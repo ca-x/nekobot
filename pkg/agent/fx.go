@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/skills"
 	_ "nekobot/pkg/providers/init" // Register all providers
@@ -22,6 +23,7 @@ func ProvideAgent(
 	cfg *config.Config,
 	log *logger.Logger,
 	skillsMgr *skills.Manager,
+	processMgr *process.Manager,
 	lc fx.Lifecycle,
 ) (*Agent, error) {
 	// Get provider config
@@ -50,8 +52,8 @@ func ProvideAgent(
 		return nil, err
 	}
 
-	// Create agent
-	agent, err := New(cfg, log, client)
+	// Create agent with process manager
+	agent, err := New(cfg, log, client, processMgr)
 	if err != nil {
 		return nil, err
 	}

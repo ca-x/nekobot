@@ -22,6 +22,7 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
@@ -131,6 +132,7 @@ func runOneShot(ctx context.Context, cancel context.CancelFunc) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		process.Module,
 		agent.Module,
 
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, ag *agent.Agent, sm *session.Manager) {
@@ -188,6 +190,7 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		process.Module,
 		agent.Module,
 
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, ag *agent.Agent, sm *session.Manager) {

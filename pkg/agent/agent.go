@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/tools"
@@ -34,7 +35,7 @@ type Config struct {
 }
 
 // New creates a new agent with the given configuration.
-func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Client) (*Agent, error) {
+func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Client, processMgr *process.Manager) (*Agent, error) {
 	workspace := cfg.WorkspacePath()
 
 	// Create tool registry
@@ -44,7 +45,11 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 	toolRegistry.MustRegister(tools.NewReadFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
 	toolRegistry.MustRegister(tools.NewWriteFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
 	toolRegistry.MustRegister(tools.NewListDirTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
-	toolRegistry.MustRegister(tools.NewExecTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace, 0))
+	toolRegistry.MustRegister(tools.NewExecTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace, 0, processMgr))
+
+	// Register process tool
+	toolRegistry.MustRegister(tools.NewProcessTool(processMgr))
+	log.Info("PTY process management enabled")
 
 	// Register web tools if configured
 	if cfg.Tools.Web.Search.APIKey != "" {
