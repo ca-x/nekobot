@@ -4,7 +4,7 @@
 
 Nanobot supports multi-channel message routing through a unified bus system. Each channel implements the `Channel` interface and can send/receive messages independently.
 
-## Completed Channels (3/8)
+## Completed Channels (11/11) ✅
 
 ### ✅ Telegram
 - **Status**: Complete with slash commands
@@ -24,42 +24,61 @@ Nanobot supports multi-channel message routing through a unified bus system. Eac
 - **Features**: Socket Mode, Events API, slash commands, ephemeral messages
 - **File**: `pkg/channels/slack/slack.go`
 
-## Pending Channels (5/8)
-
-### ⏳ WhatsApp
+### ✅ WhatsApp
+- **Status**: Complete with slash commands
 - **Type**: WebSocket bridge
 - **Config Fields**: `BridgeURL`, `AllowFrom`
-- **Implementation**: Connect to external WhatsApp bridge via WebSocket
-- **Proxy**: Not needed (handled by bridge)
-- **Reference**: `~/code/go/picoclaw/pkg/channels/whatsapp.go`
+- **Features**: Auto-reconnect, authorization, message routing
+- **File**: `pkg/channels/whatsapp/whatsapp.go`
 
-### ⏳ Feishu (飞书/Lark)
-- **Type**: HTTP API + Event callback
+### ✅ Feishu (飞书/Lark)
+- **Status**: Complete with slash commands
+- **SDK**: github.com/larksuite/oapi-sdk-go/v3
 - **Config Fields**: `AppID`, `AppSecret`, `EncryptKey`, `VerificationToken`, `AllowFrom`
-- **Implementation**: Enterprise messaging app (China)
-- **Proxy**: May be needed
-- **Reference**: `~/code/go/picoclaw/pkg/channels/feishu.go`
+- **Features**: WebSocket mode, event dispatcher, authorization
+- **File**: `pkg/channels/feishu/feishu.go`
 
-### ⏳ QQ
-- **Type**: HTTP API
-- **Config Fields**: `AppID`, `AppSecret`, `AllowFrom`
-- **Implementation**: QQ Official Bot API
-- **Proxy**: May be needed
-- **Reference**: `~/code/go/picoclaw/pkg/channels/qq.go`
-
-### ⏳ DingTalk (钉钉)
-- **Type**: HTTP webhook
+### ✅ DingTalk (钉钉)
+- **Status**: Complete with slash commands
+- **SDK**: github.com/open-dingtalk/dingtalk-stream-sdk-go
 - **Config Fields**: `ClientID`, `ClientSecret`, `AllowFrom`
-- **Implementation**: Enterprise IM (China)
-- **Proxy**: May be needed
-- **Reference**: `~/code/go/picoclaw/pkg/channels/dingtalk.go`
+- **Features**: Stream mode, auto-reconnect, session webhooks, markdown support
+- **File**: `pkg/channels/dingtalk/dingtalk.go`
 
-### ⏳ MaixCAM
-- **Type**: HTTP server
+### ✅ MaixCAM
+- **Status**: Complete with slash commands
+- **Type**: TCP server
 - **Config Fields**: `Host`, `Port`, `AllowFrom`
-- **Implementation**: Embedded device communication
-- **Proxy**: Not needed (local device)
-- **Reference**: `~/code/go/picoclaw/pkg/channels/maixcam.go`
+- **Features**: Person detection events, heartbeat, multi-device support
+- **File**: `pkg/channels/maixcam/maixcam.go`
+
+### ✅ ServerChan Bot (Server酱)
+- **Status**: Complete with slash commands
+- **Type**: HTTP API with polling
+- **Config Fields**: `BotToken`, `AllowFrom`
+- **Features**: Polling mode, markdown support, authorization
+- **File**: `pkg/channels/serverchan/serverchan.go`
+
+### ✅ WeWork (企业微信)
+- **Status**: Complete with slash commands
+- **Type**: Webhook server + API
+- **Config Fields**: `CorpID`, `AgentID`, `CorpSecret`, `Token`, `EncodingAESKey`, `AllowFrom`
+- **Features**: Message encryption/decryption, signature verification, access token management
+- **File**: `pkg/channels/wework/wework.go`
+
+### ✅ GoogleChat
+- **Status**: Complete with slash commands
+- **SDK**: google.golang.org/api/chat/v1
+- **Config Fields**: `ProjectID`, `CredentialsFile`, `AllowFrom`
+- **Features**: API mode, webhook mode, flexible authentication
+- **File**: `pkg/channels/googlechat/googlechat.go`
+
+### ✅ QQ
+- **Status**: Complete with slash commands
+- **SDK**: github.com/tencent-connect/botgo
+- **Config Fields**: `AppID`, `AppSecret`, `AllowFrom`
+- **Features**: WebSocket mode, OAuth2 token management, C2C & group messages, deduplication
+- **File**: `pkg/channels/qq/qq.go`
 
 ## Channel Interface
 

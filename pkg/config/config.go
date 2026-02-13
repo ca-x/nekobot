@@ -45,14 +45,17 @@ type AgentDefaults struct {
 
 // ChannelsConfig contains all channel configurations.
 type ChannelsConfig struct {
-	WhatsApp WhatsAppConfig `mapstructure:"whatsapp" json:"whatsapp"`
-	Telegram TelegramConfig `mapstructure:"telegram" json:"telegram"`
-	Feishu   FeishuConfig   `mapstructure:"feishu" json:"feishu"`
-	Discord  DiscordConfig  `mapstructure:"discord" json:"discord"`
-	MaixCam  MaixCamConfig  `mapstructure:"maixcam" json:"maixcam"`
-	QQ       QQConfig       `mapstructure:"qq" json:"qq"`
-	DingTalk DingTalkConfig `mapstructure:"dingtalk" json:"dingtalk"`
-	Slack    SlackConfig    `mapstructure:"slack" json:"slack"`
+	WhatsApp    WhatsAppConfig    `mapstructure:"whatsapp" json:"whatsapp"`
+	Telegram    TelegramConfig    `mapstructure:"telegram" json:"telegram"`
+	Feishu      FeishuConfig      `mapstructure:"feishu" json:"feishu"`
+	Discord     DiscordConfig     `mapstructure:"discord" json:"discord"`
+	MaixCam     MaixCamConfig     `mapstructure:"maixcam" json:"maixcam"`
+	QQ          QQConfig          `mapstructure:"qq" json:"qq"`
+	DingTalk    DingTalkConfig    `mapstructure:"dingtalk" json:"dingtalk"`
+	Slack       SlackConfig       `mapstructure:"slack" json:"slack"`
+	ServerChan  ServerChanConfig  `mapstructure:"serverchan" json:"serverchan"`
+	WeWork      WeWorkConfig      `mapstructure:"wework" json:"wework"`
+	GoogleChat  GoogleChatConfig  `mapstructure:"googlechat" json:"googlechat"`
 }
 
 // WhatsAppConfig for WhatsApp channel.
@@ -117,6 +120,32 @@ type SlackConfig struct {
 	BotToken  string   `mapstructure:"bot_token" json:"bot_token"`
 	AppToken  string   `mapstructure:"app_token" json:"app_token"`
 	AllowFrom []string `mapstructure:"allow_from" json:"allow_from"`
+}
+
+// ServerChanConfig for ServerChan Bot channel.
+type ServerChanConfig struct {
+	Enabled   bool     `mapstructure:"enabled" json:"enabled"`
+	BotToken  string   `mapstructure:"bot_token" json:"bot_token"`
+	AllowFrom []string `mapstructure:"allow_from" json:"allow_from"`
+}
+
+// WeWorkConfig for WeWork (企业微信) channel.
+type WeWorkConfig struct {
+	Enabled      bool     `mapstructure:"enabled" json:"enabled"`
+	CorpID       string   `mapstructure:"corp_id" json:"corp_id"`
+	AgentID      string   `mapstructure:"agent_id" json:"agent_id"`
+	CorpSecret   string   `mapstructure:"corp_secret" json:"corp_secret"`
+	Token        string   `mapstructure:"token" json:"token"`
+	EncodingAESKey string `mapstructure:"encoding_aes_key" json:"encoding_aes_key"`
+	AllowFrom    []string `mapstructure:"allow_from" json:"allow_from"`
+}
+
+// GoogleChatConfig for Google Chat channel.
+type GoogleChatConfig struct {
+	Enabled          bool     `mapstructure:"enabled" json:"enabled"`
+	ProjectID        string   `mapstructure:"project_id" json:"project_id"`
+	CredentialsFile  string   `mapstructure:"credentials_file" json:"credentials_file"`
+	AllowFrom        []string `mapstructure:"allow_from" json:"allow_from"`
 }
 
 // HeartbeatConfig for periodic autonomous tasks.
@@ -265,6 +294,18 @@ func DefaultConfig() *Config {
 				AllowFrom: []string{},
 			},
 			Slack: SlackConfig{
+				Enabled:   false,
+				AllowFrom: []string{},
+			},
+			ServerChan: ServerChanConfig{
+				Enabled:   false,
+				AllowFrom: []string{},
+			},
+			WeWork: WeWorkConfig{
+				Enabled:   false,
+				AllowFrom: []string{},
+			},
+			GoogleChat: GoogleChatConfig{
 				Enabled:   false,
 				AllowFrom: []string{},
 			},
