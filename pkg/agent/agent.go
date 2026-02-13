@@ -57,8 +57,13 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 	// Web fetch tool (always available)
 	toolRegistry.MustRegister(tools.NewWebFetchTool(50000))
 
-	// Message tool (no-op for now, will be set by caller)
-	toolRegistry.MustRegister(tools.NewMessageTool(nil))
+	// Browser tool (if Chrome is available)
+	outputDir := cfg.WorkspacePath() + "/screenshots"
+	toolRegistry.MustRegister(tools.NewBrowserTool(log, true, 30, outputDir))
+	log.Info("Browser tool enabled")
+
+	// Message tool (will be configured later by gateway)
+	toolRegistry.MustRegister(tools.NewMessageTool(log, nil))
 
 	// Create context builder
 	contextBuilder := NewContextBuilder(workspace)
