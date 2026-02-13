@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	stateFile      = "memory/heartbeat-state.json"
-	heartbeatFile  = "HEARTBEAT.md"
-	sessionKey     = "heartbeat:system"
-	defaultPrompt  = "Check workspace health and report any issues."
+	stateFile     = "memory/heartbeat-state.json"
+	heartbeatFile = "HEARTBEAT.md"
+	sessionKey    = "heartbeat:system"
+	defaultPrompt = "Check workspace health and report any issues."
 )
 
 // State stores heartbeat execution state.
@@ -44,11 +44,11 @@ type Task struct {
 
 // Service manages periodic heartbeat execution.
 type Service struct {
-	log     *logger.Logger
-	config  *config.Config
-	agent   *agent.Agent
-	sess    *session.Manager
-	bus     bus.Bus
+	log    *logger.Logger
+	config *config.Config
+	agent  *agent.Agent
+	sess   *session.Manager
+	bus    bus.Bus
 
 	workspacePath string
 	interval      time.Duration

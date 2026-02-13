@@ -47,17 +47,17 @@ type AgentDefaults struct {
 
 // ChannelsConfig contains all channel configurations.
 type ChannelsConfig struct {
-	WhatsApp    WhatsAppConfig    `mapstructure:"whatsapp" json:"whatsapp"`
-	Telegram    TelegramConfig    `mapstructure:"telegram" json:"telegram"`
-	Feishu      FeishuConfig      `mapstructure:"feishu" json:"feishu"`
-	Discord     DiscordConfig     `mapstructure:"discord" json:"discord"`
-	MaixCam     MaixCamConfig     `mapstructure:"maixcam" json:"maixcam"`
-	QQ          QQConfig          `mapstructure:"qq" json:"qq"`
-	DingTalk    DingTalkConfig    `mapstructure:"dingtalk" json:"dingtalk"`
-	Slack       SlackConfig       `mapstructure:"slack" json:"slack"`
-	ServerChan  ServerChanConfig  `mapstructure:"serverchan" json:"serverchan"`
-	WeWork      WeWorkConfig      `mapstructure:"wework" json:"wework"`
-	GoogleChat  GoogleChatConfig  `mapstructure:"googlechat" json:"googlechat"`
+	WhatsApp   WhatsAppConfig   `mapstructure:"whatsapp" json:"whatsapp"`
+	Telegram   TelegramConfig   `mapstructure:"telegram" json:"telegram"`
+	Feishu     FeishuConfig     `mapstructure:"feishu" json:"feishu"`
+	Discord    DiscordConfig    `mapstructure:"discord" json:"discord"`
+	MaixCam    MaixCamConfig    `mapstructure:"maixcam" json:"maixcam"`
+	QQ         QQConfig         `mapstructure:"qq" json:"qq"`
+	DingTalk   DingTalkConfig   `mapstructure:"dingtalk" json:"dingtalk"`
+	Slack      SlackConfig      `mapstructure:"slack" json:"slack"`
+	ServerChan ServerChanConfig `mapstructure:"serverchan" json:"serverchan"`
+	WeWork     WeWorkConfig     `mapstructure:"wework" json:"wework"`
+	GoogleChat GoogleChatConfig `mapstructure:"googlechat" json:"googlechat"`
 }
 
 // WhatsAppConfig for WhatsApp channel.
@@ -133,21 +133,21 @@ type ServerChanConfig struct {
 
 // WeWorkConfig for WeWork (企业微信) channel.
 type WeWorkConfig struct {
-	Enabled      bool     `mapstructure:"enabled" json:"enabled"`
-	CorpID       string   `mapstructure:"corp_id" json:"corp_id"`
-	AgentID      string   `mapstructure:"agent_id" json:"agent_id"`
-	CorpSecret   string   `mapstructure:"corp_secret" json:"corp_secret"`
-	Token        string   `mapstructure:"token" json:"token"`
-	EncodingAESKey string `mapstructure:"encoding_aes_key" json:"encoding_aes_key"`
-	AllowFrom    []string `mapstructure:"allow_from" json:"allow_from"`
+	Enabled        bool     `mapstructure:"enabled" json:"enabled"`
+	CorpID         string   `mapstructure:"corp_id" json:"corp_id"`
+	AgentID        string   `mapstructure:"agent_id" json:"agent_id"`
+	CorpSecret     string   `mapstructure:"corp_secret" json:"corp_secret"`
+	Token          string   `mapstructure:"token" json:"token"`
+	EncodingAESKey string   `mapstructure:"encoding_aes_key" json:"encoding_aes_key"`
+	AllowFrom      []string `mapstructure:"allow_from" json:"allow_from"`
 }
 
 // GoogleChatConfig for Google Chat channel.
 type GoogleChatConfig struct {
-	Enabled          bool     `mapstructure:"enabled" json:"enabled"`
-	ProjectID        string   `mapstructure:"project_id" json:"project_id"`
-	CredentialsFile  string   `mapstructure:"credentials_file" json:"credentials_file"`
-	AllowFrom        []string `mapstructure:"allow_from" json:"allow_from"`
+	Enabled         bool     `mapstructure:"enabled" json:"enabled"`
+	ProjectID       string   `mapstructure:"project_id" json:"project_id"`
+	CredentialsFile string   `mapstructure:"credentials_file" json:"credentials_file"`
+	AllowFrom       []string `mapstructure:"allow_from" json:"allow_from"`
 }
 
 // HeartbeatConfig for periodic autonomous tasks.
@@ -158,7 +158,7 @@ type HeartbeatConfig struct {
 
 // StateConfig for key-value storage backend.
 type StateConfig struct {
-	Backend  string `mapstructure:"backend" json:"backend"`   // "file" or "redis"
+	Backend  string `mapstructure:"backend" json:"backend"`     // "file" or "redis"
 	FilePath string `mapstructure:"file_path" json:"file_path"` // For file backend
 
 	// Redis backend settings
@@ -185,13 +185,13 @@ type ProvidersConfig []ProviderProfile
 
 // ProviderProfile defines a provider profile with type and alias.
 type ProviderProfile struct {
-	Name         string   `mapstructure:"name" json:"name"`                               // Alias (e.g., "openai-primary", "my-api")
-	ProviderKind string   `mapstructure:"provider_kind" json:"provider_kind"`             // Type: "openai", "anthropic", "gemini"
+	Name         string   `mapstructure:"name" json:"name"`                   // Alias (e.g., "openai-primary", "my-api")
+	ProviderKind string   `mapstructure:"provider_kind" json:"provider_kind"` // Type: "openai", "anthropic", "gemini"
 	APIKey       string   `mapstructure:"api_key" json:"api_key"`
 	APIBase      string   `mapstructure:"api_base" json:"api_base"`
-	Models       []string `mapstructure:"models" json:"models,omitempty"`                 // Supported model list
-	DefaultModel string   `mapstructure:"default_model" json:"default_model,omitempty"`   // Default model for this provider
-	Timeout      int      `mapstructure:"timeout" json:"timeout,omitempty"`               // Timeout in seconds, default 30s
+	Models       []string `mapstructure:"models" json:"models,omitempty"`               // Supported model list
+	DefaultModel string   `mapstructure:"default_model" json:"default_model,omitempty"` // Default model for this provider
+	Timeout      int      `mapstructure:"timeout" json:"timeout,omitempty"`             // Timeout in seconds, default 30s
 }
 
 // LoggerConfig contains logger configuration.
@@ -407,12 +407,12 @@ type MemoryConfig struct {
 
 // QMDConfig for QMD (Query Markdown) integration.
 type QMDConfig struct {
-	Enabled        bool               `mapstructure:"enabled" json:"enabled"`
-	Command        string             `mapstructure:"command" json:"command"`
-	IncludeDefault bool               `mapstructure:"include_default" json:"include_default"`
-	Paths          []QMDPathConfig    `mapstructure:"paths" json:"paths"`
-	Sessions       QMDSessionsConfig  `mapstructure:"sessions" json:"sessions"`
-	Update         QMDUpdateConfig    `mapstructure:"update" json:"update"`
+	Enabled        bool              `mapstructure:"enabled" json:"enabled"`
+	Command        string            `mapstructure:"command" json:"command"`
+	IncludeDefault bool              `mapstructure:"include_default" json:"include_default"`
+	Paths          []QMDPathConfig   `mapstructure:"paths" json:"paths"`
+	Sessions       QMDSessionsConfig `mapstructure:"sessions" json:"sessions"`
+	Update         QMDUpdateConfig   `mapstructure:"update" json:"update"`
 }
 
 // QMDPathConfig defines a custom collection path.

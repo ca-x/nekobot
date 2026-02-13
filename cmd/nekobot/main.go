@@ -33,12 +33,12 @@ import (
 const logo = "🤖"
 
 var (
-	configPath  string
-	message     string
-	sessionID   string
-	debugMode   bool
-	agentModel  string
-	agentProv   string
+	configPath string
+	message    string
+	sessionID  string
+	debugMode  bool
+	agentModel string
+	agentProv  string
 )
 
 var rootCmd = &cobra.Command{

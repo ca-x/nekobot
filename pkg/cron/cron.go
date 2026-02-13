@@ -59,7 +59,7 @@ type Manager struct {
 
 	// Cron scheduler
 	scheduler *cron.Cron
-	jobs      map[string]*Job     // Job ID -> Job
+	jobs      map[string]*Job         // Job ID -> Job
 	entries   map[string]cron.EntryID // Job ID -> Cron entry ID
 	mu        sync.RWMutex
 

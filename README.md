@@ -5,16 +5,27 @@ A lightweight, extensible AI assistant built with Go. nekobot provides a clean a
 ## Features
 
 ✅ **Unified Provider System** - Support for OpenAI, Claude, Gemini, and 10+ providers
+
 ✅ **Tool System** - Extensible tools for file operations, command execution, and more
+
 ✅ **Session Management** - Persistent conversation history
+
 ✅ **Memory System** - Long-term memory and daily notes
+
 ✅ **Configuration Management** - Flexible config with hot-reload
+
 ✅ **Structured Logging** - High-performance logging with rotation
+
 ✅ **Dependency Injection** - Clean architecture with Uber FX
+
 ✅ **Message Bus** - Multi-channel message routing
+
 ✅ **State Management** - File or Redis backend for KV storage
+
 ✅ **Heartbeat System** - Periodic autonomous tasks
+
 ✅ **Cron Jobs** - Scheduled task execution
+
 ✅ **System Service** - Run gateway as a native system service
 
 ## Quick Start

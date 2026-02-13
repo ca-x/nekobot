@@ -24,9 +24,9 @@ import (
 )
 
 var (
-	cronJobID   string
-	cronName    string
-	cronPrompt  string
+	cronJobID  string
+	cronName   string
+	cronPrompt string
 )
 
 var cronCmd = &cobra.Command{

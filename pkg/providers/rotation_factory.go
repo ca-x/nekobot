@@ -45,4 +45,3 @@ func CreateRotationManagerFromConfig(
 
 	return manager, nil
 }
-
