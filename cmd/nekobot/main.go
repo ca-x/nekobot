@@ -13,6 +13,7 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/skills"
 )
 
 var (
@@ -39,8 +40,8 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("nekobot v0.4.0-alpha")
-		fmt.Println("Phase 4: Agent Core Complete")
+		fmt.Println("nekobot v0.6.0-alpha")
+		fmt.Println("Phase 6: Advanced Features (Bus, State, Heartbeat, Cron, Service)")
 	},
 }
 
@@ -54,6 +55,7 @@ func init() {
 
 	// Add commands
 	rootCmd.AddCommand(agentCmd)
+	rootCmd.AddCommand(gatewayCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 
@@ -72,6 +74,7 @@ func runOneShot() {
 	app := fx.New(
 		logger.Module,
 		config.Module,
+		skills.Module,
 		agent.Module,
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, ag *agent.Agent) {
 			lc.Append(fx.Hook{

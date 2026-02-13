@@ -43,6 +43,19 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 	toolRegistry.MustRegister(tools.NewReadFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
 	toolRegistry.MustRegister(tools.NewWriteFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
 	toolRegistry.MustRegister(tools.NewListDirTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+	toolRegistry.MustRegister(tools.NewExecTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace, 0))
+
+	// Register web tools if configured
+	if cfg.Tools.Web.Search.APIKey != "" {
+		toolRegistry.MustRegister(tools.NewWebSearchTool(
+			cfg.Tools.Web.Search.APIKey,
+			cfg.Tools.Web.Search.MaxResults,
+		))
+		log.Info("Web search tool enabled")
+	}
+
+	// Web fetch tool (always available)
+	toolRegistry.MustRegister(tools.NewWebFetchTool(50000))
 
 	// Message tool (no-op for now, will be set by caller)
 	toolRegistry.MustRegister(tools.NewMessageTool(nil))

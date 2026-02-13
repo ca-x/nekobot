@@ -19,6 +19,8 @@ type Config struct {
 	Gateway   GatewayConfig   `mapstructure:"gateway" json:"gateway"`
 	Tools     ToolsConfig     `mapstructure:"tools" json:"tools"`
 	Heartbeat HeartbeatConfig `mapstructure:"heartbeat" json:"heartbeat"`
+	State     StateConfig     `mapstructure:"state" json:"state"`
+	Bus       BusConfig       `mapstructure:"bus" json:"bus"`
 	mu        sync.RWMutex
 }
 
@@ -36,6 +38,8 @@ type AgentDefaults struct {
 	MaxTokens           int     `mapstructure:"max_tokens" json:"max_tokens"`
 	Temperature         float64 `mapstructure:"temperature" json:"temperature"`
 	MaxToolIterations   int     `mapstructure:"max_tool_iterations" json:"max_tool_iterations"`
+	SkillsDir           string  `mapstructure:"skills_dir" json:"skills_dir"`
+	SkillsAutoReload    bool    `mapstructure:"skills_auto_reload" json:"skills_auto_reload"`
 }
 
 // ChannelsConfig contains all channel configurations.
@@ -116,8 +120,31 @@ type SlackConfig struct {
 
 // HeartbeatConfig for periodic autonomous tasks.
 type HeartbeatConfig struct {
-	Enabled  bool `mapstructure:"enabled" json:"enabled"`
-	Interval int  `mapstructure:"interval" json:"interval"` // minutes, min 5
+	Enabled         bool `mapstructure:"enabled" json:"enabled"`
+	IntervalMinutes int  `mapstructure:"interval_minutes" json:"interval_minutes"` // minutes, min 5
+}
+
+// StateConfig for key-value storage backend.
+type StateConfig struct {
+	Backend  string `mapstructure:"backend" json:"backend"`   // "file" or "redis"
+	FilePath string `mapstructure:"file_path" json:"file_path"` // For file backend
+
+	// Redis backend settings
+	RedisAddr     string `mapstructure:"redis_addr" json:"redis_addr"`
+	RedisPassword string `mapstructure:"redis_password" json:"redis_password"`
+	RedisDB       int    `mapstructure:"redis_db" json:"redis_db"`
+	RedisPrefix   string `mapstructure:"redis_prefix" json:"redis_prefix"`
+}
+
+// BusConfig for message bus backend.
+type BusConfig struct {
+	Type string `mapstructure:"type" json:"type"` // "local" or "redis"
+
+	// Redis backend settings (when type is "redis")
+	RedisAddr     string `mapstructure:"redis_addr" json:"redis_addr"`
+	RedisPassword string `mapstructure:"redis_password" json:"redis_password"`
+	RedisDB       int    `mapstructure:"redis_db" json:"redis_db"`
+	RedisPrefix   string `mapstructure:"redis_prefix" json:"redis_prefix"`
 }
 
 // ProvidersConfig contains all provider configurations.
@@ -156,12 +183,18 @@ type ToolsConfig struct {
 // WebToolsConfig for web-related tools.
 type WebToolsConfig struct {
 	Search WebSearchConfig `mapstructure:"search" json:"search"`
+	Fetch  WebFetchConfig  `mapstructure:"fetch" json:"fetch"`
 }
 
 // WebSearchConfig for web search tool.
 type WebSearchConfig struct {
 	APIKey     string `mapstructure:"api_key" json:"api_key"`
 	MaxResults int    `mapstructure:"max_results" json:"max_results"`
+}
+
+// WebFetchConfig for web fetch tool.
+type WebFetchConfig struct {
+	MaxChars int `mapstructure:"max_chars" json:"max_chars"`
 }
 
 // DefaultConfig returns a new Config with default values.
@@ -239,11 +272,23 @@ func DefaultConfig() *Config {
 				Search: WebSearchConfig{
 					MaxResults: 5,
 				},
+				Fetch: WebFetchConfig{
+					MaxChars: 50000,
+				},
 			},
 		},
 		Heartbeat: HeartbeatConfig{
-			Enabled:  true,
-			Interval: 30, // 30 minutes
+			Enabled:         true,
+			IntervalMinutes: 30, // 30 minutes
+		},
+		State: StateConfig{
+			Backend:     "file",
+			FilePath:    "", // Will be set to workspace/state.json by state module
+			RedisPrefix: "nekobot:",
+		},
+		Bus: BusConfig{
+			Type:        "local",
+			RedisPrefix: "nekobot:bus:",
 		},
 	}
 }

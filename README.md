@@ -11,6 +11,11 @@ A lightweight, extensible AI assistant built with Go. nekobot provides a clean a
 ✅ **Configuration Management** - Flexible config with hot-reload
 ✅ **Structured Logging** - High-performance logging with rotation
 ✅ **Dependency Injection** - Clean architecture with Uber FX
+✅ **Message Bus** - Multi-channel message routing
+✅ **State Management** - File or Redis backend for KV storage
+✅ **Heartbeat System** - Periodic autonomous tasks
+✅ **Cron Jobs** - Scheduled task execution
+✅ **System Service** - Run gateway as a native system service
 
 ## Quick Start
 
@@ -84,6 +89,27 @@ nekobot agent -m "Run 'ls -la' and show me the results"
 nekobot agent
 ```
 
+### Gateway Mode
+
+```bash
+# Run gateway in foreground
+nekobot gateway
+
+# Install as system service
+sudo nekobot gateway install
+
+# Manage service
+sudo nekobot gateway start
+sudo nekobot gateway stop
+sudo nekobot gateway restart
+nekobot gateway status
+
+# Uninstall service
+sudo nekobot gateway uninstall
+```
+
+See [Gateway Service Documentation](docs/GATEWAY_SERVICE.md) for more details.
+
 ## Architecture
 
 ```
@@ -108,6 +134,10 @@ nekobot/
 │   │   ├── file.go       # File tools
 │   │   ├── exec.go       # Shell execution
 │   │   └── common.go     # Common tools
+│   ├── bus/              # Message bus
+│   ├── state/            # State management (file/redis)
+│   ├── heartbeat/        # Heartbeat system
+│   ├── cron/             # Cron jobs
 │   ├── config/           # Configuration
 │   ├── logger/           # Logging
 │   └── session/          # Session management
@@ -120,6 +150,8 @@ nekobot/
 - **write_file**: Write content to files
 - **list_dir**: List directory contents
 - **exec**: Execute shell commands
+- **web_search**: Search the web using Brave Search API
+- **web_fetch**: Fetch and extract content from URLs
 - **message**: Send messages to user
 
 ## Development
@@ -183,14 +215,27 @@ func init() {
 - ✅ Phase 3: Logging + DI (6 files, ~800 lines)
 - ✅ Phase 4: Agent Core + Tools (8 files, ~1.2k lines)
 - ✅ Phase 5: Session + CLI (3 files, ~400 lines)
-- 🚧 Phase 6: Advanced Features (channels, heartbeat, cron)
+- ✅ Phase 6: Advanced Features (15 files, ~3k lines)
+  - Message Bus (local + Redis implementations)
+  - State Management (file + Redis backends)
+  - Heartbeat system for autonomous tasks
+  - Cron job scheduling
+  - System service management
+  - Channel system framework
+  - Web tools (search + fetch)
+- 🚧 Phase 7: Channel Implementations
+  - ✅ Telegram (basic implementation)
+  - ⏳ Discord, WhatsApp, Feishu, etc.
 
-**Total**: 35+ files, ~6,100 lines of code
+**Total**: 50+ files, ~10,000 lines of code
 
 ## Documentation
 
 - [Provider Architecture](docs/PROVIDERS.md)
 - [Logging System](docs/LOGGING.md)
+- [Gateway Service Management](docs/GATEWAY_SERVICE.md)
+- [Message Bus Architecture](docs/BUS_ARCHITECTURE.md)
+- [Web Tools](docs/WEB_TOOLS.md)
 - [Implementation Progress](docs/PROGRESS.md)
 
 ## License
@@ -202,3 +247,9 @@ MIT
 Inspired by picoclaw and nanobot projects.
 
 Built with ❤️ using Go, zap, fx, viper, and cobra.
+
+## References
+
+This project references and learns from:
+- https://github.com/smallnest/goclaw
+- https://github.com/sipeed/picoclaw

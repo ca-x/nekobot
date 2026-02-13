@@ -8,6 +8,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/providers"
+	"nekobot/pkg/skills"
 	_ "nekobot/pkg/providers/init" // Register all providers
 )
 
@@ -20,6 +21,7 @@ var Module = fx.Module("agent",
 func ProvideAgent(
 	cfg *config.Config,
 	log *logger.Logger,
+	skillsMgr *skills.Manager,
 	lc fx.Lifecycle,
 ) (*Agent, error) {
 	// Get provider config
@@ -54,6 +56,9 @@ func ProvideAgent(
 		return nil, err
 	}
 
+	// Set skills manager on context builder
+	agent.context.SetSkillsManager(skillsMgr)
+
 	// Register lifecycle hooks
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
@@ -61,6 +66,7 @@ func ProvideAgent(
 				zap.String("provider", providerName),
 				zap.String("model", cfg.Agents.Defaults.Model),
 				zap.String("workspace", cfg.WorkspacePath()),
+				zap.Int("skills", len(skillsMgr.ListEnabled())),
 			)
 			return nil
 		},

@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"nekobot/pkg/skills"
 )
 
 // ContextBuilder builds system prompts and message contexts for the agent.
@@ -22,6 +24,9 @@ type ContextBuilder struct {
 
 	// Tool registry reference (set after creation)
 	getToolDescriptions func() []string
+
+	// Skills manager reference (set after creation)
+	skillsManager *skills.Manager
 }
 
 // NewContextBuilder creates a new context builder for the given workspace.
@@ -36,6 +41,11 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 // This allows the context builder to include tool info without circular dependencies.
 func (cb *ContextBuilder) SetToolDescriptionsFunc(fn func() []string) {
 	cb.getToolDescriptions = fn
+}
+
+// SetSkillsManager sets the skills manager for context building.
+func (cb *ContextBuilder) SetSkillsManager(sm *skills.Manager) {
+	cb.skillsManager = sm
 }
 
 // GetMemory returns the memory store.
@@ -110,6 +120,20 @@ func (cb *ContextBuilder) buildToolsSection() string {
 	return sb.String()
 }
 
+// buildSkillsSection creates the skills section of the system prompt.
+func (cb *ContextBuilder) buildSkillsSection() string {
+	if cb.skillsManager == nil {
+		return ""
+	}
+
+	skillsInstructions := cb.skillsManager.GetInstructions()
+	if skillsInstructions == "" {
+		return ""
+	}
+
+	return skillsInstructions
+}
+
 // LoadBootstrapFiles loads bootstrap files from the workspace.
 // These files customize the agent's behavior and personality.
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
@@ -139,7 +163,7 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 }
 
 // BuildSystemPrompt builds the complete system prompt.
-// This includes identity, bootstrap files, tools, and memory.
+// This includes identity, bootstrap files, tools, skills, and memory.
 func (cb *ContextBuilder) BuildSystemPrompt() string {
 	var parts []string
 
@@ -150,6 +174,12 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 	bootstrapContent := cb.LoadBootstrapFiles()
 	if bootstrapContent != "" {
 		parts = append(parts, "# Bootstrap Configuration\n\n"+bootstrapContent)
+	}
+
+	// Skills (if any)
+	skillsSection := cb.buildSkillsSection()
+	if skillsSection != "" {
+		parts = append(parts, skillsSection)
 	}
 
 	// Memory context (if any)
