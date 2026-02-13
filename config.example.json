@@ -55,6 +55,46 @@
     "google": {
       "api_key": "",
       "api_base": "https://generativelanguage.googleapis.com"
+    },
+    "openrouter": {
+      "api_key": "",
+      "api_base": "https://openrouter.ai/api/v1",
+      "comment": "OpenRouter - Access to multiple models through one API"
+    },
+    "deepseek": {
+      "api_key": "",
+      "api_base": "https://api.deepseek.com/v1",
+      "comment": "DeepSeek API - OpenAI compatible"
+    },
+    "together": {
+      "api_key": "",
+      "api_base": "https://api.together.xyz/v1",
+      "comment": "Together AI - OpenAI compatible API"
+    },
+    "groq": {
+      "api_key": "",
+      "api_base": "https://api.groq.com/openai/v1",
+      "comment": "Groq - Ultra-fast LLM inference"
+    },
+    "ollama": {
+      "api_key": "ollama",
+      "api_base": "http://localhost:11434/v1",
+      "comment": "Ollama local models - OpenAI compatible API"
+    },
+    "lmstudio": {
+      "api_key": "lm-studio",
+      "api_base": "http://localhost:1234/v1",
+      "comment": "LM Studio local server - OpenAI compatible"
+    },
+    "vllm": {
+      "api_key": "vllm",
+      "api_base": "http://localhost:8000/v1",
+      "comment": "vLLM self-hosted - OpenAI compatible API"
+    },
+    "custom": {
+      "api_key": "your-api-key",
+      "api_base": "https://your-custom-api.com/v1",
+      "comment": "Any OpenAI-compatible API endpoint"
     }
   },
   "gateway": {
