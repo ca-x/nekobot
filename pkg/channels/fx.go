@@ -65,7 +65,7 @@ func RegisterChannels(
 
 	// Register Discord channel
 	if cfg.Channels.Discord.Enabled {
-		discordChannel, err := discord.NewChannel(log, cfg.Channels.Discord, messageBus)
+		discordChannel, err := discord.NewChannel(log, cfg.Channels.Discord, messageBus, cmdRegistry)
 		if err != nil {
 			log.Warn("Failed to create Discord channel, skipping", zap.Error(err))
 		} else {

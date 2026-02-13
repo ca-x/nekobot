@@ -77,6 +77,9 @@ func (c *Channel) Start(ctx context.Context) error {
 		zap.String("bot_user_id", c.botUserID),
 		zap.String("team", authResp.Team))
 
+	// Register outbound message handler
+	c.bus.RegisterHandler("slack", c.handleOutbound)
+
 	// Start event loop
 	go c.eventLoop()
 
@@ -92,9 +95,6 @@ func (c *Channel) Start(ctx context.Context) error {
 	c.running = true
 	c.log.Info("Slack channel started")
 
-	// Listen for outbound messages
-	go c.listenForOutbound(c.ctx)
-
 	return nil
 }
 
@@ -106,14 +106,27 @@ func (c *Channel) Stop(ctx context.Context) error {
 		c.cancel()
 	}
 
+	// Unregister handler
+	c.bus.UnregisterHandlers("slack")
+
 	c.running = false
 	c.log.Info("Slack channel stopped")
 	return nil
 }
 
+// ID returns the channel identifier.
+func (c *Channel) ID() string {
+	return "slack"
+}
+
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "slack"
+	return "Slack"
+}
+
+// IsEnabled returns whether the channel is enabled.
+func (c *Channel) IsEnabled() bool {
+	return c.config.Enabled
 }
 
 // IsRunning returns whether the channel is running.
@@ -176,23 +189,25 @@ func (c *Channel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	}
 
 	// Determine chat ID (channel_id or channel_id:thread_ts)
-	chatID := ev.Channel
+	sessionID := fmt.Sprintf("slack:%s", ev.Channel)
 	if ev.ThreadTimeStamp != "" {
-		chatID = fmt.Sprintf("%s:%s", ev.Channel, ev.ThreadTimeStamp)
+		sessionID = fmt.Sprintf("slack:%s:%s", ev.Channel, ev.ThreadTimeStamp)
 	}
 
 	// Create inbound message
-	msg := bus.InboundMessage{
-		Channel:   "slack",
-		ChatID:    chatID,
+	msg := &bus.Message{
+		ID:        fmt.Sprintf("slack:%s", ev.TimeStamp),
+		ChannelID: "slack",
+		SessionID: sessionID,
 		UserID:    ev.User,
 		Username:  ev.User, // Slack uses user ID
+		Type:      bus.MessageTypeText,
 		Content:   ev.Text,
 		Timestamp: time.Now(),
 	}
 
 	// Send to bus
-	if err := c.bus.SendInbound(c.ctx, msg); err != nil {
+	if err := c.bus.SendInbound(msg); err != nil {
 		c.log.Error("Failed to send inbound message", zap.Error(err))
 	}
 }
@@ -206,27 +221,29 @@ func (c *Channel) handleAppMentionEvent(ev *slackevents.AppMentionEvent) {
 		return
 	}
 
-	// Determine chat ID
-	chatID := ev.Channel
+	// Determine session ID
+	sessionID := fmt.Sprintf("slack:%s", ev.Channel)
 	if ev.ThreadTimeStamp != "" {
-		chatID = fmt.Sprintf("%s:%s", ev.Channel, ev.ThreadTimeStamp)
+		sessionID = fmt.Sprintf("slack:%s:%s", ev.Channel, ev.ThreadTimeStamp)
 	}
 
 	// Remove bot mention from text
 	text := strings.TrimSpace(strings.Replace(ev.Text, fmt.Sprintf("<@%s>", c.botUserID), "", 1))
 
 	// Create inbound message
-	msg := bus.InboundMessage{
-		Channel:   "slack",
-		ChatID:    chatID,
+	msg := &bus.Message{
+		ID:        fmt.Sprintf("slack:%s", ev.TimeStamp),
+		ChannelID: "slack",
+		SessionID: sessionID,
 		UserID:    ev.User,
 		Username:  ev.User,
+		Type:      bus.MessageTypeText,
 		Content:   text,
 		Timestamp: time.Now(),
 	}
 
 	// Send to bus
-	if err := c.bus.SendInbound(c.ctx, msg); err != nil {
+	if err := c.bus.SendInbound(msg); err != nil {
 		c.log.Error("Failed to send inbound message", zap.Error(err))
 	}
 }
@@ -318,38 +335,17 @@ func (c *Channel) handleInteractive(evt socketmode.Event) {
 	// TODO: Handle interactive components
 }
 
-// listenForOutbound listens for outbound messages from the bus.
-func (c *Channel) listenForOutbound(ctx context.Context) {
-	outboundChan, err := c.bus.SubscribeOutbound(ctx, "slack")
-	if err != nil {
-		c.log.Error("Failed to subscribe to outbound", zap.Error(err))
-		return
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case msg, ok := <-outboundChan:
-			if !ok {
-				return
-			}
-
-			if err := c.sendMessage(ctx, msg); err != nil {
-				c.log.Error("Failed to send message",
-					zap.String("chat_id", msg.ChatID),
-					zap.Error(err))
-			}
-		}
-	}
+// handleOutbound handles outbound messages from the bus.
+func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
+	return c.SendMessage(ctx, msg)
 }
 
-// sendMessage sends a message to Slack.
-func (c *Channel) sendMessage(ctx context.Context, msg bus.OutboundMessage) error {
-	// Parse chat ID (channel_id or channel_id:thread_ts)
-	channelID, threadTS := c.parseChatID(msg.ChatID)
+// SendMessage sends a message to Slack.
+func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
+	// Parse session ID (format: "slack:channel_id" or "slack:channel_id:thread_ts")
+	channelID, threadTS := c.parseSessionID(msg.SessionID)
 	if channelID == "" {
-		return fmt.Errorf("invalid chat ID: %s", msg.ChatID)
+		return fmt.Errorf("invalid session ID: %s", msg.SessionID)
 	}
 
 	// Build message options
@@ -374,9 +370,14 @@ func (c *Channel) sendMessage(ctx context.Context, msg bus.OutboundMessage) erro
 	return nil
 }
 
-// parseChatID parses chat ID into channel ID and optional thread timestamp.
-func (c *Channel) parseChatID(chatID string) (string, string) {
-	parts := strings.SplitN(chatID, ":", 2)
+// parseSessionID parses session ID into channel ID and optional thread timestamp.
+func (c *Channel) parseSessionID(sessionID string) (string, string) {
+	// Format: "slack:channel_id" or "slack:channel_id:thread_ts"
+	if !strings.HasPrefix(sessionID, "slack:") {
+		return "", ""
+	}
+
+	parts := strings.SplitN(sessionID[6:], ":", 2)
 	if len(parts) == 2 {
 		return parts[0], parts[1]
 	}
