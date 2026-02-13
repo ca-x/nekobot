@@ -352,45 +352,6 @@ NekoBot 支持跨 Provider 的自动故障转移。只需在配置中指定 fall
 }
 ```
 
-### API Key 轮换 (Profile Rotation)
-
-在单个 Provider 内轮换多个 API Key:
-
-```json
-{
-  "providers": {
-    "openai": {
-      "api_key": "",
-      "api_base": "https://api.openai.com/v1",
-      "rotation": {
-        "enabled": true,
-        "strategy": "round_robin",
-        "cooldown": "5m"
-      },
-      "profiles": {
-        "account1": {
-          "api_key": "sk-xxx-1",
-          "priority": 1
-        },
-        "account2": {
-          "api_key": "sk-xxx-2",
-          "priority": 2
-        },
-        "backup": {
-          "api_key": "sk-xxx-3",
-          "priority": 3
-        }
-      }
-    }
-  }
-}
-```
-
-**Rotation 策略**：
-- `round_robin`: 轮流使用
-- `least_used`: 优先使用调用次数最少的
-- `random`: 随机选择
-
 ### 断路器 (Circuit Breaker)
 
 自动保护机制，无需配置:

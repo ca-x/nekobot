@@ -13,45 +13,11 @@
   "providers": {
     "anthropic": {
       "api_key": "",
-      "api_base": "https://api.anthropic.com",
-      "rotation": {
-        "enabled": true,
-        "strategy": "round_robin",
-        "cooldown": "5m"
-      },
-      "profiles": {
-        "primary": {
-          "api_key": "sk-ant-xxx-primary",
-          "priority": 1
-        },
-        "secondary": {
-          "api_key": "sk-ant-xxx-secondary",
-          "priority": 2
-        },
-        "backup": {
-          "api_key": "sk-ant-xxx-backup",
-          "priority": 3
-        }
-      }
+      "api_base": "https://api.anthropic.com"
     },
     "openai": {
       "api_key": "",
-      "api_base": "https://api.openai.com/v1",
-      "rotation": {
-        "enabled": true,
-        "strategy": "least_used",
-        "cooldown": "10m"
-      },
-      "profiles": {
-        "prod": {
-          "api_key": "sk-xxx-prod",
-          "priority": 1
-        },
-        "dev": {
-          "api_key": "sk-xxx-dev",
-          "priority": 2
-        }
-      }
+      "api_base": "https://api.openai.com/v1"
     },
     "google": {
       "api_key": "",
