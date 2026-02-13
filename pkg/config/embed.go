@@ -4,5 +4,6 @@ package config
 import _ "embed"
 
 // DefaultConfigTemplate contains the default configuration template.
+//
 //go:embed config.example.json
 var DefaultConfigTemplate string
