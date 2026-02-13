@@ -69,7 +69,8 @@ func ProvideAgent(
 				zap.String("provider", providerName),
 				zap.String("model", cfg.Agents.Defaults.Model),
 				zap.String("workspace", cfg.WorkspacePath()),
-				zap.Int("skills", len(skillsMgr.ListEnabled())),
+				zap.Int("skills_total", len(skillsMgr.ListEnabled())),
+				zap.Int("skills_eligible", len(skillsMgr.ListEligibleEnabled())),
 			)
 			return nil
 		},

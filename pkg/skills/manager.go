@@ -222,6 +222,32 @@ func (m *Manager) ListEnabled() []*Skill {
 	return skills
 }
 
+// ListEligibleEnabled returns all enabled skills that meet system requirements.
+func (m *Manager) ListEligibleEnabled() []*Skill {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	skills := make([]*Skill, 0)
+	for _, skill := range m.skills {
+		if !skill.Enabled {
+			continue
+		}
+
+		// Check eligibility
+		eligible, reasons := m.eligibilityCheck.Check(skill)
+		if !eligible {
+			m.log.Debug("Skill not eligible",
+				zap.String("skill", skill.ID),
+				zap.Strings("reasons", reasons))
+			continue
+		}
+
+		skills = append(skills, skill)
+	}
+
+	return skills
+}
+
 // Enable enables a skill by ID.
 func (m *Manager) Enable(id string) error {
 	m.mu.Lock()
@@ -252,9 +278,9 @@ func (m *Manager) Disable(id string) error {
 	return nil
 }
 
-// GetInstructions returns the combined instructions for all enabled skills.
+// GetInstructions returns the combined instructions for all enabled and eligible skills.
 func (m *Manager) GetInstructions() string {
-	skills := m.ListEnabled()
+	skills := m.ListEligibleEnabled()
 	if len(skills) == 0 {
 		return ""
 	}
