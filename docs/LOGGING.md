@@ -1,8 +1,8 @@
-# Nanobot Logger - Dual Output Guide
+# NekoBot Logger - Dual Output Guide
 
 ## Overview
 
-The nanobot logger **automatically outputs to both console and file** when configured with an output path. This is a built-in feature that requires no additional configuration.
+The NekoBot logger **automatically outputs to both console and file** when configured with an output path. This is a built-in feature that requires no additional configuration.
 
 ## How It Works
 
@@ -32,7 +32,7 @@ import (
 func main() {
     // Configure logger with file path
     cfg := logger.DefaultConfig()
-    cfg.OutputPath = "/var/log/nanobot/app.log"  // Enable file output
+    cfg.OutputPath = "/var/log/nekobot/app.log"  // Enable file output
     cfg.Development = true                        // Enable colored console
 
     log, err := logger.New(cfg)
@@ -74,7 +74,7 @@ cfg.OutputPath = ""  // Empty = console only
 ### File with Rotation
 ```go
 cfg := logger.DefaultConfig()
-cfg.OutputPath = "/var/log/nanobot/app.log"
+cfg.OutputPath = "/var/log/nekobot/app.log"
 cfg.MaxSize = 100      // 100MB per file
 cfg.MaxBackups = 5     // Keep 5 old files
 cfg.MaxAge = 30        // Keep for 30 days
@@ -97,7 +97,7 @@ The logger intelligently uses different formats for each output:
 import "gopkg.in/natefinch/lumberjack.v2"
 
 fileWriter := &lumberjack.Logger{
-    Filename:   "/var/log/nanobot/app.log",
+    Filename:   "/var/log/nekobot/app.log",
     MaxSize:    100,
     MaxBackups: 5,
 }
@@ -125,16 +125,16 @@ fileWriter := &lumberjack.Logger{
 
 ```bash
 # Run your app
-./nanobot
+./nekobot
 
 # Console will show colored output
 # File will accumulate JSON logs
 
 # View file logs
-tail -f /var/log/nanobot/app.log
+tail -f /var/log/nekobot/app.log
 
 # Search file logs
-grep '"level":"error"' /var/log/nanobot/app.log
+grep '"level":"error"' /var/log/nekobot/app.log
 ```
 
 ## Integration with fx
@@ -162,7 +162,7 @@ func run(log *logger.Logger) {
 
 ### Logs not appearing in file?
 
-1. Check file permissions: `ls -la /var/log/nanobot/`
+1. Check file permissions: `ls -la /var/log/nekobot/`
 2. Ensure directory exists: `mkdir -p /var/log/nanobot`
 3. Call `Sync()` before exit: `defer log.Sync()`
 

@@ -95,7 +95,7 @@ func Example_globalLogger() {
 // Example_fileRotation demonstrates log file rotation configuration.
 func Example_fileRotation() {
 	cfg := logger.DefaultConfig()
-	cfg.OutputPath = "/tmp/nanobot.log"
+	cfg.OutputPath = "/tmp/nekobot.log"
 	cfg.MaxSize = 10      // 10 MB per file
 	cfg.MaxBackups = 5    // Keep 5 old files
 	cfg.MaxAge = 30       // Keep logs for 30 days

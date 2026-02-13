@@ -1,6 +1,6 @@
-# Nanobot Provider Architecture
+# NekoBot Provider Architecture
 
-A unified, extensible provider architecture for LLM APIs inspired by newapi, built for the nanobot project.
+A unified, extensible provider architecture for LLM APIs inspired by newapi, built for the NekoBot project.
 
 ## Architecture Overview
 

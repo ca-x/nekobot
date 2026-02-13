@@ -1,4 +1,4 @@
-# Nanobot Implementation Progress
+# NekoBot Implementation Progress
 
 ## Summary
 
@@ -35,7 +35,7 @@
 **Flexible Configuration with Viper**
 
 - ✅ Multi-format support (JSON, YAML, TOML)
-- ✅ Environment variable overrides (NANOBOT_*)
+- ✅ Environment variable overrides (NEKOBOT_*)
 - ✅ Hot-reload with fsnotify
 - ✅ Comprehensive validation
 - ✅ Thread-safe access
@@ -235,7 +235,7 @@ nekobot version            # Version info
 ## 📁 Final Project Structure
 
 ```
-nanobot/
+nekobot/
 ├── cmd/
 │   └── nekobot/
 │       ├── main.go              # Entry point
@@ -362,7 +362,7 @@ nanobot/
 ```bash
 # Clone repository
 git clone <repo-url>
-cd nanobot
+cd nekobot
 
 # Install dependencies
 go mod tidy

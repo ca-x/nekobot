@@ -61,7 +61,7 @@ type Config struct {
 // DefaultConfig returns a default logger configuration.
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
-	logPath := filepath.Join(homeDir, ".nanobot", "logs", "nanobot.log")
+	logPath := filepath.Join(homeDir, ".nanobot", "logs", "nekobot.log")
 
 	return &Config{
 		Level:            LevelInfo,

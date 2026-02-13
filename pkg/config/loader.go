@@ -30,7 +30,7 @@ func NewLoader() *Loader {
 	v.AddConfigPath("./config")
 
 	// Environment variable settings
-	v.SetEnvPrefix("NANOBOT")
+	v.SetEnvPrefix("NEKOBOT")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 

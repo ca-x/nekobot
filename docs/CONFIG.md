@@ -1,8 +1,8 @@
-# Nanobot 配置和加载说明
+# NekoBot 配置和加载说明
 
 ## 配置文件加载优先级
 
-nanobot 按以下顺序查找配置文件（找到第一个即使用）：
+NekoBot 按以下顺序查找配置文件（找到第一个即使用）：
 
 | 优先级 | 路径 | 说明 |
 |--------|------|------|
@@ -18,14 +18,14 @@ nekobot agent --config /path/to/custom/config.json
 
 ### 环境变量覆盖
 
-配置项可以通过环境变量覆盖，前缀为 `NANOBOT_`，使用下划线分隔：
+配置项可以通过环境变量覆盖，前缀为 `NEKOBOT_`，使用下划线分隔：
 
 ```bash
 # 覆盖 providers.anthropic.api_key
-export NANOBOT_PROVIDERS_ANTHROPIC_API_KEY="sk-ant-xxx"
+export NEKOBOT_PROVIDERS_ANTHROPIC_API_KEY="sk-ant-xxx"
 
 # 覆盖 agents.defaults.model
-export NANOBOT_AGENTS_DEFAULTS_MODEL="claude-3-5-sonnet-20241022"
+export NEKOBOT_AGENTS_DEFAULTS_MODEL="claude-3-5-sonnet-20241022"
 
 # 启动应用
 nekobot agent
@@ -158,7 +158,7 @@ curl "https://api.weather.com/v1/current?location=Tokyo"
 
 ## 自动准入 (Gating)
 
-nanobot 会自动检测系统环境，只加载满足要求的技能：
+NekoBot 会自动检测系统环境，只加载满足要求的技能：
 
 ### 检查项
 
@@ -186,7 +186,7 @@ requirements:
 
 ## 内置技能
 
-nanobot 包含以下内置技能：
+NekoBot 包含以下内置技能：
 
 - **coding-agent**: 运行 Codex, Claude Code, OpenCode 等编码助手
 - **actionbook**: 自动化任务流程
@@ -293,7 +293,7 @@ Skill not eligible:
 ### Q: 如何临时禁用所有技能？
 
 ```bash
-export NANOBOT_SKILLS_BUILTIN_ENABLED=false
+export NEKOBOT_SKILLS_BUILTIN_ENABLED=false
 nekobot agent
 ```
 
@@ -305,7 +305,7 @@ nekobot agent
 
 ## 与 goclaw/picoclaw 的兼容性
 
-nanobot 保持与 goclaw 的技能生态兼容：
+NekoBot 保持与 goclaw 的技能生态兼容：
 
 - ✅ SKILL.md 格式完全兼容
 - ✅ 自动准入 (gating) 机制

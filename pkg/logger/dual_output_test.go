@@ -51,7 +51,7 @@ func Example_consoleOnly() {
 func Example_productionLogging() {
 	cfg := &logger.Config{
 		Level:            logger.LevelInfo,
-		OutputPath:       "/var/log/nanobot/production.log",
+		OutputPath:       "/var/log/nekobot/production.log",
 		MaxSize:          100,  // 100MB
 		MaxBackups:       10,   // Keep 10 old files
 		MaxAge:           30,   // 30 days
