@@ -2,51 +2,33 @@ package heartbeat
 
 import (
 	"context"
-	"time"
 
 	"go.uber.org/fx"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
-	"nekobot/pkg/state"
+	"nekobot/pkg/session"
 )
 
 // Module is the fx module for heartbeat.
 var Module = fx.Module("heartbeat",
-	fx.Provide(NewHeartbeat),
+	fx.Provide(NewService),
+	fx.Invoke(StartHeartbeat),
 )
 
-// NewHeartbeat creates a new heartbeat system for fx.
-func NewHeartbeat(
+// StartHeartbeat registers the heartbeat service lifecycle hooks.
+func StartHeartbeat(
 	lc fx.Lifecycle,
-	log *logger.Logger,
-	ag *agent.Agent,
-	st state.KV,
-	cfg *config.Config,
-) *Heartbeat {
-	// Parse interval from config
-	interval := 1 * time.Hour
-	if cfg.Heartbeat.IntervalMinutes > 0 {
-		interval = time.Duration(cfg.Heartbeat.IntervalMinutes) * time.Minute
-	}
-
-	hbConfig := &Config{
-		Enabled:   cfg.Heartbeat.Enabled,
-		Interval:  interval,
-		Workspace: cfg.Agents.Defaults.Workspace,
-	}
-
-	hb := New(log, ag, st, hbConfig)
-
+	service *Service,
+) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			return hb.Start()
+			return service.Start(ctx)
 		},
 		OnStop: func(ctx context.Context) error {
-			return hb.Stop()
+			return service.Stop(ctx)
 		},
 	})
-
-	return hb
 }

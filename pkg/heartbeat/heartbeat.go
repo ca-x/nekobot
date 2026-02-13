@@ -1,285 +1,364 @@
-// Package heartbeat provides periodic autonomous task execution for the agent.
+// Package heartbeat implements periodic autonomous task execution.
 package heartbeat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/bus"
+	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
-	"nekobot/pkg/state"
+	"nekobot/pkg/session"
 )
-
-// Heartbeat manages periodic autonomous agent tasks.
-type Heartbeat struct {
-	log       *logger.Logger
-	agent     *agent.Agent
-	state     state.KV
-	workspace string
-	interval  time.Duration
-
-	// Lifecycle
-	ctx       context.Context
-	cancel    context.CancelFunc
-	ticker    *time.Ticker
-	wg        sync.WaitGroup
-	enabled   bool
-	enabledMu sync.RWMutex
-}
-
-// Config configures the heartbeat system.
-type Config struct {
-	Enabled   bool          // Enable heartbeat
-	Interval  time.Duration // Heartbeat interval (default: 1 hour)
-	Workspace string        // Workspace directory
-}
 
 const (
-	heartbeatFile     = "HEARTBEAT.md"
-	stateKeyEnabled   = "heartbeat.enabled"
-	stateKeyLastRun   = "heartbeat.last_run"
-	stateKeyRunCount  = "heartbeat.run_count"
-	defaultPrompt     = "# Heartbeat Tasks\n\nNo tasks defined. Create HEARTBEAT.md in your workspace to define periodic tasks."
+	stateFile      = "memory/heartbeat-state.json"
+	heartbeatFile  = "HEARTBEAT.md"
+	sessionKey     = "heartbeat:system"
+	defaultPrompt  = "Check workspace health and report any issues."
 )
 
-// New creates a new heartbeat system.
-func New(log *logger.Logger, ag *agent.Agent, st state.KV, cfg *Config) *Heartbeat {
-	if cfg.Interval == 0 {
-		cfg.Interval = 1 * time.Hour
+// State stores heartbeat execution state.
+type State struct {
+	LastRun       time.Time `json:"last_run"`
+	RunCount      int       `json:"run_count"`
+	LastDuration  string    `json:"last_duration"`
+	LastError     string    `json:"last_error,omitempty"`
+	NextScheduled time.Time `json:"next_scheduled"`
+}
+
+// Task represents a heartbeat task extracted from HEARTBEAT.md.
+type Task struct {
+	Name   string
+	Prompt string
+}
+
+// Service manages periodic heartbeat execution.
+type Service struct {
+	log     *logger.Logger
+	config  *config.Config
+	agent   *agent.Agent
+	sess    *session.Manager
+	bus     bus.Bus
+
+	workspacePath string
+	interval      time.Duration
+	enabled       bool
+	running       bool
+	ticker        *time.Ticker
+	stopCh        chan struct{}
+	mu            sync.RWMutex
+
+	state State
+}
+
+// NewService creates a new heartbeat service.
+func NewService(
+	log *logger.Logger,
+	cfg *config.Config,
+	ag *agent.Agent,
+	sm *session.Manager,
+	b bus.Bus,
+) *Service {
+	interval := time.Duration(cfg.Heartbeat.IntervalMinutes) * time.Minute
+	if interval < 5*time.Minute {
+		interval = 5 * time.Minute // Minimum 5 minutes
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Check if enabled in state (persists across restarts)
-	enabled := cfg.Enabled
-	if storedEnabled, exists, _ := st.GetBool(ctx, stateKeyEnabled); exists {
-		enabled = storedEnabled
-	}
-
-	return &Heartbeat{
-		log:       log,
-		agent:     ag,
-		state:     st,
-		workspace: cfg.Workspace,
-		interval:  cfg.Interval,
-		ctx:       ctx,
-		cancel:    cancel,
-		enabled:   enabled,
+	return &Service{
+		log:           log,
+		config:        cfg,
+		agent:         ag,
+		sess:          sm,
+		bus:           b,
+		workspacePath: cfg.WorkspacePath(),
+		interval:      interval,
+		enabled:       cfg.Heartbeat.Enabled,
+		stopCh:        make(chan struct{}),
 	}
 }
 
-// Start starts the heartbeat system.
-func (h *Heartbeat) Start() error {
-	h.enabledMu.RLock()
-	enabled := h.enabled
-	h.enabledMu.RUnlock()
-
-	if !enabled {
-		h.log.Info("Heartbeat is disabled, not starting")
+// Start starts the heartbeat service.
+func (s *Service) Start(ctx context.Context) error {
+	if !s.enabled {
+		s.log.Info("Heartbeat disabled in config")
 		return nil
 	}
 
-	h.log.Info("Starting heartbeat", zap.Duration("interval", h.interval))
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	h.ticker = time.NewTicker(h.interval)
+	if s.running {
+		return fmt.Errorf("heartbeat already running")
+	}
 
-	h.wg.Add(1)
-	go h.run()
+	// Load state
+	if err := s.loadState(); err != nil {
+		s.log.Warn("Failed to load heartbeat state, starting fresh", zap.Error(err))
+	}
+
+	s.running = true
+	s.ticker = time.NewTicker(s.interval)
+
+	s.log.Info("Heartbeat service started",
+		zap.Duration("interval", s.interval),
+		zap.Time("last_run", s.state.LastRun))
+
+	// Start heartbeat loop
+	go s.run(ctx)
 
 	return nil
 }
 
-// Stop stops the heartbeat system.
-func (h *Heartbeat) Stop() error {
-	h.log.Info("Stopping heartbeat")
+// Stop stops the heartbeat service.
+func (s *Service) Stop(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if h.ticker != nil {
-		h.ticker.Stop()
+	if !s.running {
+		return nil
 	}
 
-	h.cancel()
-	h.wg.Wait()
+	s.running = false
+	close(s.stopCh)
 
-	h.log.Info("Heartbeat stopped")
+	if s.ticker != nil {
+		s.ticker.Stop()
+	}
+
+	// Save final state
+	if err := s.saveState(); err != nil {
+		s.log.Error("Failed to save heartbeat state", zap.Error(err))
+	}
+
+	s.log.Info("Heartbeat service stopped")
 	return nil
-}
-
-// Enable enables the heartbeat system.
-func (h *Heartbeat) Enable() {
-	h.enabledMu.Lock()
-	h.enabled = true
-	h.enabledMu.Unlock()
-
-	ctx := context.Background()
-	h.state.Set(ctx, stateKeyEnabled, true)
-	h.log.Info("Heartbeat enabled")
-
-	// Start if not already running
-	if h.ticker == nil {
-		h.Start()
-	}
-}
-
-// Disable disables the heartbeat system.
-func (h *Heartbeat) Disable() {
-	h.enabledMu.Lock()
-	h.enabled = false
-	h.enabledMu.Unlock()
-
-	ctx := context.Background()
-	h.state.Set(ctx, stateKeyEnabled, false)
-	h.log.Info("Heartbeat disabled")
-}
-
-// IsEnabled returns whether heartbeat is enabled.
-func (h *Heartbeat) IsEnabled() bool {
-	h.enabledMu.RLock()
-	defer h.enabledMu.RUnlock()
-	return h.enabled
-}
-
-// GetStats returns heartbeat statistics.
-func (h *Heartbeat) GetStats() map[string]interface{} {
-	ctx := context.Background()
-	lastRun, _, _ := h.state.GetString(ctx, stateKeyLastRun)
-	runCount, _, _ := h.state.GetInt(ctx, stateKeyRunCount)
-
-	return map[string]interface{}{
-		"enabled":   h.IsEnabled(),
-		"interval":  h.interval.String(),
-		"last_run":  lastRun,
-		"run_count": runCount,
-	}
-}
-
-// TriggerNow immediately triggers a heartbeat execution.
-func (h *Heartbeat) TriggerNow() error {
-	h.log.Info("Manual heartbeat trigger")
-	return h.execute()
 }
 
 // run is the main heartbeat loop.
-func (h *Heartbeat) run() {
-	defer h.wg.Done()
-
+func (s *Service) run(ctx context.Context) {
 	for {
 		select {
-		case <-h.ticker.C:
-			h.enabledMu.RLock()
-			enabled := h.enabled
-			h.enabledMu.RUnlock()
-
-			if !enabled {
-				continue
-			}
-
-			if err := h.execute(); err != nil {
-				h.log.Error("Heartbeat execution failed", zap.Error(err))
-			}
-
-		case <-h.ctx.Done():
+		case <-ctx.Done():
 			return
+		case <-s.stopCh:
+			return
+		case <-s.ticker.C:
+			s.executeHeartbeat(ctx)
 		}
 	}
 }
 
-// execute runs a heartbeat cycle.
-func (h *Heartbeat) execute() error {
-	h.log.Info("Executing heartbeat")
+// executeHeartbeat executes a heartbeat cycle.
+func (s *Service) executeHeartbeat(ctx context.Context) {
+	s.log.Info("Executing heartbeat cycle",
+		zap.Int("run_count", s.state.RunCount+1))
 
-	// Load heartbeat prompt
-	prompt, err := h.loadHeartbeatPrompt()
+	start := time.Now()
+
+	// Load tasks from HEARTBEAT.md
+	tasks, err := s.loadTasks()
 	if err != nil {
-		return fmt.Errorf("loading heartbeat prompt: %w", err)
+		s.log.Error("Failed to load heartbeat tasks", zap.Error(err))
+		s.updateState(start, err)
+		return
 	}
 
-	// Build full prompt with context
-	fullPrompt := fmt.Sprintf(`# Heartbeat Execution
-
-Current time: %s
-
-You are running a periodic heartbeat check. Review the following tasks and execute any that are due:
-
-%s
-
-If no tasks are due or defined, respond with "No heartbeat tasks to execute at this time."`,
-		time.Now().Format(time.RFC3339),
-		prompt)
-
-	// Execute with agent
-	ctx, cancel := context.WithTimeout(h.ctx, 5*time.Minute)
-	defer cancel()
-
-	response, err := h.agent.Chat(ctx, fullPrompt)
-	if err != nil {
-		return fmt.Errorf("agent chat failed: %w", err)
+	if len(tasks) == 0 {
+		s.log.Warn("No heartbeat tasks found, using default")
+		tasks = []Task{{Name: "Default", Prompt: defaultPrompt}}
 	}
 
-	h.log.Info("Heartbeat completed",
-		zap.String("response_preview", truncate(response, 100)))
+	// Get or create heartbeat session
+	sess, err := s.sess.GetOrCreate(sessionKey)
+	if err != nil {
+		s.log.Error("Failed to get heartbeat session", zap.Error(err))
+		s.updateState(start, err)
+		return
+	}
 
-	// Update state
-	ctx2 := context.Background()
-	h.state.Set(ctx2, stateKeyLastRun, time.Now().Format(time.RFC3339))
-	h.state.UpdateFunc(ctx2, stateKeyRunCount, func(current interface{}) interface{} {
-		if current == nil {
-			return 1
+	// Execute each task
+	for i, task := range tasks {
+		s.log.Debug("Executing heartbeat task",
+			zap.Int("task_num", i+1),
+			zap.String("task_name", task.Name))
+
+		// Execute task with timeout
+		taskCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		_, err := s.agent.Chat(taskCtx, sess, task.Prompt)
+		cancel()
+
+		if err != nil {
+			s.log.Error("Heartbeat task failed",
+				zap.String("task_name", task.Name),
+				zap.Error(err))
+			// Continue with other tasks
 		}
-		if count, ok := current.(int); ok {
-			return count + 1
+	}
+
+	duration := time.Since(start)
+	s.log.Info("Heartbeat cycle completed",
+		zap.Duration("duration", duration),
+		zap.Int("tasks", len(tasks)))
+
+	s.updateState(start, nil)
+}
+
+// loadTasks loads tasks from HEARTBEAT.md.
+func (s *Service) loadTasks() ([]Task, error) {
+	heartbeatPath := filepath.Join(s.workspacePath, heartbeatFile)
+
+	// Check if file exists
+	if _, err := os.Stat(heartbeatPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("HEARTBEAT.md not found at %s", heartbeatPath)
+	}
+
+	// Read file
+	content, err := os.ReadFile(heartbeatPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading HEARTBEAT.md: %w", err)
+	}
+
+	// Parse tasks from markdown
+	tasks := s.parseTasksFromMarkdown(string(content))
+	return tasks, nil
+}
+
+// parseTasksFromMarkdown extracts tasks from markdown content.
+func (s *Service) parseTasksFromMarkdown(content string) []Task {
+	var tasks []Task
+
+	// Regex to find code blocks with ```prompt
+	re := regexp.MustCompile(`(?s)### Task \d+: (.+?)\s+` + "```prompt\n(.+?)```")
+	matches := re.FindAllStringSubmatch(content, -1)
+
+	for _, match := range matches {
+		if len(match) == 3 {
+			tasks = append(tasks, Task{
+				Name:   match[1],
+				Prompt: match[2],
+			})
 		}
-		// Handle float64 from JSON unmarshaling
-		if count, ok := current.(float64); ok {
-			return int(count) + 1
+	}
+
+	// Also look for custom tasks
+	customRe := regexp.MustCompile(`(?s)### Example: (.+?)\s+` + "```prompt\n(.+?)```")
+	customMatches := customRe.FindAllStringSubmatch(content, -1)
+
+	for _, match := range customMatches {
+		if len(match) == 3 {
+			tasks = append(tasks, Task{
+				Name:   match[1],
+				Prompt: match[2],
+			})
 		}
-		return 1
-	})
+	}
+
+	return tasks
+}
+
+// updateState updates the heartbeat state.
+func (s *Service) updateState(startTime time.Time, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	duration := time.Since(startTime)
+
+	s.state.LastRun = startTime
+	s.state.RunCount++
+	s.state.LastDuration = duration.String()
+	s.state.NextScheduled = startTime.Add(s.interval)
+
+	if err != nil {
+		s.state.LastError = err.Error()
+	} else {
+		s.state.LastError = ""
+	}
+
+	// Save state
+	if err := s.saveState(); err != nil {
+		s.log.Error("Failed to save heartbeat state", zap.Error(err))
+	}
+}
+
+// loadState loads heartbeat state from disk.
+func (s *Service) loadState() error {
+	statePath := filepath.Join(s.workspacePath, stateFile)
+
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Initialize with default state
+			s.state = State{
+				NextScheduled: time.Now().Add(s.interval),
+			}
+			return nil
+		}
+		return fmt.Errorf("reading state file: %w", err)
+	}
+
+	if err := json.Unmarshal(data, &s.state); err != nil {
+		return fmt.Errorf("unmarshaling state: %w", err)
+	}
 
 	return nil
 }
 
-// loadHeartbeatPrompt loads the heartbeat prompt from HEARTBEAT.md.
-func (h *Heartbeat) loadHeartbeatPrompt() (string, error) {
-	path := filepath.Join(h.workspace, heartbeatFile)
+// saveState saves heartbeat state to disk.
+func (s *Service) saveState() error {
+	statePath := filepath.Join(s.workspacePath, stateFile)
 
-	data, err := os.ReadFile(path)
+	// Ensure directory exists
+	dir := filepath.Dir(statePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(s.state, "", "  ")
 	if err != nil {
-		if os.IsNotExist(err) {
-			return defaultPrompt, nil
-		}
-		return "", err
+		return fmt.Errorf("marshaling state: %w", err)
 	}
 
-	if len(data) == 0 {
-		return defaultPrompt, nil
+	if err := os.WriteFile(statePath, data, 0644); err != nil {
+		return fmt.Errorf("writing state file: %w", err)
 	}
 
-	return string(data), nil
+	return nil
 }
 
-// SetInterval changes the heartbeat interval.
-func (h *Heartbeat) SetInterval(interval time.Duration) {
-	h.interval = interval
-
-	// Restart ticker if running
-	if h.ticker != nil {
-		h.ticker.Stop()
-		h.ticker = time.NewTicker(interval)
-	}
-
-	h.log.Info("Heartbeat interval updated", zap.Duration("interval", interval))
+// GetState returns the current heartbeat state.
+func (s *Service) GetState() State {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state
 }
 
-// truncate truncates a string to the specified length.
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
+// IsRunning returns whether the heartbeat service is running.
+func (s *Service) IsRunning() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.running
+}
+
+// TriggerNow triggers an immediate heartbeat execution.
+func (s *Service) TriggerNow(ctx context.Context) error {
+	s.mu.RLock()
+	running := s.running
+	s.mu.RUnlock()
+
+	if !running {
+		return fmt.Errorf("heartbeat service not running")
 	}
-	return s[:maxLen] + "..."
+
+	go s.executeHeartbeat(ctx)
+	return nil
 }
