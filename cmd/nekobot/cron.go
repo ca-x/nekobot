@@ -118,8 +118,8 @@ func runCronAdd(cmd *cobra.Command, args []string) {
 	var cronManager *cron.Manager
 
 	app := fx.New(
-		logger.Module,
 		config.Module,
+		logger.Module,
 		bus.Module,
 		session.Module,
 		providers.Module,
@@ -161,8 +161,8 @@ func runCronList(cmd *cobra.Command, args []string) {
 	var cronManager *cron.Manager
 
 	app := fx.New(
-		logger.Module,
 		config.Module,
+		logger.Module,
 		bus.Module,
 		session.Module,
 		providers.Module,
@@ -246,8 +246,8 @@ func runCronRemove(cmd *cobra.Command, args []string) {
 	var cronManager *cron.Manager
 
 	app := fx.New(
-		logger.Module,
 		config.Module,
+		logger.Module,
 		bus.Module,
 		session.Module,
 		providers.Module,
@@ -285,8 +285,8 @@ func runCronEnable(cmd *cobra.Command, args []string) {
 	var cronManager *cron.Manager
 
 	app := fx.New(
-		logger.Module,
 		config.Module,
+		logger.Module,
 		bus.Module,
 		session.Module,
 		providers.Module,
@@ -324,8 +324,8 @@ func runCronDisable(cmd *cobra.Command, args []string) {
 	var cronManager *cron.Manager
 
 	app := fx.New(
-		logger.Module,
 		config.Module,
+		logger.Module,
 		bus.Module,
 		session.Module,
 		providers.Module,

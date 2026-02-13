@@ -9,8 +9,9 @@ import (
 
 // Module provides configuration for fx dependency injection.
 var Module = fx.Module("config",
-	fx.Provide(ProvideConfig),
 	fx.Provide(ProvideLoader),
+	fx.Provide(ProvideConfig),
+	fx.Provide(ProvideLoggerConfig),
 )
 
 // ProvideLoader provides a configuration loader.
@@ -43,6 +44,11 @@ func ProvideConfig(loader *Loader, lc fx.Lifecycle) (*Config, error) {
 	})
 
 	return cfg, nil
+}
+
+// ProvideLoggerConfig provides logger configuration for the logger module.
+func ProvideLoggerConfig(cfg *Config) *LoggerConfig {
+	return &cfg.Logger
 }
 
 // ProvideConfigWithPath provides configuration from a specific path.

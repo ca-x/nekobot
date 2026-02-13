@@ -111,7 +111,7 @@ func (c *Channel) Start(ctx context.Context) error {
 	}
 
 	c.log.Info("Got WebSocket info",
-		zap.Int("shards", wsInfo.Shards))
+		zap.Int("shards", int(wsInfo.Shards)))
 
 	// Create session manager
 	c.sessionManager = botgo.NewSessionManager()

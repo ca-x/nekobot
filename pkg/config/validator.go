@@ -99,66 +99,52 @@ func (v *Validator) validateAgents(cfg *AgentsConfig) {
 
 // validateProviders validates provider configuration.
 func (v *Validator) validateProviders(cfg *ProvidersConfig) {
-	providers := map[string]ProviderConfig{
-		"anthropic":  cfg.Anthropic,
-		"openai":     cfg.OpenAI,
-		"openrouter": cfg.OpenRouter,
-		"groq":       cfg.Groq,
-		"zhipu":      cfg.Zhipu,
-		"vllm":       cfg.VLLM,
-		"gemini":     cfg.Gemini,
-		"nvidia":     cfg.Nvidia,
-		"moonshot":   cfg.Moonshot,
-		"deepseek":   cfg.DeepSeek,
-	}
-
 	// Check that at least one provider is configured
-	hasProvider := false
-	for _, provider := range providers {
-		if provider.APIKey != "" || provider.APIBase != "" {
-			hasProvider = true
-			break
-		}
-	}
-
-	if !hasProvider {
+	if len(*cfg) == 0 {
 		v.addError("providers", "at least one provider must be configured")
+		return
 	}
 
-	// Validate individual providers
-	for name, provider := range providers {
-		if provider.APIKey == "" && provider.APIBase == "" {
-			continue // Skip unconfigured providers
+	// Track profile names to ensure uniqueness
+	names := make(map[string]bool)
+
+	// Validate individual provider profiles
+	for i, profile := range *cfg {
+		prefix := fmt.Sprintf("providers[%d]", i)
+
+		// Validate name
+		if profile.Name == "" {
+			v.addError(prefix+".name", "provider name is required")
+		} else if names[profile.Name] {
+			v.addError(prefix+".name", fmt.Sprintf("duplicate provider name: %s", profile.Name))
+		} else {
+			names[profile.Name] = true
 		}
+
+		// Validate provider type
+		validTypes := map[string]bool{
+			"openai":    true,
+			"anthropic": true,
+			"gemini":    true,
+		}
+		if !validTypes[profile.ProviderKind] {
+			v.addError(prefix+".provider_kind", fmt.Sprintf("invalid provider type: %s (must be one of: openai, anthropic, gemini)", profile.ProviderKind))
+		}
+
+		// API key is required (can be placeholder for local providers)
+		// if profile.APIKey == "" {
+		// 	v.addError(prefix+".api_key", "API key is empty")
+		// }
 
 		// Validate API base URL if provided
-		if provider.APIBase != "" {
-			if _, err := url.Parse(provider.APIBase); err != nil {
-				v.addError(fmt.Sprintf("providers.%s.api_base", name),
-					fmt.Sprintf("invalid URL: %v", err))
+		if profile.APIBase != "" {
+			if _, err := url.Parse(profile.APIBase); err != nil {
+				v.addError(prefix+".api_base", fmt.Sprintf("invalid URL: %v", err))
 			}
 		}
 
-		// Validate proxy URL if provided
-		if provider.Proxy != "" {
-			if _, err := url.Parse(provider.Proxy); err != nil {
-				v.addError(fmt.Sprintf("providers.%s.proxy", name),
-					fmt.Sprintf("invalid proxy URL: %v", err))
-			}
-		}
-
-		// Validate auth method
-		if provider.AuthMethod != "" {
-			validMethods := map[string]bool{
-				"api_key": true,
-				"oauth":   true,
-				"token":   true,
-			}
-			if !validMethods[provider.AuthMethod] {
-				v.addError(fmt.Sprintf("providers.%s.auth_method", name),
-					"auth_method must be one of: api_key, oauth, token")
-			}
-		}
+		// Models list is optional - some profiles might not specify models
+		// Default model validation is optional - if not specified, first model will be used
 	}
 }
 

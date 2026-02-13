@@ -79,36 +79,24 @@ func modelHandler(cfg *config.Config) CommandHandler {
 			var sb strings.Builder
 			sb.WriteString("🤖 **Available Providers**\n\n")
 
-			// List all configured providers
-			providers := []struct {
-				Name   string
-				Config config.ProviderConfig
-			}{
-				{"anthropic", cfg.Providers.Anthropic},
-				{"openai", cfg.Providers.OpenAI},
-				{"openrouter", cfg.Providers.OpenRouter},
-				{"groq", cfg.Providers.Groq},
-				{"zhipu", cfg.Providers.Zhipu},
-				{"vllm", cfg.Providers.VLLM},
-				{"gemini", cfg.Providers.Gemini},
-				{"nvidia", cfg.Providers.Nvidia},
-				{"moonshot", cfg.Providers.Moonshot},
-				{"deepseek", cfg.Providers.DeepSeek},
-			}
+			// List all configured providers from profiles
+			hasProviders := len(cfg.Providers) > 0
 
-			hasProviders := false
-			for _, p := range providers {
-				if p.Config.APIKey != "" {
-					hasProviders = true
-					sb.WriteString(fmt.Sprintf("**%s**\n", p.Name))
-					if p.Config.APIBase != "" {
-						sb.WriteString(fmt.Sprintf("  Base: %s\n", p.Config.APIBase))
-					}
-					if p.Config.Rotation.Enabled {
-						sb.WriteString("  Rotation: ✅ Enabled\n")
-					}
-					sb.WriteString("\n")
+			for _, profile := range cfg.Providers {
+				sb.WriteString(fmt.Sprintf("**%s** (%s)\n", profile.Name, profile.ProviderKind))
+				if profile.APIBase != "" {
+					sb.WriteString(fmt.Sprintf("  Base: %s\n", profile.APIBase))
 				}
+				if len(profile.Models) > 0 {
+					sb.WriteString(fmt.Sprintf("  Models: %d configured\n", len(profile.Models)))
+				}
+				if profile.DefaultModel != "" {
+					sb.WriteString(fmt.Sprintf("  Default: %s\n", profile.DefaultModel))
+				}
+				if profile.Timeout > 0 {
+					sb.WriteString(fmt.Sprintf("  Timeout: %ds\n", profile.Timeout))
+				}
+				sb.WriteString("\n")
 			}
 
 			if !hasProviders {
@@ -125,40 +113,16 @@ func modelHandler(cfg *config.Config) CommandHandler {
 
 		// Show provider info
 		providerName := strings.ToLower(args)
-		var providerConfig config.ProviderConfig
+		var providerProfile *config.ProviderProfile
 		found := false
 
-		switch providerName {
-		case "anthropic":
-			providerConfig = cfg.Providers.Anthropic
-			found = providerConfig.APIKey != ""
-		case "openai":
-			providerConfig = cfg.Providers.OpenAI
-			found = providerConfig.APIKey != ""
-		case "openrouter":
-			providerConfig = cfg.Providers.OpenRouter
-			found = providerConfig.APIKey != ""
-		case "groq":
-			providerConfig = cfg.Providers.Groq
-			found = providerConfig.APIKey != ""
-		case "zhipu":
-			providerConfig = cfg.Providers.Zhipu
-			found = providerConfig.APIKey != ""
-		case "vllm":
-			providerConfig = cfg.Providers.VLLM
-			found = providerConfig.APIKey != ""
-		case "gemini":
-			providerConfig = cfg.Providers.Gemini
-			found = providerConfig.APIKey != ""
-		case "nvidia":
-			providerConfig = cfg.Providers.Nvidia
-			found = providerConfig.APIKey != ""
-		case "moonshot":
-			providerConfig = cfg.Providers.Moonshot
-			found = providerConfig.APIKey != ""
-		case "deepseek":
-			providerConfig = cfg.Providers.DeepSeek
-			found = providerConfig.APIKey != ""
+		// Search for provider in providers
+		for i := range cfg.Providers {
+			if strings.ToLower(cfg.Providers[i].Name) == providerName {
+				providerProfile = &cfg.Providers[i]
+				found = true
+				break
+			}
 		}
 
 		if !found {
@@ -170,12 +134,18 @@ func modelHandler(cfg *config.Config) CommandHandler {
 
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("🤖 **Provider: %s**\n\n", providerName))
-		if providerConfig.APIBase != "" {
-			sb.WriteString(fmt.Sprintf("Base URL: %s\n", providerConfig.APIBase))
+		sb.WriteString(fmt.Sprintf("Type: %s\n", providerProfile.ProviderKind))
+		if providerProfile.APIBase != "" {
+			sb.WriteString(fmt.Sprintf("Base URL: %s\n", providerProfile.APIBase))
 		}
-		if providerConfig.Rotation.Enabled {
-			sb.WriteString(fmt.Sprintf("Rotation: ✅ Enabled (%s)\n", providerConfig.Rotation.Strategy))
-			sb.WriteString(fmt.Sprintf("Profiles: %d\n", len(providerConfig.Profiles)))
+		if len(providerProfile.Models) > 0 {
+			sb.WriteString(fmt.Sprintf("Models: %d configured\n", len(providerProfile.Models)))
+			if providerProfile.DefaultModel != "" {
+				sb.WriteString(fmt.Sprintf("Default Model: %s\n", providerProfile.DefaultModel))
+			}
+		}
+		if providerProfile.Timeout > 0 {
+			sb.WriteString(fmt.Sprintf("Timeout: %ds\n", providerProfile.Timeout))
 		}
 
 		return CommandResponse{

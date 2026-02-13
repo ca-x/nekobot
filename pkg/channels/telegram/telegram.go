@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -16,6 +17,24 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 )
+
+// simpleSession is a simple session implementation for telegram messages.
+type simpleSession struct {
+	messages []agent.Message
+	mu       sync.RWMutex
+}
+
+func (s *simpleSession) GetMessages() []agent.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.messages
+}
+
+func (s *simpleSession) AddMessage(msg agent.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messages = append(s.messages, msg)
+}
 
 // Channel implements the Telegram channel.
 type Channel struct {
@@ -205,8 +224,13 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	// Create a simple session for this message
+	sess := &simpleSession{
+		messages: make([]agent.Message, 0),
+	}
+
 	// Process with agent
-	response, err := c.agent.Chat(ctx, message.Text)
+	response, err := c.agent.Chat(ctx, sess, message.Text)
 	if err != nil {
 		c.log.Error("Agent chat failed", zap.Error(err))
 

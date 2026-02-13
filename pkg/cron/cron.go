@@ -17,6 +17,24 @@ import (
 	"nekobot/pkg/logger"
 )
 
+// simpleSession is a simple session implementation for cron jobs.
+type simpleSession struct {
+	messages []agent.Message
+	mu       sync.RWMutex
+}
+
+func (s *simpleSession) GetMessages() []agent.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.messages
+}
+
+func (s *simpleSession) AddMessage(msg agent.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messages = append(s.messages, msg)
+}
+
 // Job represents a cron job.
 type Job struct {
 	ID          string    `json:"id"`           // Unique job ID
@@ -326,7 +344,12 @@ Scheduled task execution at %s:
 		time.Now().Format(time.RFC3339),
 		prompt)
 
-	response, err := m.agent.Chat(ctx, fullPrompt)
+	// Create a simple session for this cron job
+	sess := &simpleSession{
+		messages: make([]agent.Message, 0),
+	}
+
+	response, err := m.agent.Chat(ctx, sess, fullPrompt)
 
 	// Update job status
 	m.mu.Lock()

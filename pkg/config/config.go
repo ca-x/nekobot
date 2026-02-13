@@ -13,6 +13,7 @@ import (
 
 // Config represents the complete nanobot configuration.
 type Config struct {
+	Logger    LoggerConfig    `mapstructure:"logger" json:"logger"`
 	Agents    AgentsConfig    `mapstructure:"agents" json:"agents"`
 	Channels  ChannelsConfig  `mapstructure:"channels" json:"channels"`
 	Providers ProvidersConfig `mapstructure:"providers" json:"providers"`
@@ -178,43 +179,29 @@ type BusConfig struct {
 	RedisPrefix   string `mapstructure:"redis_prefix" json:"redis_prefix"`
 }
 
-// ProvidersConfig contains all provider configurations.
-type ProvidersConfig struct {
-	Anthropic    ProviderConfig `mapstructure:"anthropic" json:"anthropic"`
-	OpenAI       ProviderConfig `mapstructure:"openai" json:"openai"`
-	OpenRouter   ProviderConfig `mapstructure:"openrouter" json:"openrouter"`
-	Groq         ProviderConfig `mapstructure:"groq" json:"groq"`
-	Zhipu        ProviderConfig `mapstructure:"zhipu" json:"zhipu"`
-	VLLM         ProviderConfig `mapstructure:"vllm" json:"vllm"`
-	Gemini       ProviderConfig `mapstructure:"gemini" json:"gemini"`
-	Nvidia       ProviderConfig `mapstructure:"nvidia" json:"nvidia"`
-	Moonshot     ProviderConfig `mapstructure:"moonshot" json:"moonshot"`
-	DeepSeek     ProviderConfig `mapstructure:"deepseek" json:"deepseek"`
+// ProvidersConfig contains provider configurations.
+// Providers is an array of ProviderProfile.
+type ProvidersConfig []ProviderProfile
+
+// ProviderProfile defines a provider profile with type and alias.
+type ProviderProfile struct {
+	Name         string   `mapstructure:"name" json:"name"`                               // Alias (e.g., "openai-primary", "my-api")
+	ProviderKind string   `mapstructure:"provider_kind" json:"provider_kind"`             // Type: "openai", "anthropic", "gemini"
+	APIKey       string   `mapstructure:"api_key" json:"api_key"`
+	APIBase      string   `mapstructure:"api_base" json:"api_base"`
+	Models       []string `mapstructure:"models" json:"models,omitempty"`                 // Supported model list
+	DefaultModel string   `mapstructure:"default_model" json:"default_model,omitempty"`   // Default model for this provider
+	Timeout      int      `mapstructure:"timeout" json:"timeout,omitempty"`               // Timeout in seconds, default 30s
 }
 
-// ProviderConfig defines configuration for a single provider.
-type ProviderConfig struct {
-	APIKey     string `mapstructure:"api_key" json:"api_key"`
-	APIBase    string `mapstructure:"api_base" json:"api_base"`
-	Proxy      string `mapstructure:"proxy" json:"proxy"`
-	AuthMethod string `mapstructure:"auth_method" json:"auth_method"` // "api_key", "oauth", "token"
-
-	// Rotation configuration
-	Rotation RotationConfig            `mapstructure:"rotation" json:"rotation"`
-	Profiles map[string]ProfileConfig  `mapstructure:"profiles" json:"profiles"`
-}
-
-// RotationConfig defines API key rotation settings.
-type RotationConfig struct {
-	Enabled  bool   `mapstructure:"enabled" json:"enabled"`
-	Strategy string `mapstructure:"strategy" json:"strategy"` // "round_robin", "least_used", "random"
-	Cooldown string `mapstructure:"cooldown" json:"cooldown"` // Duration string, e.g. "5m"
-}
-
-// ProfileConfig defines a single API key profile.
-type ProfileConfig struct {
-	APIKey   string `mapstructure:"api_key" json:"api_key"`
-	Priority int    `mapstructure:"priority" json:"priority"`
+// LoggerConfig contains logger configuration.
+type LoggerConfig struct {
+	Level      string `mapstructure:"level" json:"level"`             // Log level: debug, info, warn, error, fatal
+	OutputPath string `mapstructure:"output_path" json:"output_path"` // Log file path, empty means stdout only
+	MaxSize    int    `mapstructure:"max_size" json:"max_size"`       // Max size in MB before rotation
+	MaxBackups int    `mapstructure:"max_backups" json:"max_backups"` // Max number of old log files
+	MaxAge     int    `mapstructure:"max_age" json:"max_age"`         // Max days to retain old log files
+	Compress   bool   `mapstructure:"compress" json:"compress"`       // Compress rotated files
 }
 
 // GatewayConfig for gateway server.
@@ -251,6 +238,14 @@ func DefaultConfig() *Config {
 	workspace := homeDir + "/.nanobot/workspace"
 
 	return &Config{
+		Logger: LoggerConfig{
+			Level:      "info",
+			OutputPath: "",
+			MaxSize:    100,
+			MaxBackups: 3,
+			MaxAge:     7,
+			Compress:   true,
+		},
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:           workspace,
@@ -311,18 +306,7 @@ func DefaultConfig() *Config {
 				AllowFrom: []string{},
 			},
 		},
-		Providers: ProvidersConfig{
-			Anthropic:  ProviderConfig{},
-			OpenAI:     ProviderConfig{},
-			OpenRouter: ProviderConfig{},
-			Groq:       ProviderConfig{},
-			Zhipu:      ProviderConfig{},
-			VLLM:       ProviderConfig{},
-			Gemini:     ProviderConfig{},
-			Nvidia:     ProviderConfig{},
-			Moonshot:   ProviderConfig{},
-			DeepSeek:   ProviderConfig{},
-		},
+		Providers: []ProviderProfile{},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
 			Port: 18790,
@@ -361,34 +345,44 @@ func (c *Config) WorkspacePath() string {
 }
 
 // GetProviderConfig returns the configuration for a specific provider.
-func (c *Config) GetProviderConfig(providerName string) *ProviderConfig {
+func (c *Config) GetProviderConfig(providerName string) *ProviderProfile {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	switch providerName {
-	case "anthropic", "claude":
-		return &c.Providers.Anthropic
-	case "openai", "gpt":
-		return &c.Providers.OpenAI
-	case "openrouter":
-		return &c.Providers.OpenRouter
-	case "groq":
-		return &c.Providers.Groq
-	case "zhipu", "glm":
-		return &c.Providers.Zhipu
-	case "vllm":
-		return &c.Providers.VLLM
-	case "gemini", "google":
-		return &c.Providers.Gemini
-	case "nvidia":
-		return &c.Providers.Nvidia
-	case "moonshot", "kimi":
-		return &c.Providers.Moonshot
-	case "deepseek":
-		return &c.Providers.DeepSeek
-	default:
-		return nil
+	// Search in providers
+	for i := range c.Providers {
+		profile := &c.Providers[i]
+		if profile.Name == providerName {
+			return profile
+		}
 	}
+
+	return nil
+}
+
+// GetDefaultModel returns the default model for this provider profile.
+// If DefaultModel is set, returns it. Otherwise, returns the first model from Models list.
+// Returns empty string if no models are configured.
+func (p *ProviderProfile) GetDefaultModel() string {
+	// If default model is explicitly set, use it
+	if p.DefaultModel != "" {
+		return p.DefaultModel
+	}
+
+	// Otherwise, use first model from models list
+	if len(p.Models) > 0 {
+		return p.Models[0]
+	}
+
+	return ""
+}
+
+// GetTimeout returns the timeout in seconds. Returns 30 if not set.
+func (p *ProviderProfile) GetTimeout() int {
+	if p.Timeout > 0 {
+		return p.Timeout
+	}
+	return 30 // Default 30 seconds
 }
 
 // expandPath expands ~ to home directory.

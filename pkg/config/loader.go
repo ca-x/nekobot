@@ -1,7 +1,6 @@
 package config
 
 import (
-	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,9 +8,6 @@ import (
 
 	"github.com/spf13/viper"
 )
-
-//go:embed ../../config.example.json
-var defaultConfigTemplate string
 
 // Loader handles configuration loading with Viper.
 type Loader struct {
@@ -189,7 +185,7 @@ func InitDefaultConfig() (configPath string, created bool, err error) {
 	}
 
 	// Write default config template to file
-	if err := os.WriteFile(configPath, []byte(defaultConfigTemplate), 0644); err != nil {
+	if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate), 0644); err != nil {
 		return "", false, fmt.Errorf("writing default config: %w", err)
 	}
 

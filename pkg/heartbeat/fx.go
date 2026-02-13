@@ -4,12 +4,6 @@ import (
 	"context"
 
 	"go.uber.org/fx"
-
-	"nekobot/pkg/agent"
-	"nekobot/pkg/bus"
-	"nekobot/pkg/config"
-	"nekobot/pkg/logger"
-	"nekobot/pkg/session"
 )
 
 // Module is the fx module for heartbeat.

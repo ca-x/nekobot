@@ -13,6 +13,12 @@ import (
 	"nekobot/pkg/tools"
 )
 
+// SessionInterface defines the interface for a conversation session.
+type SessionInterface interface {
+	GetMessages() []Message
+	AddMessage(Message)
+}
+
 // Agent represents an AI agent that can interact with users and use tools.
 type Agent struct {
 	config  *config.Config
@@ -98,13 +104,13 @@ func (a *Agent) RegisterSkillTool(skillsManager *skills.Manager) {
 
 // Chat processes a user message and returns the agent's response.
 // It handles tool calls and iterates until the agent produces a final response.
-func (a *Agent) Chat(ctx context.Context, userMessage string) (string, error) {
+func (a *Agent) Chat(ctx context.Context, sess SessionInterface, userMessage string) (string, error) {
 	a.logger.Info("Processing chat message",
 		zap.String("message", truncate(userMessage, 100)),
 	)
 
-	// Build initial messages
-	history := []Message{} // TODO: load from session
+	// Build initial messages with session history
+	history := sess.GetMessages() // Get messages from session
 	messages := a.context.BuildMessages(history, userMessage)
 
 	// Convert to provider format

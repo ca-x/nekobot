@@ -2,8 +2,6 @@ package process
 
 import (
 	"go.uber.org/fx"
-
-	"nekobot/pkg/logger"
 )
 
 // Module provides process manager for fx.

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -128,7 +129,7 @@ func (c *Channel) initService() error {
 	}
 
 	// Read credentials file
-	credBytes, err := io.ReadFile(c.config.CredentialsFile)
+	credBytes, err := os.ReadFile(c.config.CredentialsFile)
 	if err != nil {
 		return fmt.Errorf("reading credentials file: %w", err)
 	}

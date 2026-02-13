@@ -72,8 +72,8 @@ func (s *GatewayService) Stop(svc service.Service) error {
 func (s *GatewayService) run() {
 	s.app = fx.New(
 		// Core modules
-		logger.Module,
 		config.Module,
+		logger.Module,
 		commands.Module,
 		workspace.Module,
 		state.Module,
@@ -280,8 +280,8 @@ func RunService() error {
 func runGatewayForeground() {
 	app := fx.New(
 		// Core modules
-		logger.Module,
 		config.Module,
+		logger.Module,
 		commands.Module,
 		workspace.Module,
 		state.Module,

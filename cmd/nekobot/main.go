@@ -132,8 +132,8 @@ func runAgent(cmd *cobra.Command, args []string) {
 
 func runOneShot(ctx context.Context, cancel context.CancelFunc) {
 	app := fx.New(
-		logger.Module,
 		config.Module,
+		logger.Module,
 		bus.Module,
 		session.Module,
 		providers.Module,
@@ -151,7 +151,7 @@ func runOneShot(ctx context.Context, cancel context.CancelFunc) {
 						defer cancel()
 
 						// Get or create session
-						sess, err := sm.GetOrCreate(sessionID)
+						sess, err := sm.Get(sessionID)
 						if err != nil {
 							log.Error("Failed to get session", zap.Error(err))
 							os.Exit(1)
@@ -190,8 +190,8 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc) {
 	fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n\n", logo)
 
 	app := fx.New(
-		logger.Module,
 		config.Module,
+		logger.Module,
 		bus.Module,
 		session.Module,
 		providers.Module,
@@ -209,7 +209,7 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc) {
 						defer cancel()
 
 						// Get or create session
-						sess, err := sm.GetOrCreate(sessionID)
+						sess, err := sm.Get(sessionID)
 						if err != nil {
 							log.Error("Failed to get session", zap.Error(err))
 							os.Exit(1)

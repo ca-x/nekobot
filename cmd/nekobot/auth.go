@@ -83,9 +83,8 @@ func init() {
 }
 
 func runAuthLogin(cmd *cobra.Command, args []string) {
-	log, err := logger.New(logger.Config{
-		Level:  "info",
-		Format: "console",
+	log, err := logger.New(&logger.Config{
+		Level: logger.LevelInfo,
 	})
 	if err != nil {
 		fmt.Printf("Error creating logger: %v\n", err)
@@ -161,9 +160,8 @@ func runAuthLogin(cmd *cobra.Command, args []string) {
 }
 
 func runAuthLogout(cmd *cobra.Command, args []string) {
-	log, err := logger.New(logger.Config{
-		Level:  "info",
-		Format: "console",
+	log, err := logger.New(&logger.Config{
+		Level: logger.LevelInfo,
 	})
 	if err != nil {
 		fmt.Printf("Error creating logger: %v\n", err)
@@ -199,9 +197,8 @@ func runAuthLogout(cmd *cobra.Command, args []string) {
 }
 
 func runAuthStatus(cmd *cobra.Command, args []string) {
-	log, err := logger.New(logger.Config{
-		Level:  "info",
-		Format: "console",
+	log, err := logger.New(&logger.Config{
+		Level: logger.LevelInfo,
 	})
 	if err != nil {
 		fmt.Printf("Error creating logger: %v\n", err)
