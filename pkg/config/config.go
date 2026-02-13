@@ -32,15 +32,16 @@ type AgentsConfig struct {
 
 // AgentDefaults defines default settings for agents.
 type AgentDefaults struct {
-	Workspace           string  `mapstructure:"workspace" json:"workspace"`
-	RestrictToWorkspace bool    `mapstructure:"restrict_to_workspace" json:"restrict_to_workspace"`
-	Provider            string  `mapstructure:"provider" json:"provider"`
-	Model               string  `mapstructure:"model" json:"model"`
-	MaxTokens           int     `mapstructure:"max_tokens" json:"max_tokens"`
-	Temperature         float64 `mapstructure:"temperature" json:"temperature"`
-	MaxToolIterations   int     `mapstructure:"max_tool_iterations" json:"max_tool_iterations"`
-	SkillsDir           string  `mapstructure:"skills_dir" json:"skills_dir"`
-	SkillsAutoReload    bool    `mapstructure:"skills_auto_reload" json:"skills_auto_reload"`
+	Workspace           string   `mapstructure:"workspace" json:"workspace"`
+	RestrictToWorkspace bool     `mapstructure:"restrict_to_workspace" json:"restrict_to_workspace"`
+	Provider            string   `mapstructure:"provider" json:"provider"`
+	Fallback            []string `mapstructure:"fallback" json:"fallback"`
+	Model               string   `mapstructure:"model" json:"model"`
+	MaxTokens           int      `mapstructure:"max_tokens" json:"max_tokens"`
+	Temperature         float64  `mapstructure:"temperature" json:"temperature"`
+	MaxToolIterations   int      `mapstructure:"max_tool_iterations" json:"max_tool_iterations"`
+	SkillsDir           string   `mapstructure:"skills_dir" json:"skills_dir"`
+	SkillsAutoReload    bool     `mapstructure:"skills_auto_reload" json:"skills_auto_reload"`
 }
 
 // ChannelsConfig contains all channel configurations.

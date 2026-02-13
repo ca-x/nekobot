@@ -309,7 +309,52 @@ nekobot agent --provider ollama --model llama3:70b -m "Hello"
 
 ## API Failover 和负载均衡
 
-### 1. Profile Rotation (API Key 轮换)
+### 简单的 Fallback 配置
+
+NekoBot 支持跨 Provider 的自动故障转移。只需在配置中指定 fallback 列表:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "provider": "anthropic",
+      "fallback": ["openai", "ollama"],
+      "model": "claude-3-5-sonnet-20241022"
+    }
+  }
+}
+```
+
+**工作原理**：
+1. 优先使用 `provider` (anthropic)
+2. 如果失败，依次尝试 `fallback` 列表中的 provider
+3. 自动断路器保护: 连续 5 次失败后，provider 进入冷却期 (5 分钟)
+4. 智能超时: 云端 API 30 秒，本地模型 60 秒
+
+**示例场景**：
+```json
+// 场景 1: 云端主力 + 本地备份
+{
+  "provider": "anthropic",
+  "fallback": ["openai", "ollama"]
+}
+
+// 场景 2: 付费主力 + 免费备份
+{
+  "provider": "openai",
+  "fallback": ["groq", "ollama"]
+}
+
+// 场景 3: 本地优先
+{
+  "provider": "ollama",
+  "fallback": ["openai"]
+}
+```
+
+### API Key 轮换 (Profile Rotation)
+
+在单个 Provider 内轮换多个 API Key:
 
 ```json
 {
@@ -346,18 +391,18 @@ nekobot agent --provider ollama --model llama3:70b -m "Hello"
 - `least_used`: 优先使用调用次数最少的
 - `random`: 随机选择
 
-### 2. 多 Provider Fallback
+### 断路器 (Circuit Breaker)
 
-在代码中实现：
-```go
-providers := []string{"openai", "claude", "ollama"}
-for _, provider := range providers {
-    response, err := agent.ChatWithProvider(ctx, provider, message)
-    if err == nil {
-        return response
-    }
-}
-```
+自动保护机制，无需配置:
+
+- **触发条件**: 连续 5 次失败
+- **冷却时间**: 5 分钟
+- **恢复策略**: 连续 2 次成功后恢复正常
+
+**状态说明**：
+- `Closed`: 正常工作
+- `Open`: 断路保护中，跳过该 provider
+- `HalfOpen`: 测试恢复中
 
 ---
 
