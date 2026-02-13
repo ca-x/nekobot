@@ -11,7 +11,7 @@ import (
 	"github.com/mafredri/cdp/devtool"
 	"github.com/mafredri/cdp/rpcc"
 	"nekobot/pkg/logger"
-)
+	"go.uber.org/zap")
 
 var (
 	browserSession     *BrowserSession
@@ -66,7 +66,7 @@ func (s *BrowserSession) Start(timeout time.Duration) error {
 	}
 
 	s.log.Info("Starting Chrome browser",
-		logger.String("path", chromePath))
+		zap.String("path", chromePath))
 
 	// Launch Chrome with remote debugging port
 	s.cmd = exec.Command(chromePath,
@@ -114,7 +114,7 @@ func (s *BrowserSession) Start(timeout time.Duration) error {
 	s.ready = true
 
 	s.log.Info("Browser session started",
-		logger.String("debug_url", s.debugURL))
+		zap.String("debug_url", s.debugURL))
 
 	return nil
 }

@@ -4,12 +4,11 @@ package skills
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
-	"gopkg.in/yaml.v3"
+	"go.uber.org/zap"
 
 	"nekobot/pkg/logger"
 )
@@ -57,11 +56,21 @@ type Manager struct {
 	validator        *Validator
 	eligibilityCheck *EligibilityChecker
 	installer        *Installer
+	loader           *MultiPathLoader
+	snapshotMgr      *SnapshotManager
+	versionMgr       *VersionManager
 }
 
 // NewManager creates a new skills manager.
 func NewManager(log *logger.Logger, skillsDir string, autoReload bool) *Manager {
-	return &Manager{
+	// Determine workspace directory (parent of skills dir)
+	workspaceDir := filepath.Dir(skillsDir)
+
+	// Create snapshot and version directories
+	snapshotsDir := filepath.Join(workspaceDir, ".nekobot", "snapshots")
+	versionsDir := filepath.Join(workspaceDir, ".nekobot", "versions")
+
+	mgr := &Manager{
 		log:              log,
 		skillsDir:        skillsDir,
 		skills:           make(map[string]*Skill),
@@ -69,103 +78,51 @@ func NewManager(log *logger.Logger, skillsDir string, autoReload bool) *Manager 
 		validator:        NewValidator(),
 		eligibilityCheck: NewEligibilityChecker(),
 		installer:        NewInstaller(log),
+		loader:           NewMultiPathLoader(log, workspaceDir),
+		snapshotMgr:      NewSnapshotManager(log, snapshotsDir),
+		versionMgr:       NewVersionManager(log, versionsDir),
 	}
+
+	// Initialize version manager
+	if err := mgr.versionMgr.Initialize(); err != nil {
+		log.Warn("Failed to initialize version manager", zap.Error(err))
+	}
+
+	return mgr
 }
 
 // Discover scans the skills directory and loads all valid skills.
 func (m *Manager) Discover() error {
-	m.log.Info("Discovering skills", logger.String("dir", m.skillsDir))
+	m.log.Info("Discovering skills from all sources")
 
-	// Create skills directory if it doesn't exist
-	if err := os.MkdirAll(m.skillsDir, 0755); err != nil {
-		return fmt.Errorf("creating skills directory: %w", err)
-	}
-
-	// Scan for skill files (*.md)
-	entries, err := os.ReadDir(m.skillsDir)
+	// Load skills from all sources using multi-path loader
+	skills, err := m.loader.LoadAll()
 	if err != nil {
-		return fmt.Errorf("reading skills directory: %w", err)
+		return fmt.Errorf("loading skills: %w", err)
 	}
 
-	count := 0
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
+	// Register all skills
+	m.mu.Lock()
+	m.skills = skills
+	m.mu.Unlock()
 
-		if !strings.HasSuffix(entry.Name(), ".md") {
-			continue
+	// Detect changes and track versions
+	changes := m.versionMgr.DetectChanges(skills)
+	for id, changeType := range changes {
+		if skill, exists := skills[id]; exists {
+			if err := m.versionMgr.TrackChange(skill, changeType, "Auto-detected on discovery"); err != nil {
+				m.log.Warn("Failed to track skill change",
+					zap.String("skill", id),
+					zap.Error(err))
+			}
 		}
-
-		skillPath := filepath.Join(m.skillsDir, entry.Name())
-		skill, err := m.loadSkillFile(skillPath)
-		if err != nil {
-			m.log.Warn("Failed to load skill",
-				logger.String("file", entry.Name()),
-				logger.Error(err))
-			continue
-		}
-
-		m.registerSkill(skill)
-		count++
 	}
 
-	m.log.Info("Skills discovered", logger.Int("count", count))
+	m.log.Info("Skills discovered",
+		zap.Int("total", len(skills)),
+		zap.Int("changes", len(changes)))
+
 	return nil
-}
-
-// loadSkillFile loads a skill from a markdown file with YAML frontmatter.
-func (m *Manager) loadSkillFile(path string) (*Skill, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading skill file: %w", err)
-	}
-
-	content := string(data)
-
-	// Parse frontmatter (YAML between --- markers)
-	var frontmatter string
-	var instructions string
-
-	if strings.HasPrefix(content, "---\n") {
-		parts := strings.SplitN(content[4:], "\n---\n", 2)
-		if len(parts) == 2 {
-			frontmatter = parts[0]
-			instructions = strings.TrimSpace(parts[1])
-		} else {
-			// No closing ---, treat entire file as instructions
-			instructions = content
-		}
-	} else {
-		// No frontmatter, entire file is instructions
-		instructions = content
-	}
-
-	// Parse YAML frontmatter
-	skill := &Skill{
-		Enabled: true, // Default to enabled
-	}
-
-	if frontmatter != "" {
-		if err := yaml.Unmarshal([]byte(frontmatter), skill); err != nil {
-			return nil, fmt.Errorf("parsing frontmatter: %w", err)
-		}
-	}
-
-	// Set default ID from filename if not specified
-	if skill.ID == "" {
-		skill.ID = strings.TrimSuffix(filepath.Base(path), ".md")
-	}
-
-	// Set default name from ID if not specified
-	if skill.Name == "" {
-		skill.Name = skill.ID
-	}
-
-	skill.Instructions = instructions
-	skill.FilePath = path
-
-	return skill, nil
 }
 
 // registerSkill registers a skill with the manager.
@@ -175,8 +132,53 @@ func (m *Manager) registerSkill(skill *Skill) {
 
 	m.skills[skill.ID] = skill
 	m.log.Debug("Skill registered",
-		logger.String("id", skill.ID),
-		logger.String("name", skill.Name))
+		zap.String("id", skill.ID),
+		zap.String("name", skill.Name))
+}
+
+// CreateSnapshot creates a snapshot of current skill state.
+func (m *Manager) CreateSnapshot(metadata map[string]string) (*Snapshot, error) {
+	m.mu.RLock()
+	skillsCopy := make(map[string]*Skill, len(m.skills))
+	for k, v := range m.skills {
+		skillsCopy[k] = v
+	}
+	m.mu.RUnlock()
+
+	return m.snapshotMgr.Create(skillsCopy, metadata)
+}
+
+// ListSnapshots returns all available snapshots.
+func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
+	return m.snapshotMgr.List()
+}
+
+// RestoreSnapshot restores skills from a snapshot.
+func (m *Manager) RestoreSnapshot(id string) error {
+	skills, err := m.snapshotMgr.Restore(id)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	m.skills = skills
+	m.mu.Unlock()
+
+	m.log.Info("Restored skills from snapshot",
+		zap.String("id", id),
+		zap.Int("skills", len(skills)))
+
+	return nil
+}
+
+// GetVersionHistory returns version history for a skill.
+func (m *Manager) GetVersionHistory(skillID string) (*VersionHistory, error) {
+	return m.versionMgr.GetHistory(skillID)
+}
+
+// GetSkillSources returns all configured skill source paths.
+func (m *Manager) GetSkillSources() []SkillSource {
+	return m.loader.GetSources()
 }
 
 // Get retrieves a skill by ID.
@@ -231,7 +233,7 @@ func (m *Manager) Enable(id string) error {
 	}
 
 	skill.Enabled = true
-	m.log.Info("Skill enabled", logger.String("id", id))
+	m.log.Info("Skill enabled", zap.String("id", id))
 	return nil
 }
 
@@ -246,7 +248,7 @@ func (m *Manager) Disable(id string) error {
 	}
 
 	skill.Enabled = false
-	m.log.Info("Skill disabled", logger.String("id", id))
+	m.log.Info("Skill disabled", zap.String("id", id))
 	return nil
 }
 
@@ -363,8 +365,8 @@ func (m *Manager) InstallDependencies(ctx context.Context, skillID string) ([]In
 	}
 
 	m.log.Info("Installing dependencies for skill",
-		logger.String("skill", skill.ID),
-		logger.Int("count", len(specs)))
+		zap.String("skill", skill.ID),
+		zap.Int("count", len(specs)))
 
 	var results []InstallResult
 	for _, spec := range specs {

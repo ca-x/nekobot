@@ -108,10 +108,25 @@ func (l *Loader) Save(path string, cfg *Config) error {
 
 	// Write to file
 	if err := v.WriteConfigAs(path); err != nil {
-		return fmt.Errorf("writing config file: %w", err)
+		return fmt.Errorf("writing config: %w", err)
 	}
 
 	return nil
+}
+
+// SaveToFile is a convenience function to save config without creating a Loader.
+func SaveToFile(cfg *Config, path string) error {
+	loader := NewLoader()
+	return loader.Save(path, cfg)
+}
+
+// GetConfigHome returns the default config directory.
+func GetConfigHome() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("getting home directory: %w", err)
+	}
+	return filepath.Join(home, ".nekobot"), nil
 }
 
 // GetConfigPath returns the path of the loaded config file.

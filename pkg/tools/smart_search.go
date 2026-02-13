@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"nekobot/pkg/logger"
-)
+	"go.uber.org/zap")
 
 // SmartSearchTool provides intelligent web search with fallback.
 type SmartSearchTool struct {
@@ -90,8 +90,8 @@ func (t *SmartSearchTool) Execute(ctx context.Context, params map[string]interfa
 	}
 
 	t.log.Info("Smart search",
-		logger.String("query", query),
-		logger.Bool("fetch_first", fetchFirst))
+		zap.String("query", query),
+		zap.Bool("fetch_first", fetchFirst))
 
 	// Try web_search API first
 	if t.hasWebAPI {
@@ -116,7 +116,7 @@ func (t *SmartSearchTool) Execute(ctx context.Context, params map[string]interfa
 		}
 
 		t.log.Warn("Web API search failed or invalid, falling back",
-			logger.Error(err))
+			zap.Error(err))
 	}
 
 	// Fallback to browser-based search

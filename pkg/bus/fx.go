@@ -23,7 +23,7 @@ func NewMessageBus(
 	// Determine bus configuration
 	busConfig := &Config{
 		Type:       BusTypeLocal, // Default to local
-		BufferSize: cfg.Gateway.MessageQueueSize,
+		BufferSize: 100,          // Default buffer size
 	}
 
 	// Override with config if bus settings exist

@@ -2,7 +2,6 @@ package memory
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"

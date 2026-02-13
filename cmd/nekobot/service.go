@@ -20,6 +20,7 @@ import (
 	"nekobot/pkg/heartbeat"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/state"
+	"nekobot/pkg/workspace"
 )
 
 // GatewayService implements the service.Interface for the gateway.
@@ -72,6 +73,7 @@ func (s *GatewayService) run() {
 		// Core modules
 		logger.Module,
 		config.Module,
+		workspace.Module,
 		state.Module,
 		agent.Module,
 
@@ -278,6 +280,7 @@ func runGatewayForeground() {
 		// Core modules
 		logger.Module,
 		config.Module,
+		workspace.Module,
 		state.Module,
 		agent.Module,
 

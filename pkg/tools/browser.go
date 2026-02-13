@@ -14,6 +14,7 @@ import (
 	"github.com/mafredri/cdp/protocol/input"
 	"github.com/mafredri/cdp/protocol/page"
 	"github.com/mafredri/cdp/protocol/runtime"
+	"go.uber.org/zap"
 
 	"nekobot/pkg/logger"
 )
@@ -158,7 +159,7 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 	}
 
 	b.log.Info("Browser navigating",
-		logger.String("url", urlStr))
+		zap.String("url", urlStr))
 
 	sessionMgr := GetBrowserSession(b.log)
 	if !sessionMgr.IsReady() {
@@ -181,7 +182,7 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 	domLoaded, err := client.Page.DOMContentEventFired(ctx)
 	if err != nil {
 		b.log.Warn("Failed to wait for DOMContentLoaded",
-			logger.Error(err))
+			zap.Error(err))
 	} else {
 		defer domLoaded.Close()
 		_, _ = domLoaded.Recv()
@@ -225,7 +226,7 @@ func (b *BrowserTool) screenshot(ctx context.Context, params map[string]interfac
 		width, height, 1.0, false,
 	)); err != nil {
 		b.log.Warn("Failed to set viewport",
-			logger.Error(err))
+			zap.Error(err))
 	}
 
 	// Capture screenshot
@@ -280,7 +281,7 @@ func (b *BrowserTool) executeScript(ctx context.Context, params map[string]inter
 	}
 
 	b.log.Info("Executing JavaScript",
-		logger.String("script", script[:min(len(script), 100)]))
+		zap.String("script", script[:min(len(script), 100)]))
 
 	evalArgs := runtime.NewEvaluateArgs(script).
 		SetReturnByValue(true).

@@ -14,7 +14,7 @@ import (
 // Manager manages all communication channels.
 type Manager struct {
 	log      *logger.Logger
-	bus      *bus.Bus
+	bus      bus.Bus // Use interface directly, not pointer to interface
 	channels map[string]Channel
 	mu       sync.RWMutex
 
@@ -25,7 +25,7 @@ type Manager struct {
 }
 
 // NewManager creates a new channel manager.
-func NewManager(log *logger.Logger, messageBus *bus.Bus) *Manager {
+func NewManager(log *logger.Logger, messageBus bus.Bus) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Manager{

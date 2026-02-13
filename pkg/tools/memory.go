@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/memory"
 )
@@ -105,8 +106,8 @@ func (t *MemoryTool) search(ctx context.Context, params map[string]interface{}) 
 	}
 
 	t.log.Info("Searching memory",
-		logger.String("query", query),
-		logger.Int("max_results", maxResults))
+		zap.String("query", query),
+		zap.Int("max_results", maxResults))
 
 	context, err := t.manager.GetRelevantContext(ctx, query, maxResults)
 	if err != nil {
@@ -143,8 +144,8 @@ func (t *MemoryTool) add(ctx context.Context, params map[string]interface{}) (st
 	}
 
 	t.log.Info("Adding to memory",
-		logger.String("type", string(memType)),
-		logger.Int("length", len(text)))
+		zap.String("type", string(memType)),
+		zap.Int("length", len(text)))
 
 	metadata := memory.Metadata{
 		Importance: 0.5, // Default importance

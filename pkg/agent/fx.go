@@ -59,6 +59,9 @@ func ProvideAgent(
 	// Set skills manager on context builder
 	agent.context.SetSkillsManager(skillsMgr)
 
+	// Register skill tool
+	agent.RegisterSkillTool(skillsMgr)
+
 	// Register lifecycle hooks
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {

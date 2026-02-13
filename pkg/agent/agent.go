@@ -8,6 +8,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/providers"
+	"nekobot/pkg/skills"
 	"nekobot/pkg/tools"
 )
 
@@ -63,7 +64,7 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 	log.Info("Browser tool enabled")
 
 	// Message tool (will be configured later by gateway)
-	toolRegistry.MustRegister(tools.NewMessageTool(log, nil))
+	toolRegistry.MustRegister(tools.NewMessageTool(nil))
 
 	// Create context builder
 	contextBuilder := NewContextBuilder(workspace)
@@ -81,6 +82,13 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 	}
 
 	return agent, nil
+}
+
+// RegisterSkillTool registers the skill tool with the agent.
+// This should be called after agent creation when skills manager is available.
+func (a *Agent) RegisterSkillTool(skillsManager *skills.Manager) {
+	a.tools.MustRegister(tools.NewSkillTool(a.logger, skillsManager))
+	a.logger.Info("Skill tool registered")
 }
 
 // Chat processes a user message and returns the agent's response.

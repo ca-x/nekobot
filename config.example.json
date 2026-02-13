@@ -1,0 +1,100 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.nekobot/workspace",
+      "provider": "anthropic",
+      "model": "claude-3-5-sonnet-20241022",
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "max_tool_iterations": 10
+    }
+  },
+  "providers": {
+    "anthropic": {
+      "api_key": "",
+      "api_base": "https://api.anthropic.com",
+      "rotation": {
+        "enabled": true,
+        "strategy": "round_robin",
+        "cooldown": "5m"
+      },
+      "profiles": {
+        "primary": {
+          "api_key": "sk-ant-xxx-primary",
+          "priority": 1
+        },
+        "secondary": {
+          "api_key": "sk-ant-xxx-secondary",
+          "priority": 2
+        },
+        "backup": {
+          "api_key": "sk-ant-xxx-backup",
+          "priority": 3
+        }
+      }
+    },
+    "openai": {
+      "api_key": "",
+      "api_base": "https://api.openai.com/v1",
+      "rotation": {
+        "enabled": true,
+        "strategy": "least_used",
+        "cooldown": "10m"
+      },
+      "profiles": {
+        "prod": {
+          "api_key": "sk-xxx-prod",
+          "priority": 1
+        },
+        "dev": {
+          "api_key": "sk-xxx-dev",
+          "priority": 2
+        }
+      }
+    }
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "tools": {
+    "exec": {
+      "enabled": true,
+      "allow_commands": ["ls", "cat", "grep", "find"],
+      "timeout": 30
+    },
+    "web_search": {
+      "enabled": true,
+      "brave_api_key": ""
+    }
+  },
+  "heartbeat": {
+    "enabled": false,
+    "interval_minutes": 60
+  },
+  "memory": {
+    "qmd": {
+      "enabled": false,
+      "command": "qmd",
+      "include_default": true,
+      "paths": [
+        {
+          "name": "docs",
+          "path": "~/Documents",
+          "pattern": "**/*.md"
+        }
+      ],
+      "sessions": {
+        "enabled": true,
+        "export_dir": "${WORKSPACE}/memory/sessions",
+        "retention_days": 90
+      },
+      "update": {
+        "on_boot": true,
+        "interval": "30m",
+        "command_timeout": "30s",
+        "update_timeout": "5m"
+      }
+    }
+  }
+}

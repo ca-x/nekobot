@@ -147,8 +147,8 @@ func (h *Heartbeat) IsEnabled() bool {
 // GetStats returns heartbeat statistics.
 func (h *Heartbeat) GetStats() map[string]interface{} {
 	ctx := context.Background()
-	lastRun, _ := h.state.GetString(ctx, stateKeyLastRun)
-	runCount, _ := h.state.GetInt(ctx, stateKeyRunCount)
+	lastRun, _, _ := h.state.GetString(ctx, stateKeyLastRun)
+	runCount, _, _ := h.state.GetInt(ctx, stateKeyRunCount)
 
 	return map[string]interface{}{
 		"enabled":   h.IsEnabled(),

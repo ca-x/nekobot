@@ -23,7 +23,7 @@ var Module = fx.Module("channels",
 func NewChannelManager(
 	lc fx.Lifecycle,
 	log *logger.Logger,
-	messageBus *bus.Bus,
+	messageBus bus.Bus, // Use interface, not pointer to interface
 ) *Manager {
 	manager := NewManager(log, messageBus)
 
@@ -43,7 +43,7 @@ func NewChannelManager(
 func RegisterChannels(
 	manager *Manager,
 	log *logger.Logger,
-	messageBus *bus.Bus,
+	messageBus bus.Bus, // Use interface, not pointer to interface
 	ag *agent.Agent,
 	cfg *config.Config,
 ) error {

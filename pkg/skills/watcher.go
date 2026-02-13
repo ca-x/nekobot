@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"go.uber.org/zap"
 	"nekobot/pkg/logger"
 )
 
@@ -65,7 +66,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 	w.mu.Unlock()
 
 	w.log.Info("Skill watcher started",
-		logger.String("dir", skillsDir))
+		zap.String("dir", skillsDir))
 
 	// Start event processing
 	go w.processEvents(ctx)
@@ -157,7 +158,7 @@ func (w *Watcher) processEvents(ctx context.Context) {
 			w.mu.Unlock()
 
 			w.log.Warn("Skill watcher error",
-				logger.Error(err))
+				zap.Error(err))
 
 			select {
 			case w.errors <- err:
@@ -188,9 +189,9 @@ func (w *Watcher) handleFileEvent(event fsnotify.Event) {
 	skillName := strings.TrimSuffix(filepath.Base(event.Name), ".md")
 
 	w.log.Debug("Skill file changed",
-		logger.String("type", string(changeType)),
-		logger.String("skill", skillName),
-		logger.String("path", event.Name))
+		zap.String("type", string(changeType)),
+		zap.String("skill", skillName),
+		zap.String("path", event.Name))
 
 	// Update internal state
 	w.mu.Lock()
@@ -213,7 +214,7 @@ func (w *Watcher) handleFileEvent(event fsnotify.Event) {
 	default:
 		// Event channel full, drop event
 		w.log.Warn("Skill change event dropped (channel full)",
-			logger.String("skill", skillName))
+			zap.String("skill", skillName))
 	}
 
 	// Auto-reload skill if enabled
@@ -226,18 +227,18 @@ func (w *Watcher) handleFileEvent(event fsnotify.Event) {
 func (w *Watcher) reloadSkill(path string, changeType ChangeType) {
 	switch changeType {
 	case ChangeTypeCreated, ChangeTypeModified:
-		skill, err := w.manager.loadSkillFile(path)
+		skill, err := loadSkillFile(path)
 		if err != nil {
 			w.log.Warn("Failed to reload skill",
-				logger.String("path", path),
-				logger.Error(err))
+				zap.String("path", path),
+				zap.Error(err))
 			return
 		}
 
 		w.manager.registerSkill(skill)
 		w.log.Info("Skill reloaded",
-			logger.String("id", skill.ID),
-			logger.String("name", skill.Name))
+			zap.String("id", skill.ID),
+			zap.String("name", skill.Name))
 
 	case ChangeTypeDeleted:
 		// Extract skill ID from path
@@ -248,6 +249,6 @@ func (w *Watcher) reloadSkill(path string, changeType ChangeType) {
 		w.manager.mu.Unlock()
 
 		w.log.Info("Skill removed",
-			logger.String("id", skillID))
+			zap.String("id", skillID))
 	}
 }

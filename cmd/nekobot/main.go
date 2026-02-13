@@ -14,6 +14,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/workspace"
 )
 
 var (
@@ -40,8 +41,8 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("nekobot v0.6.0-alpha")
-		fmt.Println("Phase 6: Advanced Features (Bus, State, Heartbeat, Cron, Service)")
+		fmt.Println("nekobot v0.10.0-alpha")
+		fmt.Println("Phase 10: QMD Integration (Complete)")
 	},
 }
 
@@ -74,6 +75,7 @@ func runOneShot() {
 	app := fx.New(
 		logger.Module,
 		config.Module,
+		workspace.Module,
 		skills.Module,
 		agent.Module,
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, ag *agent.Agent) {

@@ -247,8 +247,8 @@ func (v *Validator) validateTools(cfg *ToolsConfig) {
 
 // validateHeartbeat validates heartbeat configuration.
 func (v *Validator) validateHeartbeat(cfg *HeartbeatConfig) {
-	if cfg.Enabled && cfg.Interval < 5 {
-		v.addError("heartbeat.interval", "interval must be at least 5 minutes when heartbeat is enabled")
+	if cfg.Enabled && cfg.IntervalMinutes < 5 {
+		v.addError("heartbeat.interval_minutes", "interval must be at least 5 minutes when heartbeat is enabled")
 	}
 }
 

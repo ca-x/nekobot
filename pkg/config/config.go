@@ -21,6 +21,7 @@ type Config struct {
 	Heartbeat HeartbeatConfig `mapstructure:"heartbeat" json:"heartbeat"`
 	State     StateConfig     `mapstructure:"state" json:"state"`
 	Bus       BusConfig       `mapstructure:"bus" json:"bus"`
+	Memory    MemoryConfig    `mapstructure:"memory" json:"memory"`
 	mu        sync.RWMutex
 }
 
@@ -167,6 +168,23 @@ type ProviderConfig struct {
 	APIBase    string `mapstructure:"api_base" json:"api_base"`
 	Proxy      string `mapstructure:"proxy" json:"proxy"`
 	AuthMethod string `mapstructure:"auth_method" json:"auth_method"` // "api_key", "oauth", "token"
+
+	// Rotation configuration
+	Rotation RotationConfig            `mapstructure:"rotation" json:"rotation"`
+	Profiles map[string]ProfileConfig  `mapstructure:"profiles" json:"profiles"`
+}
+
+// RotationConfig defines API key rotation settings.
+type RotationConfig struct {
+	Enabled  bool   `mapstructure:"enabled" json:"enabled"`
+	Strategy string `mapstructure:"strategy" json:"strategy"` // "round_robin", "least_used", "random"
+	Cooldown string `mapstructure:"cooldown" json:"cooldown"` // Duration string, e.g. "5m"
+}
+
+// ProfileConfig defines a single API key profile.
+type ProfileConfig struct {
+	APIKey   string `mapstructure:"api_key" json:"api_key"`
+	Priority int    `mapstructure:"priority" json:"priority"`
 }
 
 // GatewayConfig for gateway server.
@@ -344,4 +362,41 @@ func expandPath(path string) string {
 		return home
 	}
 	return path
+}
+
+// MemoryConfig for memory and QMD integration.
+type MemoryConfig struct {
+	QMD QMDConfig `mapstructure:"qmd" json:"qmd"`
+}
+
+// QMDConfig for QMD (Query Markdown) integration.
+type QMDConfig struct {
+	Enabled        bool               `mapstructure:"enabled" json:"enabled"`
+	Command        string             `mapstructure:"command" json:"command"`
+	IncludeDefault bool               `mapstructure:"include_default" json:"include_default"`
+	Paths          []QMDPathConfig    `mapstructure:"paths" json:"paths"`
+	Sessions       QMDSessionsConfig  `mapstructure:"sessions" json:"sessions"`
+	Update         QMDUpdateConfig    `mapstructure:"update" json:"update"`
+}
+
+// QMDPathConfig defines a custom collection path.
+type QMDPathConfig struct {
+	Name    string `mapstructure:"name" json:"name"`
+	Path    string `mapstructure:"path" json:"path"`
+	Pattern string `mapstructure:"pattern" json:"pattern"`
+}
+
+// QMDSessionsConfig for session export configuration.
+type QMDSessionsConfig struct {
+	Enabled       bool   `mapstructure:"enabled" json:"enabled"`
+	ExportDir     string `mapstructure:"export_dir" json:"export_dir"`
+	RetentionDays int    `mapstructure:"retention_days" json:"retention_days"`
+}
+
+// QMDUpdateConfig for automatic update configuration.
+type QMDUpdateConfig struct {
+	OnBoot         bool   `mapstructure:"on_boot" json:"on_boot"`
+	Interval       string `mapstructure:"interval" json:"interval"`
+	CommandTimeout string `mapstructure:"command_timeout" json:"command_timeout"`
+	UpdateTimeout  string `mapstructure:"update_timeout" json:"update_timeout"`
 }

@@ -19,7 +19,7 @@ import (
 // Channel implements the Telegram channel.
 type Channel struct {
 	log    *logger.Logger
-	bus    *bus.Bus
+	bus    bus.Bus // Use interface, not pointer to interface
 	agent  *agent.Agent
 	config *config.TelegramConfig
 
@@ -29,7 +29,7 @@ type Channel struct {
 }
 
 // New creates a new Telegram channel.
-func New(log *logger.Logger, messageBus *bus.Bus, ag *agent.Agent, cfg *config.TelegramConfig) (*Channel, error) {
+func New(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cfg *config.TelegramConfig) (*Channel, error) {
 	if cfg.Token == "" {
 		return nil, fmt.Errorf("telegram token is required")
 	}

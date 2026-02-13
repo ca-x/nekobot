@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"nekobot/pkg/logger"
 )
 
@@ -32,8 +33,8 @@ func (i *Installer) Install(ctx context.Context, spec InstallSpec) InstallResult
 	}
 
 	i.log.Info("Installing dependency",
-		logger.String("method", spec.Method),
-		logger.String("package", spec.Package))
+		zap.String("method", spec.Method),
+		zap.String("package", spec.Package))
 
 	var err error
 	var output string
@@ -63,26 +64,26 @@ func (i *Installer) Install(ctx context.Context, spec InstallSpec) InstallResult
 
 	if err != nil {
 		i.log.Error("Installation failed",
-			logger.String("method", spec.Method),
-			logger.String("package", spec.Package),
-			logger.Error(err))
+			zap.String("method", spec.Method),
+			zap.String("package", spec.Package),
+			zap.Error(err))
 	} else {
 		i.log.Info("Installation successful",
-			logger.String("method", spec.Method),
-			logger.String("package", spec.Package),
-			logger.Duration("duration", result.Duration))
+			zap.String("method", spec.Method),
+			zap.String("package", spec.Package),
+			zap.Duration("duration", result.Duration))
 	}
 
 	// Run post-hook if specified
 	if result.Success && spec.PostHook != "" {
 		i.log.Info("Running post-installation hook",
-			logger.String("command", spec.PostHook))
+			zap.String("command", spec.PostHook))
 
 		hookOutput, hookErr := i.runCommand(ctx, spec.PostHook)
 		if hookErr != nil {
 			i.log.Warn("Post-installation hook failed",
-				logger.String("command", spec.PostHook),
-				logger.Error(hookErr))
+				zap.String("command", spec.PostHook),
+				zap.Error(hookErr))
 		} else {
 			result.Output += "\n" + hookOutput
 		}
