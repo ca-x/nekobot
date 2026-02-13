@@ -99,6 +99,15 @@ func runAgent(cmd *cobra.Command, args []string) {
 		fmt.Println("🔍 Debug mode enabled")
 	}
 
+	// Initialize default config if needed
+	configPath, created, err := config.InitDefaultConfig()
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Failed to initialize config: %v\n", err)
+	} else if created {
+		fmt.Printf("✅ Created default config at: %s\n", configPath)
+		fmt.Printf("📝 Please edit the config file to add your API keys\n\n")
+	}
+
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

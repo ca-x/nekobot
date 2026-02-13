@@ -1,6 +1,7 @@
 package config
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,9 @@ import (
 
 	"github.com/spf13/viper"
 )
+
+//go:embed ../../config.example.json
+var defaultConfigTemplate string
 
 // Loader handles configuration loading with Viper.
 type Loader struct {
@@ -162,4 +166,56 @@ func (l *Loader) GetBool(key string) bool {
 // IsSet checks if a key is set in the configuration.
 func (l *Loader) IsSet(key string) bool {
 	return l.viper.IsSet(key)
+}
+
+// InitDefaultConfig creates a default config file if it doesn't exist.
+// Returns the path to the config file and whether it was newly created.
+func InitDefaultConfig() (configPath string, created bool, err error) {
+	home, err := GetConfigHome()
+	if err != nil {
+		return "", false, err
+	}
+
+	configPath = filepath.Join(home, "config.json")
+
+	// Check if config file already exists
+	if _, err := os.Stat(configPath); err == nil {
+		return configPath, false, nil // File exists, not created
+	}
+
+	// Create config directory
+	if err := os.MkdirAll(home, 0755); err != nil {
+		return "", false, fmt.Errorf("creating config directory: %w", err)
+	}
+
+	// Write default config template to file
+	if err := os.WriteFile(configPath, []byte(defaultConfigTemplate), 0644); err != nil {
+		return "", false, fmt.Errorf("writing default config: %w", err)
+	}
+
+	return configPath, true, nil
+}
+
+// EnsureWorkspace creates the workspace directory if it doesn't exist.
+func (cfg *Config) EnsureWorkspace() error {
+	workspace := cfg.WorkspacePath()
+	if workspace == "" {
+		return fmt.Errorf("workspace path not set")
+	}
+
+	// Create workspace directory
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		return fmt.Errorf("creating workspace: %w", err)
+	}
+
+	// Create subdirectories
+	subdirs := []string{"sessions", "state", "memory"}
+	for _, subdir := range subdirs {
+		path := filepath.Join(workspace, subdir)
+		if err := os.MkdirAll(path, 0755); err != nil {
+			return fmt.Errorf("creating %s directory: %w", subdir, err)
+		}
+	}
+
+	return nil
 }

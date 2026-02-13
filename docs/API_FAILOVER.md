@@ -1,11 +1,261 @@
-# API Failover & Rotation
+# API Failover & Load Balancing
 
-Nekobot supports intelligent API key rotation and failover to improve reliability and avoid rate limits.
+NekoBot 支持跨 Provider 的自动故障转移和负载均衡，提供高可用性和可靠性。
 
-## Features
+## 简化的配置方式
 
-### 1. Multiple API Key Profiles
-Configure multiple API keys per provider with different priorities:
+NekoBot 采用极简配置理念，只需一个 `fallback` 数组即可实现强大的故障转移功能：
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "provider": "anthropic",
+      "fallback": ["openai", "ollama"],
+      "model": "claude-3-5-sonnet-20241022"
+    }
+  }
+}
+```
+
+## 工作原理
+
+### 1. 自动故障转移
+
+请求按顺序尝试 provider，直到成功：
+
+```
+1. 尝试 anthropic (主 provider)
+   ↓ 失败
+2. 尝试 openai (fallback[0])
+   ↓ 失败
+3. 尝试 ollama (fallback[1])
+   ✓ 成功
+```
+
+### 2. 断路器保护 (Circuit Breaker)
+
+自动保护失败的 provider，避免重复请求：
+
+**触发条件**：
+- 连续 5 次失败
+
+**行为**：
+- Provider 进入 `Open` 状态
+- 5 分钟内跳过该 provider
+- 5 分钟后尝试恢复 (`HalfOpen` 状态)
+
+**恢复条件**：
+- 连续 2 次成功后恢复正常 (`Closed` 状态)
+
+### 3. 智能超时
+
+根据 provider 类型自动设置超时：
+
+| Provider 类型 | 超时时间 | 示例 |
+|--------------|----------|------|
+| 云端 API | 30 秒 | anthropic, openai, deepseek |
+| 本地模型 | 60 秒 | ollama, lmstudio, vllm |
+
+### 4. 断路器状态
+
+| 状态 | 说明 | 行为 |
+|------|------|------|
+| `Closed` | 正常工作 | 接受请求 |
+| `Open` | 断路保护中 | 跳过该 provider |
+| `HalfOpen` | 恢复测试中 | 尝试部分请求 |
+
+## 配置示例
+
+### 示例 1: 云端主力 + 本地备份
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "provider": "anthropic",
+      "fallback": ["openai", "ollama"]
+    }
+  }
+}
+```
+
+**使用场景**：
+- 主用 Claude API
+- OpenAI 作为第一备份
+- 本地 Ollama 作为最后备份
+
+### 示例 2: 国产大模型
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "provider": "deepseek",
+      "fallback": ["zhipu", "moonshot"]
+    }
+  }
+}
+```
+
+**使用场景**：
+- 主用 DeepSeek（性价比高）
+- 智谱 AI 作为备份
+- 月之暗面作为最后备份
+
+### 示例 3: 本地优先节省成本
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "provider": "ollama",
+      "fallback": ["openai"]
+    }
+  }
+}
+```
+
+**使用场景**：
+- 优先使用免费的本地模型
+- 本地失败时再使用付费 API
+
+### 示例 4: 高可靠性配置
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "provider": "anthropic",
+      "fallback": ["openai", "groq", "ollama"]
+    }
+  }
+}
+```
+
+**使用场景**：
+- 多个云端 provider 备份
+- 最后使用本地模型兜底
+
+## 实际运行场景
+
+### 场景 1: API 限流
+
+```
+1. 请求 anthropic
+2. 收到 429 (rate limit)
+3. anthropic 断路器打开，进入 5 分钟冷却
+4. 自动切换到 openai
+5. 请求成功
+6. 5 分钟后 anthropic 自动恢复可用
+```
+
+### 场景 2: 网络故障
+
+```
+1. 请求 openai
+2. 网络超时 (30秒)
+3. openai 连续失败 5 次
+4. 断路器打开
+5. 自动切换到 groq
+6. 请求成功
+```
+
+### 场景 3: 所有 Provider 失败
+
+```
+1. 尝试 anthropic → 失败
+2. 尝试 openai → 失败
+3. 尝试 ollama → 失败
+4. 返回错误: "all providers failed, last error: ..."
+```
+
+## 监控和统计
+
+LoadBalancer 提供统计信息（未来版本将提供 CLI 查看）：
+
+```go
+stats := loadBalancer.GetStats()
+for name, stat := range stats {
+    fmt.Printf("Provider: %s\n", name)
+    fmt.Printf("  Requests: %d\n", stat.RequestCount)
+    fmt.Printf("  Success: %d\n", stat.SuccessCount)
+    fmt.Printf("  Failure: %d\n", stat.FailureCount)
+    fmt.Printf("  Consecutive Errors: %d\n", stat.ConsecutiveErrors)
+    fmt.Printf("  Circuit State: %s\n", stat.CircuitState)
+    fmt.Printf("  Last Success: %s\n", stat.LastSuccess)
+    fmt.Printf("  Last Failure: %s\n", stat.LastFailure)
+}
+```
+
+## 错误类型处理
+
+LoadBalancer 对所有错误类型一视同仁：
+
+| 错误类型 | HTTP 状态码 | 处理方式 |
+|----------|-------------|----------|
+| 认证错误 | 401, 403 | 计入失败次数 |
+| 限流错误 | 429 | 计入失败次数 |
+| 服务器错误 | 500, 502, 503 | 计入失败次数 |
+| 网络错误 | Timeout, DNS | 计入失败次数 |
+
+所有失败都会：
+1. 增加 `ConsecutiveErrors` 计数
+2. 达到阈值（5次）后触发断路器
+3. 自动切换到下一个 provider
+
+## 最佳实践
+
+### 1. Provider 选择顺序
+
+建议从可靠性高到低排列：
+
+```
+主力 provider → 备用 provider → 本地 provider
+```
+
+### 2. 至少配置一个备份
+
+```json
+// ❌ 不推荐 - 没有备份
+{
+  "provider": "anthropic"
+}
+
+// ✅ 推荐 - 至少一个备份
+{
+  "provider": "anthropic",
+  "fallback": ["openai"]
+}
+```
+
+### 3. 本地模型作为最后兜底
+
+```json
+{
+  "provider": "anthropic",
+  "fallback": ["openai", "ollama"]
+}
+```
+
+这样即使所有云端 API 都失败，还能使用本地模型。
+
+### 4. 根据成本优化顺序
+
+```json
+// 从便宜到贵
+{
+  "provider": "deepseek",      // ¥0.001/1K tokens
+  "fallback": [
+    "moonshot",                 // ¥0.012/1K tokens
+    "openai"                    // ¥0.03/1K tokens
+  ]
+}
+```
+
+## 与旧版配置的区别
+
+### 旧版 (复杂)
 
 ```json
 {
@@ -17,239 +267,98 @@ Configure multiple API keys per provider with different priorities:
         "cooldown": "5m"
       },
       "profiles": {
-        "primary": {
-          "api_key": "sk-ant-xxx-primary",
-          "priority": 1
-        },
-        "secondary": {
-          "api_key": "sk-ant-xxx-secondary",
-          "priority": 2
-        },
-        "backup": {
-          "api_key": "sk-ant-xxx-backup",
-          "priority": 3
-        }
+        "primary": {"api_key": "sk-xxx-1", "priority": 1},
+        "secondary": {"api_key": "sk-xxx-2", "priority": 2}
       }
+    }
+  },
+  "loadbalancer": {
+    "enabled": true,
+    "strategy": "priority",
+    "providers": [
+      {"name": "anthropic", "priority": 100, "max_retries": 3},
+      {"name": "openai", "priority": 90, "max_retries": 3}
+    ],
+    "circuit_breaker": {
+      "enabled": true,
+      "failure_threshold": 5,
+      "timeout": "5m"
     }
   }
 }
 ```
 
-### 2. Rotation Strategies
-
-**Round Robin** (`round_robin`)
-- Cycles through profiles in order
-- Distributes load evenly across all profiles
-- Default strategy
-
-**Least Used** (`least_used`)
-- Selects the profile with lowest request count
-- Balances usage across profiles
-- Useful for quota management
-
-**Random** (`random`)
-- Randomly selects from available profiles
-- Simple load distribution
-
-### 3. Intelligent Failover
-
-Automatic error classification:
-- **Authentication Errors** (401, 403) → Put profile on cooldown
-- **Rate Limits** (429) → Cooldown and switch to next profile
-- **Billing Issues** → Cooldown affected profile
-- **Network Errors** → Retry with same or different profile
-- **Server Errors** (5xx) → Retry without cooldown
-
-### 4. Cooldown Mechanism
-
-When a profile fails with a retriable error, it's put on cooldown:
-- Configurable cooldown duration (e.g., "5m", "30s", "1h")
-- Profile becomes unavailable during cooldown
-- Automatic rotation to next available profile
-- Cooldown clears after duration expires
-
-## Configuration
-
-### Basic Configuration (Single API Key)
+### 新版 (简化)
 
 ```json
 {
-  "providers": {
-    "anthropic": {
-      "api_key": "sk-ant-xxx"
+  "agents": {
+    "defaults": {
+      "provider": "anthropic",
+      "fallback": ["openai"]
     }
   }
 }
 ```
 
-### Rotation Enabled (Multiple Profiles)
+**简化优势**：
+- ✅ 配置极简，只需一行 `fallback` 数组
+- ✅ 断路器、超时等参数都有智能默认值
+- ✅ 自动识别本地 provider 并调整超时
+- ✅ 零配置，开箱即用
 
-```json
-{
-  "providers": {
-    "anthropic": {
-      "rotation": {
-        "enabled": true,
-        "strategy": "round_robin",
-        "cooldown": "5m"
-      },
-      "profiles": {
-        "profile1": {
-          "api_key": "sk-ant-xxx-1",
-          "priority": 1
-        },
-        "profile2": {
-          "api_key": "sk-ant-xxx-2",
-          "priority": 2
-        }
-      }
-    }
-  }
-}
-```
+## 技术细节
 
-## Usage in Code
-
-```go
-import (
-    "nekobot/pkg/config"
-    "nekobot/pkg/logger"
-    "nekobot/pkg/providers"
-)
-
-// Load configuration
-cfg, err := config.Load("config.json")
-if err != nil {
-    log.Fatal(err)
-}
-
-// Create rotation manager from config
-log, _ := logger.New(&logger.Config{Level: logger.LevelInfo})
-rotationMgr, err := providers.CreateRotationManagerFromConfig(log, cfg.Providers.Anthropic)
-if err != nil {
-    log.Fatal(err)
-}
-
-// Get next available profile
-profile, err := rotationMgr.GetNextProfile()
-if err != nil {
-    log.Fatal(err)
-}
-
-// Use the API key
-fmt.Printf("Using profile: %s\n", profile.Name)
-
-// After request completes
-if err := requestError; err != nil {
-    // Handle error and potentially cooldown
-    rotationMgr.HandleError(profile, err, httpStatusCode)
-} else {
-    // Record success
-    rotationMgr.RecordSuccess(profile)
-}
-
-// Check rotation status
-statuses := rotationMgr.GetStatus()
-for _, status := range statuses {
-    fmt.Printf("Profile %s: available=%v, requests=%d\n",
-        status.Name, status.Available, status.RequestCount)
-}
-```
-
-## Error Classification
-
-The system automatically classifies errors and determines appropriate actions:
-
-| Error Type | Examples | Action |
-|------------|----------|--------|
-| Auth | 401, 403, "invalid api key" | Cooldown |
-| Rate Limit | 429, "too many requests" | Cooldown |
-| Billing | "quota exceeded", "payment required" | Cooldown |
-| Network | Connection timeout, DNS error | Retry |
-| Server | 500, 502, 503 | Retry |
-
-## Best Practices
-
-1. **Use Multiple Profiles**: Configure at least 2-3 profiles for better reliability
-2. **Set Appropriate Cooldown**: 5-10 minutes works well for most cases
-3. **Monitor Usage**: Check profile status regularly to identify issues
-4. **Strategy Selection**:
-   - Use `round_robin` for general use
-   - Use `least_used` when you have quota limits
-   - Use `random` for simple load distribution
-5. **Priority**: Set lower priority numbers for preferred profiles
-
-## Example Scenarios
-
-### Scenario 1: Rate Limit Hit
+### 断路器状态机
 
 ```
-1. Request to primary profile
-2. Receives 429 (rate limit)
-3. Primary put on 5min cooldown
-4. Automatically switches to secondary
-5. Request succeeds
-6. After 5min, primary becomes available again
+        +--------+
+        | Closed |  <-- 初始状态，正常工作
+        +--------+
+             |
+             | 连续 5 次失败
+             v
+        +--------+
+        |  Open  |  <-- 断路保护，跳过该 provider
+        +--------+
+             |
+             | 5 分钟后
+             v
+        +----------+
+        | HalfOpen |  <-- 恢复测试中
+        +----------+
+          /     \
+   失败  /       \  连续 2 次成功
+        v         v
+    +--------+  +--------+
+    |  Open  |  | Closed |
+    +--------+  +--------+
 ```
 
-### Scenario 2: Authentication Failure
+### 线程安全
 
-```
-1. Request to profile with invalid key
-2. Receives 401 (unauthorized)
-3. Profile put on cooldown
-4. Switches to next available profile
-5. Logs warning about invalid key
-```
+LoadBalancer 使用 `sync.RWMutex` 保证线程安全：
+- 多个请求可以并发访问不同 provider
+- 状态更新时自动加锁
+- 统计信息读取时使用读锁
 
-### Scenario 3: All Profiles on Cooldown
+### 性能特点
 
-```
-1. All profiles hit rate limits
-2. All on cooldown
-3. GetNextProfile() returns error
-4. Caller can either wait or fail gracefully
-```
+- **内存占用**：每个 provider state ~1KB
+- **并发性能**：读操作无锁竞争
+- **切换延迟**：<1ms (内存操作)
 
-## Monitoring
+## 未来计划
 
-Check profile status anytime:
+- [ ] CLI 命令查看 provider 状态
+- [ ] 配置热重载
+- [ ] 自定义断路器参数
+- [ ] Provider 健康检查
+- [ ] 请求统计和图表
+- [ ] 自动调整 fallback 顺序（基于成功率）
 
-```go
-statuses := rotationMgr.GetStatus()
-for _, s := range statuses {
-    fmt.Printf("Profile: %s\n", s.Name)
-    fmt.Printf("  Available: %v\n", s.Available)
-    fmt.Printf("  Requests: %d\n", s.RequestCount)
-    if !s.Available {
-        fmt.Printf("  Cooldown Until: %v\n", s.CooldownUntil)
-        if s.LastError != nil {
-            fmt.Printf("  Last Error: %s\n", s.LastError.Message)
-        }
-    }
-}
-```
+## 参考
 
-## Troubleshooting
-
-**Problem**: All profiles on cooldown
-
-**Solution**:
-- Increase cooldown duration
-- Add more profiles
-- Check rate limits
-- Verify API keys are valid
-
-**Problem**: Same profile always selected
-
-**Solution**:
-- Enable rotation: `"enabled": true`
-- Verify multiple profiles configured
-- Check profile priorities
-
-**Problem**: Excessive API calls
-
-**Solution**:
-- Use `least_used` strategy
-- Monitor request counts
-- Implement request caching
+- [CUSTOM_PROVIDERS.md](./CUSTOM_PROVIDERS.md) - 如何添加自定义 provider
+- [CONFIG.md](./CONFIG.md) - 完整配置说明
+- [PTY.md](./PTY.md) - PTY 支持和后台进程管理
