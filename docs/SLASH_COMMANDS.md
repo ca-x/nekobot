@@ -37,6 +37,72 @@ Shows a welcome message explaining the bot's capabilities.
 
 Displays the bot's current status and which channel you're using.
 
+### /model
+**Description:** List or switch AI models
+**Usage:** `/model [provider]` or `/model list`
+
+Manage AI provider/model selection:
+- `/model` or `/model list` - Show all configured providers
+- `/model <name>` - Switch to a specific provider (not yet implemented)
+
+**Examples:**
+```
+/model              # List all available models
+/model list         # Same as above
+/model claude       # Switch to Claude provider
+```
+
+### /agent
+**Description:** Switch agent or show agent info
+**Usage:** `/agent [name]`
+
+Manage agent selection:
+- `/agent` or `/agent info` - Show current agent information
+- `/agent list` - List all available agents
+- `/agent <name>` - Switch to a specific agent (not yet implemented)
+
+**Examples:**
+```
+/agent              # Show current agent
+/agent list         # List all agents
+/agent codex        # Switch to Codex agent
+```
+
+### /gateway
+**Description:** Gateway management
+**Usage:** `/gateway <action>`
+**Admin Only:** Yes
+
+Manage the gateway service:
+- `/gateway` or `/gateway status` - Show gateway status and active channels
+- `/gateway restart` - Restart gateway (not yet implemented)
+- `/gateway reload` - Reload configuration (not yet implemented)
+
+**Examples:**
+```
+/gateway            # Show status
+/gateway status     # Show detailed status
+/gateway restart    # Restart gateway
+```
+
+### /skill
+**Description:** Execute or show skill information
+**Usage:** `/<skillname> [args]`
+
+Skills are dynamically registered as commands. Each loaded skill becomes a command:
+- `/actionbook` - Execute actionbook skill
+- `/github` - Execute github skill
+- `/obsidian` - Execute obsidian skill
+- etc.
+
+Currently shows skill information. Direct execution is not yet implemented.
+
+**Examples:**
+```
+/github             # Show github skill info
+/obsidian projects  # Execute obsidian skill with args
+```
+
 ## Channel Support
 
 ### Telegram
