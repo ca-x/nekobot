@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/skills"
@@ -75,6 +76,7 @@ func runOneShot() {
 	app := fx.New(
 		logger.Module,
 		config.Module,
+		commands.Module,
 		workspace.Module,
 		skills.Module,
 		agent.Module,

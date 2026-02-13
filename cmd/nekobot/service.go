@@ -15,6 +15,7 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channels"
+	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/heartbeat"
@@ -73,6 +74,7 @@ func (s *GatewayService) run() {
 		// Core modules
 		logger.Module,
 		config.Module,
+		commands.Module,
 		workspace.Module,
 		state.Module,
 		agent.Module,
@@ -280,6 +282,7 @@ func runGatewayForeground() {
 		// Core modules
 		logger.Module,
 		config.Module,
+		commands.Module,
 		workspace.Module,
 		state.Module,
 		agent.Module,

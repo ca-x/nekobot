@@ -8,7 +8,10 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channels/discord"
+	"nekobot/pkg/channels/slack"
 	"nekobot/pkg/channels/telegram"
+	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 )
@@ -45,11 +48,12 @@ func RegisterChannels(
 	log *logger.Logger,
 	messageBus bus.Bus, // Use interface, not pointer to interface
 	ag *agent.Agent,
+	cmdRegistry *commands.Registry,
 	cfg *config.Config,
 ) error {
 	// Register Telegram channel
 	if cfg.Channels.Telegram.Enabled {
-		tgChannel, err := telegram.New(log, messageBus, ag, &cfg.Channels.Telegram)
+		tgChannel, err := telegram.New(log, messageBus, ag, cmdRegistry, &cfg.Channels.Telegram)
 		if err != nil {
 			log.Warn("Failed to create Telegram channel, skipping", zap.Error(err))
 		} else {
@@ -59,13 +63,29 @@ func RegisterChannels(
 		}
 	}
 
-	// TODO: Register other channels (Discord, WhatsApp, etc.)
-	// if cfg.Channels.Discord.Enabled {
-	//     discordChannel, err := discord.New(log, messageBus, ag, &cfg.Channels.Discord)
-	//     if err == nil {
-	//         manager.Register(discordChannel)
-	//     }
-	// }
+	// Register Discord channel
+	if cfg.Channels.Discord.Enabled {
+		discordChannel, err := discord.NewChannel(log, cfg.Channels.Discord, messageBus)
+		if err != nil {
+			log.Warn("Failed to create Discord channel, skipping", zap.Error(err))
+		} else {
+			if err := manager.Register(discordChannel); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Register Slack channel
+	if cfg.Channels.Slack.Enabled {
+		slackChannel, err := slack.NewChannel(log, cfg.Channels.Slack, messageBus, cmdRegistry)
+		if err != nil {
+			log.Warn("Failed to create Slack channel, skipping", zap.Error(err))
+		} else {
+			if err := manager.Register(slackChannel); err != nil {
+				return err
+			}
+		}
+	}
 
 	return nil
 }

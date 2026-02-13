@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 )
@@ -23,6 +24,7 @@ type Channel struct {
 	log          *logger.Logger
 	config       config.SlackConfig
 	bus          bus.Bus
+	commands     *commands.Registry
 	api          *slack.Client
 	socketClient *socketmode.Client
 	botUserID    string
@@ -33,7 +35,7 @@ type Channel struct {
 }
 
 // NewChannel creates a new Slack channel.
-func NewChannel(log *logger.Logger, cfg config.SlackConfig, b bus.Bus) (*Channel, error) {
+func NewChannel(log *logger.Logger, cfg config.SlackConfig, b bus.Bus, cmdRegistry *commands.Registry) (*Channel, error) {
 	if cfg.BotToken == "" || cfg.AppToken == "" {
 		return nil, fmt.Errorf("slack bot_token and app_token are required")
 	}
@@ -51,6 +53,7 @@ func NewChannel(log *logger.Logger, cfg config.SlackConfig, b bus.Bus) (*Channel
 		log:          log,
 		config:       cfg,
 		bus:          b,
+		commands:     cmdRegistry,
 		api:          api,
 		socketClient: socketClient,
 		running:      false,
@@ -236,13 +239,67 @@ func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 		return
 	}
 
+	// Acknowledge the event
 	c.socketClient.Ack(*evt.Request)
 
 	c.log.Debug("Received slash command",
 		zap.String("command", cmd.Command),
 		zap.String("text", cmd.Text))
 
-	// TODO: Handle slash commands
+	// Remove leading / from command name
+	cmdName := strings.TrimPrefix(cmd.Command, "/")
+
+	// Get command from registry
+	command, exists := c.commands.Get(cmdName)
+	if !exists {
+		c.log.Debug("Unknown slash command", zap.String("command", cmdName))
+		return
+	}
+
+	// Create command request
+	req := commands.CommandRequest{
+		Channel:  "slack",
+		ChatID:   cmd.ChannelID,
+		UserID:   cmd.UserID,
+		Username: cmd.UserName,
+		Command:  cmdName,
+		Args:     cmd.Text,
+		Metadata: map[string]string{
+			"channel_name": cmd.ChannelName,
+			"team_id":      cmd.TeamID,
+			"team_domain":  cmd.TeamDomain,
+			"trigger_id":   cmd.TriggerID,
+		},
+	}
+
+	// Execute command
+	ctx, cancel := context.WithTimeout(c.ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := command.Handler(ctx, req)
+	if err != nil {
+		c.log.Error("Slash command execution failed",
+			zap.String("command", cmdName),
+			zap.Error(err))
+
+		// Send error as ephemeral message
+		c.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+			slack.MsgOptionText("❌ Command failed: "+err.Error(), false))
+		return
+	}
+
+	// Send response
+	opts := []slack.MsgOption{
+		slack.MsgOptionText(resp.Content, false),
+	}
+
+	if resp.Ephemeral {
+		// Send as ephemeral message (only visible to user)
+		c.api.PostEphemeral(cmd.ChannelID, cmd.UserID, opts...)
+	} else {
+		// Send as regular message
+		c.api.PostMessage(cmd.ChannelID, opts...)
+	}
 }
 
 // handleInteractive handles interactive components.

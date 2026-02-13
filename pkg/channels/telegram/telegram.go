@@ -12,16 +12,18 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 )
 
 // Channel implements the Telegram channel.
 type Channel struct {
-	log    *logger.Logger
-	bus    bus.Bus // Use interface, not pointer to interface
-	agent  *agent.Agent
-	config *config.TelegramConfig
+	log      *logger.Logger
+	bus      bus.Bus // Use interface, not pointer to interface
+	agent    *agent.Agent
+	commands *commands.Registry
+	config   *config.TelegramConfig
 
 	bot    *tgbotapi.BotAPI
 	ctx    context.Context
@@ -29,7 +31,7 @@ type Channel struct {
 }
 
 // New creates a new Telegram channel.
-func New(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cfg *config.TelegramConfig) (*Channel, error) {
+func New(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, cfg *config.TelegramConfig) (*Channel, error) {
 	if cfg.Token == "" {
 		return nil, fmt.Errorf("telegram token is required")
 	}
@@ -37,12 +39,13 @@ func New(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cfg *config.Te
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Channel{
-		log:    log,
-		bus:    messageBus,
-		agent:  ag,
-		config: cfg,
-		ctx:    ctx,
-		cancel: cancel,
+		log:      log,
+		bus:      messageBus,
+		agent:    ag,
+		commands: cmdRegistry,
+		config:   cfg,
+		ctx:      ctx,
+		cancel:   cancel,
 	}, nil
 }
 
@@ -176,6 +179,12 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 		zap.String("from", message.From.UserName),
 		zap.String("text", message.Text))
 
+	// Check if it's a command
+	if c.commands.IsCommand(message.Text) {
+		c.handleCommand(message)
+		return
+	}
+
 	// Create bus message
 	busMsg := &bus.Message{
 		ID:        fmt.Sprintf("telegram:%d", message.MessageID),
@@ -213,6 +222,58 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 
 	if _, err := c.bot.Send(reply); err != nil {
 		c.log.Error("Failed to send reply", zap.Error(err))
+	}
+}
+
+// handleCommand processes a command message.
+func (c *Channel) handleCommand(message *tgbotapi.Message) {
+	cmdName, args := c.commands.Parse(message.Text)
+
+	cmd, exists := c.commands.Get(cmdName)
+	if !exists {
+		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		return
+	}
+
+	c.log.Info("Executing command",
+		zap.String("command", cmdName),
+		zap.String("user", message.From.UserName))
+
+	// Create command request
+	req := commands.CommandRequest{
+		Channel:  c.ID(),
+		ChatID:   fmt.Sprintf("%d", message.Chat.ID),
+		UserID:   fmt.Sprintf("%d", message.From.ID),
+		Username: message.From.UserName,
+		Command:  cmdName,
+		Args:     args,
+		Metadata: map[string]string{
+			"message_id": fmt.Sprintf("%d", message.MessageID),
+			"chat_type":  message.Chat.Type,
+		},
+	}
+
+	// Execute command
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		c.log.Error("Command execution failed",
+			zap.String("command", cmdName),
+			zap.Error(err))
+
+		reply := tgbotapi.NewMessage(message.Chat.ID, "❌ Command failed: "+err.Error())
+		c.bot.Send(reply)
+		return
+	}
+
+	// Send response
+	reply := tgbotapi.NewMessage(message.Chat.ID, resp.Content)
+	reply.ParseMode = "Markdown"
+
+	if _, err := c.bot.Send(reply); err != nil {
+		c.log.Error("Failed to send command response", zap.Error(err))
 	}
 }
 
