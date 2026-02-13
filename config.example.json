@@ -51,21 +51,104 @@
           "priority": 2
         }
       }
+    },
+    "google": {
+      "api_key": "",
+      "api_base": "https://generativelanguage.googleapis.com"
     }
   },
   "gateway": {
     "host": "0.0.0.0",
     "port": 8080
   },
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "bot_token": "",
+      "allow_from": [],
+      "proxy": ""
+    },
+    "discord": {
+      "enabled": false,
+      "bot_token": "",
+      "allow_from": [],
+      "proxy": ""
+    },
+    "slack": {
+      "enabled": false,
+      "bot_token": "",
+      "app_token": "",
+      "allow_from": []
+    },
+    "whatsapp": {
+      "enabled": false,
+      "bridge_url": "ws://localhost:3000",
+      "allow_from": []
+    },
+    "feishu": {
+      "enabled": false,
+      "app_id": "",
+      "app_secret": "",
+      "encrypt_key": "",
+      "verification_token": "",
+      "allow_from": []
+    },
+    "dingtalk": {
+      "enabled": false,
+      "client_id": "",
+      "client_secret": "",
+      "allow_from": []
+    },
+    "qq": {
+      "enabled": false,
+      "app_id": "",
+      "app_secret": "",
+      "allow_from": []
+    },
+    "maixcam": {
+      "enabled": false,
+      "host": "0.0.0.0",
+      "port": 8765,
+      "allow_from": []
+    },
+    "serverchan": {
+      "enabled": false,
+      "bot_token": "",
+      "allow_from": []
+    },
+    "wework": {
+      "enabled": false,
+      "corp_id": "",
+      "agent_id": "",
+      "corp_secret": "",
+      "token": "",
+      "encoding_aes_key": "",
+      "allow_from": []
+    },
+    "googlechat": {
+      "enabled": false,
+      "project_id": "",
+      "credentials_file": "",
+      "allow_from": []
+    }
+  },
   "tools": {
     "exec": {
       "enabled": true,
-      "allow_commands": ["ls", "cat", "grep", "find"],
+      "allow_commands": ["ls", "cat", "grep", "find", "git"],
       "timeout": 30
     },
     "web_search": {
       "enabled": true,
       "brave_api_key": ""
+    },
+    "web_fetch": {
+      "enabled": true,
+      "timeout": 30
+    },
+    "file_operations": {
+      "enabled": true,
+      "max_file_size": 10485760
     }
   },
   "heartbeat": {
@@ -96,5 +179,9 @@
         "update_timeout": "5m"
       }
     }
+  },
+  "skills": {
+    "auto_reload": true,
+    "builtin_enabled": true
   }
 }
