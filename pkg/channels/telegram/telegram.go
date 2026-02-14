@@ -56,6 +56,9 @@ type Channel struct {
 	stopOnce sync.Once
 	ctx      context.Context
 	cancel   context.CancelFunc
+
+	settingsMu    sync.Mutex
+	settingsInput map[string]string
 }
 
 // New creates a new Telegram channel.
@@ -75,15 +78,16 @@ func New(
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Channel{
-		log:         log,
-		bus:         messageBus,
-		agent:       ag,
-		commands:    cmdRegistry,
-		config:      cfg,
-		transcriber: transcriber,
-		prefs:       prefsMgr,
-		ctx:         ctx,
-		cancel:      cancel,
+		log:           log,
+		bus:           messageBus,
+		agent:         ag,
+		commands:      cmdRegistry,
+		config:        cfg,
+		transcriber:   transcriber,
+		prefs:         prefsMgr,
+		ctx:           ctx,
+		cancel:        cancel,
+		settingsInput: map[string]string{},
 	}, nil
 }
 
@@ -223,6 +227,12 @@ func (c *Channel) handleUpdate(update tgbotapi.Update) {
 		return
 	}
 
+	if update.CallbackQuery != nil {
+		cb := *update.CallbackQuery
+		go c.handleCallbackQuery(&cb)
+		return
+	}
+
 	// Handle other update types as needed
 }
 
@@ -350,6 +360,10 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 		}
 	}
 	if content == "" {
+		return
+	}
+
+	if msgType == bus.MessageTypeText && c.consumePendingSettingsInput(message, content) {
 		return
 	}
 
@@ -485,6 +499,11 @@ func (c *Channel) downloadFile(fileID string) ([]byte, error) {
 func (c *Channel) handleCommand(message *tgbotapi.Message) {
 	cmdName, args := c.commands.Parse(message.Text)
 
+	if cmdName == "settings" && strings.TrimSpace(args) == "" {
+		c.sendSettingsMenu(message.Chat.ID, message.From.ID, message.MessageID, "")
+		return
+	}
+
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
@@ -525,6 +544,317 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 	}
 
 	c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, resp.Content)
+}
+
+func (c *Channel) handleCallbackQuery(cb *tgbotapi.CallbackQuery) {
+	if cb == nil {
+		return
+	}
+	if cb.Message == nil {
+		c.answerCallback(cb.ID, "ok", false)
+		return
+	}
+
+	if !strings.HasPrefix(cb.Data, "settings:") {
+		c.answerCallback(cb.ID, "ok", false)
+		return
+	}
+
+	chatID := cb.Message.Chat.ID
+	userID := cb.From.ID
+	messageID := cb.Message.MessageID
+	if !c.isUserAllowed(userID, chatID, cb.From.UserName) {
+		c.answerCallback(cb.ID, "你不在 allow_from 白名单中", true)
+		return
+	}
+
+	ctx := context.Background()
+	profile, _, _ := c.getProfile(ctx, userID)
+	lang := userprefs.NormalizeLanguage(profile.Language)
+
+	switch cb.Data {
+	case "settings:view", "settings:back":
+		c.clearSettingsInput(chatID, userID)
+		c.renderSettingsMenu(chatID, userID, messageID, "", lang)
+		c.answerCallback(cb.ID, c.settingsText(lang, "已打开设置", "Opened settings", "設定を開きました"), false)
+	case "settings:lang_menu":
+		text := c.settingsText(lang,
+			"请选择语言：",
+			"Choose your language:",
+			"言語を選択してください:",
+		)
+		c.editSettingsMessage(chatID, messageID, text, c.settingsLanguageKeyboard(lang))
+		c.answerCallback(cb.ID, "ok", false)
+	case "settings:lang:zh", "settings:lang:en", "settings:lang:ja":
+		langCode := strings.TrimPrefix(cb.Data, "settings:lang:")
+		profile.Language = userprefs.NormalizeLanguage(langCode)
+		if err := c.saveProfile(ctx, userID, profile); err != nil {
+			c.answerCallback(cb.ID, c.settingsText(lang, "保存失败", "Save failed", "保存に失敗しました"), true)
+			return
+		}
+		lang = profile.Language
+		notice := c.settingsText(lang,
+			"✅ 语言已更新",
+			"✅ Language updated",
+			"✅ 言語を更新しました",
+		)
+		c.renderSettingsMenu(chatID, userID, messageID, notice, lang)
+		c.answerCallback(cb.ID, notice, false)
+	case "settings:name":
+		c.setSettingsInput(chatID, userID, "name")
+		text := c.settingsText(lang,
+			"请直接发送你希望的称呼（发送 /cancel 取消）",
+			"Send your preferred display name now (send /cancel to cancel)",
+			"希望する呼び名を送ってください（/cancel でキャンセル）",
+		)
+		c.editSettingsMessage(chatID, messageID, text, c.settingsMainKeyboard(lang))
+		c.answerCallback(cb.ID, "ok", false)
+	case "settings:prefs":
+		c.setSettingsInput(chatID, userID, "prefs")
+		text := c.settingsText(lang,
+			"请直接发送你的偏好说明（发送 /cancel 取消）",
+			"Send your preference note now (send /cancel to cancel)",
+			"好みの説明を送ってください（/cancel でキャンセル）",
+		)
+		c.editSettingsMessage(chatID, messageID, text, c.settingsMainKeyboard(lang))
+		c.answerCallback(cb.ID, "ok", false)
+	case "settings:clear":
+		if err := c.clearProfile(ctx, userID); err != nil {
+			c.answerCallback(cb.ID, c.settingsText(lang, "清除失败", "Clear failed", "クリア失敗"), true)
+			return
+		}
+		c.clearSettingsInput(chatID, userID)
+		notice := c.settingsText(lang,
+			"✅ 已清除设置",
+			"✅ Settings cleared",
+			"✅ 設定をクリアしました",
+		)
+		c.renderSettingsMenu(chatID, userID, messageID, notice, lang)
+		c.answerCallback(cb.ID, notice, false)
+	case "settings:close":
+		c.clearSettingsInput(chatID, userID)
+		text := c.settingsText(lang,
+			"✅ 设置面板已关闭，输入 /settings 可再次打开。",
+			"✅ Settings closed. Type /settings to open again.",
+			"✅ 設定パネルを閉じました。/settings で再度開けます。",
+		)
+		c.editSettingsMessage(chatID, messageID, text, tgbotapi.NewInlineKeyboardMarkup())
+		c.answerCallback(cb.ID, "ok", false)
+	default:
+		c.answerCallback(cb.ID, "ok", false)
+	}
+}
+
+func (c *Channel) consumePendingSettingsInput(message *tgbotapi.Message, content string) bool {
+	mode, ok := c.getSettingsInput(message.Chat.ID, message.From.ID)
+	if !ok {
+		return false
+	}
+
+	if strings.HasPrefix(content, "/") {
+		if strings.EqualFold(strings.TrimSpace(content), "/cancel") {
+			c.clearSettingsInput(message.Chat.ID, message.From.ID)
+			c.sendSettingsMenu(message.Chat.ID, message.From.ID, message.MessageID, c.settingsText("zh", "已取消输入", "Input canceled", "入力をキャンセルしました"))
+			return true
+		}
+		return false
+	}
+
+	ctx := context.Background()
+	profile, _, _ := c.getProfile(ctx, message.From.ID)
+	lang := userprefs.NormalizeLanguage(profile.Language)
+
+	switch mode {
+	case "name":
+		profile.PreferredName = strings.TrimSpace(content)
+	case "prefs":
+		profile.Preferences = strings.TrimSpace(content)
+	default:
+		c.clearSettingsInput(message.Chat.ID, message.From.ID)
+		return false
+	}
+
+	if err := c.saveProfile(ctx, message.From.ID, profile); err != nil {
+		reply := tgbotapi.NewMessage(message.Chat.ID, c.settingsText(lang, "❌ 保存失败", "❌ Save failed", "❌ 保存失敗"))
+		reply.ReplyToMessageID = message.MessageID
+		_, _ = c.bot.Send(reply)
+		return true
+	}
+
+	c.clearSettingsInput(message.Chat.ID, message.From.ID)
+	notice := c.settingsText(lang,
+		"✅ 设置已更新",
+		"✅ Settings updated",
+		"✅ 設定を更新しました",
+	)
+	c.sendSettingsMenu(message.Chat.ID, message.From.ID, message.MessageID, notice)
+	return true
+}
+
+func (c *Channel) sendSettingsMenu(chatID, userID int64, replyTo int, notice string) {
+	ctx := context.Background()
+	profile, _, _ := c.getProfile(ctx, userID)
+	lang := userprefs.NormalizeLanguage(profile.Language)
+	text := c.settingsSummaryText(profile, notice, lang)
+	msg := tgbotapi.NewMessage(chatID, text)
+	if replyTo > 0 {
+		msg.ReplyToMessageID = replyTo
+	}
+	kb := c.settingsMainKeyboard(lang)
+	msg.ReplyMarkup = kb
+	if _, err := c.bot.Send(msg); err != nil {
+		c.log.Warn("Failed to send settings menu", zap.Error(err))
+	}
+}
+
+func (c *Channel) renderSettingsMenu(chatID, userID int64, messageID int, notice, lang string) {
+	ctx := context.Background()
+	profile, _, _ := c.getProfile(ctx, userID)
+	if lang == "" {
+		lang = userprefs.NormalizeLanguage(profile.Language)
+	}
+	text := c.settingsSummaryText(profile, notice, lang)
+	c.editSettingsMessage(chatID, messageID, text, c.settingsMainKeyboard(lang))
+}
+
+func (c *Channel) settingsSummaryText(profile userprefs.Profile, notice, lang string) string {
+	langCode := profile.Language
+	if langCode == "" {
+		langCode = "zh"
+	}
+	name := strings.TrimSpace(profile.PreferredName)
+	if name == "" {
+		name = c.settingsText(lang, "(未设置)", "(not set)", "(未設定)")
+	}
+	pref := strings.TrimSpace(profile.Preferences)
+	if pref == "" {
+		pref = c.settingsText(lang, "(未设置)", "(not set)", "(未設定)")
+	}
+
+	var sb strings.Builder
+	if strings.TrimSpace(notice) != "" {
+		sb.WriteString(notice)
+		sb.WriteString("\n\n")
+	}
+	sb.WriteString(c.settingsText(lang, "⚙️ 个人设置", "⚙️ Personal Settings", "⚙️ 個人設定"))
+	sb.WriteString("\n\n")
+	sb.WriteString(c.settingsText(lang, "语言", "Language", "言語"))
+	sb.WriteString(": ")
+	sb.WriteString(langCode)
+	sb.WriteString("\n")
+	sb.WriteString(c.settingsText(lang, "称呼", "Name", "呼び名"))
+	sb.WriteString(": ")
+	sb.WriteString(name)
+	sb.WriteString("\n")
+	sb.WriteString(c.settingsText(lang, "偏好", "Preferences", "好み"))
+	sb.WriteString(": ")
+	sb.WriteString(pref)
+	return sb.String()
+}
+
+func (c *Channel) settingsMainKeyboard(lang string) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "🌐 语言", "🌐 Language", "🌐 言語"), "settings:lang_menu"),
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "🔄 刷新", "🔄 Refresh", "🔄 更新"), "settings:view"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "📝 设置称呼", "📝 Set Name", "📝 呼び名設定"), "settings:name"),
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "💡 设置偏好", "💡 Set Preferences", "💡 好み設定"), "settings:prefs"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "🧹 清除", "🧹 Clear", "🧹 クリア"), "settings:clear"),
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "❌ 关闭", "❌ Close", "❌ 閉じる"), "settings:close"),
+		),
+	)
+}
+
+func (c *Channel) settingsLanguageKeyboard(lang string) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("中文", "settings:lang:zh"),
+			tgbotapi.NewInlineKeyboardButtonData("English", "settings:lang:en"),
+			tgbotapi.NewInlineKeyboardButtonData("日本語", "settings:lang:ja"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "⬅️ 返回", "⬅️ Back", "⬅️ 戻る"), "settings:back"),
+		),
+	)
+}
+
+func (c *Channel) editSettingsMessage(chatID int64, messageID int, text string, kb tgbotapi.InlineKeyboardMarkup) {
+	edit := tgbotapi.NewEditMessageText(chatID, messageID, text)
+	edit.ReplyMarkup = &kb
+	if _, err := c.bot.Send(edit); err != nil {
+		c.log.Warn("Failed to edit settings message", zap.Error(err))
+		msg := tgbotapi.NewMessage(chatID, text)
+		msg.ReplyMarkup = kb
+		_, _ = c.bot.Send(msg)
+	}
+}
+
+func (c *Channel) answerCallback(id, text string, alert bool) {
+	if c.bot == nil || strings.TrimSpace(id) == "" {
+		return
+	}
+	cb := tgbotapi.NewCallback(id, text)
+	cb.ShowAlert = alert
+	_, _ = c.bot.Request(cb)
+}
+
+func (c *Channel) settingsText(lang, zh, en, ja string) string {
+	switch userprefs.NormalizeLanguage(lang) {
+	case "en":
+		return en
+	case "ja":
+		return ja
+	default:
+		return zh
+	}
+}
+
+func (c *Channel) settingsKey(chatID, userID int64) string {
+	return fmt.Sprintf("%d:%d", chatID, userID)
+}
+
+func (c *Channel) setSettingsInput(chatID, userID int64, mode string) {
+	c.settingsMu.Lock()
+	defer c.settingsMu.Unlock()
+	c.settingsInput[c.settingsKey(chatID, userID)] = mode
+}
+
+func (c *Channel) getSettingsInput(chatID, userID int64) (string, bool) {
+	c.settingsMu.Lock()
+	defer c.settingsMu.Unlock()
+	mode, ok := c.settingsInput[c.settingsKey(chatID, userID)]
+	return mode, ok
+}
+
+func (c *Channel) clearSettingsInput(chatID, userID int64) {
+	c.settingsMu.Lock()
+	defer c.settingsMu.Unlock()
+	delete(c.settingsInput, c.settingsKey(chatID, userID))
+}
+
+func (c *Channel) getProfile(ctx context.Context, userID int64) (userprefs.Profile, bool, error) {
+	if c.prefs == nil {
+		return userprefs.Profile{}, false, nil
+	}
+	return c.prefs.Get(ctx, c.ID(), fmt.Sprintf("%d", userID))
+}
+
+func (c *Channel) saveProfile(ctx context.Context, userID int64, profile userprefs.Profile) error {
+	if c.prefs == nil {
+		return nil
+	}
+	return c.prefs.Save(ctx, c.ID(), fmt.Sprintf("%d", userID), profile)
+}
+
+func (c *Channel) clearProfile(ctx context.Context, userID int64) error {
+	if c.prefs == nil {
+		return nil
+	}
+	return c.prefs.Clear(ctx, c.ID(), fmt.Sprintf("%d", userID))
 }
 
 func (c *Channel) sendThinkingMessage(chatID int64, replyTo int, text string) int {
