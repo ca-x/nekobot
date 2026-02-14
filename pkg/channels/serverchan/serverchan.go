@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,9 +36,24 @@ type Update struct {
 
 // Message represents a message in an update.
 type Message struct {
-	MessageID int    `json:"message_id"`
-	ChatID    int    `json:"chat_id"`
-	Text      string `json:"text"`
+	MessageID int         `json:"message_id"`
+	ChatID    int64       `json:"chat_id,omitempty"` // legacy flat payload
+	Text      string      `json:"text"`
+	Chat      MessageChat `json:"chat,omitempty"`
+	From      MessageFrom `json:"from,omitempty"`
+	Date      int64       `json:"date,omitempty"`
+}
+
+type MessageChat struct {
+	ID   int64  `json:"id"`
+	Type string `json:"type,omitempty"`
+}
+
+type MessageFrom struct {
+	ID        int64  `json:"id"`
+	Username  string `json:"username,omitempty"`
+	FirstName string `json:"first_name,omitempty"`
+	LastName  string `json:"last_name,omitempty"`
 }
 
 // Response represents a ServerChan API response.
@@ -224,12 +241,40 @@ func (c *Channel) getUpdates() error {
 // processUpdate processes a single update.
 func (c *Channel) processUpdate(update Update) {
 	msg := update.Message
-	chatID := fmt.Sprintf("%d", msg.ChatID)
-	userID := chatID // In ServerChan, chat_id is the user's uid
+
+	chatIDNum := msg.Chat.ID
+	if chatIDNum == 0 {
+		chatIDNum = msg.ChatID
+	}
+	if chatIDNum == 0 {
+		c.log.Warn("Invalid ServerChan update: missing chat ID",
+			zap.Int("update_id", update.UpdateID),
+			zap.Int("message_id", msg.MessageID))
+		return
+	}
+
+	userIDNum := msg.From.ID
+	if userIDNum == 0 {
+		userIDNum = chatIDNum
+	}
+
+	chatID := fmt.Sprintf("%d", chatIDNum)
+	userID := fmt.Sprintf("%d", userIDNum)
+	username := strings.TrimSpace(msg.From.Username)
+	if username == "" {
+		username = strings.TrimSpace(strings.TrimSpace(msg.From.FirstName + " " + msg.From.LastName))
+	}
+	if username == "" {
+		username = "User" + userID
+	}
 
 	// Check authorization
-	if !c.isAllowed(userID) {
-		c.log.Warn("Unauthorized user", zap.String("user_id", userID))
+	if !c.isAllowed(userID, chatID) {
+		c.log.Warn("Unauthorized user",
+			zap.String("user_id", userID),
+			zap.String("chat_id", chatID),
+			zap.String("username", username))
+		_ = c.sendMessage(chatID, "❌ 你不在 allow_from 白名单中，暂时不能使用这个 agent。", false)
 		return
 	}
 
@@ -240,11 +285,12 @@ func (c *Channel) processUpdate(update Update) {
 
 	c.log.Info("ServerChan message received",
 		zap.String("user_id", userID),
-		zap.String("chat_id", chatID))
+		zap.String("chat_id", chatID),
+		zap.String("username", username))
 
 	// Check for slash commands
 	if c.commands.IsCommand(content) {
-		c.handleCommand(userID, chatID, content)
+		c.handleCommand(userID, username, chatID, content)
 		return
 	}
 
@@ -254,7 +300,7 @@ func (c *Channel) processUpdate(update Update) {
 		ChannelID: "serverchan",
 		SessionID: fmt.Sprintf("serverchan:%s", chatID),
 		UserID:    userID,
-		Username:  "User" + userID,
+		Username:  username,
 		Type:      bus.MessageTypeText,
 		Content:   content,
 		Timestamp: time.Now(),
@@ -267,7 +313,7 @@ func (c *Channel) processUpdate(update Update) {
 }
 
 // handleCommand processes a command message.
-func (c *Channel) handleCommand(userID, chatID, content string) {
+func (c *Channel) handleCommand(userID, username, chatID, content string) {
 	cmdName, args := c.commands.Parse(content)
 
 	cmd, exists := c.commands.Get(cmdName)
@@ -285,7 +331,7 @@ func (c *Channel) handleCommand(userID, chatID, content string) {
 		Channel:  "serverchan",
 		ChatID:   chatID,
 		UserID:   userID,
-		Username: "User" + userID,
+		Username: username,
 		Command:  cmdName,
 		Args:     args,
 	}
@@ -330,12 +376,16 @@ func (c *Channel) sendMessage(chatID, text string, silent bool) error {
 	if chatID == "" {
 		return fmt.Errorf("chat ID is empty")
 	}
+	chatIDNum, err := strconv.ParseInt(chatID, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid chat ID %q: %w", chatID, err)
+	}
 
 	url := fmt.Sprintf("%s/bot%s/sendMessage", baseURL, c.config.BotToken)
 
 	// Build request payload
 	payload := map[string]interface{}{
-		"chat_id":    chatID,
+		"chat_id":    chatIDNum,
 		"text":       text,
 		"parse_mode": "markdown",
 		"silent":     silent,
@@ -363,13 +413,13 @@ func (c *Channel) sendMessage(chatID, text string, silent bool) error {
 }
 
 // isAllowed checks if a user is allowed to use the bot.
-func (c *Channel) isAllowed(userID string) bool {
+func (c *Channel) isAllowed(userID, chatID string) bool {
 	if len(c.config.AllowFrom) == 0 {
 		return true
 	}
 
 	for _, allowed := range c.config.AllowFrom {
-		if allowed == userID || allowed == "*" {
+		if allowed == userID || allowed == chatID || allowed == "*" {
 			return true
 		}
 	}
