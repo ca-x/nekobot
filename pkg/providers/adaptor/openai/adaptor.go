@@ -41,9 +41,11 @@ func (a *Adaptor) Init(info *providers.RelayInfo) error {
 	}
 
 	// Setup HTTP client with proxy if provided
-	if info.Proxy != "" {
-		// TODO: Implement proxy support
+	client, err := providers.NewHTTPClientWithProxy(info.Proxy)
+	if err != nil {
+		return fmt.Errorf("setting up proxy: %w", err)
 	}
+	a.httpClient = client
 
 	return nil
 }

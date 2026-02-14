@@ -30,11 +30,14 @@ func NewMessageBus(
 	if cfg.Bus.Type != "" {
 		busConfig.Type = BusType(cfg.Bus.Type)
 	}
-	if cfg.Bus.RedisAddr != "" {
-		busConfig.RedisAddr = cfg.Bus.RedisAddr
-		busConfig.RedisPassword = cfg.Bus.RedisPassword
-		busConfig.RedisDB = cfg.Bus.RedisDB
-		busConfig.RedisPrefix = cfg.Bus.RedisPrefix
+	// Use shared Redis config with bus-specific prefix
+	if cfg.Redis.Addr != "" {
+		busConfig.RedisAddr = cfg.Redis.Addr
+		busConfig.RedisPassword = cfg.Redis.Password
+		busConfig.RedisDB = cfg.Redis.DB
+		if cfg.Bus.Prefix != "" {
+			busConfig.RedisPrefix = cfg.Bus.Prefix
+		}
 	}
 
 	// Default buffer size

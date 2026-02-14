@@ -36,11 +36,14 @@ func NewKVStore(
 	if cfg.State.FilePath != "" {
 		stateConfig.FilePath = cfg.State.FilePath
 	}
-	if cfg.State.RedisAddr != "" {
-		stateConfig.RedisAddr = cfg.State.RedisAddr
-		stateConfig.RedisPassword = cfg.State.RedisPassword
-		stateConfig.RedisDB = cfg.State.RedisDB
-		stateConfig.RedisPrefix = cfg.State.RedisPrefix
+	// Use shared Redis config with state-specific prefix
+	if cfg.Redis.Addr != "" {
+		stateConfig.RedisAddr = cfg.Redis.Addr
+		stateConfig.RedisPassword = cfg.Redis.Password
+		stateConfig.RedisDB = cfg.Redis.DB
+		if cfg.State.Prefix != "" {
+			stateConfig.RedisPrefix = cfg.State.Prefix
+		}
 	}
 
 	store, err := NewKV(log, stateConfig)

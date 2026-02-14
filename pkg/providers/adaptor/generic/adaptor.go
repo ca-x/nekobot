@@ -38,6 +38,13 @@ func (a *Adaptor) Init(info *providers.RelayInfo) error {
 		return fmt.Errorf("API base URL is required for generic provider")
 	}
 
+	// Setup HTTP client with proxy if provided
+	client, err := providers.NewHTTPClientWithProxy(info.Proxy)
+	if err != nil {
+		return fmt.Errorf("setting up proxy: %w", err)
+	}
+	a.httpClient = client
+
 	// API key is optional for some self-hosted services
 	return nil
 }

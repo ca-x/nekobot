@@ -13,14 +13,17 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channels"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
+	"nekobot/pkg/gateway"
 	"nekobot/pkg/heartbeat"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/state"
+	"nekobot/pkg/webui"
 	"nekobot/pkg/workspace"
 )
 
@@ -77,6 +80,7 @@ func (s *GatewayService) run() {
 		commands.Module,
 		workspace.Module,
 		state.Module,
+		approval.Module,
 		agent.Module,
 
 		// Gateway modules
@@ -84,6 +88,8 @@ func (s *GatewayService) run() {
 		channels.Module,
 		heartbeat.Module,
 		cron.Module,
+		gateway.Module,
+		webui.Module,
 
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, b bus.Bus, cm *channels.Manager) {
 			lc.Append(fx.Hook{
@@ -285,6 +291,7 @@ func runGatewayForeground() {
 		commands.Module,
 		workspace.Module,
 		state.Module,
+		approval.Module,
 		agent.Module,
 
 		// Gateway modules
@@ -292,6 +299,8 @@ func runGatewayForeground() {
 		channels.Module,
 		heartbeat.Module,
 		cron.Module,
+		gateway.Module,
+		webui.Module,
 
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, b bus.Bus, cm *channels.Manager, cfg *config.Config) {
 			lc.Append(fx.Hook{

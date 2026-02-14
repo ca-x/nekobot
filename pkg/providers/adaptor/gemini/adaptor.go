@@ -41,6 +41,13 @@ func (a *Adaptor) Init(info *providers.RelayInfo) error {
 		info.APIBase = "https://generativelanguage.googleapis.com/v1beta"
 	}
 
+	// Setup HTTP client with proxy if provided
+	client, err := providers.NewHTTPClientWithProxy(info.Proxy)
+	if err != nil {
+		return fmt.Errorf("setting up proxy: %w", err)
+	}
+	a.httpClient = client
+
 	return nil
 }
 

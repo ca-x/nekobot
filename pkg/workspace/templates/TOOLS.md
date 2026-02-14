@@ -11,9 +11,9 @@ Your agent has access to these tools for completing tasks.
 
 - **read_file** - Read contents of a file
 - **write_file** - Create or overwrite a file
+- **edit_file** - Edit specific parts of a file by string replacement
+- **append_file** - Append content to an existing file
 - **list_dir** - List directory contents
-- **edit_file** - Edit specific parts of a file (coming soon)
-- **append_file** - Append to an existing file (coming soon)
 
 ## Execution
 

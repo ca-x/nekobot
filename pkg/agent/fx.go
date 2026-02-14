@@ -5,6 +5,7 @@ import (
 
 	"go.uber.org/fx"
 	"go.uber.org/zap"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
@@ -24,6 +25,7 @@ func ProvideAgent(
 	log *logger.Logger,
 	skillsMgr *skills.Manager,
 	processMgr *process.Manager,
+	approvalMgr *approval.Manager,
 	lc fx.Lifecycle,
 ) (*Agent, error) {
 	// Get provider config
@@ -47,13 +49,15 @@ func ProvideAgent(
 		APIKey:       providerCfg.APIKey,
 		APIBase:      providerCfg.APIBase,
 		Model:        cfg.Agents.Defaults.Model,
+		Proxy:        providerCfg.Proxy,
+		Timeout:      providerCfg.GetTimeout(),
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	// Create agent with process manager
-	agent, err := New(cfg, log, client, processMgr)
+	agent, err := New(cfg, log, client, processMgr, approvalMgr)
 	if err != nil {
 		return nil, err
 	}
