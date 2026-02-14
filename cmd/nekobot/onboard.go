@@ -27,6 +27,12 @@ Run this once when setting up nekobot for the first time.`,
 	Run: runOnboard,
 }
 
+func onboardDefaultConfig(workspaceDir string) *config.Config {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = workspaceDir
+	return cfg
+}
+
 func init() {
 	rootCmd.AddCommand(onboardCmd)
 }
@@ -110,7 +116,7 @@ func runOnboard(cmd *cobra.Command, args []string) {
 		}
 
 		// Create default config
-		defaultConfig := config.DefaultConfig()
+		defaultConfig := onboardDefaultConfig(workspaceDir)
 		if err := config.SaveToFile(defaultConfig, configPath); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to save config: %v\n", err)
 			os.Exit(1)

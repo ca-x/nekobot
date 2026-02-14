@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -122,11 +124,23 @@ func (s *GatewayService) run() {
 
 // ServiceConfig returns the service configuration.
 func ServiceConfig() *service.Config {
+	args := []string{"gateway", "run"}
+	configFile := strings.TrimSpace(configPath)
+	if configFile == "" {
+		configFile = strings.TrimSpace(os.Getenv(config.ConfigPathEnv))
+	}
+	if configFile != "" {
+		if absPath, err := filepath.Abs(configFile); err == nil {
+			configFile = absPath
+		}
+		args = append([]string{"-c", configFile}, args...)
+	}
+
 	return &service.Config{
 		Name:        "nekobot-gateway",
 		DisplayName: "Nekobot Gateway",
 		Description: "Nekobot AI assistant gateway for multi-channel support",
-		Arguments:   []string{"gateway", "run"}, // Will call "nekobot gateway run" when service starts
+		Arguments:   args, // Will call "nekobot [-c config] gateway run" when service starts
 	}
 }
 

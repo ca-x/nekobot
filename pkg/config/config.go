@@ -8,6 +8,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -291,7 +292,7 @@ type DockerSandboxConfig struct {
 // DefaultConfig returns a new Config with default values.
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
-	workspace := homeDir + "/.nanobot/workspace"
+	workspace := filepath.Join(homeDir, ".nekobot", "workspace")
 
 	return &Config{
 		Logger: LoggerConfig{

@@ -26,6 +26,7 @@ func NewLoader() *Loader {
 
 	// Add default config paths
 	if home, err := os.UserHomeDir(); err == nil {
+		v.AddConfigPath(filepath.Join(home, ".nekobot"))
 		v.AddConfigPath(filepath.Join(home, ".nanobot"))
 	}
 	v.AddConfigPath(".")

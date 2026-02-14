@@ -21,3 +21,16 @@ func TestWorkspacePath_ExpandsHome(t *testing.T) {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
 }
+
+func TestDefaultConfig_UsesNekobotWorkspace(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg := DefaultConfig()
+
+	got := cfg.Agents.Defaults.Workspace
+	want := filepath.Join(home, ".nekobot", "workspace")
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
