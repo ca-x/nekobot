@@ -44,22 +44,23 @@ func helpHandler(registry *Registry) CommandHandler {
 	return func(ctx context.Context, req CommandRequest) (CommandResponse, error) {
 		// If a specific command is requested, show detailed help
 		if req.Args != "" {
-			cmdName := strings.TrimPrefix(req.Args, "/")
-			cmd, exists := registry.Get(cmdName)
-			if !exists {
-				return CommandResponse{
-					Content:     fmt.Sprintf("❌ Unknown command: /%s", cmdName),
-					ReplyInline: true,
-				}, nil
+			parts := strings.Fields(req.Args)
+			if len(parts) > 0 {
+				cmdName := strings.TrimPrefix(parts[0], "/")
+				if at := strings.Index(cmdName, "@"); at > 0 {
+					cmdName = cmdName[:at]
+				}
+				cmd, exists := registry.Get(cmdName)
+				if exists {
+					content := fmt.Sprintf("**/%s**\n\n%s\n\n**Usage:** %s",
+						cmd.Name, cmd.Description, cmd.Usage)
+
+					return CommandResponse{
+						Content:     content,
+						ReplyInline: true,
+					}, nil
+				}
 			}
-
-			content := fmt.Sprintf("**/%s**\n\n%s\n\n**Usage:** %s",
-				cmd.Name, cmd.Description, cmd.Usage)
-
-			return CommandResponse{
-				Content:     content,
-				ReplyInline: true,
-			}, nil
 		}
 
 		// Show all commands
