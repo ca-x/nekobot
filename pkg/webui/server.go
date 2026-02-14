@@ -8,18 +8,23 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/websocket"
 	echojwt "github.com/labstack/echo-jwt/v5"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 	"go.uber.org/zap"
 
+	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
+	"nekobot/pkg/channels"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/webui/frontend"
@@ -31,12 +36,14 @@ type Server struct {
 	httpServer *http.Server
 	config     *config.Config
 	logger     *logger.Logger
+	agent      *agent.Agent
 	approval   *approval.Manager
+	channels   *channels.Manager
 	port       int
 }
 
 // NewServer creates a new WebUI server.
-func NewServer(cfg *config.Config, log *logger.Logger, approvalMgr *approval.Manager) *Server {
+func NewServer(cfg *config.Config, log *logger.Logger, ag *agent.Agent, approvalMgr *approval.Manager, chanMgr *channels.Manager) *Server {
 	port := cfg.WebUI.Port
 	if port == 0 {
 		port = cfg.Gateway.Port + 1
@@ -45,7 +52,9 @@ func NewServer(cfg *config.Config, log *logger.Logger, approvalMgr *approval.Man
 	s := &Server{
 		config:   cfg,
 		logger:   log,
+		agent:    ag,
 		approval: approvalMgr,
+		channels: chanMgr,
 		port:     port,
 	}
 
@@ -68,6 +77,9 @@ func (s *Server) setup() {
 	e.GET("/api/auth/init-status", s.handleInitStatus)
 	e.POST("/api/auth/init", s.handleInitPassword)
 
+	// Chat WebSocket (auth handled inside via token query param)
+	e.GET("/api/chat/ws", s.handleChatWS)
+
 	// Protected API routes
 	api := e.Group("/api")
 	secret := s.getJWTSecret()
@@ -89,9 +101,6 @@ func (s *Server) setup() {
 	// Config routes
 	api.GET("/config", s.handleGetConfig)
 	api.PUT("/config", s.handleSaveConfig)
-
-	// Chat playground (WebSocket)
-	api.GET("/chat/ws", s.handleChatWS)
 
 	// Status
 	api.GET("/status", s.handleStatus)
@@ -312,11 +321,31 @@ func (s *Server) handleUpdateChannel(c *echo.Context) error {
 
 func (s *Server) handleTestChannel(c *echo.Context) error {
 	name := c.Param("name")
-	// TODO: implement channel connectivity test
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"channel": name,
-		"status":  "test not yet implemented",
-	})
+
+	ch, err := s.channels.GetChannel(name)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]interface{}{
+			"channel": name,
+			"status":  "not_found",
+			"error":   err.Error(),
+		})
+	}
+
+	result := map[string]interface{}{
+		"channel":   ch.Name(),
+		"id":        ch.ID(),
+		"enabled":   ch.IsEnabled(),
+		"reachable": false,
+	}
+
+	if !ch.IsEnabled() {
+		result["status"] = "disabled"
+		return c.JSON(http.StatusOK, result)
+	}
+
+	result["reachable"] = true
+	result["status"] = "ok"
+	return c.JSON(http.StatusOK, result)
 }
 
 // --- Config Handlers ---
@@ -352,11 +381,185 @@ func (s *Server) handleStatus(c *echo.Context) error {
 	})
 }
 
-// --- Chat WebSocket (placeholder) ---
+// --- Chat WebSocket Playground ---
+
+var wsUpgrader = websocket.Upgrader{
+	ReadBufferSize:  4096,
+	WriteBufferSize: 4096,
+	CheckOrigin:     func(r *http.Request) bool { return true },
+}
+
+// chatSession implements agent.SessionInterface for WebUI chat playground.
+type chatSession struct {
+	messages []agent.Message
+	mu       sync.RWMutex
+}
+
+func (cs *chatSession) GetMessages() []agent.Message {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.messages
+}
+
+func (cs *chatSession) AddMessage(msg agent.Message) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.messages = append(cs.messages, msg)
+}
+
+type chatWSMessage struct {
+	Type    string `json:"type"`    // "message", "ping", "clear"
+	Content string `json:"content"` // User message text
+	Model   string `json:"model"`   // Optional model override
+}
+
+type chatWSResponse struct {
+	Type      string `json:"type"`               // "message", "thinking", "error", "system", "pong"
+	Content   string `json:"content"`             // Response text
+	Thinking  string `json:"thinking,omitempty"`  // Model's thinking (if extended thinking enabled)
+	Timestamp int64  `json:"timestamp,omitempty"` // Unix timestamp
+}
 
 func (s *Server) handleChatWS(c *echo.Context) error {
-	// TODO: implement WebSocket chat playground
-	return c.JSON(http.StatusNotImplemented, map[string]string{"error": "chat WebSocket not yet implemented"})
+	// Authenticate via token query param (since WebSocket can't use Authorization header easily)
+	tokenStr := c.QueryParam("token")
+	if tokenStr == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
+	}
+
+	secret := s.getJWTSecret()
+	parsed, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || !parsed.Valid {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+	}
+
+	// Upgrade to WebSocket
+	conn, err := wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
+	if err != nil {
+		s.logger.Error("WebUI chat WS upgrade failed", zap.Error(err))
+		return nil
+	}
+	defer conn.Close()
+
+	sess := &chatSession{}
+
+	// Send welcome
+	welcome := chatWSResponse{
+		Type:      "system",
+		Content:   "Connected to chat playground",
+		Timestamp: time.Now().Unix(),
+	}
+	if data, err := json.Marshal(welcome); err == nil {
+		conn.WriteMessage(websocket.TextMessage, data)
+	}
+
+	// Read loop
+	conn.SetReadLimit(65536)
+	conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+		return nil
+	})
+
+	// Ping ticker
+	pingDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
+			case <-pingDone:
+				return
+			}
+		}
+	}()
+	defer close(pingDone)
+
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+				s.logger.Warn("WebUI chat WS read error", zap.Error(err))
+			}
+			return nil
+		}
+
+		var msg chatWSMessage
+		if err := json.Unmarshal(message, &msg); err != nil {
+			sendWSError(conn, "invalid message format")
+			continue
+		}
+
+		switch msg.Type {
+		case "ping":
+			resp := chatWSResponse{Type: "pong", Timestamp: time.Now().Unix()}
+			if data, err := json.Marshal(resp); err == nil {
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "clear":
+			sess = &chatSession{}
+			resp := chatWSResponse{Type: "system", Content: "Session cleared", Timestamp: time.Now().Unix()}
+			if data, err := json.Marshal(resp); err == nil {
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+		case "message":
+			if msg.Content == "" {
+				continue
+			}
+
+			// Add user message to session
+			sess.AddMessage(agent.Message{
+				Role:    "user",
+				Content: msg.Content,
+			})
+
+			// Process with agent
+			response, err := s.agent.Chat(context.Background(), sess, msg.Content)
+			if err != nil {
+				sendWSError(conn, fmt.Sprintf("agent error: %v", err))
+				continue
+			}
+
+			// Add assistant response to session
+			sess.AddMessage(agent.Message{
+				Role:    "assistant",
+				Content: response,
+			})
+
+			resp := chatWSResponse{
+				Type:      "message",
+				Content:   response,
+				Timestamp: time.Now().Unix(),
+			}
+			if data, err := json.Marshal(resp); err == nil {
+				conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+		}
+	}
+}
+
+func sendWSError(conn *websocket.Conn, errMsg string) {
+	resp := chatWSResponse{
+		Type:      "error",
+		Content:   errMsg,
+		Timestamp: time.Now().Unix(),
+	}
+	if data, err := json.Marshal(resp); err == nil {
+		conn.WriteMessage(websocket.TextMessage, data)
+	}
 }
 
 // --- Approval Handlers ---
