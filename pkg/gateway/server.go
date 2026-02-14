@@ -21,6 +21,7 @@ import (
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/version"
 )
 
 var upgrader = websocket.Upgrader{
@@ -367,7 +368,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	status := map[string]interface{}{
-		"version":     "0.11.0-alpha",
+		"version":     version.GetVersion(),
 		"connections": connCount,
 		"bus_metrics": s.bus.GetMetrics(),
 		"gateway": map[string]interface{}{

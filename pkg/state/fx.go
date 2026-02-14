@@ -23,9 +23,9 @@ func NewKVStore(
 ) (KV, error) {
 	// Determine state configuration
 	stateConfig := &Config{
-		Backend:  BackendFile, // Default to file backend
-		FilePath: filepath.Join(cfg.Agents.Defaults.Workspace, "state.json"),
-		AutoSave: true,
+		Backend:       BackendFile, // Default to file backend
+		FilePath:      filepath.Join(cfg.WorkspacePath(), "state.json"),
+		AutoSave:      true,
 		SaveIntervalS: 5,
 	}
 

@@ -1,0 +1,27 @@
+# VCS / CI
+.git
+.github
+
+# Local/dev files
+.gitignore
+CODEX_TASKS.md
+1ms-helper
+nekobot
+~
+
+# Local configs with secrets
+config.json
+config/deploy.json
+config/telegram-test.json
+
+# Build artifacts
+bin
+dist
+*.log
+*.out
+coverage.out
+
+# Docs and misc not needed for image build
+docs
+notes.md
+task_plan.md

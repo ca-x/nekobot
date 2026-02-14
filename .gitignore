@@ -1,0 +1,32 @@
+# Binaries / build output
+/nekobot
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.out
+
+# Go work files
+go.work
+go.work.sum
+
+# Local runtime / temp
+/.tmp/
+/tmp/
+*.log
+
+# Local config with secrets
+/config.json
+/config/deploy.json
+/config/telegram-test.json
+
+# Local task / scratch files
+/CODEX_TASKS.md
+/1ms-helper
+/~/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

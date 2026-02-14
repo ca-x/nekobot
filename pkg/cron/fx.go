@@ -22,7 +22,7 @@ func NewManager(
 	ag *agent.Agent,
 	cfg *config.Config,
 ) *Manager {
-	manager := New(log, ag, cfg.Agents.Defaults.Workspace)
+	manager := New(log, ag, cfg.WorkspacePath())
 
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {

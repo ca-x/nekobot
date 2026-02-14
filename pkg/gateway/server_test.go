@@ -10,6 +10,7 @@ import (
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/version"
 )
 
 func newTestServer(t *testing.T) *Server {
@@ -68,8 +69,8 @@ func TestStatusEndpoint(t *testing.T) {
 	var body map[string]interface{}
 	json.NewDecoder(rec.Body).Decode(&body)
 
-	if body["version"] != "0.11.0-alpha" {
-		t.Fatalf("expected version 0.11.0-alpha, got %v", body["version"])
+	if body["version"] != version.GetVersion() {
+		t.Fatalf("expected version %s, got %v", version.GetVersion(), body["version"])
 	}
 	if body["connections"] != float64(0) {
 		t.Fatalf("expected 0 connections, got %v", body["connections"])

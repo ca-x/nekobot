@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"nekobot/pkg/logger"
+	"nekobot/pkg/version"
 )
 
 //go:embed templates/*.md
@@ -163,15 +164,15 @@ func (m *Manager) getTemplateVars() map[string]string {
 	now := time.Now()
 
 	return map[string]string{
-		"Date":       now.Format("2006-01-02"),
-		"DayOfWeek":  now.Format("Monday"),
-		"AgentID":    "nekobot",
-		"AgentName":  "Nekobot",
-		"Version":    "0.10.0-alpha",
-		"Workspace":  m.workspaceDir,
-		"Timezone":   now.Format("MST"),
-		"Model":      "claude-3-5-sonnet-20241022", // Default, will be from config
-		"Provider":   "anthropic",                   // Default, will be from config
+		"Date":      now.Format("2006-01-02"),
+		"DayOfWeek": now.Format("Monday"),
+		"AgentID":   "nekobot",
+		"AgentName": "Nekobot",
+		"Version":   version.GetVersion(),
+		"Workspace": m.workspaceDir,
+		"Timezone":  now.Format("MST"),
+		"Model":     "claude-3-5-sonnet-20241022", // Default, will be from config
+		"Provider":  "anthropic",                  // Default, will be from config
 	}
 }
 

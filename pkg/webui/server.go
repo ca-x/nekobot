@@ -34,6 +34,7 @@ import (
 	"nekobot/pkg/logger"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/userprefs"
+	"nekobot/pkg/version"
 	"nekobot/pkg/webui/frontend"
 )
 
@@ -704,7 +705,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 
 func (s *Server) handleStatus(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"version":        "0.11.0-alpha",
+		"version":        version.GetVersion(),
 		"uptime":         time.Since(time.Now()).String(), // placeholder
 		"provider_count": len(s.config.Providers),
 		"gateway": map[string]interface{}{

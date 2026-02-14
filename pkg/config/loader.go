@@ -14,6 +14,8 @@ type Loader struct {
 	viper *viper.Viper
 }
 
+const ConfigPathEnv = "NEKOBOT_CONFIG_FILE"
+
 // NewLoader creates a new configuration loader.
 func NewLoader() *Loader {
 	v := viper.New()
@@ -43,6 +45,11 @@ func NewLoader() *Loader {
 func (l *Loader) Load(configPath string) (*Config, error) {
 	// Start with default config
 	cfg := DefaultConfig()
+
+	// Allow global override from environment.
+	if strings.TrimSpace(configPath) == "" {
+		configPath = strings.TrimSpace(os.Getenv(ConfigPathEnv))
+	}
 
 	// If specific path is provided, use it
 	if configPath != "" {

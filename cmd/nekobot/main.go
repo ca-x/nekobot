@@ -27,6 +27,7 @@ import (
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/tools"
+	"nekobot/pkg/version"
 	"nekobot/pkg/workspace"
 )
 
@@ -46,6 +47,18 @@ var rootCmd = &cobra.Command{
 	Short: "nekobot - A lightweight AI assistant",
 	Long: `nekobot is a lightweight, extensible AI assistant that can help you with
 various tasks including file operations, command execution, and more.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		path := strings.TrimSpace(configPath)
+		if path == "" {
+			return os.Unsetenv(config.ConfigPathEnv)
+		}
+
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("resolve config path: %w", err)
+		}
+		return os.Setenv(config.ConfigPathEnv, abs)
+	},
 }
 
 var agentCmd = &cobra.Command{
@@ -72,8 +85,10 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("nekobot v0.10.0-alpha")
-		fmt.Println("Phase 10: QMD Integration (Complete)")
+		fmt.Println(version.GetFullVersion())
+		fmt.Printf("version: %s\n", version.GetVersion())
+		fmt.Printf("commit: %s\n", version.GitCommit)
+		fmt.Printf("built: %s\n", version.BuildTime)
 	},
 }
 
