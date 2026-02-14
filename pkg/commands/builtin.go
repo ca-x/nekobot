@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -68,6 +69,25 @@ func helpHandler(registry *Registry) CommandHandler {
 				Content:     "No commands available.",
 				ReplyInline: true,
 			}, nil
+		}
+
+		sort.Slice(cmds, func(i, j int) bool {
+			return cmds[i].Name < cmds[j].Name
+		})
+
+		// Limited-interaction channels prefer plain slash list.
+		if strings.EqualFold(strings.TrimSpace(req.Channel), "serverchan") {
+			var sb strings.Builder
+			sb.WriteString("可用命令：\n\n")
+			for _, cmd := range cmds {
+				desc := strings.TrimSpace(cmd.Description)
+				if desc == "" {
+					desc = "Command"
+				}
+				sb.WriteString(fmt.Sprintf("/%s - %s\n", cmd.Name, desc))
+			}
+			sb.WriteString("\n提示：普通文本会进入 AI 对话。")
+			return CommandResponse{Content: sb.String(), ReplyInline: true}, nil
 		}
 
 		var sb strings.Builder

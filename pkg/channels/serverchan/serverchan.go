@@ -15,6 +15,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
@@ -66,6 +67,7 @@ type Response struct {
 type Channel struct {
 	log      *logger.Logger
 	config   config.ServerChanConfig
+	agent    *agent.Agent
 	bus      bus.Bus
 	commands *commands.Registry
 
@@ -78,10 +80,28 @@ type Channel struct {
 	lastUpdateID int
 }
 
+type simpleSession struct {
+	messages []agent.Message
+	mu       sync.RWMutex
+}
+
+func (s *simpleSession) GetMessages() []agent.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]agent.Message(nil), s.messages...)
+}
+
+func (s *simpleSession) AddMessage(msg agent.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messages = append(s.messages, msg)
+}
+
 // NewChannel creates a new ServerChan channel.
 func NewChannel(
 	log *logger.Logger,
 	cfg config.ServerChanConfig,
+	ag *agent.Agent,
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
@@ -92,6 +112,7 @@ func NewChannel(
 	return &Channel{
 		log:      log,
 		config:   cfg,
+		agent:    ag,
 		bus:      b,
 		commands: cmdRegistry,
 		client: &http.Client{
@@ -294,21 +315,26 @@ func (c *Channel) processUpdate(update Update) {
 		return
 	}
 
-	// Create bus message
-	busMsg := &bus.Message{
-		ID:        fmt.Sprintf("serverchan:%d", msg.MessageID),
-		ChannelID: "serverchan",
-		SessionID: fmt.Sprintf("serverchan:%s", chatID),
-		UserID:    userID,
-		Username:  username,
-		Type:      bus.MessageTypeText,
-		Content:   content,
-		Timestamp: time.Now(),
+	if c.agent == nil {
+		_ = c.sendMessage(chatID, "❌ Agent 不可用（未初始化）", false)
+		return
 	}
 
-	// Send to bus
-	if err := c.bus.SendInbound(busMsg); err != nil {
-		c.log.Error("Failed to send inbound message", zap.Error(err))
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	sess := &simpleSession{messages: make([]agent.Message, 0, 8)}
+	reply, err := c.agent.Chat(ctx, sess, content)
+	if err != nil {
+		c.log.Error("ServerChan agent chat failed", zap.Error(err))
+		_ = c.sendMessage(chatID, "❌ 抱歉，处理消息时出现错误。", false)
+		return
+	}
+	if strings.TrimSpace(reply) == "" {
+		reply = "（无输出）"
+	}
+	if err := c.sendMessage(chatID, reply, false); err != nil {
+		c.log.Error("Failed to send ServerChan agent reply", zap.Error(err))
 	}
 }
 

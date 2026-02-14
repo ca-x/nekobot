@@ -59,7 +59,7 @@ func BuildChannel(
 	case "wework":
 		return wework.NewChannel(log, cfg.Channels.WeWork, messageBus, cmdRegistry)
 	case "serverchan":
-		return serverchan.NewChannel(log, cfg.Channels.ServerChan, messageBus, cmdRegistry)
+		return serverchan.NewChannel(log, cfg.Channels.ServerChan, ag, messageBus, cmdRegistry)
 	case "googlechat":
 		return googlechat.NewChannel(log, cfg.Channels.GoogleChat, messageBus, cmdRegistry)
 	case "maixcam":

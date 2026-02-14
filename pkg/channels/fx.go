@@ -162,7 +162,7 @@ func RegisterChannels(
 
 	// Register ServerChan channel
 	if cfg.Channels.ServerChan.Enabled {
-		serverchanChannel, err := serverchan.NewChannel(log, cfg.Channels.ServerChan, messageBus, cmdRegistry)
+		serverchanChannel, err := serverchan.NewChannel(log, cfg.Channels.ServerChan, ag, messageBus, cmdRegistry)
 		if err != nil {
 			log.Warn("Failed to create ServerChan channel, skipping", zap.Error(err))
 		} else {
