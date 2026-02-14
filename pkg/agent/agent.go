@@ -3,8 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"go.uber.org/zap"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
@@ -21,11 +23,12 @@ type SessionInterface interface {
 
 // Agent represents an AI agent that can interact with users and use tools.
 type Agent struct {
-	config  *config.Config
-	logger  *logger.Logger
-	client  *providers.Client
-	tools   *tools.Registry
-	context *ContextBuilder
+	config   *config.Config
+	logger   *logger.Logger
+	client   *providers.Client
+	tools    *tools.Registry
+	context  *ContextBuilder
+	approval *approval.Manager
 
 	maxIterations int
 }
@@ -41,7 +44,7 @@ type Config struct {
 }
 
 // New creates a new agent with the given configuration.
-func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Client, processMgr *process.Manager) (*Agent, error) {
+func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Client, processMgr *process.Manager, approvalMgr *approval.Manager) (*Agent, error) {
 	workspace := cfg.WorkspacePath()
 
 	// Create tool registry
@@ -50,8 +53,20 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 	// Register built-in tools
 	toolRegistry.MustRegister(tools.NewReadFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
 	toolRegistry.MustRegister(tools.NewWriteFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+	toolRegistry.MustRegister(tools.NewEditFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
+	toolRegistry.MustRegister(tools.NewAppendFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
 	toolRegistry.MustRegister(tools.NewListDirTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
-	toolRegistry.MustRegister(tools.NewExecTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace, 0, processMgr))
+	toolRegistry.MustRegister(tools.NewExecTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace, tools.ExecConfig{
+		Timeout: time.Duration(cfg.Tools.Exec.TimeoutSeconds) * time.Second,
+		Sandbox: tools.DockerSandboxConfig{
+			Enabled:     cfg.Tools.Exec.Sandbox.Enabled,
+			Image:       cfg.Tools.Exec.Sandbox.Image,
+			NetworkMode: cfg.Tools.Exec.Sandbox.NetworkMode,
+			Mounts:      cfg.Tools.Exec.Sandbox.Mounts,
+			Timeout:     time.Duration(cfg.Tools.Exec.Sandbox.Timeout) * time.Second,
+			AutoCleanup: cfg.Tools.Exec.Sandbox.AutoCleanup,
+		},
+	}, processMgr))
 
 	// Register process tool
 	toolRegistry.MustRegister(tools.NewProcessTool(processMgr))
@@ -89,6 +104,7 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 		client:        providerClient,
 		tools:         toolRegistry,
 		context:       contextBuilder,
+		approval:      approvalMgr,
 		maxIterations: cfg.Agents.Defaults.MaxToolIterations,
 	}
 
@@ -191,12 +207,28 @@ func (a *Agent) Chat(ctx context.Context, sess SessionInterface, userMessage str
 	return "", fmt.Errorf("max iterations (%d) reached without final response", a.maxIterations)
 }
 
-// executeToolCall executes a single tool call.
+// executeToolCall executes a single tool call with approval checking.
 func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedToolCall) (string, error) {
 	a.logger.Info("Executing tool",
 		zap.String("tool", toolCall.Name),
 		zap.Any("args", toolCall.Arguments),
 	)
+
+	// Check approval
+	if a.approval != nil {
+		decision, _, err := a.approval.CheckApproval(toolCall.Name, toolCall.Arguments, "")
+		if err != nil {
+			return "", fmt.Errorf("approval check failed: %w", err)
+		}
+		switch decision {
+		case approval.Denied:
+			return "Tool call denied by approval policy", nil
+		case approval.Pending:
+			return "Tool call pending approval", nil
+		case approval.Approved:
+			// continue
+		}
+	}
 
 	result, err := a.tools.Execute(ctx, toolCall.Name, toolCall.Arguments)
 	if err != nil {

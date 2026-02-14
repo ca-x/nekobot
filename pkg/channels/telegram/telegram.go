@@ -4,6 +4,8 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/transcription"
 )
 
 // simpleSession is a simple session implementation for telegram messages.
@@ -38,11 +41,12 @@ func (s *simpleSession) AddMessage(msg agent.Message) {
 
 // Channel implements the Telegram channel.
 type Channel struct {
-	log      *logger.Logger
-	bus      bus.Bus // Use interface, not pointer to interface
-	agent    *agent.Agent
-	commands *commands.Registry
-	config   *config.TelegramConfig
+	log         *logger.Logger
+	bus         bus.Bus // Use interface, not pointer to interface
+	agent       *agent.Agent
+	commands    *commands.Registry
+	config      *config.TelegramConfig
+	transcriber transcription.Transcriber
 
 	bot    *tgbotapi.BotAPI
 	ctx    context.Context
@@ -50,7 +54,14 @@ type Channel struct {
 }
 
 // New creates a new Telegram channel.
-func New(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, cfg *config.TelegramConfig) (*Channel, error) {
+func New(
+	log *logger.Logger,
+	messageBus bus.Bus,
+	ag *agent.Agent,
+	cmdRegistry *commands.Registry,
+	cfg *config.TelegramConfig,
+	transcriber transcription.Transcriber,
+) (*Channel, error) {
 	if cfg.Token == "" {
 		return nil, fmt.Errorf("telegram token is required")
 	}
@@ -58,13 +69,14 @@ func New(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *c
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Channel{
-		log:      log,
-		bus:      messageBus,
-		agent:    ag,
-		commands: cmdRegistry,
-		config:   cfg,
-		ctx:      ctx,
-		cancel:   cancel,
+		log:         log,
+		bus:         messageBus,
+		agent:       ag,
+		commands:    cmdRegistry,
+		config:      cfg,
+		transcriber: transcriber,
+		ctx:         ctx,
+		cancel:      cancel,
 	}, nil
 }
 
@@ -188,19 +200,37 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 		return
 	}
 
-	// Ignore non-text messages for now
-	if message.Text == "" {
+	content := strings.TrimSpace(message.Text)
+	msgType := bus.MessageTypeText
+
+	// Support voice/audio messages via Whisper transcription.
+	if content == "" && c.transcriber != nil {
+		transcribed, ok := c.tryTranscribeAudio(message)
+		if ok {
+			content = transcribed
+			msgType = bus.MessageTypeAudio
+		}
+	}
+	if content == "" {
 		return
 	}
 
 	c.log.Info("Received Telegram message",
 		zap.Int64("chat_id", message.Chat.ID),
 		zap.String("from", message.From.UserName),
-		zap.String("text", message.Text))
+		zap.String("text", content))
 
 	// Check if it's a command
-	if c.commands.IsCommand(message.Text) {
-		c.handleCommand(message)
+	if c.commands.IsCommand(content) {
+		if msgType == bus.MessageTypeText {
+			c.handleCommand(message)
+			return
+		}
+
+		// For transcribed voice command text, run command path with synthetic message text.
+		clone := *message
+		clone.Text = content
+		c.handleCommand(&clone)
 		return
 	}
 
@@ -211,8 +241,8 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 		SessionID: fmt.Sprintf("telegram:%d", message.Chat.ID),
 		UserID:    fmt.Sprintf("%d", message.From.ID),
 		Username:  message.From.UserName,
-		Type:      bus.MessageTypeText,
-		Content:   message.Text,
+		Type:      msgType,
+		Content:   content,
 		Timestamp: time.Unix(int64(message.Date), 0),
 	}
 
@@ -230,7 +260,7 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 	}
 
 	// Process with agent
-	response, err := c.agent.Chat(ctx, sess, message.Text)
+	response, err := c.agent.Chat(ctx, sess, content)
 	if err != nil {
 		c.log.Error("Agent chat failed", zap.Error(err))
 
@@ -247,6 +277,74 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 	if _, err := c.bot.Send(reply); err != nil {
 		c.log.Error("Failed to send reply", zap.Error(err))
 	}
+}
+
+func (c *Channel) tryTranscribeAudio(message *tgbotapi.Message) (string, bool) {
+	fileID := ""
+	filename := "voice.ogg"
+	switch {
+	case message.Voice != nil:
+		fileID = message.Voice.FileID
+		filename = "voice.ogg"
+	case message.Audio != nil:
+		fileID = message.Audio.FileID
+		if message.Audio.FileName != "" {
+			filename = message.Audio.FileName
+		}
+	case message.Document != nil:
+		fileID = message.Document.FileID
+		if message.Document.FileName != "" {
+			filename = message.Document.FileName
+		}
+	default:
+		return "", false
+	}
+	if fileID == "" {
+		return "", false
+	}
+
+	audioBytes, err := c.downloadFile(fileID)
+	if err != nil {
+		c.log.Warn("Failed to download Telegram audio for transcription", zap.Error(err))
+		return "", false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	text, err := c.transcriber.Transcribe(ctx, audioBytes, filename)
+	if err != nil {
+		c.log.Warn("Telegram audio transcription failed", zap.Error(err))
+		return "", false
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", false
+	}
+	return text, true
+}
+
+func (c *Channel) downloadFile(fileID string) ([]byte, error) {
+	url, err := c.bot.GetFileDirectURL(fileID)
+	if err != nil {
+		return nil, fmt.Errorf("resolving file URL: %w", err)
+	}
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("downloading file: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("download failed with status %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+	if err != nil {
+		return nil, fmt.Errorf("reading file body: %w", err)
+	}
+	return data, nil
 }
 
 // handleCommand processes a command message.

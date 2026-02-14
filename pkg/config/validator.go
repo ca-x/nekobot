@@ -68,6 +68,9 @@ func (v *Validator) Validate(cfg *Config) error {
 	// Validate tools configuration
 	v.validateTools(&cfg.Tools)
 
+	// Validate transcription configuration
+	v.validateTranscription(&cfg.Transcription)
+
 	// Validate heartbeat configuration
 	v.validateHeartbeat(&cfg.Heartbeat)
 
@@ -211,6 +214,21 @@ func (v *Validator) validateChannels(cfg *ChannelsConfig) {
 			v.addError("channels.slack.app_token", "app_token is required when Slack is enabled")
 		}
 	}
+
+	// Validate Teams
+	if cfg.Teams.Enabled {
+		if cfg.Teams.AppID == "" {
+			v.addError("channels.teams.app_id", "app_id is required when Teams is enabled")
+		}
+		if cfg.Teams.AppPassword == "" {
+			v.addError("channels.teams.app_password", "app_password is required when Teams is enabled")
+		}
+	}
+
+	// Validate Infoflow
+	if cfg.Infoflow.Enabled && cfg.Infoflow.WebhookURL == "" {
+		v.addError("channels.infoflow.webhook_url", "webhook_url is required when Infoflow is enabled")
+	}
 }
 
 // validateGateway validates gateway configuration.
@@ -228,6 +246,30 @@ func (v *Validator) validateGateway(cfg *GatewayConfig) {
 func (v *Validator) validateTools(cfg *ToolsConfig) {
 	if cfg.Web.Search.MaxResults < 1 {
 		v.addError("tools.web.search.max_results", "max_results must be at least 1")
+	}
+	if cfg.Exec.TimeoutSeconds < 1 {
+		v.addError("tools.exec.timeout_seconds", "timeout_seconds must be at least 1")
+	}
+	if cfg.Exec.Sandbox.Enabled {
+		if cfg.Exec.Sandbox.Image == "" {
+			v.addError("tools.exec.sandbox.image", "image is required when sandbox is enabled")
+		}
+		if cfg.Exec.Sandbox.Timeout < 1 {
+			v.addError("tools.exec.sandbox.timeout", "timeout must be at least 1")
+		}
+	}
+}
+
+// validateTranscription validates transcription configuration.
+func (v *Validator) validateTranscription(cfg *TranscriptionConfig) {
+	if !cfg.Enabled {
+		return
+	}
+	if cfg.Model == "" {
+		v.addError("transcription.model", "model is required when transcription is enabled")
+	}
+	if cfg.TimeoutSeconds < 1 {
+		v.addError("transcription.timeout_seconds", "timeout_seconds must be at least 1")
 	}
 }
 

@@ -4,6 +4,10 @@ package discord
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -13,20 +17,29 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/transcription"
 )
 
 // Channel implements Discord channel.
 type Channel struct {
-	log      *logger.Logger
-	config   config.DiscordConfig
-	bus      bus.Bus
-	commands *commands.Registry
-	session  *discordgo.Session
-	running  bool
+	log         *logger.Logger
+	config      config.DiscordConfig
+	bus         bus.Bus
+	commands    *commands.Registry
+	transcriber transcription.Transcriber
+	httpClient  *http.Client
+	session     *discordgo.Session
+	running     bool
 }
 
 // NewChannel creates a new Discord channel.
-func NewChannel(log *logger.Logger, cfg config.DiscordConfig, b bus.Bus, cmdRegistry *commands.Registry) (*Channel, error) {
+func NewChannel(
+	log *logger.Logger,
+	cfg config.DiscordConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	transcriber transcription.Transcriber,
+) (*Channel, error) {
 	// Create Discord session
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
@@ -34,12 +47,16 @@ func NewChannel(log *logger.Logger, cfg config.DiscordConfig, b bus.Bus, cmdRegi
 	}
 
 	return &Channel{
-		log:      log,
-		config:   cfg,
-		bus:      b,
-		commands: cmdRegistry,
-		session:  session,
-		running:  false,
+		log:         log,
+		config:      cfg,
+		bus:         b,
+		commands:    cmdRegistry,
+		transcriber: transcriber,
+		httpClient: &http.Client{
+			Timeout: 90 * time.Second,
+		},
+		session: session,
+		running: false,
 	}, nil
 }
 
@@ -125,9 +142,23 @@ func (c *Channel) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate
 		return
 	}
 
+	content := strings.TrimSpace(m.Content)
+	msgType := bus.MessageTypeText
+
 	// Check if it's a command
-	if c.commands.IsCommand(m.Content) {
+	if c.commands.IsCommand(content) {
 		c.handleCommand(s, m)
+		return
+	}
+
+	if content == "" && c.transcriber != nil {
+		transcribed, ok := c.transcribeAttachmentAudio(m.Attachments)
+		if ok {
+			content = transcribed
+			msgType = bus.MessageTypeAudio
+		}
+	}
+	if content == "" {
 		return
 	}
 
@@ -138,8 +169,8 @@ func (c *Channel) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate
 		SessionID: fmt.Sprintf("discord:%s", m.ChannelID),
 		UserID:    m.Author.ID,
 		Username:  m.Author.Username,
-		Type:      bus.MessageTypeText,
-		Content:   m.Content,
+		Type:      msgType,
+		Content:   content,
 		Timestamp: time.Now(),
 	}
 
@@ -240,4 +271,51 @@ func (c *Channel) isAllowed(userID string) bool {
 	}
 
 	return false
+}
+
+func (c *Channel) transcribeAttachmentAudio(attachments []*discordgo.MessageAttachment) (string, bool) {
+	for _, att := range attachments {
+		if att == nil || att.URL == "" {
+			continue
+		}
+		contentType := strings.ToLower(att.ContentType)
+		ext := strings.ToLower(filepath.Ext(att.Filename))
+		if !strings.HasPrefix(contentType, "audio/") &&
+			ext != ".ogg" && ext != ".mp3" && ext != ".wav" && ext != ".m4a" && ext != ".webm" {
+			continue
+		}
+
+		req, err := http.NewRequest(http.MethodGet, att.URL, nil)
+		if err != nil {
+			continue
+		}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			c.log.Warn("Failed to download Discord audio", zap.Error(err))
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			continue
+		}
+		data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+		resp.Body.Close()
+		if err != nil {
+			c.log.Warn("Failed reading Discord audio", zap.Error(err))
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		text, err := c.transcriber.Transcribe(ctx, data, att.Filename)
+		cancel()
+		if err != nil {
+			c.log.Warn("Discord audio transcription failed", zap.Error(err))
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text != "" {
+			return text, true
+		}
+	}
+	return "", false
 }

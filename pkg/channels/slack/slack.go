@@ -4,6 +4,9 @@ package slack
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +20,7 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/transcription"
 )
 
 // Channel implements Slack channel using Socket Mode.
@@ -32,10 +36,18 @@ type Channel struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	pendingAcks  sync.Map // chat_id -> message reference
+	transcriber  transcription.Transcriber
+	httpClient   *http.Client
 }
 
 // NewChannel creates a new Slack channel.
-func NewChannel(log *logger.Logger, cfg config.SlackConfig, b bus.Bus, cmdRegistry *commands.Registry) (*Channel, error) {
+func NewChannel(
+	log *logger.Logger,
+	cfg config.SlackConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	transcriber transcription.Transcriber,
+) (*Channel, error) {
 	if cfg.BotToken == "" || cfg.AppToken == "" {
 		return nil, fmt.Errorf("slack bot_token and app_token are required")
 	}
@@ -57,6 +69,10 @@ func NewChannel(log *logger.Logger, cfg config.SlackConfig, b bus.Bus, cmdRegist
 		api:          api,
 		socketClient: socketClient,
 		running:      false,
+		transcriber:  transcriber,
+		httpClient: &http.Client{
+			Timeout: 90 * time.Second,
+		},
 	}, nil
 }
 
@@ -188,6 +204,19 @@ func (c *Channel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		return
 	}
 
+	content := strings.TrimSpace(ev.Text)
+	msgType := bus.MessageTypeText
+
+	if content == "" && c.transcriber != nil && ev.Message != nil && len(ev.Message.Files) > 0 {
+		if transcribed, ok := c.transcribeFiles(ev.Message.Files); ok {
+			content = transcribed
+			msgType = bus.MessageTypeAudio
+		}
+	}
+	if content == "" {
+		return
+	}
+
 	// Determine chat ID (channel_id or channel_id:thread_ts)
 	sessionID := fmt.Sprintf("slack:%s", ev.Channel)
 	if ev.ThreadTimeStamp != "" {
@@ -201,8 +230,8 @@ func (c *Channel) handleMessageEvent(ev *slackevents.MessageEvent) {
 		SessionID: sessionID,
 		UserID:    ev.User,
 		Username:  ev.User, // Slack uses user ID
-		Type:      bus.MessageTypeText,
-		Content:   ev.Text,
+		Type:      msgType,
+		Content:   content,
 		Timestamp: time.Now(),
 	}
 
@@ -397,4 +426,57 @@ func (c *Channel) isAllowed(userID string) bool {
 	}
 
 	return false
+}
+
+func (c *Channel) transcribeFiles(files []slack.File) (string, bool) {
+	for _, f := range files {
+		mime := strings.ToLower(f.Mimetype)
+		ext := strings.ToLower(filepath.Ext(f.Name))
+		if !strings.HasPrefix(mime, "audio/") &&
+			ext != ".ogg" && ext != ".mp3" && ext != ".wav" && ext != ".m4a" && ext != ".webm" {
+			continue
+		}
+		url := f.URLPrivateDownload
+		if url == "" {
+			url = f.URLPrivate
+		}
+		if url == "" {
+			continue
+		}
+
+		req, err := http.NewRequest(http.MethodGet, url, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+c.config.BotToken)
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			c.log.Warn("Failed to download Slack audio", zap.Error(err))
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			continue
+		}
+		data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
+		resp.Body.Close()
+		if err != nil {
+			c.log.Warn("Failed reading Slack audio", zap.Error(err))
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		text, err := c.transcriber.Transcribe(ctx, data, f.Name)
+		cancel()
+		if err != nil {
+			c.log.Warn("Slack audio transcription failed", zap.Error(err))
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text != "" {
+			return text, true
+		}
+	}
+	return "", false
 }

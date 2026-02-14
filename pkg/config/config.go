@@ -13,17 +13,21 @@ import (
 
 // Config represents the complete nanobot configuration.
 type Config struct {
-	Logger    LoggerConfig    `mapstructure:"logger" json:"logger"`
-	Agents    AgentsConfig    `mapstructure:"agents" json:"agents"`
-	Channels  ChannelsConfig  `mapstructure:"channels" json:"channels"`
-	Providers ProvidersConfig `mapstructure:"providers" json:"providers"`
-	Gateway   GatewayConfig   `mapstructure:"gateway" json:"gateway"`
-	Tools     ToolsConfig     `mapstructure:"tools" json:"tools"`
-	Heartbeat HeartbeatConfig `mapstructure:"heartbeat" json:"heartbeat"`
-	State     StateConfig     `mapstructure:"state" json:"state"`
-	Bus       BusConfig       `mapstructure:"bus" json:"bus"`
-	Memory    MemoryConfig    `mapstructure:"memory" json:"memory"`
-	mu        sync.RWMutex
+	Logger        LoggerConfig        `mapstructure:"logger" json:"logger"`
+	Agents        AgentsConfig        `mapstructure:"agents" json:"agents"`
+	Channels      ChannelsConfig      `mapstructure:"channels" json:"channels"`
+	Providers     ProvidersConfig     `mapstructure:"providers" json:"providers"`
+	Transcription TranscriptionConfig `mapstructure:"transcription" json:"transcription"`
+	Gateway       GatewayConfig       `mapstructure:"gateway" json:"gateway"`
+	Tools         ToolsConfig         `mapstructure:"tools" json:"tools"`
+	Heartbeat     HeartbeatConfig     `mapstructure:"heartbeat" json:"heartbeat"`
+	Redis         RedisConfig         `mapstructure:"redis" json:"redis"`
+	State         StateConfig         `mapstructure:"state" json:"state"`
+	Bus           BusConfig           `mapstructure:"bus" json:"bus"`
+	Memory        MemoryConfig        `mapstructure:"memory" json:"memory"`
+	Approval      ApprovalConfig      `mapstructure:"approval" json:"approval"`
+	WebUI         WebUIConfig         `mapstructure:"webui" json:"webui"`
+	mu            sync.RWMutex
 }
 
 // AgentsConfig contains agent-related configuration.
@@ -58,6 +62,8 @@ type ChannelsConfig struct {
 	ServerChan ServerChanConfig `mapstructure:"serverchan" json:"serverchan"`
 	WeWork     WeWorkConfig     `mapstructure:"wework" json:"wework"`
 	GoogleChat GoogleChatConfig `mapstructure:"googlechat" json:"googlechat"`
+	Teams      TeamsConfig      `mapstructure:"teams" json:"teams"`
+	Infoflow   InfoflowConfig   `mapstructure:"infoflow" json:"infoflow"`
 }
 
 // WhatsAppConfig for WhatsApp channel.
@@ -150,33 +156,47 @@ type GoogleChatConfig struct {
 	AllowFrom       []string `mapstructure:"allow_from" json:"allow_from"`
 }
 
+// TeamsConfig for Microsoft Teams channel.
+type TeamsConfig struct {
+	Enabled     bool     `mapstructure:"enabled" json:"enabled"`
+	AppID       string   `mapstructure:"app_id" json:"app_id"`
+	AppPassword string   `mapstructure:"app_password" json:"app_password"`
+	AllowFrom   []string `mapstructure:"allow_from" json:"allow_from"`
+}
+
+// InfoflowConfig for infoflow channel.
+type InfoflowConfig struct {
+	Enabled    bool     `mapstructure:"enabled" json:"enabled"`
+	WebhookURL string   `mapstructure:"webhook_url" json:"webhook_url"`
+	AESKey     string   `mapstructure:"aes_key" json:"aes_key"`
+	AllowFrom  []string `mapstructure:"allow_from" json:"allow_from"`
+}
+
 // HeartbeatConfig for periodic autonomous tasks.
 type HeartbeatConfig struct {
 	Enabled         bool `mapstructure:"enabled" json:"enabled"`
 	IntervalMinutes int  `mapstructure:"interval_minutes" json:"interval_minutes"` // minutes, min 5
 }
 
+// RedisConfig is the shared Redis connection configuration.
+// Configure once, used by both state and bus modules when their backend is "redis".
+type RedisConfig struct {
+	Addr     string `mapstructure:"addr" json:"addr"`         // Redis address (host:port), e.g. "localhost:6379"
+	Password string `mapstructure:"password" json:"password"` // Redis password (optional)
+	DB       int    `mapstructure:"db" json:"db"`             // Redis database number (default 0)
+}
+
 // StateConfig for key-value storage backend.
 type StateConfig struct {
 	Backend  string `mapstructure:"backend" json:"backend"`     // "file" or "redis"
 	FilePath string `mapstructure:"file_path" json:"file_path"` // For file backend
-
-	// Redis backend settings
-	RedisAddr     string `mapstructure:"redis_addr" json:"redis_addr"`
-	RedisPassword string `mapstructure:"redis_password" json:"redis_password"`
-	RedisDB       int    `mapstructure:"redis_db" json:"redis_db"`
-	RedisPrefix   string `mapstructure:"redis_prefix" json:"redis_prefix"`
+	Prefix   string `mapstructure:"prefix" json:"prefix"`       // Redis key prefix (default "nekobot:")
 }
 
 // BusConfig for message bus backend.
 type BusConfig struct {
-	Type string `mapstructure:"type" json:"type"` // "local" or "redis"
-
-	// Redis backend settings (when type is "redis")
-	RedisAddr     string `mapstructure:"redis_addr" json:"redis_addr"`
-	RedisPassword string `mapstructure:"redis_password" json:"redis_password"`
-	RedisDB       int    `mapstructure:"redis_db" json:"redis_db"`
-	RedisPrefix   string `mapstructure:"redis_prefix" json:"redis_prefix"`
+	Type   string `mapstructure:"type" json:"type"`     // "local" or "redis"
+	Prefix string `mapstructure:"prefix" json:"prefix"` // Redis key prefix (default "nekobot:bus:")
 }
 
 // ProvidersConfig contains provider configurations.
@@ -189,6 +209,7 @@ type ProviderProfile struct {
 	ProviderKind string   `mapstructure:"provider_kind" json:"provider_kind"` // Type: "openai", "anthropic", "gemini"
 	APIKey       string   `mapstructure:"api_key" json:"api_key"`
 	APIBase      string   `mapstructure:"api_base" json:"api_base"`
+	Proxy        string   `mapstructure:"proxy" json:"proxy,omitempty"`                 // HTTP/SOCKS5 proxy URL (optional)
 	Models       []string `mapstructure:"models" json:"models,omitempty"`               // Supported model list
 	DefaultModel string   `mapstructure:"default_model" json:"default_model,omitempty"` // Default model for this provider
 	Timeout      int      `mapstructure:"timeout" json:"timeout,omitempty"`             // Timeout in seconds, default 30s
@@ -210,9 +231,20 @@ type GatewayConfig struct {
 	Port int    `mapstructure:"port" json:"port"`
 }
 
+// TranscriptionConfig controls speech-to-text behavior.
+type TranscriptionConfig struct {
+	Enabled        bool   `mapstructure:"enabled" json:"enabled"`
+	Provider       string `mapstructure:"provider" json:"provider"`
+	APIKey         string `mapstructure:"api_key" json:"api_key"`
+	APIBase        string `mapstructure:"api_base" json:"api_base"`
+	Model          string `mapstructure:"model" json:"model"`
+	TimeoutSeconds int    `mapstructure:"timeout_seconds" json:"timeout_seconds"`
+}
+
 // ToolsConfig contains tool-related configuration.
 type ToolsConfig struct {
-	Web WebToolsConfig `mapstructure:"web" json:"web"`
+	Web  WebToolsConfig  `mapstructure:"web" json:"web"`
+	Exec ExecToolsConfig `mapstructure:"exec" json:"exec"`
 }
 
 // WebToolsConfig for web-related tools.
@@ -230,6 +262,22 @@ type WebSearchConfig struct {
 // WebFetchConfig for web fetch tool.
 type WebFetchConfig struct {
 	MaxChars int `mapstructure:"max_chars" json:"max_chars"`
+}
+
+// ExecToolsConfig for the exec tool.
+type ExecToolsConfig struct {
+	TimeoutSeconds int                 `mapstructure:"timeout_seconds" json:"timeout_seconds"`
+	Sandbox        DockerSandboxConfig `mapstructure:"sandbox" json:"sandbox"`
+}
+
+// DockerSandboxConfig controls containerized execution for exec tool.
+type DockerSandboxConfig struct {
+	Enabled     bool     `mapstructure:"enabled" json:"enabled"`
+	Image       string   `mapstructure:"image" json:"image"`
+	NetworkMode string   `mapstructure:"network_mode" json:"network_mode"`
+	Mounts      []string `mapstructure:"mounts" json:"mounts"`
+	Timeout     int      `mapstructure:"timeout" json:"timeout"`
+	AutoCleanup bool     `mapstructure:"auto_cleanup" json:"auto_cleanup"`
 }
 
 // DefaultConfig returns a new Config with default values.
@@ -305,8 +353,23 @@ func DefaultConfig() *Config {
 				Enabled:   false,
 				AllowFrom: []string{},
 			},
+			Teams: TeamsConfig{
+				Enabled:   false,
+				AllowFrom: []string{},
+			},
+			Infoflow: InfoflowConfig{
+				Enabled:   false,
+				AllowFrom: []string{},
+			},
 		},
 		Providers: []ProviderProfile{},
+		Transcription: TranscriptionConfig{
+			Enabled:        true,
+			Provider:       "groq",
+			APIBase:        "https://api.groq.com/openai/v1",
+			Model:          "whisper-large-v3-turbo",
+			TimeoutSeconds: 90,
+		},
 		Gateway: GatewayConfig{
 			Host: "0.0.0.0",
 			Port: 18790,
@@ -320,19 +383,43 @@ func DefaultConfig() *Config {
 					MaxChars: 50000,
 				},
 			},
+			Exec: ExecToolsConfig{
+				TimeoutSeconds: 30,
+				Sandbox: DockerSandboxConfig{
+					Enabled:     false,
+					Image:       "alpine:3.20",
+					NetworkMode: "none",
+					Mounts:      []string{},
+					Timeout:     60,
+					AutoCleanup: true,
+				},
+			},
 		},
 		Heartbeat: HeartbeatConfig{
 			Enabled:         true,
 			IntervalMinutes: 30, // 30 minutes
 		},
+		Redis: RedisConfig{
+			Addr: "localhost:6379",
+		},
 		State: StateConfig{
-			Backend:     "file",
-			FilePath:    "", // Will be set to workspace/state.json by state module
-			RedisPrefix: "nekobot:",
+			Backend:  "file",
+			FilePath: "", // Will be set to workspace/state.json by state module
+			Prefix:   "nekobot:",
 		},
 		Bus: BusConfig{
-			Type:        "local",
-			RedisPrefix: "nekobot:bus:",
+			Type:   "local",
+			Prefix: "nekobot:bus:",
+		},
+		Approval: ApprovalConfig{
+			Mode:      "auto",
+			Allowlist: []string{},
+			Denylist:  []string{},
+		},
+		WebUI: WebUIConfig{
+			Enabled:  true,
+			Port:     0, // 0 means gateway port + 1
+			Username: "admin",
 		},
 	}
 }
@@ -435,4 +522,20 @@ type QMDUpdateConfig struct {
 	Interval       string `mapstructure:"interval" json:"interval"`
 	CommandTimeout string `mapstructure:"command_timeout" json:"command_timeout"`
 	UpdateTimeout  string `mapstructure:"update_timeout" json:"update_timeout"`
+}
+
+// ApprovalConfig for tool execution approval system.
+type ApprovalConfig struct {
+	Mode      string   `mapstructure:"mode" json:"mode"`           // "auto", "prompt", or "manual"
+	Allowlist []string `mapstructure:"allowlist" json:"allowlist"` // Tools that bypass approval
+	Denylist  []string `mapstructure:"denylist" json:"denylist"`   // Tools that are always denied
+}
+
+// WebUIConfig for the web dashboard.
+type WebUIConfig struct {
+	Enabled  bool   `mapstructure:"enabled" json:"enabled"`   // Enable WebUI (default true in daemon mode)
+	Port     int    `mapstructure:"port" json:"port"`         // WebUI port (default: gateway port + 1)
+	Secret   string `mapstructure:"secret" json:"secret"`     // JWT secret for auth (auto-generated on first run)
+	Username string `mapstructure:"username" json:"username"` // Admin username (default: admin)
+	Password string `mapstructure:"password" json:"password"` // Admin password (set on first run)
 }

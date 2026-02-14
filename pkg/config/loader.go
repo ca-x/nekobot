@@ -102,9 +102,16 @@ func (l *Loader) Save(path string, cfg *Config) error {
 	v.Set("agents", cfg.Agents)
 	v.Set("channels", cfg.Channels)
 	v.Set("providers", cfg.Providers)
+	v.Set("transcription", cfg.Transcription)
 	v.Set("gateway", cfg.Gateway)
 	v.Set("tools", cfg.Tools)
 	v.Set("heartbeat", cfg.Heartbeat)
+	v.Set("redis", cfg.Redis)
+	v.Set("state", cfg.State)
+	v.Set("bus", cfg.Bus)
+	v.Set("memory", cfg.Memory)
+	v.Set("approval", cfg.Approval)
+	v.Set("webui", cfg.WebUI)
 
 	// Write to file
 	if err := v.WriteConfigAs(path); err != nil {

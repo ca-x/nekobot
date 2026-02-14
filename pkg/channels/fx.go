@@ -12,16 +12,19 @@ import (
 	"nekobot/pkg/channels/discord"
 	"nekobot/pkg/channels/feishu"
 	"nekobot/pkg/channels/googlechat"
+	"nekobot/pkg/channels/infoflow"
 	"nekobot/pkg/channels/maixcam"
 	"nekobot/pkg/channels/qq"
 	"nekobot/pkg/channels/serverchan"
 	"nekobot/pkg/channels/slack"
+	"nekobot/pkg/channels/teams"
 	"nekobot/pkg/channels/telegram"
 	"nekobot/pkg/channels/wework"
 	"nekobot/pkg/channels/whatsapp"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/transcription"
 )
 
 // Module is the fx module for channels.
@@ -59,9 +62,11 @@ func RegisterChannels(
 	cmdRegistry *commands.Registry,
 	cfg *config.Config,
 ) error {
+	transcriber := transcription.NewFromConfig(log, cfg)
+
 	// Register Telegram channel
 	if cfg.Channels.Telegram.Enabled {
-		tgChannel, err := telegram.New(log, messageBus, ag, cmdRegistry, &cfg.Channels.Telegram)
+		tgChannel, err := telegram.New(log, messageBus, ag, cmdRegistry, &cfg.Channels.Telegram, transcriber)
 		if err != nil {
 			log.Warn("Failed to create Telegram channel, skipping", zap.Error(err))
 		} else {
@@ -73,7 +78,7 @@ func RegisterChannels(
 
 	// Register Discord channel
 	if cfg.Channels.Discord.Enabled {
-		discordChannel, err := discord.NewChannel(log, cfg.Channels.Discord, messageBus, cmdRegistry)
+		discordChannel, err := discord.NewChannel(log, cfg.Channels.Discord, messageBus, cmdRegistry, transcriber)
 		if err != nil {
 			log.Warn("Failed to create Discord channel, skipping", zap.Error(err))
 		} else {
@@ -85,7 +90,7 @@ func RegisterChannels(
 
 	// Register Slack channel
 	if cfg.Channels.Slack.Enabled {
-		slackChannel, err := slack.NewChannel(log, cfg.Channels.Slack, messageBus, cmdRegistry)
+		slackChannel, err := slack.NewChannel(log, cfg.Channels.Slack, messageBus, cmdRegistry, transcriber)
 		if err != nil {
 			log.Warn("Failed to create Slack channel, skipping", zap.Error(err))
 		} else {
@@ -186,6 +191,30 @@ func RegisterChannels(
 			log.Warn("Failed to create QQ channel, skipping", zap.Error(err))
 		} else {
 			if err := manager.Register(qqChannel); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Register Teams channel
+	if cfg.Channels.Teams.Enabled {
+		teamsChannel, err := teams.NewChannel(log, cfg.Channels.Teams, messageBus, cmdRegistry)
+		if err != nil {
+			log.Warn("Failed to create Teams channel, skipping", zap.Error(err))
+		} else {
+			if err := manager.Register(teamsChannel); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Register Infoflow channel
+	if cfg.Channels.Infoflow.Enabled {
+		infoflowChannel, err := infoflow.NewChannel(log, cfg.Channels.Infoflow, messageBus, cmdRegistry)
+		if err != nil {
+			log.Warn("Failed to create Infoflow channel, skipping", zap.Error(err))
+		} else {
+			if err := manager.Register(infoflowChannel); err != nil {
 				return err
 			}
 		}
