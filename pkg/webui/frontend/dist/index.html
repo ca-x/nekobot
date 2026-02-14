@@ -3,11 +3,487 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nekobot Dashboard</title>
-  <style>body{font-family:system-ui;text-align:center;margin-top:20vh}h1{color:#333}p{color:#666}</style>
+  <title>Nekobot WebUI</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f172a;
+      --panel: #111827;
+      --soft: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #22d3ee;
+      --danger: #f87171;
+      --ok: #34d399;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(circle at top, #1e293b 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .app {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+    }
+    .card {
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid #374151;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
+    }
+    h1, h2, h3 { margin: 0 0 12px; }
+    p { margin: 0; color: var(--muted); }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .row + .row { margin-top: 12px; }
+    .spacer { flex: 1; }
+    input, select, button, textarea {
+      background: #0b1220;
+      color: var(--text);
+      border: 1px solid #374151;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+    }
+    button {
+      cursor: pointer;
+      transition: all .15s ease;
+      background: #0b1220;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary {
+      background: #0e7490;
+      border-color: #0891b2;
+      color: #ecfeff;
+      font-weight: 600;
+    }
+    button.danger { border-color: #7f1d1d; color: #fecaca; }
+    .hidden { display: none !important; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tab.active { border-color: var(--accent); color: #cffafe; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #0b1220;
+      border: 1px solid #374151;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6b7280;
+    }
+    .dot.ok { background: var(--ok); }
+    .dot.err { background: var(--danger); }
+    .chat-log {
+      height: 380px;
+      overflow: auto;
+      border-radius: 12px;
+      border: 1px solid #374151;
+      background: #0b1220;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    .msg {
+      margin-bottom: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg.user { background: #1e293b; border: 1px solid #334155; }
+    .msg.bot { background: #13263f; border: 1px solid #1f3f66; }
+    .msg.system { background: #1f2937; border: 1px dashed #475569; color: var(--muted); }
+    .msg.error { background: #3f1419; border: 1px solid #7f1d1d; color: #fecaca; }
+    .channels-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .channels-table th, .channels-table td {
+      padding: 10px;
+      border-bottom: 1px solid #374151;
+      text-align: left;
+      font-size: 14px;
+    }
+    .channels-table th { color: var(--muted); font-weight: 600; }
+    .badge {
+      border: 1px solid #374151;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 12px;
+      color: var(--muted);
+      display: inline-block;
+    }
+    .badge.on { color: #bbf7d0; border-color: #166534; }
+    .badge.off { color: #fecaca; border-color: #7f1d1d; }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #0b1220;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 12px;
+      max-height: 360px;
+      overflow: auto;
+    }
+    .mt { margin-top: 12px; }
+  </style>
 </head>
 <body>
-  <h1>Nekobot Dashboard</h1>
-  <p>Frontend placeholder - build with npm run build to replace</p>
+  <div class="app">
+    <div id="authCard" class="card">
+      <h1>Nekobot WebUI</h1>
+      <p id="authHint">Checking initialization status...</p>
+      <div id="authInit" class="hidden mt">
+        <h3>Initialize Admin Account</h3>
+        <div class="row">
+          <input id="initUsername" value="admin" placeholder="Username">
+          <input id="initPassword" type="password" placeholder="Password">
+          <button id="initBtn" class="primary">Initialize</button>
+        </div>
+      </div>
+      <div id="authLogin" class="hidden mt">
+        <h3>Login</h3>
+        <div class="row">
+          <input id="loginUsername" value="admin" placeholder="Username">
+          <input id="loginPassword" type="password" placeholder="Password">
+          <button id="loginBtn" class="primary">Login</button>
+        </div>
+      </div>
+      <p id="authError" class="mt" style="color:#fca5a5;"></p>
+    </div>
+
+    <div id="mainCard" class="card hidden">
+      <div class="row">
+        <h2 style="margin:0;">Nekobot Dashboard</h2>
+        <div class="spacer"></div>
+        <span id="wsState" class="status"><span class="dot"></span><span>WS disconnected</span></span>
+        <button id="logoutBtn" class="danger">Logout</button>
+      </div>
+
+      <div class="tabs mt">
+        <button class="tab active" data-tab="chat">Chat Playground</button>
+        <button class="tab" data-tab="channels">Channels</button>
+        <button class="tab" data-tab="status">System</button>
+      </div>
+
+      <section id="tab-chat">
+        <div class="row">
+          <select id="modelSelect"></select>
+          <button id="connectWsBtn">Reconnect WS</button>
+          <button id="clearChatBtn">Clear Session</button>
+        </div>
+        <div id="chatLog" class="chat-log mt"></div>
+        <div class="row">
+          <textarea id="chatInput" rows="2" style="flex:1;" placeholder="Type message and press Send"></textarea>
+          <button id="sendBtn" class="primary">Send</button>
+        </div>
+      </section>
+
+      <section id="tab-channels" class="hidden">
+        <div class="row">
+          <button id="refreshChannelsBtn">Refresh</button>
+        </div>
+        <table class="channels-table mt">
+          <thead>
+            <tr><th>Channel</th><th>Enabled</th><th>Status</th><th>Action</th></tr>
+          </thead>
+          <tbody id="channelsBody"></tbody>
+        </table>
+      </section>
+
+      <section id="tab-status" class="hidden">
+        <div class="row">
+          <button id="refreshStatusBtn">Refresh</button>
+        </div>
+        <pre id="statusPre" class="mt">{}</pre>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      token: localStorage.getItem("nekobot_webui_token") || "",
+      ws: null,
+      models: []
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function setAuthError(msg) { $("authError").textContent = msg || ""; }
+
+    async function api(path, options = {}) {
+      const headers = Object.assign({ "Content-Type": "application/json" }, options.headers || {});
+      if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
+      const resp = await fetch(path, Object.assign({}, options, { headers }));
+      const text = await resp.text();
+      let payload = {};
+      try { payload = text ? JSON.parse(text) : {}; } catch (_) { payload = { raw: text }; }
+      if (!resp.ok) throw new Error(payload.error || `HTTP ${resp.status}`);
+      return payload;
+    }
+
+    function showMain() {
+      $("authCard").classList.add("hidden");
+      $("mainCard").classList.remove("hidden");
+    }
+
+    function showAuth() {
+      $("mainCard").classList.add("hidden");
+      $("authCard").classList.remove("hidden");
+    }
+
+    function setWSState(connected, text) {
+      const wrap = $("wsState");
+      wrap.querySelector(".dot").className = "dot " + (connected ? "ok" : "err");
+      wrap.querySelector("span:last-child").textContent = text;
+    }
+
+    function pushChat(kind, text) {
+      const log = $("chatLog");
+      const item = document.createElement("div");
+      item.className = `msg ${kind}`;
+      item.textContent = text;
+      log.appendChild(item);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function checkInitAndAuth() {
+      setAuthError("");
+      try {
+        await api("/api/status");
+        showMain();
+        await initMain();
+        return;
+      } catch (_) {}
+
+      showAuth();
+      const init = await fetch("/api/auth/init-status").then(r => r.json());
+      if (init.initialized) {
+        $("authHint").textContent = "Please login to continue.";
+        $("authLogin").classList.remove("hidden");
+        $("authInit").classList.add("hidden");
+      } else {
+        $("authHint").textContent = "First run detected. Create admin credentials.";
+        $("authInit").classList.remove("hidden");
+        $("authLogin").classList.add("hidden");
+      }
+    }
+
+    async function initMain() {
+      await Promise.all([loadModels(), loadChannels(), loadStatus()]);
+      connectWS();
+    }
+
+    async function loadModels() {
+      try {
+        const providers = await api("/api/providers");
+        const models = [];
+        for (const p of providers) {
+          if (p.default_model) models.push(`${p.name}:${p.default_model}`);
+          if (Array.isArray(p.models)) {
+            for (const m of p.models) models.push(`${p.name}:${m}`);
+          }
+        }
+        state.models = Array.from(new Set(models));
+      } catch (_) {
+        state.models = [];
+      }
+      const sel = $("modelSelect");
+      sel.innerHTML = "";
+      const auto = document.createElement("option");
+      auto.value = "";
+      auto.textContent = "Default model";
+      sel.appendChild(auto);
+      for (const item of state.models) {
+        const [provider, model] = item.split(":");
+        const opt = document.createElement("option");
+        opt.value = model;
+        opt.textContent = `${model} (${provider})`;
+        sel.appendChild(opt);
+      }
+    }
+
+    async function loadChannels() {
+      const body = $("channelsBody");
+      body.innerHTML = "";
+      try {
+        const data = await api("/api/channels");
+        const names = Object.keys(data).sort();
+        for (const name of names) {
+          const cfg = data[name] || {};
+          const tr = document.createElement("tr");
+          const statusCell = document.createElement("td");
+          statusCell.textContent = "-";
+          tr.innerHTML = `
+            <td>${name}</td>
+            <td><span class="badge ${cfg.enabled ? "on" : "off"}">${cfg.enabled ? "on" : "off"}</span></td>
+            <td></td>
+            <td><button data-test="${name}">Test</button></td>
+          `;
+          tr.children[2].replaceWith(statusCell);
+          body.appendChild(tr);
+        }
+      } catch (err) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="4" style="color:#fca5a5;">${err.message}</td>`;
+        body.appendChild(tr);
+      }
+    }
+
+    async function testChannel(name, statusCell) {
+      statusCell.textContent = "Testing...";
+      try {
+        const r = await api(`/api/channels/${encodeURIComponent(name)}/test`, { method: "POST" });
+        statusCell.textContent = `${r.status || "ok"}${r.reachable ? " (reachable)" : ""}`;
+      } catch (err) {
+        statusCell.textContent = `error: ${err.message}`;
+      }
+    }
+
+    async function loadStatus() {
+      try {
+        const status = await api("/api/status");
+        $("statusPre").textContent = JSON.stringify(status, null, 2);
+      } catch (err) {
+        $("statusPre").textContent = `Error: ${err.message}`;
+      }
+    }
+
+    function connectWS() {
+      if (!state.token) return;
+      if (state.ws) {
+        try { state.ws.close(); } catch (_) {}
+      }
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/api/chat/ws?token=${encodeURIComponent(state.token)}`);
+      state.ws = ws;
+
+      ws.onopen = () => setWSState(true, "WS connected");
+      ws.onclose = () => setWSState(false, "WS disconnected");
+      ws.onerror = () => setWSState(false, "WS error");
+      ws.onmessage = (ev) => {
+        let msg = {};
+        try { msg = JSON.parse(ev.data); } catch (_) { return; }
+        if (msg.type === "message") pushChat("bot", msg.content || "");
+        else if (msg.type === "error") pushChat("error", msg.content || "Unknown error");
+        else pushChat("system", msg.content || msg.type || "event");
+      };
+    }
+
+    function sendChat() {
+      const text = $("chatInput").value.trim();
+      if (!text || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+      const model = $("modelSelect").value;
+      state.ws.send(JSON.stringify({ type: "message", content: text, model }));
+      pushChat("user", text);
+      $("chatInput").value = "";
+    }
+
+    function setupEvents() {
+      $("initBtn").addEventListener("click", async () => {
+        setAuthError("");
+        try {
+          const payload = await fetch("/api/auth/init", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: $("initUsername").value.trim() || "admin",
+              password: $("initPassword").value
+            })
+          }).then(r => r.json());
+          if (!payload.token) throw new Error(payload.error || "Initialization failed");
+          state.token = payload.token;
+          localStorage.setItem("nekobot_webui_token", state.token);
+          showMain();
+          await initMain();
+        } catch (err) {
+          setAuthError(err.message);
+        }
+      });
+
+      $("loginBtn").addEventListener("click", async () => {
+        setAuthError("");
+        try {
+          const payload = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: $("loginUsername").value.trim(),
+              password: $("loginPassword").value
+            })
+          }).then(r => r.json());
+          if (!payload.token) throw new Error(payload.error || "Login failed");
+          state.token = payload.token;
+          localStorage.setItem("nekobot_webui_token", state.token);
+          showMain();
+          await initMain();
+        } catch (err) {
+          setAuthError(err.message);
+        }
+      });
+
+      $("logoutBtn").addEventListener("click", () => {
+        state.token = "";
+        localStorage.removeItem("nekobot_webui_token");
+        if (state.ws) try { state.ws.close(); } catch (_) {}
+        showAuth();
+      });
+
+      document.querySelectorAll(".tab").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+          btn.classList.add("active");
+          const tab = btn.dataset.tab;
+          ["chat", "channels", "status"].forEach(name => {
+            $(`tab-${name}`).classList.toggle("hidden", name !== tab);
+          });
+        });
+      });
+
+      $("sendBtn").addEventListener("click", sendChat);
+      $("chatInput").addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendChat();
+        }
+      });
+      $("connectWsBtn").addEventListener("click", connectWS);
+      $("clearChatBtn").addEventListener("click", () => {
+        $("chatLog").innerHTML = "";
+        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+          state.ws.send(JSON.stringify({ type: "clear" }));
+        }
+      });
+
+      $("refreshChannelsBtn").addEventListener("click", loadChannels);
+      $("channelsBody").addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-test]");
+        if (!btn) return;
+        const name = btn.dataset.test;
+        const row = btn.closest("tr");
+        testChannel(name, row.children[2]);
+      });
+
+      $("refreshStatusBtn").addEventListener("click", loadStatus);
+    }
+
+    setupEvents();
+    checkInitAndAuth();
+  </script>
 </body>
 </html>
