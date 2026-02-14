@@ -3,6 +3,8 @@ package config
 import (
 	"context"
 
+	"nekobot/pkg/logger"
+
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 )
@@ -11,7 +13,12 @@ import (
 var Module = fx.Module("config",
 	fx.Provide(ProvideLoader),
 	fx.Provide(ProvideConfig),
-	fx.Provide(ProvideLoggerConfig),
+	fx.Provide(
+		fx.Annotate(
+			ProvideLoggerConfig,
+			fx.As(new(logger.ConfigProvider)),
+		),
+	),
 )
 
 // ProvideLoader provides a configuration loader.

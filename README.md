@@ -50,24 +50,45 @@ Create a config file at `~/.nekobot/config.json`:
 
 ```json
 {
+  "logger": {
+    "level": "info"
+  },
   "agents": {
     "defaults": {
       "workspace": "~/.nekobot/workspace",
       "restrict_to_workspace": true,
-      "provider": "claude",
+      "provider": "anthropic",
       "model": "claude-sonnet-4-5-20250929",
       "max_tokens": 8192,
       "temperature": 0.7,
       "max_tool_iterations": 20
     }
   },
-  "providers": {
-    "anthropic": {
-      "api_key": "your-api-key-here"
+  "providers": [
+    {
+      "name": "anthropic",
+      "provider_kind": "anthropic",
+      "api_key": "your-anthropic-api-key",
+      "api_base": "https://api.anthropic.com"
     },
-    "openai": {
-      "api_key": "your-openai-key"
+    {
+      "name": "openai",
+      "provider_kind": "openai",
+      "api_key": "your-openai-api-key",
+      "api_base": "https://api.openai.com/v1"
     }
+  ],
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "token": "",
+      "proxy": "",
+      "allow_from": []
+    }
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
   }
 }
 ```
@@ -75,9 +96,13 @@ Create a config file at `~/.nekobot/config.json`:
 Or use environment variables:
 
 ```bash
-export NEKOBOT_PROVIDERS_ANTHROPIC_API_KEY="your-key"
+export NEKOBOT_PROVIDERS_0_NAME="anthropic"
+export NEKOBOT_PROVIDERS_0_PROVIDER_KIND="anthropic"
+export NEKOBOT_PROVIDERS_0_API_KEY="your-key"
 export NEKOBOT_AGENTS_DEFAULTS_MODEL="claude-sonnet-4-5-20250929"
 ```
+
+See `pkg/config/config.example.json` for a full configuration example.
 
 ## Usage
 
