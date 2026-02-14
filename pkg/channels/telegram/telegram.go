@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -59,6 +60,16 @@ type Channel struct {
 
 	settingsMu    sync.Mutex
 	settingsInput map[string]string
+
+	pendingSkillMu       sync.Mutex
+	pendingSkillInstalls map[string]pendingSkillInstall
+}
+
+type pendingSkillInstall struct {
+	UserID    int64
+	Command   string
+	Repo      string
+	CreatedAt time.Time
 }
 
 // New creates a new Telegram channel.
@@ -78,16 +89,17 @@ func New(
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Channel{
-		log:           log,
-		bus:           messageBus,
-		agent:         ag,
-		commands:      cmdRegistry,
-		config:        cfg,
-		transcriber:   transcriber,
-		prefs:         prefsMgr,
-		ctx:           ctx,
-		cancel:        cancel,
-		settingsInput: map[string]string{},
+		log:                  log,
+		bus:                  messageBus,
+		agent:                ag,
+		commands:             cmdRegistry,
+		config:               cfg,
+		transcriber:          transcriber,
+		prefs:                prefsMgr,
+		ctx:                  ctx,
+		cancel:               cancel,
+		settingsInput:        map[string]string{},
+		pendingSkillInstalls: map[string]pendingSkillInstall{},
 	}, nil
 }
 
@@ -601,6 +613,21 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 		return
 	}
 
+	if proposal, ok := parseSkillInstallProposal(resp.Content); ok {
+		c.finishThinkingMessage(
+			message.Chat.ID,
+			message.MessageID,
+			thinkingMsgID,
+			c.settingsText("zh",
+				fmt.Sprintf("已找到候选技能：%s\n请点击下方按钮确认是否安装。", proposal.Repo),
+				fmt.Sprintf("Found candidate skill: %s\nPlease confirm installation below.", proposal.Repo),
+				fmt.Sprintf("候補スキルが見つかりました: %s\n下のボタンでインストール確認してください。", proposal.Repo),
+			),
+		)
+		c.sendSkillInstallConfirmation(message.Chat.ID, message.From.ID, message.MessageID, cmdName, proposal)
+		return
+	}
+
 	c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, resp.Content)
 }
 
@@ -610,6 +637,11 @@ func (c *Channel) handleCallbackQuery(cb *tgbotapi.CallbackQuery) {
 	}
 	if cb.Message == nil {
 		c.answerCallback(cb.ID, "ok", false)
+		return
+	}
+
+	if strings.HasPrefix(cb.Data, "skillinstall:") {
+		c.handleSkillInstallCallback(cb)
 		return
 	}
 
@@ -643,6 +675,14 @@ func (c *Channel) handleCallbackQuery(cb *tgbotapi.CallbackQuery) {
 		)
 		c.editSettingsMessage(chatID, messageID, text, c.settingsLanguageKeyboard(lang))
 		c.answerCallback(cb.ID, "ok", false)
+	case "settings:skillmode_menu":
+		text := c.settingsText(lang,
+			"请选择 Skills 安装方式：",
+			"Choose skill install mode:",
+			"スキル導入モードを選んでください:",
+		)
+		c.editSettingsMessage(chatID, messageID, text, c.settingsSkillModeKeyboard(lang))
+		c.answerCallback(cb.ID, "ok", false)
 	case "settings:lang:zh", "settings:lang:en", "settings:lang:ja":
 		langCode := strings.TrimPrefix(cb.Data, "settings:lang:")
 		profile.Language = userprefs.NormalizeLanguage(langCode)
@@ -655,6 +695,29 @@ func (c *Channel) handleCallbackQuery(cb *tgbotapi.CallbackQuery) {
 			"✅ 语言已更新",
 			"✅ Language updated",
 			"✅ 言語を更新しました",
+		)
+		c.renderSettingsMenu(chatID, userID, messageID, notice, lang)
+		c.answerCallback(cb.ID, notice, false)
+	case "settings:skillmode:legacy", "settings:skillmode:npx_preferred":
+		mode := strings.TrimPrefix(cb.Data, "settings:skillmode:")
+		profile.SkillInstallMode = userprefs.NormalizeSkillInstallMode(mode)
+		if err := c.saveProfile(ctx, userID, profile); err != nil {
+			c.answerCallback(cb.ID, c.settingsText(lang, "保存失败", "Save failed", "保存に失敗しました"), true)
+			return
+		}
+		notice := c.settingsText(lang,
+			map[string]string{
+				"legacy":        "✅ Skills 安装方式：当前方式",
+				"npx_preferred": "✅ Skills 安装方式：npx 优先",
+			}[profile.SkillInstallMode],
+			map[string]string{
+				"legacy":        "✅ Skill install mode: current",
+				"npx_preferred": "✅ Skill install mode: npx preferred",
+			}[profile.SkillInstallMode],
+			map[string]string{
+				"legacy":        "✅ スキル導入方式: 現在の方法",
+				"npx_preferred": "✅ スキル導入方式: npx 優先",
+			}[profile.SkillInstallMode],
 		)
 		c.renderSettingsMenu(chatID, userID, messageID, notice, lang)
 		c.answerCallback(cb.ID, notice, false)
@@ -701,6 +764,86 @@ func (c *Channel) handleCallbackQuery(cb *tgbotapi.CallbackQuery) {
 	default:
 		c.answerCallback(cb.ID, "ok", false)
 	}
+}
+
+func (c *Channel) handleSkillInstallCallback(cb *tgbotapi.CallbackQuery) {
+	if cb == nil || cb.Message == nil {
+		return
+	}
+
+	chatID := cb.Message.Chat.ID
+	messageID := cb.Message.MessageID
+	pending, ok := c.getPendingSkillInstall(chatID, messageID)
+	if !ok {
+		c.answerCallback(cb.ID, "安装请求已过期，请重新发起。", true)
+		return
+	}
+
+	if pending.UserID != cb.From.ID {
+		c.answerCallback(cb.ID, "只有发起请求的用户可以确认。", true)
+		return
+	}
+
+	switch cb.Data {
+	case "skillinstall:cancel":
+		c.clearPendingSkillInstall(chatID, messageID)
+		c.editSettingsMessage(
+			chatID,
+			messageID,
+			c.settingsText("zh",
+				"已取消安装。",
+				"Installation canceled.",
+				"インストールをキャンセルしました。",
+			),
+			tgbotapi.NewInlineKeyboardMarkup(),
+		)
+		c.answerCallback(cb.ID, "已取消", false)
+	case "skillinstall:confirm":
+		c.answerCallback(cb.ID, "开始安装…", false)
+		c.editSettingsMessage(
+			chatID,
+			messageID,
+			c.settingsText("zh", "⏳ 正在安装技能，请稍候…", "⏳ Installing skill, please wait…", "⏳ スキルをインストール中です…"),
+			tgbotapi.NewInlineKeyboardMarkup(),
+		)
+		result := c.executeConfirmedSkillInstall(cb, pending)
+		c.clearPendingSkillInstall(chatID, messageID)
+		c.editSettingsMessage(chatID, messageID, result, tgbotapi.NewInlineKeyboardMarkup())
+	default:
+		c.answerCallback(cb.ID, "ok", false)
+	}
+}
+
+func (c *Channel) executeConfirmedSkillInstall(cb *tgbotapi.CallbackQuery, pending pendingSkillInstall) string {
+	cmd, exists := c.commands.Get(pending.Command)
+	if !exists {
+		return c.settingsText("zh", "❌ 安装失败：命令不存在。", "❌ Install failed: command not found.", "❌ インストール失敗: コマンドがありません。")
+	}
+
+	req := commands.CommandRequest{
+		Channel:  c.ID(),
+		ChatID:   fmt.Sprintf("%d", cb.Message.Chat.ID),
+		UserID:   fmt.Sprintf("%d", cb.From.ID),
+		Username: cb.From.UserName,
+		Command:  pending.Command,
+		Args:     "__confirm_install__ " + pending.Repo,
+		Metadata: map[string]string{
+			"message_id": fmt.Sprintf("%d", cb.Message.MessageID),
+			"chat_type":  cb.Message.Chat.Type,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.requestTimeout())
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		return c.settingsText("zh", "❌ 安装失败: "+err.Error(), "❌ Install failed: "+err.Error(), "❌ インストール失敗: "+err.Error())
+	}
+	if strings.TrimSpace(resp.Content) == "" {
+		return c.settingsText("zh", "✅ 安装流程已执行（无额外输出）。", "✅ Installation flow executed (no additional output).", "✅ インストール処理を実行しました（追加出力なし）。")
+	}
+	return resp.Content
 }
 
 func (c *Channel) consumePendingSettingsInput(message *tgbotapi.Message, content string) bool {
@@ -788,6 +931,21 @@ func (c *Channel) settingsSummaryText(profile userprefs.Profile, notice, lang st
 	if pref == "" {
 		pref = c.settingsText(lang, "(未设置)", "(not set)", "(未設定)")
 	}
+	installMode := userprefs.NormalizeSkillInstallMode(profile.SkillInstallMode)
+	installModeLabel := c.settingsText(lang,
+		map[string]string{
+			"legacy":        "当前方式",
+			"npx_preferred": "npx 优先",
+		}[installMode],
+		map[string]string{
+			"legacy":        "Current",
+			"npx_preferred": "npx preferred",
+		}[installMode],
+		map[string]string{
+			"legacy":        "現在の方式",
+			"npx_preferred": "npx 優先",
+		}[installMode],
+	)
 
 	var sb strings.Builder
 	if strings.TrimSpace(notice) != "" {
@@ -807,6 +965,10 @@ func (c *Channel) settingsSummaryText(profile userprefs.Profile, notice, lang st
 	sb.WriteString(c.settingsText(lang, "偏好", "Preferences", "好み"))
 	sb.WriteString(": ")
 	sb.WriteString(pref)
+	sb.WriteString("\n")
+	sb.WriteString(c.settingsText(lang, "Skills安装", "Skill Install", "スキル導入"))
+	sb.WriteString(": ")
+	sb.WriteString(installModeLabel)
 	return sb.String()
 }
 
@@ -819,6 +981,9 @@ func (c *Channel) settingsMainKeyboard(lang string) tgbotapi.InlineKeyboardMarku
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "📝 设置称呼", "📝 Set Name", "📝 呼び名設定"), "settings:name"),
 			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "💡 设置偏好", "💡 Set Preferences", "💡 好み設定"), "settings:prefs"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "🧩 Skills安装方式", "🧩 Skill Install Mode", "🧩 スキル導入方式"), "settings:skillmode_menu"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "🧹 清除", "🧹 Clear", "🧹 クリア"), "settings:clear"),
@@ -838,6 +1003,59 @@ func (c *Channel) settingsLanguageKeyboard(lang string) tgbotapi.InlineKeyboardM
 			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "⬅️ 返回", "⬅️ Back", "⬅️ 戻る"), "settings:back"),
 		),
 	)
+}
+
+func (c *Channel) settingsSkillModeKeyboard(lang string) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "当前方式", "Current", "現在の方式"), "settings:skillmode:legacy"),
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "npx 优先", "npx preferred", "npx 優先"), "settings:skillmode:npx_preferred"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "⬅️ 返回", "⬅️ Back", "⬅️ 戻る"), "settings:back"),
+		),
+	)
+}
+
+func (c *Channel) sendSkillInstallConfirmation(chatID, userID int64, replyTo int, command string, proposal skillInstallProposal) {
+	lang := "zh"
+	if p, ok, _ := c.getProfile(context.Background(), userID); ok {
+		lang = userprefs.NormalizeLanguage(p.Language)
+	}
+
+	text := proposal.Message
+	if strings.TrimSpace(text) == "" {
+		text = c.settingsText(lang,
+			fmt.Sprintf("准备安装技能仓库：%s\n是否继续？", proposal.Repo),
+			fmt.Sprintf("Ready to install skill repo: %s\nContinue?", proposal.Repo),
+			fmt.Sprintf("スキルリポジトリ %s をインストールします。続行しますか？", proposal.Repo),
+		)
+	}
+	if strings.TrimSpace(proposal.Reason) != "" {
+		text += "\n\n" + c.settingsText(lang, "原因：", "Reason: ", "理由: ") + proposal.Reason
+	}
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	if replyTo > 0 {
+		msg.ReplyToMessageID = replyTo
+	}
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "✅ 确认安装", "✅ Confirm Install", "✅ インストール"), "skillinstall:confirm"),
+			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "❌ 取消", "❌ Cancel", "❌ キャンセル"), "skillinstall:cancel"),
+		),
+	)
+	sent, err := c.bot.Send(msg)
+	if err != nil {
+		c.log.Warn("Failed to send skill install confirmation", zap.Error(err))
+		return
+	}
+	c.setPendingSkillInstall(chatID, sent.MessageID, pendingSkillInstall{
+		UserID:    userID,
+		Command:   command,
+		Repo:      proposal.Repo,
+		CreatedAt: time.Now(),
+	})
 }
 
 func (c *Channel) editSettingsMessage(chatID int64, messageID int, text string, kb tgbotapi.InlineKeyboardMarkup) {
@@ -860,6 +1078,35 @@ func (c *Channel) answerCallback(id, text string, alert bool) {
 	_, _ = c.bot.Request(cb)
 }
 
+type skillInstallProposal struct {
+	Repo    string
+	Reason  string
+	Message string
+}
+
+var repoPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`)
+
+func parseSkillInstallProposal(content string) (skillInstallProposal, bool) {
+	var p skillInstallProposal
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "SKILL_INSTALL_PROPOSAL:"):
+			p.Repo = strings.TrimSpace(strings.TrimPrefix(line, "SKILL_INSTALL_PROPOSAL:"))
+		case strings.HasPrefix(line, "REASON:"):
+			p.Reason = strings.TrimSpace(strings.TrimPrefix(line, "REASON:"))
+		case strings.HasPrefix(line, "MESSAGE:"):
+			p.Message = strings.TrimSpace(strings.TrimPrefix(line, "MESSAGE:"))
+		}
+	}
+
+	if p.Repo == "" || !repoPattern.MatchString(p.Repo) {
+		return skillInstallProposal{}, false
+	}
+	return p, true
+}
+
 func (c *Channel) settingsText(lang, zh, en, ja string) string {
 	switch userprefs.NormalizeLanguage(lang) {
 	case "en":
@@ -873,6 +1120,10 @@ func (c *Channel) settingsText(lang, zh, en, ja string) string {
 
 func (c *Channel) settingsKey(chatID, userID int64) string {
 	return fmt.Sprintf("%d:%d", chatID, userID)
+}
+
+func (c *Channel) pendingSkillInstallKey(chatID int64, messageID int) string {
+	return fmt.Sprintf("%d:%d", chatID, messageID)
 }
 
 func (c *Channel) setSettingsInput(chatID, userID int64, mode string) {
@@ -892,6 +1143,34 @@ func (c *Channel) clearSettingsInput(chatID, userID int64) {
 	c.settingsMu.Lock()
 	defer c.settingsMu.Unlock()
 	delete(c.settingsInput, c.settingsKey(chatID, userID))
+}
+
+func (c *Channel) setPendingSkillInstall(chatID int64, messageID int, pending pendingSkillInstall) {
+	c.pendingSkillMu.Lock()
+	defer c.pendingSkillMu.Unlock()
+	c.pendingSkillInstalls[c.pendingSkillInstallKey(chatID, messageID)] = pending
+}
+
+func (c *Channel) getPendingSkillInstall(chatID int64, messageID int) (pendingSkillInstall, bool) {
+	c.pendingSkillMu.Lock()
+	defer c.pendingSkillMu.Unlock()
+
+	key := c.pendingSkillInstallKey(chatID, messageID)
+	pending, ok := c.pendingSkillInstalls[key]
+	if !ok {
+		return pendingSkillInstall{}, false
+	}
+	if time.Since(pending.CreatedAt) > 15*time.Minute {
+		delete(c.pendingSkillInstalls, key)
+		return pendingSkillInstall{}, false
+	}
+	return pending, true
+}
+
+func (c *Channel) clearPendingSkillInstall(chatID int64, messageID int) {
+	c.pendingSkillMu.Lock()
+	defer c.pendingSkillMu.Unlock()
+	delete(c.pendingSkillInstalls, c.pendingSkillInstallKey(chatID, messageID))
 }
 
 func (c *Channel) getProfile(ctx context.Context, userID int64) (userprefs.Profile, bool, error) {

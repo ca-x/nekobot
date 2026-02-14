@@ -14,10 +14,11 @@ const keyPrefix = "userprefs"
 
 // Profile stores user preferences per (channel, user).
 type Profile struct {
-	Language      string    `json:"language,omitempty"`
-	PreferredName string    `json:"preferred_name,omitempty"`
-	Preferences   string    `json:"preferences,omitempty"`
-	UpdatedAt     time.Time `json:"updated_at,omitempty"`
+	Language         string    `json:"language,omitempty"`
+	PreferredName    string    `json:"preferred_name,omitempty"`
+	Preferences      string    `json:"preferences,omitempty"`
+	SkillInstallMode string    `json:"skill_install_mode,omitempty"`
+	UpdatedAt        time.Time `json:"updated_at,omitempty"`
 }
 
 // Manager manages profile persistence.
@@ -58,9 +59,21 @@ func (m *Manager) Save(ctx context.Context, channel, userID string, p Profile) e
 	p.Language = NormalizeLanguage(p.Language)
 	p.PreferredName = strings.TrimSpace(p.PreferredName)
 	p.Preferences = strings.TrimSpace(p.Preferences)
+	p.SkillInstallMode = NormalizeSkillInstallMode(p.SkillInstallMode)
 	p.UpdatedAt = time.Now()
 
 	return m.store.Set(ctx, key(channel, userID), p)
+}
+
+// NormalizeSkillInstallMode returns normalized skill install preference.
+func NormalizeSkillInstallMode(mode string) string {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "legacy", "npx_preferred":
+		return mode
+	default:
+		return "legacy"
+	}
 }
 
 // Clear removes a profile.
@@ -93,6 +106,9 @@ func (p Profile) PromptContext() string {
 	}
 	if p.Preferences != "" {
 		parts = append(parts, "preferences="+p.Preferences)
+	}
+	if p.SkillInstallMode != "" {
+		parts = append(parts, "skill_install_mode="+NormalizeSkillInstallMode(p.SkillInstallMode))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -128,5 +144,6 @@ func decodeProfile(v interface{}) (Profile, error) {
 	}
 
 	p.Language = NormalizeLanguage(p.Language)
+	p.SkillInstallMode = NormalizeSkillInstallMode(p.SkillInstallMode)
 	return p, nil
 }

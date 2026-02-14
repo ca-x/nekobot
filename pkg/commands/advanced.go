@@ -50,8 +50,8 @@ func RegisterAdvancedCommands(registry *Registry, deps Dependencies) error {
 		},
 		{
 			Name:        "settings",
-			Description: "Set per-channel language/name/preferences",
-			Usage:       "/settings [show|lang <zh|en|ja>|name <text>|prefs <text>|clear]",
+			Description: "Set per-channel language/name/preferences/skill install mode",
+			Usage:       "/settings [show|lang <zh|en|ja>|name <text>|prefs <text>|skillmode <legacy|npx>|clear]",
 			Handler:     settingsHandler(deps.UserPrefs),
 		},
 		{
@@ -70,7 +70,7 @@ func RegisterAdvancedCommands(registry *Registry, deps Dependencies) error {
 
 	// Register skill commands dynamically
 	if deps.SkillsManager != nil {
-		if err := registerSkillCommands(registry, deps.SkillsManager, deps.Agent); err != nil {
+		if err := registerSkillCommands(registry, deps.SkillsManager, deps.Agent, deps.UserPrefs); err != nil {
 			return fmt.Errorf("failed to register skill commands: %w", err)
 		}
 	}
@@ -342,6 +342,24 @@ func settingsHandler(prefsMgr *userprefs.Manager) CommandHandler {
 			}
 			return CommandResponse{Content: "✅ 偏好已更新", ReplyInline: true}, nil
 
+		case "skillmode", "skill_mode", "skills":
+			mode := strings.ToLower(strings.TrimSpace(value))
+			switch mode {
+			case "npx", "npx_preferred":
+				profile.SkillInstallMode = "npx_preferred"
+			case "legacy", "default", "current":
+				profile.SkillInstallMode = "legacy"
+			default:
+				return CommandResponse{Content: "❌ 用法: /settings skillmode <legacy|npx>", ReplyInline: true}, nil
+			}
+			if err := prefsMgr.Save(ctx, channel, userID, profile); err != nil {
+				return CommandResponse{Content: "❌ 保存失败: " + err.Error(), ReplyInline: true}, nil
+			}
+			if profile.SkillInstallMode == "npx_preferred" {
+				return CommandResponse{Content: "✅ Skills 安装方式已更新为: npx 优先（失败时回退当前方式）", ReplyInline: true}, nil
+			}
+			return CommandResponse{Content: "✅ Skills 安装方式已更新为: 当前方式", ReplyInline: true}, nil
+
 		case "clear", "reset":
 			if err := prefsMgr.Clear(ctx, channel, userID); err != nil {
 				return CommandResponse{Content: "❌ 清除失败: " + err.Error(), ReplyInline: true}, nil
@@ -349,7 +367,7 @@ func settingsHandler(prefsMgr *userprefs.Manager) CommandHandler {
 			return CommandResponse{Content: "✅ 设置已清除", ReplyInline: true}, nil
 
 		default:
-			return CommandResponse{Content: "ℹ️ 用法: /settings [show|lang <zh|en|ja>|name <text>|prefs <text>|clear]", ReplyInline: true}, nil
+			return CommandResponse{Content: "ℹ️ 用法: /settings [show|lang <zh|en|ja>|name <text>|prefs <text>|skillmode <legacy|npx>|clear]", ReplyInline: true}, nil
 		}
 	}
 }
@@ -368,11 +386,17 @@ func formatSettings(p userprefs.Profile) string {
 		prefs = "(未设置)"
 	}
 
-	return fmt.Sprintf("⚙️ 当前设置\n\n语言: %s\n称呼: %s\n偏好: %s\n\n用法:\n/settings lang <zh|en|ja>\n/settings name <称呼>\n/settings prefs <偏好描述>\n/settings clear", lang, name, prefs)
+	mode := userprefs.NormalizeSkillInstallMode(p.SkillInstallMode)
+	modeLabel := "当前方式"
+	if mode == "npx_preferred" {
+		modeLabel = "npx 优先"
+	}
+
+	return fmt.Sprintf("⚙️ 当前设置\n\n语言: %s\n称呼: %s\n偏好: %s\nSkills安装: %s\n\n用法:\n/settings lang <zh|en|ja>\n/settings name <称呼>\n/settings prefs <偏好描述>\n/settings skillmode <legacy|npx>\n/settings clear", lang, name, prefs, modeLabel)
 }
 
 // registerSkillCommands registers commands for all loaded skills.
-func registerSkillCommands(registry *Registry, skillsMgr *skills.Manager, ag *agent.Agent) error {
+func registerSkillCommands(registry *Registry, skillsMgr *skills.Manager, ag *agent.Agent, prefsMgr *userprefs.Manager) error {
 	allSkills := skillsMgr.List()
 
 	for _, skill := range allSkills {
@@ -386,7 +410,7 @@ func registerSkillCommands(registry *Registry, skillsMgr *skills.Manager, ag *ag
 			Name:        skillName,
 			Description: skillDesc,
 			Usage:       fmt.Sprintf("/%s [args]", skillName),
-			Handler:     skillHandler(skillsMgr, ag, skillName),
+			Handler:     skillHandler(skillsMgr, ag, prefsMgr, skillName),
 		}
 
 		// Try to register (ignore if already exists)
@@ -403,7 +427,7 @@ func registerSkillCommands(registry *Registry, skillsMgr *skills.Manager, ag *ag
 				Name:        alias,
 				Description: skillDesc,
 				Usage:       fmt.Sprintf("/%s [args]", alias),
-				Handler:     skillHandler(skillsMgr, ag, skillName),
+				Handler:     skillHandler(skillsMgr, ag, prefsMgr, skillName),
 			})
 		}
 	}
@@ -449,7 +473,7 @@ func toTelegramSafeCommandName(name string) string {
 }
 
 // skillHandler creates a handler for executing a skill.
-func skillHandler(skillsMgr *skills.Manager, ag *agent.Agent, skillName string) CommandHandler {
+func skillHandler(skillsMgr *skills.Manager, ag *agent.Agent, prefsMgr *userprefs.Manager, skillName string) CommandHandler {
 	return func(ctx context.Context, req CommandRequest) (CommandResponse, error) {
 		// Get the skill
 		skill, err := skillsMgr.Get(skillName)
@@ -471,9 +495,70 @@ func skillHandler(skillsMgr *skills.Manager, ag *agent.Agent, skillName string) 
 		if userTask == "" {
 			userTask = skillName
 		}
+
+		installMode := "legacy"
+		if prefsMgr != nil {
+			if profile, ok, err := prefsMgr.Get(ctx, req.Channel, req.UserID); err == nil && ok {
+				installMode = userprefs.NormalizeSkillInstallMode(profile.SkillInstallMode)
+			}
+		}
+		installModeHint := "涉及技能安装时，使用当前方式。"
+		if installMode == "npx_preferred" {
+			installModeHint = "涉及技能安装时，优先尝试 `npx skills add <owner/repo>`，失败再回退当前方式。"
+		}
+
+		confirmedRepo := parseConfirmedInstallRepo(userTask)
+		if skillName == "find-skills" && installMode == "npx_preferred" {
+			prompt := fmt.Sprintf(
+				"你正在处理 Telegram slash command /%s，对应技能 %q。\n"+
+					"必须调用技能 %q（skill invoke）并按技能指引执行。\n"+
+					"%s\n"+
+					"要求：\n"+
+					"1) 只做最少必要的工具调用，避免重复尝试；\n"+
+					"2) 除非用户已确认，否则不要安装；\n"+
+					"3) 成功时不要返回技能说明文本。\n",
+				req.Command,
+				skill.Name,
+				skill.Name,
+				installModeHint,
+			)
+			if confirmedRepo != "" {
+				prompt += fmt.Sprintf(
+					"用户已确认安装仓库：%s。\n"+
+						"请立刻执行安装：优先 `npx skills add %s`，失败再回退现有方式。\n"+
+						"完成后只返回最终结果（成功/失败 + 关键原因）。",
+					confirmedRepo,
+					confirmedRepo,
+				)
+			} else {
+				prompt += fmt.Sprintf(
+					"用户请求：%s\n"+
+						"请先使用 https://skills.sh/?q=<query> 查找最匹配仓库，并且不要执行安装。\n"+
+						"你必须严格输出以下三行（不要多余内容）：\n"+
+						"SKILL_INSTALL_PROPOSAL: <owner/repo>\n"+
+						"REASON: <一句话原因>\n"+
+						"MESSAGE: <给用户的确认提示>\n"+
+						"如果没有合适结果，改为输出：\n"+
+						"NO_PROPOSAL: <原因>",
+					userTask,
+				)
+			}
+
+			sess := newCommandSession()
+			reply, err := ag.Chat(ctx, sess, prompt)
+			if err != nil {
+				return CommandResponse{
+					Content:     fmt.Sprintf("❌ 执行技能失败: %v", err),
+					ReplyInline: true,
+				}, nil
+			}
+			return CommandResponse{Content: reply, ReplyInline: true}, nil
+		}
+
 		prompt := fmt.Sprintf(
 			"你正在处理 Telegram slash command /%s。\n"+
 				"必须调用技能 %q（skill invoke）并按技能指引执行。\n"+
+				"用户安装偏好：%s\n"+
 				"要求：\n"+
 				"1) 只做最少必要的工具调用，避免重复尝试；\n"+
 				"2) 成功时只返回最终执行结果，不要返回技能说明；\n"+
@@ -481,6 +566,7 @@ func skillHandler(skillsMgr *skills.Manager, ag *agent.Agent, skillName string) 
 				"用户请求：%s",
 			req.Command,
 			skill.Name,
+			installModeHint,
 			userTask,
 		)
 
@@ -498,6 +584,19 @@ func skillHandler(skillsMgr *skills.Manager, ag *agent.Agent, skillName string) 
 			ReplyInline: true,
 		}, nil
 	}
+}
+
+func parseConfirmedInstallRepo(task string) string {
+	const prefix = "__confirm_install__"
+	task = strings.TrimSpace(task)
+	if !strings.HasPrefix(task, prefix) {
+		return ""
+	}
+	repo := strings.TrimSpace(strings.TrimPrefix(task, prefix))
+	if repo == "" || !strings.Contains(repo, "/") {
+		return ""
+	}
+	return repo
 }
 
 type commandSession struct {
