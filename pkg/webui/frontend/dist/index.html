@@ -1,858 +1,167 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nekobot WebUI</title>
-  <style>
-    :root {
-      color-scheme: dark;
-      --bg: #0f172a;
-      --panel: #111827;
-      --soft: #1f2937;
-      --text: #e5e7eb;
-      --muted: #9ca3af;
-      --accent: #22d3ee;
-      --danger: #f87171;
-      --ok: #34d399;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      background: radial-gradient(circle at top, #1e293b 0%, var(--bg) 55%);
-      color: var(--text);
-      min-height: 100vh;
-    }
-    .app {
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 20px 16px 40px;
-    }
-    .card {
-      background: rgba(17, 24, 39, 0.92);
-      border: 1px solid #374151;
-      border-radius: 14px;
-      padding: 16px;
-      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
-    }
-    h1, h2, h3 { margin: 0 0 12px; }
-    p { margin: 0; color: var(--muted); }
-    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    .row + .row { margin-top: 12px; }
-    .spacer { flex: 1; }
-    input, select, button, textarea {
-      background: #0b1220;
-      color: var(--text);
-      border: 1px solid #374151;
-      border-radius: 10px;
-      padding: 10px 12px;
-      font: inherit;
-    }
-    button {
-      cursor: pointer;
-      transition: all .15s ease;
-      background: #0b1220;
-    }
-    button:hover { border-color: var(--accent); }
-    button.primary {
-      background: #0e7490;
-      border-color: #0891b2;
-      color: #ecfeff;
-      font-weight: 600;
-    }
-    button.danger { border-color: #7f1d1d; color: #fecaca; }
-    .hidden { display: none !important; }
-    .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
-    .tab.active { border-color: var(--accent); color: #cffafe; }
-    .status {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: #0b1220;
-      border: 1px solid #374151;
-      color: var(--muted);
-      font-size: 13px;
-    }
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #6b7280;
-    }
-    .dot.ok { background: var(--ok); }
-    .dot.err { background: var(--danger); }
-    .chat-log {
-      height: 380px;
-      overflow: auto;
-      border-radius: 12px;
-      border: 1px solid #374151;
-      background: #0b1220;
-      padding: 10px;
-      margin-bottom: 10px;
-    }
-    .msg {
-      margin-bottom: 10px;
-      padding: 8px 10px;
-      border-radius: 10px;
-      line-height: 1.45;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .msg.user { background: #1e293b; border: 1px solid #334155; }
-    .msg.bot { background: #13263f; border: 1px solid #1f3f66; }
-    .msg.system { background: #1f2937; border: 1px dashed #475569; color: var(--muted); }
-    .msg.error { background: #3f1419; border: 1px solid #7f1d1d; color: #fecaca; }
-    .channels-table {
-      width: 100%;
-      border-collapse: collapse;
-      border: 1px solid #374151;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-    .channels-table th, .channels-table td {
-      padding: 10px;
-      border-bottom: 1px solid #374151;
-      text-align: left;
-      font-size: 14px;
-    }
-    .channels-table th { color: var(--muted); font-weight: 600; }
-    .badge {
-      border: 1px solid #374151;
-      border-radius: 999px;
-      padding: 2px 8px;
-      font-size: 12px;
-      color: var(--muted);
-      display: inline-block;
-    }
-    .badge.on { color: #bbf7d0; border-color: #166534; }
-    .badge.off { color: #fecaca; border-color: #7f1d1d; }
-    pre {
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      background: #0b1220;
-      border: 1px solid #374151;
-      border-radius: 12px;
-      padding: 12px;
-      max-height: 360px;
-      overflow: auto;
-    }
-    .mt { margin-top: 12px; }
-  </style>
+  <title>Nekobot</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="app">
-    <div id="authCard" class="card">
-      <h1>Nekobot WebUI</h1>
-      <p id="authHint">Checking initialization status...</p>
-      <div id="authInit" class="hidden mt">
-        <h3>Initialize Admin Account</h3>
-        <div class="row">
-          <input id="initUsername" value="admin" placeholder="Username">
-          <input id="initPassword" type="password" placeholder="Password">
-          <button id="initBtn" class="primary">Initialize</button>
-        </div>
+    <header class="topbar">
+      <span class="brand">Nekobot</span>
+      <span class="brand-sub" data-i18n="appSubtitle">Control Panel</span>
+      <div class="spacer"></div>
+      <div class="topbar-controls">
+        <button id="themeToggle" class="icon-btn" aria-label="Toggle theme">
+          <svg id="themeIconSun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          <svg id="themeIconMoon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        </button>
+        <select id="langSelect" class="lang-select">
+          <option value="en">EN</option>
+          <option value="zh-CN">中文</option>
+          <option value="ja">日本語</option>
+        </select>
       </div>
-      <div id="authLogin" class="hidden mt">
-        <h3>Login</h3>
-        <div class="row">
-          <input id="loginUsername" value="admin" placeholder="Username">
-          <input id="loginPassword" type="password" placeholder="Password">
-          <button id="loginBtn" class="primary">Login</button>
+    </header>
+
+    <!-- Auth -->
+    <div id="authWrapper" class="auth-wrapper">
+      <div id="authCard" class="card auth-card">
+        <svg class="auth-neko" width="56" height="56" viewBox="0 0 64 64" fill="none">
+          <path d="M14 28L19 10l9 12h8l9-12 5 18" fill="currentColor" opacity="0.13" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+          <circle cx="32" cy="38" r="19" fill="var(--panel)" stroke="currentColor" stroke-width="2"/>
+          <circle cx="24" cy="36" r="2.8" fill="currentColor"/><circle cx="40" cy="36" r="2.8" fill="currentColor"/>
+          <circle cx="25.2" cy="35" r="0.9" fill="var(--panel)"/><circle cx="41.2" cy="35" r="0.9" fill="var(--panel)"/>
+          <ellipse cx="32" cy="41" rx="2" ry="1.4" fill="currentColor" opacity="0.5"/>
+          <path d="M28 44c2 2 4 2.5 4 2.5s2-.5 4-2.5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        </svg>
+        <h1>Nekobot</h1>
+        <p id="authHint" class="auth-hint" data-i18n="checkingInit">Checking initialization status...</p>
+
+        <div id="authInit" class="hidden">
+          <h3 data-i18n="initTitle">Initialize Admin Account</h3>
+          <div class="auth-form">
+            <input id="initUsername" value="admin" data-i18n-ph="username" placeholder="Username">
+            <input id="initPassword" type="password" data-i18n-ph="password" placeholder="Password">
+            <button id="initBtn" class="btn btn-primary" style="width:100%;" data-i18n="initialize">Initialize</button>
+          </div>
         </div>
+
+        <div id="authLogin" class="hidden">
+          <h3 data-i18n="loginTitle">Login</h3>
+          <div class="auth-form">
+            <input id="loginUsername" value="admin" data-i18n-ph="username" placeholder="Username">
+            <input id="loginPassword" type="password" data-i18n-ph="password" placeholder="Password">
+            <button id="loginBtn" class="btn btn-primary" style="width:100%;" data-i18n="login">Login</button>
+          </div>
+        </div>
+
+        <p id="authError" class="error-text"></p>
       </div>
-      <p id="authError" class="mt" style="color:#fca5a5;"></p>
     </div>
 
-    <div id="mainCard" class="card hidden">
-      <div class="row">
-        <h2 style="margin:0;">Nekobot Dashboard</h2>
+    <!-- Dashboard -->
+    <div id="mainCard" class="card main-card hidden">
+      <div class="dash-header">
+        <h2 data-i18n="dashboard">Dashboard</h2>
         <div class="spacer"></div>
-        <span id="wsState" class="status"><span class="dot"></span><span>WS disconnected</span></span>
-        <button id="logoutBtn" class="danger">Logout</button>
+        <span id="wsState" class="ws-status"><span class="ws-dot"></span><span data-i18n="wsDisconnected">Disconnected</span></span>
+        <button id="logoutBtn" class="btn btn-danger btn-sm" data-i18n="logout">Logout</button>
       </div>
 
-      <div class="tabs mt">
-        <button class="tab active" data-tab="chat">Chat Playground</button>
-        <button class="tab" data-tab="providers">Providers</button>
-        <button class="tab" data-tab="channels">Channels</button>
-        <button class="tab" data-tab="config">Config</button>
-        <button class="tab" data-tab="status">System</button>
-      </div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="chat" data-i18n="tabChat">Chat</button>
+        <button class="tab" data-tab="providers" data-i18n="tabProviders">Providers</button>
+        <button class="tab" data-tab="channels" data-i18n="tabChannels">Channels</button>
+        <button class="tab" data-tab="config" data-i18n="tabConfig">Config</button>
+        <button class="tab" data-tab="status" data-i18n="tabStatus">System</button>
+      </nav>
 
+      <!-- Chat Tab -->
       <section id="tab-chat">
-        <div class="row">
+        <div class="chat-controls">
           <select id="modelSelect"></select>
-          <input id="modelInput" placeholder="Custom model override (optional)">
-          <button id="connectWsBtn">Reconnect WS</button>
-          <button id="clearChatBtn">Clear Session</button>
+          <input id="modelInput" data-i18n-ph="customModel" placeholder="Custom model override">
+          <button id="connectWsBtn" class="btn btn-sm" data-i18n="reconnect">Reconnect</button>
+          <button id="clearChatBtn" class="btn btn-sm" data-i18n="clearSession">Clear</button>
         </div>
-        <div id="chatLog" class="chat-log mt"></div>
-        <div class="row">
-          <textarea id="chatInput" rows="2" style="flex:1;" placeholder="Type message and press Send"></textarea>
-          <button id="sendBtn" class="primary">Send</button>
+        <div id="chatLog" class="chat-log">
+          <div class="chat-empty" data-i18n="chatEmptyHint">Send a message to start chatting</div>
+        </div>
+        <div class="chat-input-row">
+          <textarea id="chatInput" rows="2" data-i18n-ph="chatPlaceholder" placeholder="Type a message..."></textarea>
+          <button id="sendBtn" class="btn btn-primary" data-i18n="send">Send</button>
         </div>
       </section>
 
+      <!-- Providers Tab -->
       <section id="tab-providers" class="hidden">
-        <div class="row">
+        <div class="toolbar">
           <select id="providerSelect"></select>
-          <button id="refreshProvidersBtn">Refresh</button>
-          <button id="newProviderBtn">New</button>
-          <button id="fetchProviderModelsBtn">Fetch Models</button>
-          <button id="saveProviderBtn" class="primary">Save</button>
-          <button id="deleteProviderBtn" class="danger">Delete</button>
-          <span id="providerMsg" style="color:#9ca3af;"></span>
+          <button id="refreshProvidersBtn" class="btn btn-sm" data-i18n="refresh">Refresh</button>
+          <button id="newProviderBtn" class="btn btn-sm" data-i18n="newProvider">New</button>
+          <button id="fetchProviderModelsBtn" class="btn btn-sm" data-i18n="fetchModels">Discover Models</button>
+          <button id="saveProviderBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
+          <button id="deleteProviderBtn" class="btn btn-sm btn-danger" data-i18n="delete">Delete</button>
+          <span id="providerMsg" class="msg-text"></span>
         </div>
-        <div class="row mt">
-          <input id="providerModelInput" placeholder="manual model name">
-          <button id="addProviderModelBtn">Add Model</button>
+        <div class="toolbar mt-sm">
+          <input id="providerModelInput" data-i18n-ph="manualModel" placeholder="Manual model name" style="max-width:260px;">
+          <button id="addProviderModelBtn" class="btn btn-sm" data-i18n="addModel">Add</button>
         </div>
-        <textarea id="providerEditor" rows="14" class="mt" style="width:100%;" spellcheck="false"></textarea>
+        <textarea id="providerEditor" rows="14" class="editor-area" spellcheck="false"></textarea>
       </section>
 
+      <!-- Channels Tab -->
       <section id="tab-channels" class="hidden">
-        <div class="row">
-          <button id="refreshChannelsBtn">Refresh</button>
+        <div class="toolbar">
+          <button id="refreshChannelsBtn" class="btn btn-sm" data-i18n="refresh">Refresh</button>
         </div>
-        <table class="channels-table mt">
+        <table class="data-table">
           <thead>
-            <tr><th>Channel</th><th>Enabled</th><th>Status</th><th>Action</th></tr>
+            <tr>
+              <th data-i18n="channel">Channel</th>
+              <th data-i18n="enabled">Enabled</th>
+              <th data-i18n="status">Status</th>
+              <th data-i18n="action">Action</th>
+            </tr>
           </thead>
           <tbody id="channelsBody"></tbody>
         </table>
-        <div id="channelEditor" class="mt hidden">
+        <div id="channelEditor" class="section-editor hidden">
           <h3 id="channelEditorTitle">Edit Channel</h3>
-          <textarea id="channelEditorInput" rows="12" style="width:100%;" spellcheck="false"></textarea>
-          <div class="row mt">
-            <button id="saveChannelBtn" class="primary">Save</button>
-            <button id="cancelChannelBtn">Cancel</button>
-            <span id="channelEditorMsg" style="color:#9ca3af;"></span>
+          <textarea id="channelEditorInput" rows="12" class="editor-area" spellcheck="false"></textarea>
+          <div class="toolbar mt">
+            <button id="saveChannelBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
+            <button id="cancelChannelBtn" class="btn btn-sm" data-i18n="cancel">Cancel</button>
+            <span id="channelEditorMsg" class="msg-text"></span>
           </div>
         </div>
       </section>
 
-      <section id="tab-status" class="hidden">
-        <div class="row">
-          <button id="refreshStatusBtn">Refresh</button>
+      <!-- Config Tab -->
+      <section id="tab-config" class="hidden">
+        <div class="toolbar">
+          <button id="refreshConfigBtn" class="btn btn-sm" data-i18n="refresh">Refresh</button>
+          <button id="saveConfigBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
+          <span id="configMsg" class="msg-text"></span>
         </div>
-        <pre id="statusPre" class="mt">{}</pre>
+        <textarea id="configEditor" rows="16" class="editor-area" spellcheck="false"></textarea>
       </section>
 
-      <section id="tab-config" class="hidden">
-        <div class="row">
-          <button id="refreshConfigBtn">Refresh</button>
-          <button id="saveConfigBtn" class="primary">Save</button>
-          <span id="configMsg" style="color:#9ca3af;"></span>
+      <!-- Status Tab -->
+      <section id="tab-status" class="hidden">
+        <div class="toolbar">
+          <button id="refreshStatusBtn" class="btn btn-sm" data-i18n="refresh">Refresh</button>
         </div>
-        <textarea id="configEditor" rows="16" class="mt" style="width:100%;" spellcheck="false"></textarea>
+        <pre id="statusPre" class="json-pre">{}</pre>
       </section>
     </div>
+
+    <div class="footer">Powered by Nekobot</div>
   </div>
 
-  <script>
-    const state = {
-      token: localStorage.getItem("nekobot_webui_token") || "",
-      ws: null,
-      models: [],
-      channels: {},
-      editingChannel: "",
-      providers: [],
-      editingProviderName: ""
-    };
-
-    const $ = (id) => document.getElementById(id);
-
-    function setAuthError(msg) { $("authError").textContent = msg || ""; }
-
-    async function api(path, options = {}) {
-      const headers = Object.assign({ "Content-Type": "application/json" }, options.headers || {});
-      if (state.token) headers["Authorization"] = `Bearer ${state.token}`;
-      const resp = await fetch(path, Object.assign({}, options, { headers }));
-      const text = await resp.text();
-      let payload = {};
-      try { payload = text ? JSON.parse(text) : {}; } catch (_) { payload = { raw: text }; }
-      if (!resp.ok) throw new Error(payload.error || `HTTP ${resp.status}`);
-      return payload;
-    }
-
-    function showMain() {
-      $("authCard").classList.add("hidden");
-      $("mainCard").classList.remove("hidden");
-    }
-
-    function showAuth() {
-      $("mainCard").classList.add("hidden");
-      $("authCard").classList.remove("hidden");
-    }
-
-    function setWSState(connected, text) {
-      const wrap = $("wsState");
-      wrap.querySelector(".dot").className = "dot " + (connected ? "ok" : "err");
-      wrap.querySelector("span:last-child").textContent = text;
-    }
-
-    function pushChat(kind, text) {
-      const log = $("chatLog");
-      const item = document.createElement("div");
-      item.className = `msg ${kind}`;
-      item.textContent = text;
-      log.appendChild(item);
-      log.scrollTop = log.scrollHeight;
-    }
-
-    async function checkInitAndAuth() {
-      setAuthError("");
-      try {
-        await api("/api/status");
-        showMain();
-        await initMain();
-        return;
-      } catch (_) {}
-
-      showAuth();
-      const init = await fetch("/api/auth/init-status").then(r => r.json());
-      if (init.initialized) {
-        $("authHint").textContent = "Please login to continue.";
-        $("authLogin").classList.remove("hidden");
-        $("authInit").classList.add("hidden");
-      } else {
-        $("authHint").textContent = "First run detected. Create admin credentials.";
-        $("authInit").classList.remove("hidden");
-        $("authLogin").classList.add("hidden");
-      }
-    }
-
-    async function initMain() {
-      await Promise.all([loadModels(), loadProviders(), loadChannels(), loadConfig(), loadStatus()]);
-      connectWS();
-    }
-
-    async function loadModels() {
-      try {
-        const [providers, cfg] = await Promise.all([
-          api("/api/providers"),
-          api("/api/config")
-        ]);
-        const models = [];
-        const seen = new Set();
-
-        const addModel = (provider, model) => {
-          const m = String(model || "").trim();
-          if (!m) return;
-          const p = String(provider || "default").trim() || "default";
-          const key = `${p}::${m}`;
-          if (seen.has(key)) return;
-          seen.add(key);
-          models.push({ provider: p, model: m });
-        };
-
-        const currentProvider = cfg?.agents?.defaults?.provider || "default";
-        addModel(currentProvider, cfg?.agents?.defaults?.model || "");
-
-        for (const p of providers) {
-          if (p.default_model) addModel(p.name, p.default_model);
-          if (Array.isArray(p.models)) {
-            for (const m of p.models) addModel(p.name, m);
-          }
-        }
-        state.models = models;
-      } catch (_) {
-        state.models = [];
-      }
-
-      const sel = $("modelSelect");
-      sel.innerHTML = "";
-      const auto = document.createElement("option");
-      auto.value = "";
-      auto.textContent = "Default model";
-      sel.appendChild(auto);
-
-      for (const item of state.models) {
-        const opt = document.createElement("option");
-        opt.value = item.model;
-        opt.textContent = `${item.model} (${item.provider})`;
-        sel.appendChild(opt);
-      }
-
-      if (state.models.length > 0) {
-        $("modelInput").value = state.models[0].model;
-      }
-    }
-
-    async function loadChannels() {
-      const body = $("channelsBody");
-      body.innerHTML = "";
-      try {
-        const data = await api("/api/channels");
-        state.channels = data;
-        const names = Object.keys(data).sort();
-        for (const name of names) {
-          const cfg = data[name] || {};
-          if (typeof cfg !== "object" || cfg === null || !Object.prototype.hasOwnProperty.call(cfg, "enabled")) {
-            continue;
-          }
-          const tr = document.createElement("tr");
-          const statusCell = document.createElement("td");
-          statusCell.textContent = "-";
-          tr.innerHTML = `
-            <td>${name}</td>
-            <td><span class="badge ${cfg.enabled ? "on" : "off"}">${cfg.enabled ? "on" : "off"}</span></td>
-            <td></td>
-            <td>
-              <button data-test="${name}">Test</button>
-              <button data-edit="${name}">Edit</button>
-            </td>
-          `;
-          tr.children[2].replaceWith(statusCell);
-          body.appendChild(tr);
-        }
-      } catch (err) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td colspan="4" style="color:#fca5a5;">${err.message}</td>`;
-        body.appendChild(tr);
-      }
-    }
-
-    function defaultProviderTemplate() {
-      return {
-        name: "new-provider",
-        provider_kind: "openai",
-        api_base: "",
-        api_key: "",
-        models: [],
-        default_model: "",
-        timeout: 60
-      };
-    }
-
-    function setProviderMessage(text, isError = false) {
-      const el = $("providerMsg");
-      el.style.color = isError ? "#fca5a5" : "#9ca3af";
-      el.textContent = text || "";
-    }
-
-    function renderProviderSelect() {
-      const sel = $("providerSelect");
-      sel.innerHTML = "";
-
-      for (const p of state.providers) {
-        const opt = document.createElement("option");
-        opt.value = p.name;
-        opt.textContent = p.name;
-        sel.appendChild(opt);
-      }
-
-      if (!state.providers.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "No providers";
-        sel.appendChild(opt);
-      }
-    }
-
-    function openProvider(name) {
-      const provider = state.providers.find(p => p.name === name);
-      if (!provider) {
-        state.editingProviderName = "";
-        $("providerEditor").value = JSON.stringify(defaultProviderTemplate(), null, 2);
-        $("providerModelInput").value = "";
-        return;
-      }
-      state.editingProviderName = provider.name;
-      $("providerEditor").value = JSON.stringify(provider, null, 2);
-      $("providerSelect").value = provider.name;
-      $("providerModelInput").value = "";
-    }
-
-    function readProviderEditor() {
-      return JSON.parse($("providerEditor").value || "{}");
-    }
-
-    function writeProviderEditor(payload) {
-      $("providerEditor").value = JSON.stringify(payload || {}, null, 2);
-    }
-
-    async function loadProviders() {
-      try {
-        const data = await api("/api/providers");
-        state.providers = Array.isArray(data) ? data : [];
-        renderProviderSelect();
-        if (state.providers.length > 0) {
-          const first = state.providers[0].name;
-          openProvider(state.editingProviderName || first);
-        } else {
-          state.editingProviderName = "";
-          $("providerEditor").value = JSON.stringify(defaultProviderTemplate(), null, 2);
-        }
-        setProviderMessage("");
-      } catch (err) {
-        setProviderMessage(err.message, true);
-      }
-    }
-
-    async function saveProvider() {
-      let payload;
-      try {
-        payload = readProviderEditor();
-      } catch (err) {
-        setProviderMessage(`Invalid JSON: ${err.message}`, true);
-        return;
-      }
-
-      if (!payload.name || !String(payload.name).trim()) {
-        setProviderMessage("Provider name is required", true);
-        return;
-      }
-
-      try {
-        if (state.editingProviderName) {
-          await api(`/api/providers/${encodeURIComponent(state.editingProviderName)}`, {
-            method: "PUT",
-            body: JSON.stringify(payload)
-          });
-        } else {
-          await api("/api/providers", {
-            method: "POST",
-            body: JSON.stringify(payload)
-          });
-        }
-        state.editingProviderName = payload.name;
-        setProviderMessage("Saved.");
-        await loadProviders();
-        await loadModels();
-      } catch (err) {
-        setProviderMessage(err.message, true);
-      }
-    }
-
-    async function deleteProvider() {
-      const name = state.editingProviderName || $("providerSelect").value;
-      if (!name) {
-        setProviderMessage("No provider selected", true);
-        return;
-      }
-      if (!confirm(`Delete provider ?`)) return;
-
-      try {
-        await api(`/api/providers/${encodeURIComponent(name)}`, { method: "DELETE" });
-        state.editingProviderName = "";
-        setProviderMessage("Deleted.");
-        await loadProviders();
-        await loadModels();
-      } catch (err) {
-        setProviderMessage(err.message, true);
-      }
-    }
-
-    function newProvider() {
-      state.editingProviderName = "";
-      $("providerEditor").value = JSON.stringify(defaultProviderTemplate(), null, 2);
-      setProviderMessage("Creating new provider.");
-    }
-
-    async function fetchProviderModels() {
-      let payload;
-      try {
-        payload = readProviderEditor();
-      } catch (err) {
-        setProviderMessage(`Invalid JSON: ${err.message}`, true);
-        return;
-      }
-
-      setProviderMessage("Discovering models...");
-      try {
-        const result = await api("/api/providers/discover-models", {
-          method: "POST",
-          body: JSON.stringify(payload)
-        });
-        const models = Array.isArray(result.models) ? result.models : [];
-        payload.models = models;
-        if (!payload.default_model && models.length > 0) {
-          payload.default_model = models[0];
-        }
-        writeProviderEditor(payload);
-        setProviderMessage(`Discovered ${models.length} model(s).`);
-      } catch (err) {
-        setProviderMessage(`Auto-discovery failed: ${err.message}. You can still input models manually.`, true);
-      }
-    }
-
-    function addProviderModel() {
-      const model = $("providerModelInput").value.trim();
-      if (!model) {
-        setProviderMessage("Please enter a model name", true);
-        return;
-      }
-
-      let payload;
-      try {
-        payload = readProviderEditor();
-      } catch (err) {
-        setProviderMessage(`Invalid JSON: ${err.message}`, true);
-        return;
-      }
-
-      const existing = Array.isArray(payload.models) ? payload.models : [];
-      if (!existing.includes(model)) {
-        existing.push(model);
-      }
-      payload.models = existing;
-      if (!payload.default_model) {
-        payload.default_model = model;
-      }
-      writeProviderEditor(payload);
-      $("providerModelInput").value = "";
-      setProviderMessage("Model added. Remember to Save provider.");
-    }
-
-    async function testChannel(name, statusCell) {
-      statusCell.textContent = "Testing...";
-      try {
-        const r = await api(`/api/channels/${encodeURIComponent(name)}/test`, { method: "POST" });
-        statusCell.textContent = `${r.status || "ok"}${r.reachable ? " (reachable)" : ""}`;
-      } catch (err) {
-        statusCell.textContent = `error: ${err.message}`;
-      }
-    }
-
-    async function loadStatus() {
-      try {
-        const status = await api("/api/status");
-        $("statusPre").textContent = JSON.stringify(status, null, 2);
-      } catch (err) {
-        $("statusPre").textContent = `Error: ${err.message}`;
-      }
-    }
-
-    function setConfigMessage(text, isError = false) {
-      const el = $("configMsg");
-      el.style.color = isError ? "#fca5a5" : "#9ca3af";
-      el.textContent = text || "";
-    }
-
-    async function loadConfig() {
-      try {
-        const cfg = await api("/api/config");
-        $("configEditor").value = JSON.stringify(cfg, null, 2);
-        setConfigMessage("");
-      } catch (err) {
-        setConfigMessage(err.message, true);
-      }
-    }
-
-    async function saveConfig() {
-      let payload;
-      try {
-        payload = JSON.parse($("configEditor").value || "{}");
-      } catch (err) {
-        setConfigMessage(`Invalid JSON: ${err.message}`, true);
-        return;
-      }
-
-      setConfigMessage("Saving...");
-      try {
-        await api("/api/config", {
-          method: "PUT",
-          body: JSON.stringify(payload)
-        });
-        setConfigMessage("Saved.");
-        await Promise.all([loadStatus(), loadModels()]);
-      } catch (err) {
-        setConfigMessage(err.message, true);
-      }
-    }
-
-    function connectWS() {
-      if (!state.token) return;
-      if (state.ws) {
-        try { state.ws.close(); } catch (_) {}
-      }
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${proto}://${location.host}/api/chat/ws?token=${encodeURIComponent(state.token)}`);
-      state.ws = ws;
-
-      ws.onopen = () => setWSState(true, "WS connected");
-      ws.onclose = () => setWSState(false, "WS disconnected");
-      ws.onerror = () => setWSState(false, "WS error");
-      ws.onmessage = (ev) => {
-        let msg = {};
-        try { msg = JSON.parse(ev.data); } catch (_) { return; }
-        if (msg.type === "message") pushChat("bot", msg.content || "");
-        else if (msg.type === "error") pushChat("error", msg.content || "Unknown error");
-        else pushChat("system", msg.content || msg.type || "event");
-      };
-    }
-
-    function sendChat() {
-      const text = $("chatInput").value.trim();
-      if (!text || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-      const customModel = $("modelInput").value.trim();
-      const model = customModel || $("modelSelect").value;
-      state.ws.send(JSON.stringify({ type: "message", content: text, model }));
-      pushChat("user", text);
-      $("chatInput").value = "";
-    }
-
-    function openChannelEditor(name) {
-      state.editingChannel = name;
-      const cfg = state.channels[name] || {};
-      $("channelEditorTitle").textContent = `Edit Channel: ${name}`;
-      $("channelEditorInput").value = JSON.stringify(cfg, null, 2);
-      $("channelEditorMsg").textContent = "";
-      $("channelEditor").classList.remove("hidden");
-    }
-
-    function closeChannelEditor() {
-      state.editingChannel = "";
-      $("channelEditor").classList.add("hidden");
-      $("channelEditorMsg").textContent = "";
-    }
-
-    async function saveChannelConfig() {
-      if (!state.editingChannel) return;
-      const msgEl = $("channelEditorMsg");
-      let payload;
-      try {
-        payload = JSON.parse($("channelEditorInput").value || "{}");
-      } catch (err) {
-        msgEl.style.color = "#fca5a5";
-        msgEl.textContent = `Invalid JSON: ${err.message}`;
-        return;
-      }
-
-      msgEl.style.color = "#9ca3af";
-      msgEl.textContent = "Saving...";
-      try {
-        await api(`/api/channels/${encodeURIComponent(state.editingChannel)}`, {
-          method: "PUT",
-          body: JSON.stringify(payload)
-        });
-        msgEl.style.color = "#86efac";
-        msgEl.textContent = "Saved. Restart gateway/channel if needed.";
-        await loadChannels();
-      } catch (err) {
-        msgEl.style.color = "#fca5a5";
-        msgEl.textContent = err.message;
-      }
-    }
-
-    function setupEvents() {
-      $("initBtn").addEventListener("click", async () => {
-        setAuthError("");
-        try {
-          const payload = await fetch("/api/auth/init", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username: $("initUsername").value.trim() || "admin",
-              password: $("initPassword").value
-            })
-          }).then(r => r.json());
-          if (!payload.token) throw new Error(payload.error || "Initialization failed");
-          state.token = payload.token;
-          localStorage.setItem("nekobot_webui_token", state.token);
-          showMain();
-          await initMain();
-        } catch (err) {
-          setAuthError(err.message);
-        }
-      });
-
-      $("loginBtn").addEventListener("click", async () => {
-        setAuthError("");
-        try {
-          const payload = await fetch("/api/auth/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username: $("loginUsername").value.trim(),
-              password: $("loginPassword").value
-            })
-          }).then(r => r.json());
-          if (!payload.token) throw new Error(payload.error || "Login failed");
-          state.token = payload.token;
-          localStorage.setItem("nekobot_webui_token", state.token);
-          showMain();
-          await initMain();
-        } catch (err) {
-          setAuthError(err.message);
-        }
-      });
-
-      $("logoutBtn").addEventListener("click", () => {
-        state.token = "";
-        localStorage.removeItem("nekobot_webui_token");
-        if (state.ws) try { state.ws.close(); } catch (_) {}
-        showAuth();
-      });
-
-      document.querySelectorAll(".tab").forEach(btn => {
-        btn.addEventListener("click", () => {
-          document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-          btn.classList.add("active");
-          const tab = btn.dataset.tab;
-          ["chat", "providers", "channels", "config", "status"].forEach(name => {
-            $(`tab-${name}`).classList.toggle("hidden", name !== tab);
-          });
-        });
-      });
-
-      $("sendBtn").addEventListener("click", sendChat);
-      $("modelSelect").addEventListener("change", () => {
-        const selected = $("modelSelect").value;
-        if (selected) $("modelInput").value = selected;
-      });
-      $("chatInput").addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          sendChat();
-        }
-      });
-      $("connectWsBtn").addEventListener("click", connectWS);
-      $("clearChatBtn").addEventListener("click", () => {
-        $("chatLog").innerHTML = "";
-        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-          state.ws.send(JSON.stringify({ type: "clear" }));
-        }
-      });
-
-      $("refreshChannelsBtn").addEventListener("click", loadChannels);
-      $("channelsBody").addEventListener("click", (e) => {
-        const btn = e.target.closest("button[data-test]");
-        if (btn) {
-          const name = btn.dataset.test;
-          const row = btn.closest("tr");
-          testChannel(name, row.children[2]);
-          return;
-        }
-
-        const editBtn = e.target.closest("button[data-edit]");
-        if (!editBtn) return;
-        openChannelEditor(editBtn.dataset.edit);
-      });
-      $("saveChannelBtn").addEventListener("click", saveChannelConfig);
-      $("cancelChannelBtn").addEventListener("click", closeChannelEditor);
-
-      $("refreshProvidersBtn").addEventListener("click", loadProviders);
-      $("providerSelect").addEventListener("change", (e) => openProvider(e.target.value));
-      $("newProviderBtn").addEventListener("click", newProvider);
-      $("fetchProviderModelsBtn").addEventListener("click", fetchProviderModels);
-      $("addProviderModelBtn").addEventListener("click", addProviderModel);
-      $("saveProviderBtn").addEventListener("click", saveProvider);
-      $("deleteProviderBtn").addEventListener("click", deleteProvider);
-
-      $("refreshConfigBtn").addEventListener("click", loadConfig);
-      $("saveConfigBtn").addEventListener("click", saveConfig);
-
-      $("refreshStatusBtn").addEventListener("click", loadStatus);
-    }
-
-    setupEvents();
-    checkInitAndAuth();
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
