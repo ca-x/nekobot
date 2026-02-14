@@ -298,8 +298,14 @@ func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 	// Get command from registry
 	command, exists := c.commands.Get(cmdName)
 	if !exists {
-		c.log.Debug("Unknown slash command", zap.String("command", cmdName))
-		return
+		c.log.Debug("Unknown slash command, fallback to help", zap.String("command", cmdName))
+		helpCmd, ok := c.commands.Get("help")
+		if !ok {
+			return
+		}
+		command = helpCmd
+		cmdName = "help"
+		cmd.Text = ""
 	}
 
 	// Create command request

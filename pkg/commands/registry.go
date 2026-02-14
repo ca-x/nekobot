@@ -77,10 +77,8 @@ func (r *Registry) IsCommand(text string) bool {
 
 	// Extract command name (first word)
 	parts := strings.SplitN(text, " ", 2)
-	cmdName := strings.TrimPrefix(parts[0], "/")
-
-	_, exists := r.Get(cmdName)
-	return exists
+	cmdName := normalizeCommandToken(strings.TrimPrefix(parts[0], "/"))
+	return cmdName != ""
 }
 
 // Parse parses a command from text.
@@ -96,12 +94,32 @@ func (r *Registry) Parse(text string) (string, string) {
 
 	// Split command and args
 	parts := strings.SplitN(text, " ", 2)
-	cmdName := strings.ToLower(parts[0])
+	cmdName := normalizeCommandToken(parts[0])
 
 	args := ""
 	if len(parts) > 1 {
 		args = strings.TrimSpace(parts[1])
 	}
 
+	if _, exists := r.Get(cmdName); !exists {
+		if _, hasHelp := r.Get("help"); hasHelp {
+			// Treat unknown slash commands like /help for a friendlier UX.
+			return "help", ""
+		}
+	}
+
 	return cmdName, args
+}
+
+func normalizeCommandToken(token string) string {
+	token = strings.TrimSpace(strings.ToLower(token))
+	if token == "" {
+		return ""
+	}
+
+	// Telegram/group commands can be in /cmd@bot format.
+	if at := strings.Index(token, "@"); at > 0 {
+		token = token[:at]
+	}
+	return strings.TrimSpace(token)
 }
