@@ -35,6 +35,7 @@ type Server struct {
 	echo       *echo.Echo
 	httpServer *http.Server
 	config     *config.Config
+	loader     *config.Loader
 	logger     *logger.Logger
 	agent      *agent.Agent
 	approval   *approval.Manager
@@ -43,7 +44,7 @@ type Server struct {
 }
 
 // NewServer creates a new WebUI server.
-func NewServer(cfg *config.Config, log *logger.Logger, ag *agent.Agent, approvalMgr *approval.Manager, chanMgr *channels.Manager) *Server {
+func NewServer(cfg *config.Config, loader *config.Loader, log *logger.Logger, ag *agent.Agent, approvalMgr *approval.Manager, chanMgr *channels.Manager) *Server {
 	port := cfg.WebUI.Port
 	if port == 0 {
 		port = cfg.Gateway.Port + 1
@@ -51,6 +52,7 @@ func NewServer(cfg *config.Config, log *logger.Logger, ag *agent.Agent, approval
 
 	s := &Server{
 		config:   cfg,
+		loader:   loader,
 		logger:   log,
 		agent:    ag,
 		approval: approvalMgr,
@@ -198,7 +200,10 @@ func (s *Server) handleInitPassword(c *echo.Context) error {
 		s.config.WebUI.Secret = generateSecret()
 	}
 
-	// TODO: persist config to file
+	// Persist config to file
+	if err := s.persistConfig(); err != nil {
+		s.logger.Warn("Failed to persist init config", zap.Error(err))
+	}
 
 	token, err := s.generateToken(s.config.WebUI.Username)
 	if err != nil {
@@ -256,6 +261,11 @@ func (s *Server) handleCreateProvider(c *echo.Context) error {
 	}
 
 	s.config.Providers = append(s.config.Providers, profile)
+
+	if err := s.persistConfig(); err != nil {
+		s.logger.Error("Failed to persist provider config", zap.Error(err))
+	}
+
 	return c.JSON(http.StatusCreated, map[string]string{"status": "created"})
 }
 
@@ -273,6 +283,11 @@ func (s *Server) handleUpdateProvider(c *echo.Context) error {
 				profile.APIKey = p.APIKey
 			}
 			s.config.Providers[i] = profile
+
+			if err := s.persistConfig(); err != nil {
+				s.logger.Error("Failed to persist provider config", zap.Error(err))
+			}
+
 			return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
 		}
 	}
@@ -286,6 +301,11 @@ func (s *Server) handleDeleteProvider(c *echo.Context) error {
 	for i, p := range s.config.Providers {
 		if p.Name == name {
 			s.config.Providers = append(s.config.Providers[:i], s.config.Providers[i+1:]...)
+
+			if err := s.persistConfig(); err != nil {
+				s.logger.Error("Failed to persist provider config", zap.Error(err))
+			}
+
 			return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
 		}
 	}
@@ -314,8 +334,82 @@ func (s *Server) handleGetChannels(c *echo.Context) error {
 }
 
 func (s *Server) handleUpdateChannel(c *echo.Context) error {
-	// Channel update will be implemented with reflection or a switch on channel name
 	name := c.Param("name")
+
+	var body map[string]interface{}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	// Marshal the body to JSON, then unmarshal into the appropriate channel config
+	data, err := json.Marshal(body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	switch name {
+	case "telegram":
+		if err := json.Unmarshal(data, &s.config.Channels.Telegram); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "discord":
+		if err := json.Unmarshal(data, &s.config.Channels.Discord); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "slack":
+		if err := json.Unmarshal(data, &s.config.Channels.Slack); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "whatsapp":
+		if err := json.Unmarshal(data, &s.config.Channels.WhatsApp); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "feishu":
+		if err := json.Unmarshal(data, &s.config.Channels.Feishu); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "dingtalk":
+		if err := json.Unmarshal(data, &s.config.Channels.DingTalk); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "qq":
+		if err := json.Unmarshal(data, &s.config.Channels.QQ); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "wework":
+		if err := json.Unmarshal(data, &s.config.Channels.WeWork); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "serverchan":
+		if err := json.Unmarshal(data, &s.config.Channels.ServerChan); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "googlechat":
+		if err := json.Unmarshal(data, &s.config.Channels.GoogleChat); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "maixcam":
+		if err := json.Unmarshal(data, &s.config.Channels.MaixCam); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "teams":
+		if err := json.Unmarshal(data, &s.config.Channels.Teams); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "infoflow":
+		if err := json.Unmarshal(data, &s.config.Channels.Infoflow); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	default:
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "unknown channel: " + name})
+	}
+
+	// Persist
+	if err := s.persistConfig(); err != nil {
+		s.logger.Error("Failed to persist channel config", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config"})
+	}
+
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated", "channel": name})
 }
 
@@ -363,7 +457,49 @@ func (s *Server) handleGetConfig(c *echo.Context) error {
 }
 
 func (s *Server) handleSaveConfig(c *echo.Context) error {
-	// TODO: persist config changes to disk
+	var body struct {
+		Agents    *config.AgentsConfig    `json:"agents"`
+		Gateway   *config.GatewayConfig   `json:"gateway"`
+		Tools     *config.ToolsConfig     `json:"tools"`
+		Heartbeat *config.HeartbeatConfig `json:"heartbeat"`
+		Approval  *config.ApprovalConfig  `json:"approval"`
+		Logger    *config.LoggerConfig    `json:"logger"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	// Apply partial updates
+	if body.Agents != nil {
+		s.config.Agents = *body.Agents
+	}
+	if body.Gateway != nil {
+		s.config.Gateway = *body.Gateway
+	}
+	if body.Tools != nil {
+		s.config.Tools = *body.Tools
+	}
+	if body.Heartbeat != nil {
+		s.config.Heartbeat = *body.Heartbeat
+	}
+	if body.Approval != nil {
+		s.config.Approval = *body.Approval
+	}
+	if body.Logger != nil {
+		s.config.Logger = *body.Logger
+	}
+
+	// Validate
+	if err := config.ValidateConfig(s.config); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	// Persist to file
+	if err := s.persistConfig(); err != nil {
+		s.logger.Error("Failed to persist config", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config"})
+	}
+
 	return c.JSON(http.StatusOK, map[string]string{"status": "saved"})
 }
 
@@ -617,4 +753,18 @@ func generateSecret() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// persistConfig saves the current config to the file it was loaded from.
+func (s *Server) persistConfig() error {
+	configPath := s.loader.GetConfigPath()
+	if configPath == "" {
+		// No config file loaded yet, save to default location
+		home, err := config.GetConfigHome()
+		if err != nil {
+			return fmt.Errorf("getting config home: %w", err)
+		}
+		configPath = home + "/config.json"
+	}
+	return s.loader.Save(configPath, s.config)
 }
