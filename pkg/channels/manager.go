@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -134,7 +135,7 @@ func (m *Manager) Stop() error {
 	m.mu.RUnlock()
 
 	// Stop all channels
-	ctx, cancel := context.WithTimeout(context.Background(), 30)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	for _, ch := range channels {
@@ -152,6 +153,75 @@ func (m *Manager) Stop() error {
 	m.wg.Wait()
 
 	m.log.Info("Channel manager stopped")
+	return nil
+}
+
+// StopChannel stops and unregisters a specific channel.
+func (m *Manager) StopChannel(channelID string) error {
+	m.mu.RLock()
+	ch, exists := m.channels[channelID]
+	m.mu.RUnlock()
+	if !exists {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := ch.Stop(ctx); err != nil {
+		m.log.Error("Error stopping channel",
+			zap.String("channel", channelID),
+			zap.Error(err))
+	}
+
+	m.bus.UnregisterHandlers(channelID)
+
+	m.mu.Lock()
+	delete(m.channels, channelID)
+	m.mu.Unlock()
+
+	m.log.Info("Stopped channel", zap.String("id", channelID))
+	return nil
+}
+
+// ReloadChannel replaces an existing channel and starts the new one if enabled.
+func (m *Manager) ReloadChannel(channel Channel) error {
+	if channel == nil {
+		return fmt.Errorf("channel cannot be nil")
+	}
+
+	id := channel.ID()
+	if err := m.StopChannel(id); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	m.channels[id] = channel
+	m.mu.Unlock()
+
+	m.log.Info("Reloaded channel",
+		zap.String("id", channel.ID()),
+		zap.String("name", channel.Name()),
+		zap.Bool("enabled", channel.IsEnabled()))
+
+	if !channel.IsEnabled() {
+		return nil
+	}
+
+	m.bus.RegisterHandler(channel.ID(), func(ctx context.Context, msg *bus.Message) error {
+		return channel.SendMessage(ctx, msg)
+	})
+
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+		if err := channel.Start(m.ctx); err != nil {
+			m.log.Error("Channel start failed after reload",
+				zap.String("channel", channel.ID()),
+				zap.Error(err))
+		}
+	}()
+
 	return nil
 }
 

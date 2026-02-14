@@ -25,7 +25,9 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
+	"nekobot/pkg/bus"
 	"nekobot/pkg/channels"
+	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/webui/frontend"
@@ -41,11 +43,22 @@ type Server struct {
 	agent      *agent.Agent
 	approval   *approval.Manager
 	channels   *channels.Manager
+	bus        bus.Bus
+	commands   *commands.Registry
 	port       int
 }
 
 // NewServer creates a new WebUI server.
-func NewServer(cfg *config.Config, loader *config.Loader, log *logger.Logger, ag *agent.Agent, approvalMgr *approval.Manager, chanMgr *channels.Manager) *Server {
+func NewServer(
+	cfg *config.Config,
+	loader *config.Loader,
+	log *logger.Logger,
+	ag *agent.Agent,
+	approvalMgr *approval.Manager,
+	chanMgr *channels.Manager,
+	messageBus bus.Bus,
+	cmdRegistry *commands.Registry,
+) *Server {
 	port := cfg.WebUI.Port
 	if port == 0 {
 		port = cfg.Gateway.Port + 1
@@ -58,6 +71,8 @@ func NewServer(cfg *config.Config, loader *config.Loader, log *logger.Logger, ag
 		agent:    ag,
 		approval: approvalMgr,
 		channels: chanMgr,
+		bus:      messageBus,
+		commands: cmdRegistry,
 		port:     port,
 	}
 
@@ -413,7 +428,32 @@ func (s *Server) handleUpdateChannel(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"status": "updated", "channel": name})
+	if err := s.reloadChannel(name); err != nil {
+		s.logger.Error("Failed to reload channel", zap.String("channel", name), zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "channel config saved but reload failed: " + err.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "updated", "channel": name, "reload": "ok"})
+}
+
+func (s *Server) reloadChannel(name string) error {
+	enabled, err := channels.IsChannelEnabled(name, s.config)
+	if err != nil {
+		return err
+	}
+
+	if !enabled {
+		return s.channels.StopChannel(name)
+	}
+
+	ch, err := channels.BuildChannel(name, s.logger, s.bus, s.agent, s.commands, s.config)
+	if err != nil {
+		return err
+	}
+
+	return s.channels.ReloadChannel(ch)
 }
 
 func (s *Server) handleTestChannel(c *echo.Context) error {

@@ -326,7 +326,7 @@ func sanitizeTelegramCommandName(name string) string {
 // handleMessage processes an incoming message.
 func (c *Channel) handleMessage(message *tgbotapi.Message) {
 	// Check if user is allowed
-	if !c.isUserAllowed(message.From.ID, message.Chat.ID) {
+	if !c.isUserAllowed(message.From.ID, message.Chat.ID, message.From.UserName) {
 		c.log.Warn("Unauthorized access attempt",
 			zap.Int64("user_id", message.From.ID),
 			zap.String("username", message.From.UserName))
@@ -531,7 +531,7 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 }
 
 // isUserAllowed checks if a user is allowed to use the bot.
-func (c *Channel) isUserAllowed(userID, chatID int64) bool {
+func (c *Channel) isUserAllowed(userID, chatID int64, username string) bool {
 	// If no allow list is configured, allow all
 	if len(c.config.AllowFrom) == 0 {
 		return true
@@ -540,9 +540,14 @@ func (c *Channel) isUserAllowed(userID, chatID int64) bool {
 	// Check allow list
 	userIDStr := fmt.Sprintf("%d", userID)
 	chatIDStr := fmt.Sprintf("%d", chatID)
+	username = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(username)), "@")
 
 	for _, allowed := range c.config.AllowFrom {
-		if allowed == userIDStr || allowed == chatIDStr {
+		normalizedAllowed := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(allowed)), "@")
+		if normalizedAllowed == userIDStr || normalizedAllowed == chatIDStr {
+			return true
+		}
+		if username != "" && normalizedAllowed == username {
 			return true
 		}
 	}

@@ -95,6 +95,8 @@ Create a config file at `~/.nekobot/config.json`:
 }
 ```
 
+`channels.telegram.allow_from` supports numeric user/chat IDs and Telegram usernames (with or without `@`).
+
 Or use environment variables:
 
 ```bash
