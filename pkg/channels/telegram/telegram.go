@@ -21,6 +21,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/transcription"
+	"nekobot/pkg/userprefs"
 )
 
 // simpleSession is a simple session implementation for telegram messages.
@@ -49,6 +50,7 @@ type Channel struct {
 	commands    *commands.Registry
 	config      *config.TelegramConfig
 	transcriber transcription.Transcriber
+	prefs       *userprefs.Manager
 
 	bot      *tgbotapi.BotAPI
 	stopOnce sync.Once
@@ -64,6 +66,7 @@ func New(
 	cmdRegistry *commands.Registry,
 	cfg *config.TelegramConfig,
 	transcriber transcription.Transcriber,
+	prefsMgr *userprefs.Manager,
 ) (*Channel, error) {
 	if cfg.Token == "" {
 		return nil, fmt.Errorf("telegram token is required")
@@ -78,6 +81,7 @@ func New(
 		commands:    cmdRegistry,
 		config:      cfg,
 		transcriber: transcriber,
+		prefs:       prefsMgr,
 		ctx:         ctx,
 		cancel:      cancel,
 	}, nil
@@ -394,9 +398,10 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 	}
 
 	thinkingMsgID := c.sendThinkingMessage(message.Chat.ID, message.MessageID, "🤔 正在思考中...")
+	agentInput := c.applyUserProfile(context.Background(), busMsg.UserID, content)
 
 	// Process with agent
-	response, err := c.agent.Chat(ctx, sess, content)
+	response, err := c.agent.Chat(ctx, sess, agentInput)
 	if err != nil {
 		c.log.Error("Agent chat failed", zap.Error(err))
 
@@ -572,6 +577,44 @@ func (c *Channel) sendAccessDenied(message *tgbotapi.Message) {
 	if _, err := c.bot.Send(reply); err != nil {
 		c.log.Debug("Failed to send access denied message", zap.Error(err))
 	}
+}
+
+func (c *Channel) applyUserProfile(ctx context.Context, userID, content string) string {
+	if c.prefs == nil {
+		return content
+	}
+
+	profile, ok, err := c.prefs.Get(ctx, c.ID(), userID)
+	if err != nil || !ok {
+		return content
+	}
+
+	lang := userprefs.NormalizeLanguage(profile.Language)
+	langHint := map[string]string{
+		"zh": "请使用中文回复。",
+		"en": "Please reply in English.",
+		"ja": "日本語で回答してください。",
+	}[lang]
+
+	var sb strings.Builder
+	sb.WriteString("你必须遵循以下用户偏好。\n")
+	if langHint != "" {
+		sb.WriteString(langHint)
+		sb.WriteString("\n")
+	}
+	if profile.PreferredName != "" {
+		sb.WriteString("用户希望被称呼为：")
+		sb.WriteString(profile.PreferredName)
+		sb.WriteString("\n")
+	}
+	if profile.Preferences != "" {
+		sb.WriteString("用户偏好：")
+		sb.WriteString(profile.Preferences)
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n用户消息：")
+	sb.WriteString(content)
+	return sb.String()
 }
 
 // isUserAllowed checks if a user is allowed to use the bot.

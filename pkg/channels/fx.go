@@ -25,6 +25,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/transcription"
+	"nekobot/pkg/userprefs"
 )
 
 // Module is the fx module for channels.
@@ -67,6 +68,7 @@ func RegisterChannels(
 	ag *agent.Agent,
 	cmdRegistry *commands.Registry,
 	cfg *config.Config,
+	prefsMgr *userprefs.Manager,
 ) error {
 	transcriber := transcription.NewFromConfig(log, cfg)
 
@@ -76,7 +78,7 @@ func RegisterChannels(
 		if telegramCfg.TimeoutSeconds <= 0 {
 			telegramCfg.TimeoutSeconds = cfg.Channels.TimeoutSeconds
 		}
-		tgChannel, err := telegram.New(log, messageBus, ag, cmdRegistry, &telegramCfg, transcriber)
+		tgChannel, err := telegram.New(log, messageBus, ag, cmdRegistry, &telegramCfg, transcriber, prefsMgr)
 		if err != nil {
 			log.Warn("Failed to create Telegram channel, skipping", zap.Error(err))
 		} else {

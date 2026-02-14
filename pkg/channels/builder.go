@@ -23,6 +23,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/transcription"
+	"nekobot/pkg/userprefs"
 )
 
 // BuildChannel creates a channel instance from the current config.
@@ -32,6 +33,7 @@ func BuildChannel(
 	messageBus bus.Bus,
 	ag *agent.Agent,
 	cmdRegistry *commands.Registry,
+	prefsMgr *userprefs.Manager,
 	cfg *config.Config,
 ) (Channel, error) {
 	transcriber := transcription.NewFromConfig(log, cfg)
@@ -41,7 +43,7 @@ func BuildChannel(
 		if telegramCfg.TimeoutSeconds <= 0 {
 			telegramCfg.TimeoutSeconds = cfg.Channels.TimeoutSeconds
 		}
-		return telegram.New(log, messageBus, ag, cmdRegistry, &telegramCfg, transcriber)
+		return telegram.New(log, messageBus, ag, cmdRegistry, &telegramCfg, transcriber, prefsMgr)
 	case "discord":
 		return discord.NewChannel(log, cfg.Channels.Discord, messageBus, cmdRegistry, transcriber)
 	case "slack":

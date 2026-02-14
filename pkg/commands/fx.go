@@ -8,6 +8,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/userprefs"
 )
 
 // Module provides the commands system.
@@ -30,26 +31,32 @@ func registerBuiltins(registry *Registry, log *logger.Logger) error {
 
 // registerAdvanced registers advanced commands with dependencies.
 func registerAdvanced(
-	registry *Registry,
-	log *logger.Logger,
-	cfg *config.Config,
-	ag *agent.Agent,
-	skillsMgr *skills.Manager,
-	channelMgr ChannelManager, // Use interface instead of concrete type
+	p struct {
+		fx.In
+
+		Registry   *Registry
+		Log        *logger.Logger
+		Config     *config.Config
+		Agent      *agent.Agent
+		Skills     *skills.Manager    `optional:"true"`
+		ChannelMgr ChannelManager     `optional:"true"`
+		UserPrefs  *userprefs.Manager `optional:"true"`
+	},
 ) error {
 	deps := Dependencies{
-		Config:         cfg,
-		Agent:          ag,
-		SkillsManager:  skillsMgr,
-		ChannelManager: channelMgr,
+		Config:         p.Config,
+		Agent:          p.Agent,
+		SkillsManager:  p.Skills,
+		ChannelManager: p.ChannelMgr,
+		UserPrefs:      p.UserPrefs,
 	}
 
-	if err := RegisterAdvancedCommands(registry, deps); err != nil {
-		log.Error("Failed to register advanced commands", zap.Error(err))
+	if err := RegisterAdvancedCommands(p.Registry, deps); err != nil {
+		p.Log.Error("Failed to register advanced commands", zap.Error(err))
 		return err
 	}
 
-	log.Info("Registered advanced commands",
-		zap.Int("total_commands", len(registry.List())))
+	p.Log.Info("Registered advanced commands",
+		zap.Int("total_commands", len(p.Registry.List())))
 	return nil
 }

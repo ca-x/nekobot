@@ -97,6 +97,11 @@ Create a config file at `~/.nekobot/config.json`:
 
 `channels.telegram.allow_from` supports numeric user/chat IDs and Telegram usernames (with or without `@`).
 
+In Telegram, users can set per-channel preferences with `/settings`:
+- `/settings lang zh|en|ja`
+- `/settings name <display name>`
+- `/settings prefs <custom preferences>`
+
 Or use environment variables:
 
 ```bash

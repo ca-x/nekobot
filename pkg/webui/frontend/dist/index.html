@@ -202,9 +202,14 @@
           <select id="providerSelect"></select>
           <button id="refreshProvidersBtn">Refresh</button>
           <button id="newProviderBtn">New</button>
+          <button id="fetchProviderModelsBtn">Fetch Models</button>
           <button id="saveProviderBtn" class="primary">Save</button>
           <button id="deleteProviderBtn" class="danger">Delete</button>
           <span id="providerMsg" style="color:#9ca3af;"></span>
+        </div>
+        <div class="row mt">
+          <input id="providerModelInput" placeholder="manual model name">
+          <button id="addProviderModelBtn">Add Model</button>
         </div>
         <textarea id="providerEditor" rows="14" class="mt" style="width:100%;" spellcheck="false"></textarea>
       </section>
@@ -454,11 +459,21 @@
       if (!provider) {
         state.editingProviderName = "";
         $("providerEditor").value = JSON.stringify(defaultProviderTemplate(), null, 2);
+        $("providerModelInput").value = "";
         return;
       }
       state.editingProviderName = provider.name;
       $("providerEditor").value = JSON.stringify(provider, null, 2);
       $("providerSelect").value = provider.name;
+      $("providerModelInput").value = "";
+    }
+
+    function readProviderEditor() {
+      return JSON.parse($("providerEditor").value || "{}");
+    }
+
+    function writeProviderEditor(payload) {
+      $("providerEditor").value = JSON.stringify(payload || {}, null, 2);
     }
 
     async function loadProviders() {
@@ -482,7 +497,7 @@
     async function saveProvider() {
       let payload;
       try {
-        payload = JSON.parse($("providerEditor").value || "{}");
+        payload = readProviderEditor();
       } catch (err) {
         setProviderMessage(`Invalid JSON: ${err.message}`, true);
         return;
@@ -537,6 +552,61 @@
       state.editingProviderName = "";
       $("providerEditor").value = JSON.stringify(defaultProviderTemplate(), null, 2);
       setProviderMessage("Creating new provider.");
+    }
+
+    async function fetchProviderModels() {
+      let payload;
+      try {
+        payload = readProviderEditor();
+      } catch (err) {
+        setProviderMessage(`Invalid JSON: ${err.message}`, true);
+        return;
+      }
+
+      setProviderMessage("Discovering models...");
+      try {
+        const result = await api("/api/providers/discover-models", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        const models = Array.isArray(result.models) ? result.models : [];
+        payload.models = models;
+        if (!payload.default_model && models.length > 0) {
+          payload.default_model = models[0];
+        }
+        writeProviderEditor(payload);
+        setProviderMessage(`Discovered ${models.length} model(s).`);
+      } catch (err) {
+        setProviderMessage(`Auto-discovery failed: ${err.message}. You can still input models manually.`, true);
+      }
+    }
+
+    function addProviderModel() {
+      const model = $("providerModelInput").value.trim();
+      if (!model) {
+        setProviderMessage("Please enter a model name", true);
+        return;
+      }
+
+      let payload;
+      try {
+        payload = readProviderEditor();
+      } catch (err) {
+        setProviderMessage(`Invalid JSON: ${err.message}`, true);
+        return;
+      }
+
+      const existing = Array.isArray(payload.models) ? payload.models : [];
+      if (!existing.includes(model)) {
+        existing.push(model);
+      }
+      payload.models = existing;
+      if (!payload.default_model) {
+        payload.default_model = model;
+      }
+      writeProviderEditor(payload);
+      $("providerModelInput").value = "";
+      setProviderMessage("Model added. Remember to Save provider.");
     }
 
     async function testChannel(name, statusCell) {
@@ -770,6 +840,8 @@
       $("refreshProvidersBtn").addEventListener("click", loadProviders);
       $("providerSelect").addEventListener("change", (e) => openProvider(e.target.value));
       $("newProviderBtn").addEventListener("click", newProvider);
+      $("fetchProviderModelsBtn").addEventListener("click", fetchProviderModels);
+      $("addProviderModelBtn").addEventListener("click", addProviderModel);
       $("saveProviderBtn").addEventListener("click", saveProvider);
       $("deleteProviderBtn").addEventListener("click", deleteProvider);
 

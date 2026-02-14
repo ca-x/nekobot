@@ -9,6 +9,7 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/userprefs"
 )
 
 // ChannelManager interface to avoid circular dependency with channels package.
@@ -28,6 +29,7 @@ type Dependencies struct {
 	Agent          *agent.Agent
 	SkillsManager  *skills.Manager
 	ChannelManager ChannelManager
+	UserPrefs      *userprefs.Manager
 }
 
 // RegisterAdvancedCommands registers advanced commands that require dependencies.
@@ -45,6 +47,12 @@ func RegisterAdvancedCommands(registry *Registry, deps Dependencies) error {
 			Usage:       "/gateway <action>",
 			Handler:     gatewayHandler(deps.ChannelManager),
 			AdminOnly:   true,
+		},
+		{
+			Name:        "settings",
+			Description: "Set per-channel language/name/preferences",
+			Usage:       "/settings [show|lang <zh|en|ja>|name <text>|prefs <text>|clear]",
+			Handler:     settingsHandler(deps.UserPrefs),
 		},
 		{
 			Name:        "agent",
@@ -159,6 +167,13 @@ func modelHandler(cfg *config.Config) CommandHandler {
 // gatewayHandler handles the /gateway command.
 func gatewayHandler(channelMgr ChannelManager) CommandHandler {
 	return func(ctx context.Context, req CommandRequest) (CommandResponse, error) {
+		if channelMgr == nil {
+			return CommandResponse{
+				Content:     "ℹ️ Channel manager unavailable in current runtime.",
+				ReplyInline: true,
+			}, nil
+		}
+
 		args := strings.TrimSpace(req.Args)
 
 		if args == "" || args == "status" {
@@ -265,6 +280,95 @@ func agentHandler(cfg *config.Config) CommandHandler {
 			ReplyInline: true,
 		}, nil
 	}
+}
+
+func settingsHandler(prefsMgr *userprefs.Manager) CommandHandler {
+	return func(ctx context.Context, req CommandRequest) (CommandResponse, error) {
+		if prefsMgr == nil {
+			return CommandResponse{Content: "❌ settings 暂不可用（state 未初始化）", ReplyInline: true}, nil
+		}
+
+		args := strings.TrimSpace(req.Args)
+		channel := strings.TrimSpace(req.Channel)
+		userID := strings.TrimSpace(req.UserID)
+
+		profile, _, err := prefsMgr.Get(ctx, channel, userID)
+		if err != nil {
+			return CommandResponse{Content: "❌ 读取设置失败: " + err.Error(), ReplyInline: true}, nil
+		}
+
+		if args == "" || strings.EqualFold(args, "show") {
+			return CommandResponse{Content: formatSettings(profile), ReplyInline: true}, nil
+		}
+
+		parts := strings.Fields(args)
+		action := strings.ToLower(parts[0])
+		value := ""
+		if len(parts) > 1 {
+			value = strings.TrimSpace(args[len(parts[0]):])
+		}
+
+		switch action {
+		case "lang", "language":
+			lang := strings.ToLower(strings.TrimSpace(value))
+			if lang != "zh" && lang != "en" && lang != "ja" {
+				return CommandResponse{Content: "❌ 仅支持: zh / en / ja", ReplyInline: true}, nil
+			}
+			profile.Language = userprefs.NormalizeLanguage(lang)
+			if err := prefsMgr.Save(ctx, channel, userID, profile); err != nil {
+				return CommandResponse{Content: "❌ 保存失败: " + err.Error(), ReplyInline: true}, nil
+			}
+			return CommandResponse{Content: "✅ 语言已更新为: " + profile.Language, ReplyInline: true}, nil
+
+		case "name":
+			name := strings.TrimSpace(value)
+			if name == "" {
+				return CommandResponse{Content: "❌ 用法: /settings name <称呼>", ReplyInline: true}, nil
+			}
+			profile.PreferredName = name
+			if err := prefsMgr.Save(ctx, channel, userID, profile); err != nil {
+				return CommandResponse{Content: "❌ 保存失败: " + err.Error(), ReplyInline: true}, nil
+			}
+			return CommandResponse{Content: "✅ 称呼已更新", ReplyInline: true}, nil
+
+		case "prefs", "preference", "preferences":
+			pref := strings.TrimSpace(value)
+			if pref == "" {
+				return CommandResponse{Content: "❌ 用法: /settings prefs <偏好描述>", ReplyInline: true}, nil
+			}
+			profile.Preferences = pref
+			if err := prefsMgr.Save(ctx, channel, userID, profile); err != nil {
+				return CommandResponse{Content: "❌ 保存失败: " + err.Error(), ReplyInline: true}, nil
+			}
+			return CommandResponse{Content: "✅ 偏好已更新", ReplyInline: true}, nil
+
+		case "clear", "reset":
+			if err := prefsMgr.Clear(ctx, channel, userID); err != nil {
+				return CommandResponse{Content: "❌ 清除失败: " + err.Error(), ReplyInline: true}, nil
+			}
+			return CommandResponse{Content: "✅ 设置已清除", ReplyInline: true}, nil
+
+		default:
+			return CommandResponse{Content: "ℹ️ 用法: /settings [show|lang <zh|en|ja>|name <text>|prefs <text>|clear]", ReplyInline: true}, nil
+		}
+	}
+}
+
+func formatSettings(p userprefs.Profile) string {
+	lang := p.Language
+	if lang == "" {
+		lang = "zh"
+	}
+	name := p.PreferredName
+	if name == "" {
+		name = "(未设置)"
+	}
+	prefs := p.Preferences
+	if prefs == "" {
+		prefs = "(未设置)"
+	}
+
+	return fmt.Sprintf("⚙️ 当前设置\n\n语言: %s\n称呼: %s\n偏好: %s\n\n用法:\n/settings lang <zh|en|ja>\n/settings name <称呼>\n/settings prefs <偏好描述>\n/settings clear", lang, name, prefs)
 }
 
 // registerSkillCommands registers commands for all loaded skills.

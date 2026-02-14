@@ -10,8 +10,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +32,8 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/providers"
+	"nekobot/pkg/userprefs"
 	"nekobot/pkg/webui/frontend"
 )
 
@@ -45,6 +49,7 @@ type Server struct {
 	channels   *channels.Manager
 	bus        bus.Bus
 	commands   *commands.Registry
+	prefs      *userprefs.Manager
 	port       int
 }
 
@@ -58,6 +63,7 @@ func NewServer(
 	chanMgr *channels.Manager,
 	messageBus bus.Bus,
 	cmdRegistry *commands.Registry,
+	prefsMgr *userprefs.Manager,
 ) *Server {
 	port := cfg.WebUI.Port
 	if port == 0 {
@@ -73,6 +79,7 @@ func NewServer(
 		channels: chanMgr,
 		bus:      messageBus,
 		commands: cmdRegistry,
+		prefs:    prefsMgr,
 		port:     port,
 	}
 
@@ -108,6 +115,7 @@ func (s *Server) setup() {
 	// Provider routes
 	api.GET("/providers", s.handleGetProviders)
 	api.POST("/providers", s.handleCreateProvider)
+	api.POST("/providers/discover-models", s.handleDiscoverProviderModels)
 	api.PUT("/providers/:name", s.handleUpdateProvider)
 	api.DELETE("/providers/:name", s.handleDeleteProvider)
 
@@ -329,24 +337,170 @@ func (s *Server) handleDeleteProvider(c *echo.Context) error {
 	return c.JSON(http.StatusNotFound, map[string]string{"error": "provider not found"})
 }
 
+func (s *Server) handleDiscoverProviderModels(c *echo.Context) error {
+	var profile config.ProviderProfile
+	if err := c.Bind(&profile); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	kind := strings.TrimSpace(profile.ProviderKind)
+	if kind == "" {
+		kind = strings.TrimSpace(profile.Name)
+	}
+	if kind == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "provider_kind is required"})
+	}
+
+	models, err := s.discoverModels(kind, &profile)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"provider_kind": kind,
+		"models":        models,
+	})
+}
+
+func (s *Server) discoverModels(kind string, profile *config.ProviderProfile) ([]string, error) {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+
+	if kind == "openai" || kind == "generic" || kind == "openrouter" || kind == "groq" || kind == "vllm" || kind == "deepseek" || kind == "moonshot" || kind == "zhipu" || kind == "nvidia" {
+		if models, err := discoverOpenAICompatibleModels(profile.APIBase, profile.APIKey, profile.Proxy, profile.Timeout); err == nil && len(models) > 0 {
+			return models, nil
+		}
+	}
+
+	client, err := providers.NewClient(kind, &providers.RelayInfo{
+		ProviderName: kind,
+		APIKey:       profile.APIKey,
+		APIBase:      profile.APIBase,
+		Proxy:        profile.Proxy,
+		Timeout:      profile.GetTimeout(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init provider client failed: %w", err)
+	}
+
+	models, err := client.GetModelList()
+	if err != nil {
+		return nil, fmt.Errorf("discover models failed: %w", err)
+	}
+	sort.Strings(models)
+	return dedupeStrings(models), nil
+}
+
+func discoverOpenAICompatibleModels(apiBase, apiKey, proxy string, timeout int) ([]string, error) {
+	base := strings.TrimRight(strings.TrimSpace(apiBase), "/")
+	if base == "" {
+		return nil, fmt.Errorf("api_base is required for OpenAI-compatible model discovery")
+	}
+
+	client, err := providers.NewHTTPClientWithProxy(proxy)
+	if err != nil {
+		return nil, fmt.Errorf("setup proxy failed: %w", err)
+	}
+	if timeout <= 0 {
+		timeout = 20
+	}
+	client.Timeout = time.Duration(timeout) * time.Second
+
+	url := base + "/models"
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request failed: %w", err)
+	}
+	if strings.TrimSpace(apiKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request /models failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("request /models failed: HTTP %d", resp.StatusCode)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("parse /models response failed: %w", err)
+	}
+
+	models := make([]string, 0)
+	if data, ok := payload["data"].([]interface{}); ok {
+		for _, item := range data {
+			if m, ok := item.(map[string]interface{}); ok {
+				if id, ok := m["id"].(string); ok && strings.TrimSpace(id) != "" {
+					models = append(models, strings.TrimSpace(id))
+				}
+			}
+		}
+	}
+
+	if data, ok := payload["models"].([]interface{}); ok {
+		for _, item := range data {
+			if m, ok := item.(map[string]interface{}); ok {
+				if id, ok := m["id"].(string); ok && strings.TrimSpace(id) != "" {
+					models = append(models, strings.TrimSpace(id))
+					continue
+				}
+				if name, ok := m["name"].(string); ok && strings.TrimSpace(name) != "" {
+					models = append(models, strings.TrimSpace(name))
+				}
+			}
+		}
+	}
+
+	if len(models) == 0 {
+		return nil, fmt.Errorf("no models found in /models response")
+	}
+
+	sort.Strings(models)
+	return dedupeStrings(models), nil
+}
+
+func dedupeStrings(items []string) []string {
+	if len(items) == 0 {
+		return items
+	}
+	out := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, it := range items {
+		v := strings.TrimSpace(it)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
 // --- Channel Handlers ---
 
 func (s *Server) handleGetChannels(c *echo.Context) error {
 	// Return editable channel configs for dashboard.
 	channels := map[string]interface{}{
-		"telegram":        s.config.Channels.Telegram,
-		"discord":         s.config.Channels.Discord,
-		"slack":           s.config.Channels.Slack,
-		"whatsapp":        s.config.Channels.WhatsApp,
-		"feishu":          s.config.Channels.Feishu,
-		"dingtalk":        s.config.Channels.DingTalk,
-		"qq":              s.config.Channels.QQ,
-		"wework":          s.config.Channels.WeWork,
-		"serverchan":      s.config.Channels.ServerChan,
-		"googlechat":      s.config.Channels.GoogleChat,
-		"maixcam":         s.config.Channels.MaixCam,
-		"teams":           s.config.Channels.Teams,
-		"infoflow":        s.config.Channels.Infoflow,
+		"telegram":   s.config.Channels.Telegram,
+		"discord":    s.config.Channels.Discord,
+		"slack":      s.config.Channels.Slack,
+		"whatsapp":   s.config.Channels.WhatsApp,
+		"feishu":     s.config.Channels.Feishu,
+		"dingtalk":   s.config.Channels.DingTalk,
+		"qq":         s.config.Channels.QQ,
+		"wework":     s.config.Channels.WeWork,
+		"serverchan": s.config.Channels.ServerChan,
+		"googlechat": s.config.Channels.GoogleChat,
+		"maixcam":    s.config.Channels.MaixCam,
+		"teams":      s.config.Channels.Teams,
+		"infoflow":   s.config.Channels.Infoflow,
 	}
 	return c.JSON(http.StatusOK, channels)
 }
@@ -448,7 +602,7 @@ func (s *Server) reloadChannel(name string) error {
 		return s.channels.StopChannel(name)
 	}
 
-	ch, err := channels.BuildChannel(name, s.logger, s.bus, s.agent, s.commands, s.config)
+	ch, err := channels.BuildChannel(name, s.logger, s.bus, s.agent, s.commands, s.prefs, s.config)
 	if err != nil {
 		return err
 	}
