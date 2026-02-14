@@ -288,11 +288,10 @@ func (s *FileStore) GetAll(ctx context.Context) (map[string]interface{}, error) 
 // UpdateFunc atomically updates a value using a function.
 func (s *FileStore) UpdateFunc(ctx context.Context, key string, updateFn func(current interface{}) interface{}) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	current := s.data[key]
 	s.data[key] = updateFn(current)
 	s.pendingWrites = true
+	s.mu.Unlock()
 
 	if !s.autoSave {
 		return s.Save()
