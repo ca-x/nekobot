@@ -6,7 +6,11 @@ Nekobot includes web tools that enable the agent to search the internet and fetc
 
 ### 1. web_search
 
-Search the web for current information using Brave Search API.
+Search the web for current information.
+
+Provider behavior:
+- If `brave_api_key` is configured, use **Brave Search API**
+- If Brave fails (or key is missing), fallback/use **DuckDuckGo HTML search**
 
 **Configuration:**
 ```json
@@ -14,8 +18,10 @@ Search the web for current information using Brave Search API.
   "tools": {
     "web": {
       "search": {
-        "api_key": "your-brave-search-api-key",
-        "max_results": 5
+        "brave_api_key": "your-brave-search-api-key",
+        "max_results": 5,
+        "duckduckgo_enabled": true,
+        "duckduckgo_max_results": 5
       }
     }
   }
@@ -30,7 +36,7 @@ Search the web for current information using Brave Search API.
 
 **Environment Variable:**
 ```bash
-export NEKOBOT_TOOLS_WEB_SEARCH_API_KEY="your-brave-api-key"
+export NEKOBOT_TOOLS_WEB_SEARCH_BRAVE_API_KEY="your-brave-api-key"
 ```
 
 **Usage Example:**
@@ -200,26 +206,13 @@ The agent automatically decides when to use these tools based on the conversatio
 
 ## Troubleshooting
 
-### web_search Not Available
+### web_search Results Are Weak/Empty
 
-**Issue:** "web search API key not configured"
+**Issue:** DuckDuckGo fallback returns low-quality/limited results in some regions.
 
-**Solution:**
+**Solution:** configure Brave API key for better relevance and stability.
 ```bash
-export NEKOBOT_TOOLS_WEB_SEARCH_API_KEY="your-api-key"
-```
-
-Or add to config.json:
-```json
-{
-  "tools": {
-    "web": {
-      "search": {
-        "api_key": "your-api-key"
-      }
-    }
-  }
-}
+export NEKOBOT_TOOLS_WEB_SEARCH_BRAVE_API_KEY="your-api-key"
 ```
 
 ### web_fetch Fails
@@ -257,7 +250,7 @@ Or add to config.json:
 2. **URL Validation**: Only http:// and https:// URLs are allowed
 3. **Content Filtering**: HTML is sanitized during extraction
 4. **Rate Limiting**: Respect API rate limits
-5. **Privacy**: Web requests are logged by Brave Search
+5. **Privacy**: Web requests may be logged by upstream search providers (Brave/DuckDuckGo)
 
 ## Cost
 
@@ -274,7 +267,7 @@ Or add to config.json:
 ## Future Enhancements
 
 Planned improvements:
-- [ ] Support for alternative search providers (Google, DuckDuckGo)
+- [ ] Support for additional providers (Google, Bing, etc.)
 - [ ] Image search and fetch
 - [ ] PDF content extraction
 - [ ] Markdown output option

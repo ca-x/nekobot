@@ -195,7 +195,7 @@ nekobot/
 - **write_file**: Write content to files
 - **list_dir**: List directory contents
 - **exec**: Execute shell commands
-- **web_search**: Search the web using Brave Search API
+- **web_search**: Search the web using Brave Search (with DuckDuckGo fallback)
 - **web_fetch**: Fetch and extract content from URLs
 - **message**: Send messages to user
 

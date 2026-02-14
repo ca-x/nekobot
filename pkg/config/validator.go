@@ -247,6 +247,9 @@ func (v *Validator) validateTools(cfg *ToolsConfig) {
 	if cfg.Web.Search.MaxResults < 1 {
 		v.addError("tools.web.search.max_results", "max_results must be at least 1")
 	}
+	if cfg.Web.Search.DuckDuckGoEnabled && cfg.Web.Search.DuckDuckGoMaxResults < 1 {
+		v.addError("tools.web.search.duckduckgo_max_results", "duckduckgo_max_results must be at least 1 when duckduckgo is enabled")
+	}
 	if cfg.Exec.TimeoutSeconds < 1 {
 		v.addError("tools.exec.timeout_seconds", "timeout_seconds must be at least 1")
 	}

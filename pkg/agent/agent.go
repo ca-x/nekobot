@@ -72,13 +72,15 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 	toolRegistry.MustRegister(tools.NewProcessTool(processMgr))
 	log.Info("PTY process management enabled")
 
-	// Register web tools if configured
-	if cfg.Tools.Web.Search.APIKey != "" {
-		toolRegistry.MustRegister(tools.NewWebSearchTool(
-			cfg.Tools.Web.Search.APIKey,
-			cfg.Tools.Web.Search.MaxResults,
-		))
-		log.Info("Web search tool enabled")
+	// Register web search tool (Brave first, optional DuckDuckGo fallback)
+	if webSearch := tools.NewWebSearchTool(tools.WebSearchToolOptions{
+		BraveAPIKey:          cfg.Tools.Web.Search.GetBraveAPIKey(),
+		BraveMaxResults:      cfg.Tools.Web.Search.MaxResults,
+		DuckDuckGoEnabled:    cfg.Tools.Web.Search.DuckDuckGoEnabled,
+		DuckDuckGoMaxResults: cfg.Tools.Web.Search.DuckDuckGoMaxResults,
+	}); webSearch != nil {
+		toolRegistry.MustRegister(webSearch)
+		log.Info("Web search tool enabled", zap.String("providers", webSearch.ProviderSummary()))
 	}
 
 	// Web fetch tool (always available)

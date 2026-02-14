@@ -258,8 +258,10 @@
     },
     "web": {
       "search": {
-        "api_key": "",
-        "max_results": 5
+        "brave_api_key": "",
+        "max_results": 5,
+        "duckduckgo_enabled": true,
+        "duckduckgo_max_results": 5
       },
       "fetch": {
         "max_chars": 50000

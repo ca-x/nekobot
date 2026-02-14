@@ -75,7 +75,7 @@
 - ✅ Tool registry and discovery
 - ✅ File operations (read, write, edit, append, list)
 - ✅ Shell execution (exec with safety guards)
-- ✅ Web search (Brave API)
+- ✅ Web search (Brave API + DuckDuckGo fallback)
 - ✅ Web fetch (HTTP content)
 - ✅ Message tool (user communication)
 - ✅ Spawn/subagent (async tasks)

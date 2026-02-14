@@ -70,6 +70,11 @@ func (l *Loader) Load(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("unmarshaling config: %w", err)
 	}
 
+	// Backward compatibility: migrate tools.web.search.api_key -> brave_api_key in-memory.
+	if cfg.Tools.Web.Search.BraveAPIKey == "" {
+		cfg.Tools.Web.Search.BraveAPIKey = cfg.Tools.Web.Search.LegacyAPIKey
+	}
+
 	return cfg, nil
 }
 

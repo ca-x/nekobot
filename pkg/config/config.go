@@ -8,6 +8,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -259,8 +260,11 @@ type WebToolsConfig struct {
 
 // WebSearchConfig for web search tool.
 type WebSearchConfig struct {
-	APIKey     string `mapstructure:"api_key" json:"api_key"`
-	MaxResults int    `mapstructure:"max_results" json:"max_results"`
+	BraveAPIKey          string `mapstructure:"brave_api_key" json:"brave_api_key"`
+	LegacyAPIKey         string `mapstructure:"api_key" json:"-"`
+	MaxResults           int    `mapstructure:"max_results" json:"max_results"`
+	DuckDuckGoEnabled    bool   `mapstructure:"duckduckgo_enabled" json:"duckduckgo_enabled"`
+	DuckDuckGoMaxResults int    `mapstructure:"duckduckgo_max_results" json:"duckduckgo_max_results"`
 }
 
 // WebFetchConfig for web fetch tool.
@@ -383,7 +387,9 @@ func DefaultConfig() *Config {
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{
 				Search: WebSearchConfig{
-					MaxResults: 5,
+					MaxResults:           5,
+					DuckDuckGoEnabled:    true,
+					DuckDuckGoMaxResults: 5,
 				},
 				Fetch: WebFetchConfig{
 					MaxChars: 50000,
@@ -476,6 +482,14 @@ func (p *ProviderProfile) GetTimeout() int {
 		return p.Timeout
 	}
 	return 30 // Default 30 seconds
+}
+
+// GetBraveAPIKey returns the Brave search API key with backward compatibility.
+func (w WebSearchConfig) GetBraveAPIKey() string {
+	if strings.TrimSpace(w.BraveAPIKey) != "" {
+		return strings.TrimSpace(w.BraveAPIKey)
+	}
+	return strings.TrimSpace(w.LegacyAPIKey)
 }
 
 // expandPath expands ~ to home directory.

@@ -69,7 +69,7 @@
 **Built-in Tools**:
 - **file.go** - Read, write, list, edit, append files
 - **exec.go** - Shell command execution
-- **web_search.go** - Brave Search API integration
+- **web_search.go** - Brave Search + DuckDuckGo fallback integration
 - **web_fetch.go** - URL content fetching with HTML parsing
 - **browser.go** - Chrome CDP automation (navigate, screenshot, click, type, execute JS)
 - **message.go** - Direct user communication via bus
