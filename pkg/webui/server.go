@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -550,7 +551,7 @@ type chatWSMessage struct {
 }
 
 type chatWSResponse struct {
-	Type      string `json:"type"`               // "message", "thinking", "error", "system", "pong"
+	Type      string `json:"type"`                // "message", "thinking", "error", "system", "pong"
 	Content   string `json:"content"`             // Response text
 	Thinking  string `json:"thinking,omitempty"`  // Model's thinking (if extended thinking enabled)
 	Timestamp int64  `json:"timestamp,omitempty"` // Unix timestamp
@@ -651,18 +652,20 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 
 		case "message":
-			if msg.Content == "" {
+			content := strings.TrimSpace(msg.Content)
+			if content == "" {
 				continue
 			}
+			model := strings.TrimSpace(msg.Model)
 
 			// Add user message to session
 			sess.AddMessage(agent.Message{
 				Role:    "user",
-				Content: msg.Content,
+				Content: content,
 			})
 
 			// Process with agent
-			response, err := s.agent.Chat(context.Background(), sess, msg.Content)
+			response, err := s.agent.ChatWithModel(context.Background(), sess, content, model)
 			if err != nil {
 				sendWSError(conn, fmt.Sprintf("agent error: %v", err))
 				continue

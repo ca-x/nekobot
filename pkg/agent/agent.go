@@ -121,9 +121,21 @@ func (a *Agent) RegisterSkillTool(skillsManager *skills.Manager) {
 // Chat processes a user message and returns the agent's response.
 // It handles tool calls and iterates until the agent produces a final response.
 func (a *Agent) Chat(ctx context.Context, sess SessionInterface, userMessage string) (string, error) {
+	return a.chatWithModel(ctx, sess, userMessage, a.config.Agents.Defaults.Model)
+}
+
+// ChatWithModel processes a message using a specific model override.
+func (a *Agent) ChatWithModel(ctx context.Context, sess SessionInterface, userMessage, model string) (string, error) {
+	return a.chatWithModel(ctx, sess, userMessage, model)
+}
+
+func (a *Agent) chatWithModel(ctx context.Context, sess SessionInterface, userMessage, model string) (string, error) {
 	a.logger.Info("Processing chat message",
 		zap.String("message", truncate(userMessage, 100)),
 	)
+	if model == "" {
+		model = a.config.Agents.Defaults.Model
+	}
 
 	// Build initial messages with session history
 	history := sess.GetMessages() // Get messages from session
@@ -147,7 +159,7 @@ func (a *Agent) Chat(ctx context.Context, sess SessionInterface, userMessage str
 
 		// Create request
 		req := &providers.UnifiedRequest{
-			Model:       a.config.Agents.Defaults.Model,
+			Model:       model,
 			Messages:    providerMessages,
 			Tools:       toolDefs,
 			MaxTokens:   a.config.Agents.Defaults.MaxTokens,
