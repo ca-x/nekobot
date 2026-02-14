@@ -30,6 +30,12 @@ import (
 // Module is the fx module for channels.
 var Module = fx.Module("channels",
 	fx.Provide(NewChannelManager),
+	fx.Provide(
+		fx.Annotate(
+			newCommandChannelAdapter,
+			fx.As(new(commands.ChannelManager)),
+		),
+	),
 	fx.Invoke(RegisterChannels),
 )
 
@@ -66,7 +72,11 @@ func RegisterChannels(
 
 	// Register Telegram channel
 	if cfg.Channels.Telegram.Enabled {
-		tgChannel, err := telegram.New(log, messageBus, ag, cmdRegistry, &cfg.Channels.Telegram, transcriber)
+		telegramCfg := cfg.Channels.Telegram
+		if telegramCfg.TimeoutSeconds <= 0 {
+			telegramCfg.TimeoutSeconds = cfg.Channels.TimeoutSeconds
+		}
+		tgChannel, err := telegram.New(log, messageBus, ag, cmdRegistry, &telegramCfg, transcriber)
 		if err != nil {
 			log.Warn("Failed to create Telegram channel, skipping", zap.Error(err))
 		} else {

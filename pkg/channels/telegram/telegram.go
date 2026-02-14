@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -48,9 +50,10 @@ type Channel struct {
 	config      *config.TelegramConfig
 	transcriber transcription.Transcriber
 
-	bot    *tgbotapi.BotAPI
-	ctx    context.Context
-	cancel context.CancelFunc
+	bot      *tgbotapi.BotAPI
+	stopOnce sync.Once
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 // New creates a new Telegram channel.
@@ -99,21 +102,36 @@ func (c *Channel) IsEnabled() bool {
 func (c *Channel) Start(ctx context.Context) error {
 	c.log.Info("Starting Telegram channel")
 
+	// Keep HTTP timeout longer than long-poll timeout to avoid periodic forced reconnects.
+	httpClient := &http.Client{Timeout: 75 * time.Second}
+	if c.config.Proxy != "" {
+		proxyURL, err := url.Parse(c.config.Proxy)
+		if err != nil {
+			return fmt.Errorf("parsing telegram proxy: %w", err)
+		}
+		httpClient.Transport = &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		}
+		c.log.Info("Telegram proxy enabled", zap.String("proxy", proxyURL.String()))
+	}
+
 	// Create bot
-	bot, err := tgbotapi.NewBotAPI(c.config.Token)
+	bot, err := tgbotapi.NewBotAPIWithClient(c.config.Token, tgbotapi.APIEndpoint, httpClient)
 	if err != nil {
 		return fmt.Errorf("creating telegram bot: %w", err)
 	}
 
 	c.bot = bot
+	c.stopOnce = sync.Once{}
 	c.bot.Debug = false
 
 	c.log.Info("Telegram bot connected",
 		zap.String("username", bot.Self.UserName))
+	c.syncSlashCommands()
 
 	// Setup updates
 	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
+	u.Timeout = 50
 
 	updates := bot.GetUpdatesChan(u)
 
@@ -125,12 +143,12 @@ func (c *Channel) Start(ctx context.Context) error {
 
 		case <-ctx.Done():
 			c.log.Info("Telegram channel stopping")
-			bot.StopReceivingUpdates()
+			c.stopReceivingUpdates()
 			return nil
 
 		case <-c.ctx.Done():
 			c.log.Info("Telegram channel stopping")
-			bot.StopReceivingUpdates()
+			c.stopReceivingUpdates()
 			return nil
 		}
 	}
@@ -140,12 +158,25 @@ func (c *Channel) Start(ctx context.Context) error {
 func (c *Channel) Stop(ctx context.Context) error {
 	c.log.Info("Stopping Telegram channel")
 	c.cancel()
-
-	if c.bot != nil {
-		c.bot.StopReceivingUpdates()
-	}
+	c.stopReceivingUpdates()
 
 	return nil
+}
+
+func (c *Channel) stopReceivingUpdates() {
+	if c.bot == nil {
+		return
+	}
+	c.stopOnce.Do(func() {
+		c.bot.StopReceivingUpdates()
+	})
+}
+
+func (c *Channel) requestTimeout() time.Duration {
+	if c.config.TimeoutSeconds > 0 {
+		return time.Duration(c.config.TimeoutSeconds) * time.Second
+	}
+	return 60 * time.Second
 }
 
 // SendMessage sends a message through Telegram.
@@ -183,11 +214,113 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 func (c *Channel) handleUpdate(update tgbotapi.Update) {
 	// Handle messages
 	if update.Message != nil {
-		c.handleMessage(update.Message)
+		msg := *update.Message
+		go c.handleMessage(&msg)
 		return
 	}
 
 	// Handle other update types as needed
+}
+
+func (c *Channel) syncSlashCommands() {
+	if c.bot == nil || c.commands == nil {
+		return
+	}
+
+	cmds := c.commands.List()
+	telegramCmds := make([]tgbotapi.BotCommand, 0, len(cmds))
+	seen := make(map[string]struct{})
+
+	for _, cmd := range cmds {
+		name := sanitizeTelegramCommandName(cmd.Name)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+
+		desc := strings.TrimSpace(cmd.Description)
+		if desc == "" {
+			desc = strings.TrimSpace(cmd.Usage)
+		}
+		if desc == "" {
+			desc = "Command"
+		}
+		if len(desc) > 256 {
+			desc = desc[:256]
+		}
+
+		telegramCmds = append(telegramCmds, tgbotapi.BotCommand{
+			Command:     name,
+			Description: desc,
+		})
+	}
+
+	if len(telegramCmds) == 0 {
+		return
+	}
+
+	// Telegram supports at most 100 commands.
+	sort.Slice(telegramCmds, func(i, j int) bool {
+		return telegramCmds[i].Command < telegramCmds[j].Command
+	})
+	if len(telegramCmds) > 100 {
+		telegramCmds = telegramCmds[:100]
+	}
+
+	if _, err := c.bot.Request(tgbotapi.NewSetMyCommands(telegramCmds...)); err != nil {
+		c.log.Warn("Failed to sync Telegram slash commands (default scope)", zap.Error(err))
+		return
+	}
+	if _, err := c.bot.Request(
+		tgbotapi.NewSetMyCommandsWithScope(
+			tgbotapi.NewBotCommandScopeAllPrivateChats(),
+			telegramCmds...,
+		),
+	); err != nil {
+		c.log.Warn("Failed to sync Telegram slash commands (private scope)", zap.Error(err))
+	}
+
+	c.log.Info("Synced Telegram slash commands", zap.Int("count", len(telegramCmds)))
+}
+
+func sanitizeTelegramCommandName(name string) string {
+	normalized := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
+	if normalized == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range normalized {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastUnderscore = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastUnderscore = false
+		case r == '-' || r == '_':
+			if b.Len() > 0 && !lastUnderscore {
+				b.WriteRune('_')
+				lastUnderscore = true
+			}
+		default:
+			// Ignore unsupported characters.
+		}
+
+		if b.Len() >= 32 {
+			break
+		}
+	}
+
+	result := strings.Trim(b.String(), "_")
+	if result == "" {
+		return ""
+	}
+	return result
 }
 
 // handleMessage processes an incoming message.
@@ -251,7 +384,7 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 	}
 
 	// Send to bus for processing
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), c.requestTimeout())
 	defer cancel()
 
 	// Create a simple session for this message
@@ -309,7 +442,7 @@ func (c *Channel) tryTranscribeAudio(message *tgbotapi.Message) (string, bool) {
 		return "", false
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), c.requestTimeout())
 	defer cancel()
 
 	text, err := c.transcriber.Transcribe(ctx, audioBytes, filename)
@@ -375,8 +508,7 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 		},
 	}
 
-	// Execute command
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), c.requestTimeout())
 	defer cancel()
 
 	resp, err := cmd.Handler(ctx, req)
@@ -392,7 +524,6 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 
 	// Send response
 	reply := tgbotapi.NewMessage(message.Chat.ID, resp.Content)
-	reply.ParseMode = "Markdown"
 
 	if _, err := c.bot.Send(reply); err != nil {
 		c.log.Error("Failed to send command response", zap.Error(err))

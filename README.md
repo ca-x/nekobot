@@ -79,10 +79,12 @@ Create a config file at `~/.nekobot/config.json`:
     }
   ],
   "channels": {
+    "timeout_seconds": 60,
     "telegram": {
       "enabled": false,
       "token": "",
       "proxy": "",
+      "timeout_seconds": 120,
       "allow_from": []
     }
   },

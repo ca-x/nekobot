@@ -7,13 +7,15 @@
     "max_age": 7,
     "compress": true
   },
-
   "agents": {
     "defaults": {
       "workspace": "~/.nekobot/workspace",
       "restrict_to_workspace": true,
       "provider": "anthropic",
-      "fallback": ["openai", "ollama"],
+      "fallback": [
+        "openai",
+        "ollama"
+      ],
       "model": "claude-3-5-sonnet-20241022",
       "max_tokens": 4096,
       "temperature": 0.7,
@@ -22,14 +24,17 @@
       "skills_auto_reload": true
     }
   },
-
   "providers": [
     {
       "name": "anthropic",
       "provider_kind": "anthropic",
       "api_key": "",
       "api_base": "https://api.anthropic.com",
-      "models": ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"],
+      "models": [
+        "claude-3-5-sonnet-20241022",
+        "claude-3-opus-20240229",
+        "claude-3-haiku-20240307"
+      ],
       "default_model": "claude-3-5-sonnet-20241022",
       "timeout": 30
     },
@@ -38,7 +43,11 @@
       "provider_kind": "openai",
       "api_key": "",
       "api_base": "https://api.openai.com/v1",
-      "models": ["gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"],
+      "models": [
+        "gpt-4-turbo",
+        "gpt-4",
+        "gpt-3.5-turbo"
+      ],
       "default_model": "gpt-4-turbo",
       "timeout": 30
     },
@@ -47,73 +56,98 @@
       "provider_kind": "gemini",
       "api_key": "",
       "api_base": "https://generativelanguage.googleapis.com",
-      "models": ["gemini-pro", "gemini-pro-vision"],
+      "models": [
+        "gemini-pro",
+        "gemini-pro-vision"
+      ],
       "timeout": 30
     },
-      {
-        "name": "deepseek",
-        "provider_kind": "openai",
-        "api_key": "",
-        "api_base": "https://api.deepseek.com/v1",
-        "models": ["deepseek-chat", "deepseek-coder"],
-        "timeout": 30
-      },
-      {
-        "name": "openrouter",
-        "provider_kind": "openai",
-        "api_key": "",
-        "api_base": "https://openrouter.ai/api/v1",
-        "models": ["anthropic/claude-3.5-sonnet", "openai/gpt-4-turbo"],
-        "timeout": 30
-      },
-      {
-        "name": "groq",
-        "provider_kind": "openai",
-        "api_key": "",
-        "api_base": "https://api.groq.com/openai/v1",
-        "models": ["llama-3.1-70b-versatile", "mixtral-8x7b-32768"],
-        "timeout": 30
-      },
-      {
-        "name": "zhipu",
-        "provider_kind": "openai",
-        "api_key": "",
-        "api_base": "https://open.bigmodel.cn/api/paas/v4",
-        "models": ["glm-4", "glm-4v", "glm-3-turbo"],
-        "timeout": 30
-      },
-      {
-        "name": "moonshot",
-        "provider_kind": "openai",
-        "api_key": "",
-        "api_base": "https://api.moonshot.cn/v1",
-        "models": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
-        "timeout": 30
-      },
-      {
-        "name": "ollama",
-        "provider_kind": "openai",
-        "api_key": "ollama",
-        "api_base": "http://localhost:11434/v1",
-        "models": ["llama3:70b", "llama3:8b", "mistral", "codellama", "qwen2"],
-        "timeout": 60
-      },
-      {
-        "name": "lmstudio",
-        "provider_kind": "openai",
-        "api_key": "lm-studio",
-        "api_base": "http://localhost:1234/v1",
-        "timeout": 60
-      },
-      {
-        "name": "vllm",
-        "provider_kind": "openai",
-        "api_key": "vllm",
-        "api_base": "http://localhost:8000/v1",
-        "timeout": 60
-      }
+    {
+      "name": "deepseek",
+      "provider_kind": "openai",
+      "api_key": "",
+      "api_base": "https://api.deepseek.com/v1",
+      "models": [
+        "deepseek-chat",
+        "deepseek-coder"
+      ],
+      "timeout": 30
+    },
+    {
+      "name": "openrouter",
+      "provider_kind": "openai",
+      "api_key": "",
+      "api_base": "https://openrouter.ai/api/v1",
+      "models": [
+        "anthropic/claude-3.5-sonnet",
+        "openai/gpt-4-turbo"
+      ],
+      "timeout": 30
+    },
+    {
+      "name": "groq",
+      "provider_kind": "openai",
+      "api_key": "",
+      "api_base": "https://api.groq.com/openai/v1",
+      "models": [
+        "llama-3.1-70b-versatile",
+        "mixtral-8x7b-32768"
+      ],
+      "timeout": 30
+    },
+    {
+      "name": "zhipu",
+      "provider_kind": "openai",
+      "api_key": "",
+      "api_base": "https://open.bigmodel.cn/api/paas/v4",
+      "models": [
+        "glm-4",
+        "glm-4v",
+        "glm-3-turbo"
+      ],
+      "timeout": 30
+    },
+    {
+      "name": "moonshot",
+      "provider_kind": "openai",
+      "api_key": "",
+      "api_base": "https://api.moonshot.cn/v1",
+      "models": [
+        "moonshot-v1-8k",
+        "moonshot-v1-32k",
+        "moonshot-v1-128k"
+      ],
+      "timeout": 30
+    },
+    {
+      "name": "ollama",
+      "provider_kind": "openai",
+      "api_key": "ollama",
+      "api_base": "http://localhost:11434/v1",
+      "models": [
+        "llama3:70b",
+        "llama3:8b",
+        "mistral",
+        "codellama",
+        "qwen2"
+      ],
+      "timeout": 60
+    },
+    {
+      "name": "lmstudio",
+      "provider_kind": "openai",
+      "api_key": "lm-studio",
+      "api_base": "http://localhost:1234/v1",
+      "timeout": 60
+    },
+    {
+      "name": "vllm",
+      "provider_kind": "openai",
+      "api_key": "vllm",
+      "api_base": "http://localhost:8000/v1",
+      "timeout": 60
+    }
   ],
-
   "transcription": {
     "enabled": true,
     "provider": "groq",
@@ -122,18 +156,17 @@
     "model": "whisper-large-v3-turbo",
     "timeout_seconds": 90
   },
-
   "gateway": {
     "host": "0.0.0.0",
     "port": 8080
   },
-
   "channels": {
     "telegram": {
       "enabled": false,
       "token": "",
       "allow_from": [],
-      "proxy": ""
+      "proxy": "",
+      "timeout_seconds": 60
     },
     "discord": {
       "enabled": false,
@@ -208,9 +241,9 @@
       "webhook_url": "http://0.0.0.0:8768/infoflow/webhook",
       "aes_key": "",
       "allow_from": []
-    }
+    },
+    "timeout_seconds": 60
   },
-
   "tools": {
     "exec": {
       "timeout_seconds": 30,
@@ -233,29 +266,24 @@
       }
     }
   },
-
   "heartbeat": {
     "enabled": false,
     "interval_minutes": 60
   },
-
   "redis": {
     "addr": "localhost:6379",
     "password": "",
     "db": 0
   },
-
   "state": {
     "backend": "file",
     "file_path": "",
     "prefix": "nekobot:"
   },
-
   "bus": {
     "type": "local",
     "prefix": "nekobot:bus:"
   },
-
   "memory": {
     "qmd": {
       "enabled": false,

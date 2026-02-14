@@ -53,19 +53,20 @@ type AgentDefaults struct {
 
 // ChannelsConfig contains all channel configurations.
 type ChannelsConfig struct {
-	WhatsApp   WhatsAppConfig   `mapstructure:"whatsapp" json:"whatsapp"`
-	Telegram   TelegramConfig   `mapstructure:"telegram" json:"telegram"`
-	Feishu     FeishuConfig     `mapstructure:"feishu" json:"feishu"`
-	Discord    DiscordConfig    `mapstructure:"discord" json:"discord"`
-	MaixCam    MaixCamConfig    `mapstructure:"maixcam" json:"maixcam"`
-	QQ         QQConfig         `mapstructure:"qq" json:"qq"`
-	DingTalk   DingTalkConfig   `mapstructure:"dingtalk" json:"dingtalk"`
-	Slack      SlackConfig      `mapstructure:"slack" json:"slack"`
-	ServerChan ServerChanConfig `mapstructure:"serverchan" json:"serverchan"`
-	WeWork     WeWorkConfig     `mapstructure:"wework" json:"wework"`
-	GoogleChat GoogleChatConfig `mapstructure:"googlechat" json:"googlechat"`
-	Teams      TeamsConfig      `mapstructure:"teams" json:"teams"`
-	Infoflow   InfoflowConfig   `mapstructure:"infoflow" json:"infoflow"`
+	TimeoutSeconds int              `mapstructure:"timeout_seconds" json:"timeout_seconds"`
+	WhatsApp       WhatsAppConfig   `mapstructure:"whatsapp" json:"whatsapp"`
+	Telegram       TelegramConfig   `mapstructure:"telegram" json:"telegram"`
+	Feishu         FeishuConfig     `mapstructure:"feishu" json:"feishu"`
+	Discord        DiscordConfig    `mapstructure:"discord" json:"discord"`
+	MaixCam        MaixCamConfig    `mapstructure:"maixcam" json:"maixcam"`
+	QQ             QQConfig         `mapstructure:"qq" json:"qq"`
+	DingTalk       DingTalkConfig   `mapstructure:"dingtalk" json:"dingtalk"`
+	Slack          SlackConfig      `mapstructure:"slack" json:"slack"`
+	ServerChan     ServerChanConfig `mapstructure:"serverchan" json:"serverchan"`
+	WeWork         WeWorkConfig     `mapstructure:"wework" json:"wework"`
+	GoogleChat     GoogleChatConfig `mapstructure:"googlechat" json:"googlechat"`
+	Teams          TeamsConfig      `mapstructure:"teams" json:"teams"`
+	Infoflow       InfoflowConfig   `mapstructure:"infoflow" json:"infoflow"`
 }
 
 // WhatsAppConfig for WhatsApp channel.
@@ -77,10 +78,11 @@ type WhatsAppConfig struct {
 
 // TelegramConfig for Telegram channel.
 type TelegramConfig struct {
-	Enabled   bool     `mapstructure:"enabled" json:"enabled"`
-	Token     string   `mapstructure:"token" json:"token"`
-	Proxy     string   `mapstructure:"proxy" json:"proxy"`
-	AllowFrom []string `mapstructure:"allow_from" json:"allow_from"`
+	Enabled        bool     `mapstructure:"enabled" json:"enabled"`
+	Token          string   `mapstructure:"token" json:"token"`
+	Proxy          string   `mapstructure:"proxy" json:"proxy"`
+	TimeoutSeconds int      `mapstructure:"timeout_seconds" json:"timeout_seconds"`
+	AllowFrom      []string `mapstructure:"allow_from" json:"allow_from"`
 }
 
 // FeishuConfig for Feishu (Lark) channel.
@@ -308,14 +310,16 @@ func DefaultConfig() *Config {
 			},
 		},
 		Channels: ChannelsConfig{
+			TimeoutSeconds: 60,
 			WhatsApp: WhatsAppConfig{
 				Enabled:   false,
 				BridgeURL: "ws://localhost:3001",
 				AllowFrom: []string{},
 			},
 			Telegram: TelegramConfig{
-				Enabled:   false,
-				AllowFrom: []string{},
+				Enabled:        false,
+				TimeoutSeconds: 60,
+				AllowFrom:      []string{},
 			},
 			Feishu: FeishuConfig{
 				Enabled:   false,

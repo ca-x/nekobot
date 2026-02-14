@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
@@ -61,7 +62,7 @@ func RegisterAdvancedCommands(registry *Registry, deps Dependencies) error {
 
 	// Register skill commands dynamically
 	if deps.SkillsManager != nil {
-		if err := registerSkillCommands(registry, deps.SkillsManager); err != nil {
+		if err := registerSkillCommands(registry, deps.SkillsManager, deps.Agent); err != nil {
 			return fmt.Errorf("failed to register skill commands: %w", err)
 		}
 	}
@@ -267,17 +268,21 @@ func agentHandler(cfg *config.Config) CommandHandler {
 }
 
 // registerSkillCommands registers commands for all loaded skills.
-func registerSkillCommands(registry *Registry, skillsMgr *skills.Manager) error {
+func registerSkillCommands(registry *Registry, skillsMgr *skills.Manager, ag *agent.Agent) error {
 	allSkills := skillsMgr.List()
 
 	for _, skill := range allSkills {
 		// Create a command for this skill
 		skillName := skill.Name
+		skillDesc := strings.TrimSpace(skill.Description)
+		if skillDesc == "" {
+			skillDesc = fmt.Sprintf("Run %s skill", skillName)
+		}
 		cmd := &Command{
 			Name:        skillName,
-			Description: fmt.Sprintf("Execute %s skill", skillName),
+			Description: skillDesc,
 			Usage:       fmt.Sprintf("/%s [args]", skillName),
-			Handler:     skillHandler(skillsMgr, skillName),
+			Handler:     skillHandler(skillsMgr, ag, skillName),
 		}
 
 		// Try to register (ignore if already exists)
@@ -285,13 +290,62 @@ func registerSkillCommands(registry *Registry, skillsMgr *skills.Manager) error 
 			// Skill name might conflict with builtin command, skip
 			continue
 		}
+
+		// Telegram slash command list only supports [a-z0-9_], so register
+		// an alias for skills that use dashes or other symbols.
+		alias := toTelegramSafeCommandName(skillName)
+		if alias != "" && alias != skillName {
+			_ = registry.Register(&Command{
+				Name:        alias,
+				Description: skillDesc,
+				Usage:       fmt.Sprintf("/%s [args]", alias),
+				Handler:     skillHandler(skillsMgr, ag, skillName),
+			})
+		}
 	}
 
 	return nil
 }
 
+func toTelegramSafeCommandName(name string) string {
+	normalized := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
+	if normalized == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	lastUnderscore := false
+	for _, r := range normalized {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastUnderscore = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastUnderscore = false
+		case r == '-' || r == '_':
+			if b.Len() > 0 && !lastUnderscore {
+				b.WriteRune('_')
+				lastUnderscore = true
+			}
+		default:
+			// Ignore unsupported characters.
+		}
+
+		if b.Len() >= 32 {
+			break
+		}
+	}
+
+	result := strings.Trim(b.String(), "_")
+	if result == "" {
+		return ""
+	}
+	return result
+}
+
 // skillHandler creates a handler for executing a skill.
-func skillHandler(skillsMgr *skills.Manager, skillName string) CommandHandler {
+func skillHandler(skillsMgr *skills.Manager, ag *agent.Agent, skillName string) CommandHandler {
 	return func(ctx context.Context, req CommandRequest) (CommandResponse, error) {
 		// Get the skill
 		skill, err := skillsMgr.Get(skillName)
@@ -302,26 +356,63 @@ func skillHandler(skillsMgr *skills.Manager, skillName string) CommandHandler {
 			}, nil
 		}
 
-		// Return skill info for now
-		// TODO: Actual skill execution would require agent integration
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("🔧 **Skill: %s**\n\n", skill.Name))
-		sb.WriteString(fmt.Sprintf("%s\n\n", skill.Description))
-
-		if skill.Instructions != "" {
-			preview := skill.Instructions
-			if len(preview) > 200 {
-				preview = preview[:200] + "..."
-			}
-			sb.WriteString(fmt.Sprintf("**Instructions Preview:**\n%s\n\n", preview))
+		if ag == nil {
+			return CommandResponse{
+				Content:     fmt.Sprintf("❌ Skill '%s' is unavailable right now.", skillName),
+				ReplyInline: true,
+			}, nil
 		}
 
-		sb.WriteString("ℹ️ Direct skill execution from commands is not yet implemented.\n")
-		sb.WriteString("Skills are automatically available to the agent during conversations.")
+		userTask := strings.TrimSpace(req.Args)
+		if userTask == "" {
+			userTask = skillName
+		}
+		prompt := fmt.Sprintf(
+			"你正在处理 Telegram slash command /%s。\n"+
+				"必须调用技能 %q（skill invoke）并按技能指引执行。\n"+
+				"要求：\n"+
+				"1) 只做最少必要的工具调用，避免重复尝试；\n"+
+				"2) 成功时只返回最终执行结果，不要返回技能说明；\n"+
+				"3) 失败时只返回一行错误原因。\n"+
+				"用户请求：%s",
+			req.Command,
+			skill.Name,
+			userTask,
+		)
+
+		sess := newCommandSession()
+		reply, err := ag.Chat(ctx, sess, prompt)
+		if err != nil {
+			return CommandResponse{
+				Content:     fmt.Sprintf("❌ 执行技能失败: %v", err),
+				ReplyInline: true,
+			}, nil
+		}
 
 		return CommandResponse{
-			Content:     sb.String(),
+			Content:     reply,
 			ReplyInline: true,
 		}, nil
 	}
+}
+
+type commandSession struct {
+	messages []agent.Message
+	mu       sync.RWMutex
+}
+
+func newCommandSession() *commandSession {
+	return &commandSession{messages: make([]agent.Message, 0, 8)}
+}
+
+func (s *commandSession) GetMessages() []agent.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]agent.Message(nil), s.messages...)
+}
+
+func (s *commandSession) AddMessage(msg agent.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messages = append(s.messages, msg)
 }

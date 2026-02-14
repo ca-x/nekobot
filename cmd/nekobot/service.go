@@ -22,6 +22,9 @@ import (
 	"nekobot/pkg/gateway"
 	"nekobot/pkg/heartbeat"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/process"
+	"nekobot/pkg/session"
+	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
 	"nekobot/pkg/webui"
 	"nekobot/pkg/workspace"
@@ -80,7 +83,10 @@ func (s *GatewayService) run() {
 		commands.Module,
 		workspace.Module,
 		state.Module,
+		session.Module,
 		approval.Module,
+		skills.Module,
+		process.Module,
 		agent.Module,
 
 		// Gateway modules
@@ -291,7 +297,10 @@ func runGatewayForeground() {
 		commands.Module,
 		workspace.Module,
 		state.Module,
+		session.Module,
 		approval.Module,
+		skills.Module,
+		process.Module,
 		agent.Module,
 
 		// Gateway modules
