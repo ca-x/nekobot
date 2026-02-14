@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nekobot</title>
+  <link rel="stylesheet" href="vendor/xterm/xterm.css">
+  <link rel="stylesheet" href="vendor/remixicon/remixicon.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -72,6 +74,7 @@
 
       <nav class="tabs">
         <button class="tab active" data-tab="chat" data-i18n="tabChat">Chat</button>
+        <button class="tab" data-tab="tools" data-i18n="tabTools">Tools</button>
         <button class="tab" data-tab="providers" data-i18n="tabProviders">Providers</button>
         <button class="tab" data-tab="channels" data-i18n="tabChannels">Channels</button>
         <button class="tab" data-tab="config" data-i18n="tabConfig">Config</button>
@@ -97,20 +100,85 @@
         </div>
       </section>
 
+      <!-- Tools Tab -->
+      <section id="tab-tools" class="hidden">
+        <div id="toolsLayout" class="tools-layout">
+          <aside class="tools-sidebar">
+            <div class="toolbar">
+              <button id="newToolSessionBtn" class="btn btn-sm btn-primary" data-i18n="newToolSession">New Session</button>
+              <button id="refreshToolSessionsBtn" class="btn btn-sm" data-i18n="refresh">Refresh</button>
+              <button id="cleanupToolSessionsBtn" class="btn btn-sm" data-i18n="cleanupTerminated">Cleanup Stopped</button>
+            </div>
+            <div id="toolSessionsList" class="tool-session-list"></div>
+          </aside>
+          <div class="tools-main">
+            <div class="tools-main-head">
+              <div id="toolTabs" class="tool-tabs"></div>
+              <button id="clearSplitBtn" class="btn btn-sm" data-i18n="clearSplit">Clear Split</button>
+            </div>
+            <div class="tools-split">
+              <div id="toolPanelPrimary" class="tool-panel">
+                <div class="tool-panel-head">
+                  <span id="toolPrimaryTitle" class="tool-panel-title">-</span>
+                  <div class="tool-panel-head-actions">
+                    <span id="toolPrimaryStatus" class="msg-text">-</span>
+                    <button id="toolPrimaryMaxBtn" class="btn btn-sm" data-i18n="maximize">Maximize</button>
+                  </div>
+                </div>
+                <div id="toolOutputPrimary" class="tool-output"></div>
+                <div class="tool-input-row">
+                  <textarea id="toolInputPrimary" rows="2" data-i18n-ph="toolInputPlaceholder" placeholder="Type command..."></textarea>
+                  <button id="toolSendPrimaryBtn" class="btn btn-sm btn-primary" data-i18n="send">Send</button>
+                </div>
+              </div>
+              <div id="toolPanelSplit" class="tool-panel hidden">
+                <div class="tool-panel-head">
+                  <span id="toolSplitTitle" class="tool-panel-title">-</span>
+                  <div class="tool-panel-head-actions">
+                    <span id="toolSplitStatus" class="msg-text">-</span>
+                    <button id="toolSplitMaxBtn" class="btn btn-sm" data-i18n="maximize">Maximize</button>
+                  </div>
+                </div>
+                <div id="toolOutputSplit" class="tool-output"></div>
+                <div class="tool-input-row">
+                  <textarea id="toolInputSplit" rows="2" data-i18n-ph="toolInputPlaceholder" placeholder="Type command..."></textarea>
+                  <button id="toolSendSplitBtn" class="btn btn-sm btn-primary" data-i18n="send">Send</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- Providers Tab -->
       <section id="tab-providers" class="hidden">
         <div class="toolbar">
           <select id="providerSelect"></select>
           <button id="refreshProvidersBtn" class="btn btn-sm" data-i18n="refresh">Refresh</button>
           <button id="newProviderBtn" class="btn btn-sm" data-i18n="newProvider">New</button>
+          <button id="editProviderBtn" class="btn btn-sm" data-i18n="editProvider">Edit</button>
           <button id="fetchProviderModelsBtn" class="btn btn-sm" data-i18n="fetchModels">Discover Models</button>
           <button id="saveProviderBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
           <button id="deleteProviderBtn" class="btn btn-sm btn-danger" data-i18n="delete">Delete</button>
           <span id="providerMsg" class="msg-text"></span>
         </div>
         <div class="toolbar mt-sm">
-          <input id="providerModelInput" data-i18n-ph="manualModel" placeholder="Manual model name" style="max-width:260px;">
-          <button id="addProviderModelBtn" class="btn btn-sm" data-i18n="addModel">Add</button>
+          <div id="providerModelPicker" class="provider-model-picker hidden">
+            <div class="provider-model-picker-head">
+              <input id="providerModelFilter" data-i18n-ph="filterModels" placeholder="Filter models">
+              <span id="providerModelCounter" class="msg-text"></span>
+            </div>
+            <select id="providerModelSelect" multiple size="8"></select>
+            <div class="toolbar mt-sm">
+              <button id="selectAllProviderModelsBtn" class="btn btn-sm" data-i18n="selectAllModels">Select all</button>
+              <button id="clearProviderModelsBtn" class="btn btn-sm" data-i18n="clearModelSelection">Clear</button>
+              <button id="applyProviderModelsBtn" class="btn btn-sm btn-primary" data-i18n="applyModelSelection">Apply</button>
+            </div>
+          </div>
+          <div id="providerManualModelRow" class="toolbar">
+            <input id="providerModelInput" data-i18n-ph="manualModel" placeholder="Manual model name" style="max-width:260px;">
+            <button id="addProviderModelBtn" class="btn btn-sm" data-i18n="addModel">Add</button>
+          </div>
         </div>
         <textarea id="providerEditor" rows="14" class="editor-area" spellcheck="false"></textarea>
       </section>
@@ -161,9 +229,171 @@
       </section>
     </div>
 
-    <div class="footer">Powered by Nekobot</div>
-  </div>
+    <div id="providerDialog" class="dialog-overlay hidden">
+      <div class="dialog-card">
+        <h3 id="providerDialogTitle">Provider</h3>
+        <div class="dialog-grid">
+          <label class="dialog-field">
+            <span data-i18n="providerType">Provider type</span>
+            <select id="providerDialogKind">
+              <option value="openai">openai</option>
+              <option value="anthropic">anthropic</option>
+              <option value="gemini">gemini</option>
+              <option value="ollama">ollama</option>
+              <option value="groq">groq</option>
+              <option value="lmstudio">lmstudio</option>
+              <option value="vllm">vllm</option>
+              <option value="generic">generic</option>
+            </select>
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="providerName">Provider name</span>
+            <input id="providerDialogName" data-i18n-ph="providerName" placeholder="Provider name">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="apiEndpoint">API endpoint</span>
+            <input id="providerDialogApiBase" data-i18n-ph="apiEndpoint" placeholder="API endpoint">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="proxyAddress">Proxy</span>
+            <input id="providerDialogProxy" data-i18n-ph="proxyAddress" placeholder="Proxy URL (optional)">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="apiKey">API key</span>
+            <input id="providerDialogApiKey" type="password" data-i18n-ph="apiKey" placeholder="API key">
+          </label>
+        </div>
+        <div class="toolbar mt">
+          <button id="providerDialogCancelBtn" class="btn btn-sm" data-i18n="cancel">Cancel</button>
+          <button id="providerDialogApplyBtn" class="btn btn-sm btn-primary" data-i18n="apply">Apply</button>
+        </div>
+      </div>
+    </div>
 
+    <div id="toolSessionDialog" class="dialog-overlay hidden">
+      <div class="dialog-card">
+        <h3 id="toolSessionDialogTitle" data-i18n="newToolSessionTitle">New Tool Session</h3>
+        <div class="dialog-grid">
+          <label class="dialog-field">
+            <span data-i18n="toolName">Tool</span>
+            <select id="toolSessionTool">
+              <option value="codex">codex</option>
+              <option value="opencode">opencode</option>
+              <option value="claude">claude</option>
+              <option value="aider">aider</option>
+              <option value="__custom__" data-i18n="customTool">custom</option>
+            </select>
+          </label>
+          <label id="toolSessionCustomToolField" class="dialog-field hidden">
+            <span data-i18n="customTool">Custom tool</span>
+            <input id="toolSessionToolCustom" data-i18n-ph="customTool" placeholder="custom tool">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="sessionTitle">Title</span>
+            <input id="toolSessionTitle" data-i18n-ph="sessionTitle" placeholder="Session title">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="launchCommand">Command</span>
+            <input id="toolSessionCommand" data-i18n-ph="launchCommand" placeholder="Command (optional)">
+            <small class="field-help" data-i18n="launchCommandHelp">Leave empty to run the selected tool directly.</small>
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="workingDirectory">Working directory</span>
+            <input id="toolSessionWorkdir" data-i18n-ph="workingDirectory" placeholder="Working directory">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="proxyMode">Proxy mode</span>
+            <select id="toolSessionProxyMode">
+              <option value="inherit" data-i18n="proxyModeInherit">inherit</option>
+              <option value="clear" data-i18n="proxyModeClear">clear</option>
+              <option value="custom" data-i18n="proxyModeCustom">custom</option>
+            </select>
+          </label>
+          <label id="toolSessionProxyUrlField" class="dialog-field hidden">
+            <span data-i18n="proxyAddress">Proxy</span>
+            <input id="toolSessionProxyUrl" data-i18n-ph="proxyAddress" placeholder="Proxy URL (optional)">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="accessMode">Access mode</span>
+            <select id="toolSessionAccessMode">
+              <option value="none">none</option>
+              <option value="one_time">one_time</option>
+              <option value="permanent">permanent</option>
+            </select>
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="accessPassword">Access password</span>
+            <input id="toolSessionAccessPassword" data-i18n-ph="accessPassword" placeholder="Leave empty to auto-generate">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="publicBaseUrl">Public base URL</span>
+            <input id="toolSessionPublicBaseUrl" data-i18n-ph="publicBaseUrl" placeholder="https://your-domain-or-ip">
+          </label>
+        </div>
+        <div class="toolbar mt">
+          <button id="toolSessionDialogCancelBtn" class="btn btn-sm" data-i18n="cancel">Cancel</button>
+          <button id="toolSessionDialogCreateBtn" class="btn btn-sm btn-primary" data-i18n="createSession">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toolAccessDialog" class="dialog-overlay hidden">
+      <div class="dialog-card">
+        <h3 data-i18n="toolAccessDialogTitle">Session Access Info</h3>
+        <div id="toolAccessSessionHint" class="msg-text"></div>
+        <div class="dialog-grid">
+          <label class="dialog-field">
+            <span data-i18n="accessUrl">Access URL</span>
+            <div class="field-inline">
+              <input id="toolAccessUrlInput" readonly>
+              <div class="field-actions">
+                <button id="toolAccessCopyUrlBtn" class="icon-btn input-icon-btn" title="Copy URL" aria-label="Copy URL"><i class="ri-file-copy-line" aria-hidden="true"></i></button>
+              </div>
+            </div>
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="permanentPassword">Permanent password</span>
+            <div class="field-inline">
+              <input id="toolAccessPasswordInput" readonly>
+              <div class="field-actions">
+                <button id="toolAccessRefreshBtn" class="icon-btn input-icon-btn" title="Refresh Access" aria-label="Refresh Access"><i class="ri-refresh-line" aria-hidden="true"></i></button>
+                <button id="toolAccessCopyPasswordBtn" class="icon-btn input-icon-btn" title="Copy Password" aria-label="Copy Password"><i class="ri-file-copy-line" aria-hidden="true"></i></button>
+              </div>
+            </div>
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="otpPassword">One-time password</span>
+            <div class="otp-row">
+              <div class="field-inline">
+                <input id="toolAccessOtpInput" readonly>
+                <div class="field-actions">
+                  <button id="toolAccessOtpRefreshBtn" class="icon-btn input-icon-btn" title="Refresh OTP" aria-label="Refresh OTP"><i class="ri-refresh-line" aria-hidden="true"></i></button>
+                  <button id="toolAccessCopyOtpBtn" class="icon-btn input-icon-btn" title="Copy OTP" aria-label="Copy OTP"><i class="ri-file-copy-line" aria-hidden="true"></i></button>
+                </div>
+              </div>
+              <div class="otp-timer-wrap">
+                <div id="toolAccessOtpRing" class="otp-ring" style="--otp-progress: 0deg;">
+                  <span id="toolAccessOtpCountdown">-</span>
+                </div>
+              </div>
+            </div>
+          </label>
+        </div>
+        <div class="toolbar mt">
+          <div class="spacer"></div>
+          <button id="toolAccessDialogCloseBtn" class="btn btn-sm btn-primary" data-i18n="close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">Powered by Nekobot <span id="versionBadge" class="version-badge hidden">v0.0.0</span></div>
+  </div>
+  <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="vendor/xterm/xterm.js"></script>
+  <script src="vendor/xterm/addon-fit.js"></script>
+  <script src="vendor/xterm/addon-web-links.js"></script>
+  <script src="vendor/xterm/addon-unicode11.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -2,12 +2,12 @@
 package process
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +32,11 @@ type Session struct {
 	OutputMutex sync.RWMutex
 	MaxOutput   int // Maximum output lines to keep
 }
+
+const (
+	defaultPTYRows = 40
+	defaultPTYCols = 120
+)
 
 // Manager manages PTY sessions.
 type Manager struct {
@@ -59,13 +64,18 @@ func (m *Manager) Start(ctx context.Context, sessionID, command, workdir string)
 	}
 
 	// Create command
-	cmd := exec.CommandContext(ctx, "sh", "-c", command)
+	shellPath := resolveShellPath()
+	cmd := exec.CommandContext(ctx, shellPath, "-c", command)
+	cmd.Env = buildProcessEnv(os.Environ())
 	if workdir != "" {
 		cmd.Dir = workdir
 	}
 
-	// Start with PTY
-	ptmx, err := pty.Start(cmd)
+	// Start with PTY and a safe default size so TUI tools can render immediately.
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
+		Rows: defaultPTYRows,
+		Cols: defaultPTYCols,
+	})
 	if err != nil {
 		return fmt.Errorf("starting PTY: %w", err)
 	}
@@ -94,25 +104,59 @@ func (m *Manager) Start(ctx context.Context, sessionID, command, workdir string)
 	m.log.Info("PTY session started",
 		zap.String("session_id", sessionID),
 		zap.String("command", command),
+		zap.String("shell", shellPath),
 		zap.Int("pid", cmd.Process.Pid))
 
 	return nil
 }
 
-// captureOutput captures output from PTY.
+// Reset removes a session from manager and kills its process if still running.
+func (m *Manager) Reset(sessionID string) error {
+	m.mu.Lock()
+	session, exists := m.sessions[sessionID]
+	if !exists {
+		m.mu.Unlock()
+		return nil
+	}
+	delete(m.sessions, sessionID)
+	m.mu.Unlock()
+
+	session.OutputMutex.RLock()
+	running := session.Running
+	session.OutputMutex.RUnlock()
+	if running && session.Process != nil {
+		_ = session.Process.Kill()
+	}
+	if session.PTY != nil {
+		_ = session.PTY.Close()
+	}
+	return nil
+}
+
+// captureOutput captures raw output chunks from PTY.
 func (m *Manager) captureOutput(session *Session) {
-	scanner := bufio.NewScanner(session.PTY)
-	for scanner.Scan() {
-		line := scanner.Text()
+	buf := make([]byte, 4096)
+	for {
+		n, err := session.PTY.Read(buf)
+		if n > 0 {
+			chunk := string(buf[:n])
+			session.OutputMutex.Lock()
+			session.Output = append(session.Output, chunk)
 
-		session.OutputMutex.Lock()
-		session.Output = append(session.Output, line)
-
-		// Trim if exceeds max
-		if len(session.Output) > session.MaxOutput {
-			session.Output = session.Output[len(session.Output)-session.MaxOutput:]
+			// Trim if exceeds max
+			if len(session.Output) > session.MaxOutput {
+				session.Output = session.Output[len(session.Output)-session.MaxOutput:]
+			}
+			session.OutputMutex.Unlock()
 		}
-		session.OutputMutex.Unlock()
+		if err != nil {
+			if err != io.EOF {
+				m.log.Debug("PTY output read stopped",
+					zap.String("session_id", session.ID),
+					zap.Error(err))
+			}
+			return
+		}
 	}
 }
 
@@ -195,6 +239,27 @@ func (m *Manager) Write(sessionID, data string) error {
 
 	_, err := io.WriteString(session.PTY, data)
 	return err
+}
+
+// Resize updates PTY window size for a running session.
+func (m *Manager) Resize(sessionID string, cols, rows int) error {
+	m.mu.RLock()
+	session, exists := m.sessions[sessionID]
+	m.mu.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+	if cols <= 0 || rows <= 0 {
+		return fmt.Errorf("invalid resize values: cols=%d rows=%d", cols, rows)
+	}
+	if err := pty.Setsize(session.PTY, &pty.Winsize{
+		Cols: uint16(cols),
+		Rows: uint16(rows),
+	}); err != nil {
+		return fmt.Errorf("resize PTY: %w", err)
+	}
+	return nil
 }
 
 // Kill terminates a session.
@@ -302,6 +367,83 @@ func (m *Manager) Cleanup(maxAge time.Duration) int {
 	}
 
 	return count
+}
+
+func buildProcessEnv(base []string) []string {
+	env := append([]string{}, base...)
+	termIdx := -1
+	termValue := ""
+	for i := range env {
+		if strings.HasPrefix(env[i], "TERM=") {
+			termIdx = i
+			termValue = strings.TrimSpace(strings.TrimPrefix(env[i], "TERM="))
+			break
+		}
+	}
+
+	// Many tools (and tmux) fail under TERM=dumb in daemon environments.
+	if termIdx == -1 {
+		env = append(env, "TERM=xterm-256color")
+	} else if termValue == "" || strings.EqualFold(termValue, "dumb") {
+		env[termIdx] = "TERM=xterm-256color"
+	}
+
+	hasColorTerm := false
+	for i := range env {
+		if strings.HasPrefix(env[i], "COLORTERM=") {
+			hasColorTerm = true
+			break
+		}
+	}
+	if !hasColorTerm {
+		env = append(env, "COLORTERM=truecolor")
+	}
+
+	return env
+}
+
+func resolveShellPath() string {
+	candidates := []string{
+		"/bin/sh",
+		"/usr/bin/sh",
+		"/bin/bash",
+		"/usr/bin/bash",
+		"/usr/local/bin/bash",
+		"/bin/zsh",
+		"/usr/bin/zsh",
+		"/usr/local/bin/zsh",
+		"/bin/ash",
+		"/usr/bin/ash",
+		"/system/bin/sh",
+		"/usr/bin/fish",
+		"/bin/fish",
+		"/usr/local/bin/fish",
+	}
+	for _, path := range candidates {
+		if !isExecutableFile(path) {
+			continue
+		}
+		return path
+	}
+	lookupNames := []string{"sh", "bash", "zsh", "ash", "fish"}
+	for _, name := range lookupNames {
+		lookedUp, err := exec.LookPath(name)
+		if err != nil {
+			continue
+		}
+		if isExecutableFile(lookedUp) {
+			return lookedUp
+		}
+	}
+	return "sh"
+}
+
+func isExecutableFile(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Mode()&0o111 != 0
 }
 
 // SessionStatus represents session status information.

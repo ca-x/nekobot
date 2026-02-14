@@ -9,14 +9,18 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +39,9 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
+	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/userprefs"
 	"nekobot/pkg/version"
 	"nekobot/pkg/webui/frontend"
@@ -54,6 +60,8 @@ type Server struct {
 	bus        bus.Bus
 	commands   *commands.Registry
 	prefs      *userprefs.Manager
+	toolSess   *toolsessions.Manager
+	processMgr *process.Manager
 	port       int
 	startedAt  time.Time
 }
@@ -69,6 +77,8 @@ func NewServer(
 	messageBus bus.Bus,
 	cmdRegistry *commands.Registry,
 	prefsMgr *userprefs.Manager,
+	toolSessionMgr *toolsessions.Manager,
+	processManager *process.Manager,
 ) *Server {
 	port := cfg.WebUI.Port
 	if port == 0 {
@@ -76,17 +86,19 @@ func NewServer(
 	}
 
 	s := &Server{
-		config:    cfg,
-		loader:    loader,
-		logger:    log,
-		agent:     ag,
-		approval:  approvalMgr,
-		channels:  chanMgr,
-		bus:       messageBus,
-		commands:  cmdRegistry,
-		prefs:     prefsMgr,
-		port:      port,
-		startedAt: time.Now(),
+		config:     cfg,
+		loader:     loader,
+		logger:     log,
+		agent:      ag,
+		approval:   approvalMgr,
+		channels:   chanMgr,
+		bus:        messageBus,
+		commands:   cmdRegistry,
+		prefs:      prefsMgr,
+		toolSess:   toolSessionMgr,
+		processMgr: processManager,
+		port:       port,
+		startedAt:  time.Now(),
 	}
 
 	s.setup()
@@ -110,6 +122,8 @@ func (s *Server) setup() {
 
 	// Chat WebSocket (auth handled inside via token query param)
 	e.GET("/api/chat/ws", s.handleChatWS)
+	e.GET("/api/tool-sessions/ws", s.handleToolSessionWS)
+	e.POST("/api/tool-sessions/access-login", s.handleToolSessionAccessLogin)
 
 	// Protected API routes
 	api := e.Group("/api")
@@ -136,6 +150,24 @@ func (s *Server) setup() {
 
 	// Status
 	api.GET("/status", s.handleStatus)
+
+	// Tool session routes
+	api.GET("/tool-sessions", s.handleListToolSessions)
+	api.POST("/tool-sessions", s.handleCreateToolSession)
+	api.POST("/tool-sessions/:id/detach", s.handleDetachToolSession)
+	api.POST("/tool-sessions/:id/terminate", s.handleTerminateToolSession)
+	api.PUT("/tool-sessions/:id", s.handleUpdateToolSession)
+	api.POST("/tool-sessions/:id/access", s.handleUpdateToolSessionAccess)
+	api.POST("/tool-sessions/:id/otp", s.handleGenerateToolSessionOTP)
+	api.POST("/tool-sessions/:id/restart", s.handleRestartToolSession)
+	api.POST("/tool-sessions/:id/attach-token", s.handleCreateToolSessionAttachToken)
+	api.POST("/tool-sessions/consume-token", s.handleConsumeToolSessionAttachToken)
+	api.POST("/tool-sessions/spawn", s.handleSpawnToolSession)
+	api.GET("/tool-sessions/:id/process/status", s.handleToolSessionProcessStatus)
+	api.GET("/tool-sessions/:id/process/output", s.handleToolSessionProcessOutput)
+	api.POST("/tool-sessions/:id/process/input", s.handleToolSessionProcessInput)
+	api.POST("/tool-sessions/:id/process/kill", s.handleToolSessionProcessKill)
+	api.POST("/tool-sessions/cleanup-terminated", s.handleCleanupTerminatedToolSessions)
 
 	// Approval routes
 	api.GET("/approvals", s.handleGetApprovals)
@@ -489,6 +521,1142 @@ func dedupeStrings(items []string) []string {
 	return out
 }
 
+// --- Tool Session Handlers ---
+
+func (s *Server) handleListToolSessions(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+
+	owner := s.currentUsername(c)
+	limit := 100
+	if raw := strings.TrimSpace(c.QueryParam("limit")); raw != "" {
+		var parsed int
+		if _, err := fmt.Sscanf(raw, "%d", &parsed); err == nil && parsed > 0 && parsed <= 500 {
+			limit = parsed
+		}
+	}
+
+	sessions, err := s.toolSess.ListSessions(c.Request().Context(), toolsessions.ListSessionsInput{
+		Owner:  owner,
+		Source: strings.TrimSpace(c.QueryParam("source")),
+		State:  strings.TrimSpace(c.QueryParam("state")),
+		Limit:  limit,
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, sessions)
+}
+
+func (s *Server) handleCreateToolSession(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+
+	var body toolsessions.CreateSessionInput
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	body.Owner = s.currentUsername(c)
+	if strings.TrimSpace(body.Tool) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "tool is required"})
+	}
+	if strings.TrimSpace(body.Source) == "" {
+		body.Source = toolsessions.SourceWebUI
+	}
+
+	sess, err := s.toolSess.CreateSession(c.Request().Context(), body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, sess)
+}
+
+func (s *Server) handleDetachToolSession(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+	if err := s.toolSess.DetachSession(c.Request().Context(), id); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "detached"})
+}
+
+func (s *Server) handleTerminateToolSession(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = c.Bind(&body)
+	if s.processMgr != nil {
+		_ = s.processMgr.Kill(id)
+	}
+	s.tryKillTmuxSession(id)
+	if err := s.toolSess.TerminateSession(c.Request().Context(), id, body.Reason); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "terminated"})
+}
+
+func (s *Server) handleCleanupTerminatedToolSessions(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	count, err := s.toolSess.ArchiveTerminatedSessions(c.Request().Context(), s.currentUsername(c))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]int{"archived": count})
+}
+
+func (s *Server) handleCreateToolSessionAttachToken(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+	var body struct {
+		TTLSeconds int `json:"ttl_seconds"`
+	}
+	_ = c.Bind(&body)
+	ttl := time.Minute
+	if body.TTLSeconds > 0 && body.TTLSeconds <= 600 {
+		ttl = time.Duration(body.TTLSeconds) * time.Second
+	}
+	token, err := s.toolSess.CreateAttachToken(c.Request().Context(), id, s.currentUsername(c), ttl)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"token": token})
+}
+
+func (s *Server) handleConsumeToolSessionAttachToken(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	sess, err := s.toolSess.ConsumeAttachToken(c.Request().Context(), body.Token, s.currentUsername(c))
+	if err != nil {
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "token not found"})
+		case errors.Is(err, os.ErrPermission):
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "token is not valid for this user"})
+		case errors.Is(err, os.ErrDeadlineExceeded):
+			return c.JSON(http.StatusGone, map[string]string{"error": "token expired"})
+		default:
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+	return c.JSON(http.StatusOK, sess)
+}
+
+func (s *Server) handleSpawnToolSession(c *echo.Context) error {
+	if s.toolSess == nil || s.processMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool runtime not available"})
+	}
+
+	var body struct {
+		Tool           string                 `json:"tool"`
+		Title          string                 `json:"title"`
+		Command        string                 `json:"command"`
+		CommandArgs    string                 `json:"command_args"`
+		Workdir        string                 `json:"workdir"`
+		Metadata       map[string]interface{} `json:"metadata"`
+		AccessMode     string                 `json:"access_mode"`
+		AccessPassword string                 `json:"access_password"`
+		ProxyMode      string                 `json:"proxy_mode"`
+		ProxyURL       string                 `json:"proxy_url"`
+		PublicBaseURL  string                 `json:"public_base_url"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	toolName := strings.TrimSpace(body.Tool)
+	if toolName == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "tool is required"})
+	}
+	command := resolveToolCommandWithArgs(toolName, body.Command, body.CommandArgs)
+	if command == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
+	}
+	workdir := strings.TrimSpace(body.Workdir)
+	if workdir == "" {
+		workdir = s.config.WorkspacePath()
+	}
+	proxyMode, proxyURL, err := resolveToolProxyConfig("", "", body.ProxyMode, body.ProxyURL)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	metadata := cloneMap(body.Metadata)
+	metadata = withToolProxyMetadata(metadata, proxyMode, proxyURL)
+	metadata["user_command"] = command
+	metadata["user_args"] = strings.TrimSpace(body.CommandArgs)
+
+	sess, err := s.toolSess.CreateSession(c.Request().Context(), toolsessions.CreateSessionInput{
+		Owner:    s.currentUsername(c),
+		Source:   toolsessions.SourceWebUI,
+		Tool:     toolName,
+		Title:    strings.TrimSpace(body.Title),
+		Command:  command,
+		Workdir:  workdir,
+		State:    toolsessions.StateRunning,
+		Metadata: metadata,
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	launchCommand := applyToolProxyToCommand(command, proxyMode, proxyURL)
+	tmuxSession := ""
+	if wrapped, sessionName := buildToolRuntimeCommand(launchCommand, sess.ID); sessionName != "" {
+		launchCommand = wrapped
+		tmuxSession = sessionName
+	}
+
+	if err := s.processMgr.Start(context.Background(), sess.ID, launchCommand, workdir); err != nil {
+		_ = s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to start tool process: " + err.Error()})
+	}
+	accessMode := strings.TrimSpace(body.AccessMode)
+	accessPassword := ""
+	if accessMode != "" && accessMode != toolsessions.AccessModeNone {
+		accessPassword, err = s.toolSess.ConfigureSessionAccess(c.Request().Context(), sess.ID, accessMode, body.AccessPassword)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to configure session access: " + err.Error()})
+		}
+		sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
+	}
+	accessURL := ""
+	if strings.TrimSpace(sess.AccessMode) != "" && sess.AccessMode != toolsessions.AccessModeNone {
+		accessURL = s.buildToolSessionAccessURL(c, sess.ID, strings.TrimSpace(body.PublicBaseURL))
+	}
+
+	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", map[string]interface{}{
+		"command":      command,
+		"launch_cmd":   launchCommand,
+		"tmux_session": tmuxSession,
+		"workdir":      workdir,
+		"proxy_mode":   proxyMode,
+	})
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"session":         sess,
+		"access_mode":     sess.AccessMode,
+		"access_url":      accessURL,
+		"access_password": accessPassword,
+	})
+}
+
+func (s *Server) handleUpdateToolSession(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+	current, err := s.toolSess.GetSession(c.Request().Context(), id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	var body struct {
+		Tool           string `json:"tool"`
+		Title          string `json:"title"`
+		Command        string `json:"command"`
+		CommandArgs    string `json:"command_args"`
+		Workdir        string `json:"workdir"`
+		AccessMode     string `json:"access_mode"`
+		AccessPassword string `json:"access_password"`
+		ProxyMode      string `json:"proxy_mode"`
+		ProxyURL       string `json:"proxy_url"`
+		PublicBaseURL  string `json:"public_base_url"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	toolName := strings.TrimSpace(body.Tool)
+	if toolName == "" {
+		toolName = strings.TrimSpace(current.Tool)
+	}
+	if toolName == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "tool is required"})
+	}
+
+	command := resolveToolCommandWithArgs(toolName, body.Command, body.CommandArgs)
+	if command == "" {
+		command = strings.TrimSpace(current.Command)
+	}
+	if command == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
+	}
+
+	workdir := strings.TrimSpace(body.Workdir)
+	if workdir == "" {
+		workdir = strings.TrimSpace(current.Workdir)
+	}
+	if workdir == "" {
+		workdir = s.config.WorkspacePath()
+	}
+
+	updated, err := s.toolSess.UpdateSessionConfig(c.Request().Context(), id, toolName, strings.TrimSpace(body.Title), command, workdir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	existingProxyMode, existingProxyURL := toolProxyFromMetadata(current.Metadata)
+	proxyMode, proxyURL, err := resolveToolProxyConfig(existingProxyMode, existingProxyURL, body.ProxyMode, body.ProxyURL)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	nextMetadata := withToolProxyMetadata(cloneMap(current.Metadata), proxyMode, proxyURL)
+	nextMetadata["user_command"] = command
+	nextMetadata["user_args"] = strings.TrimSpace(body.CommandArgs)
+	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), id, nextMetadata); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	updated, _ = s.toolSess.GetSession(c.Request().Context(), id)
+
+	accessPassword := ""
+	modeChanged := strings.TrimSpace(body.AccessMode) != "" || strings.TrimSpace(body.AccessPassword) != ""
+	if modeChanged {
+		mode := strings.TrimSpace(body.AccessMode)
+		if mode == "" {
+			mode = strings.TrimSpace(updated.AccessMode)
+		}
+		accessPassword, err = s.toolSess.ConfigureSessionAccess(c.Request().Context(), id, mode, body.AccessPassword)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to configure session access: " + err.Error()})
+		}
+		updated, _ = s.toolSess.GetSession(c.Request().Context(), id)
+	}
+
+	accessURL := ""
+	if strings.TrimSpace(updated.AccessMode) != "" && updated.AccessMode != toolsessions.AccessModeNone {
+		accessURL = s.buildToolSessionAccessURL(c, id, strings.TrimSpace(body.PublicBaseURL))
+	}
+	_ = s.toolSess.AppendEvent(context.Background(), id, "session_updated", map[string]interface{}{
+		"command":    command,
+		"workdir":    workdir,
+		"proxy_mode": proxyMode,
+	})
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"session":         updated,
+		"access_mode":     updated.AccessMode,
+		"access_url":      accessURL,
+		"access_password": accessPassword,
+	})
+}
+
+func (s *Server) handleRestartToolSession(c *echo.Context) error {
+	if s.toolSess == nil || s.processMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool runtime not available"})
+	}
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+	current, err := s.toolSess.GetSession(c.Request().Context(), id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	var body struct {
+		Tool           string `json:"tool"`
+		Title          string `json:"title"`
+		Command        string `json:"command"`
+		CommandArgs    string `json:"command_args"`
+		Workdir        string `json:"workdir"`
+		AccessMode     string `json:"access_mode"`
+		AccessPassword string `json:"access_password"`
+		ProxyMode      string `json:"proxy_mode"`
+		ProxyURL       string `json:"proxy_url"`
+		PublicBaseURL  string `json:"public_base_url"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	toolName := strings.TrimSpace(body.Tool)
+	if toolName == "" {
+		toolName = strings.TrimSpace(current.Tool)
+	}
+	if toolName == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "tool is required"})
+	}
+
+	command := resolveToolCommandWithArgs(toolName, body.Command, body.CommandArgs)
+	if command == "" {
+		command = strings.TrimSpace(current.Command)
+	}
+	if command == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
+	}
+
+	workdir := strings.TrimSpace(body.Workdir)
+	if workdir == "" {
+		workdir = strings.TrimSpace(current.Workdir)
+	}
+	if workdir == "" {
+		workdir = s.config.WorkspacePath()
+	}
+	existingProxyMode, existingProxyURL := toolProxyFromMetadata(current.Metadata)
+	proxyMode, proxyURL, err := resolveToolProxyConfig(existingProxyMode, existingProxyURL, body.ProxyMode, body.ProxyURL)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	launchCommand := applyToolProxyToCommand(command, proxyMode, proxyURL)
+	tmuxSession := ""
+	if wrapped, sessionName := buildToolRuntimeCommand(launchCommand, id); sessionName != "" {
+		launchCommand = wrapped
+		tmuxSession = sessionName
+	}
+
+	_ = s.processMgr.Reset(id)
+	s.tryKillTmuxSession(id)
+	if err := s.processMgr.Start(context.Background(), id, launchCommand, workdir); err != nil {
+		_ = s.toolSess.TerminateSession(context.Background(), id, "failed to restart process: "+err.Error())
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to restart tool process: " + err.Error()})
+	}
+
+	updated, err := s.toolSess.UpdateSessionLaunch(c.Request().Context(), id, toolName, strings.TrimSpace(body.Title), command, workdir)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	nextMetadata := withToolProxyMetadata(cloneMap(current.Metadata), proxyMode, proxyURL)
+	nextMetadata["user_command"] = command
+	nextMetadata["user_args"] = strings.TrimSpace(body.CommandArgs)
+	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), id, nextMetadata); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	updated, _ = s.toolSess.GetSession(c.Request().Context(), id)
+
+	accessPassword := ""
+	modeChanged := strings.TrimSpace(body.AccessMode) != "" || strings.TrimSpace(body.AccessPassword) != ""
+	if modeChanged {
+		mode := strings.TrimSpace(body.AccessMode)
+		if mode == "" {
+			mode = strings.TrimSpace(updated.AccessMode)
+		}
+		accessPassword, err = s.toolSess.ConfigureSessionAccess(c.Request().Context(), id, mode, body.AccessPassword)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to configure session access: " + err.Error()})
+		}
+		updated, _ = s.toolSess.GetSession(c.Request().Context(), id)
+	}
+
+	accessURL := ""
+	if strings.TrimSpace(updated.AccessMode) != "" && updated.AccessMode != toolsessions.AccessModeNone {
+		accessURL = s.buildToolSessionAccessURL(c, id, strings.TrimSpace(body.PublicBaseURL))
+	}
+
+	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", map[string]interface{}{
+		"command":      command,
+		"launch_cmd":   launchCommand,
+		"tmux_session": tmuxSession,
+		"workdir":      workdir,
+		"proxy_mode":   proxyMode,
+	})
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"session":         updated,
+		"access_mode":     updated.AccessMode,
+		"access_url":      accessURL,
+		"access_password": accessPassword,
+	})
+}
+
+func (s *Server) handleToolSessionProcessStatus(c *echo.Context) error {
+	if s.processMgr == nil || s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool runtime not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+	s.tryRestoreToolSessionRuntime(c.Request().Context(), id)
+
+	status, err := s.processMgr.GetStatus(id)
+	if err != nil {
+		if isProcessSessionNotFound(err) {
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"id":      id,
+				"running": false,
+				"missing": true,
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, status)
+}
+
+func (s *Server) handleToolSessionProcessOutput(c *echo.Context) error {
+	if s.processMgr == nil || s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool runtime not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+	s.tryRestoreToolSessionRuntime(c.Request().Context(), id)
+
+	offset := 0
+	limit := 300
+	if raw := strings.TrimSpace(c.QueryParam("offset")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+	if raw := strings.TrimSpace(c.QueryParam("limit")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 && v <= 2000 {
+			limit = v
+		}
+	}
+
+	lines, total, err := s.processMgr.GetOutput(id, offset, limit)
+	if err != nil {
+		if isProcessSessionNotFound(err) {
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"lines":   []string{},
+				"total":   0,
+				"running": false,
+				"missing": true,
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	status, statusErr := s.processMgr.GetStatus(id)
+	if statusErr == nil && status.Running {
+		_ = s.toolSess.TouchSession(c.Request().Context(), id, toolsessions.StateRunning)
+	} else if statusErr == nil && !status.Running {
+		if sess, err := s.toolSess.GetSession(c.Request().Context(), id); err == nil &&
+			sess.State != toolsessions.StateTerminated &&
+			sess.State != toolsessions.StateArchived {
+			_ = s.toolSess.TerminateSession(c.Request().Context(), id, fmt.Sprintf("process exited with code %d", status.ExitCode))
+		}
+	}
+	running := statusErr == nil && status.Running
+	exitCode := 0
+	if statusErr == nil {
+		exitCode = status.ExitCode
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"lines":     lines,
+		"total":     total,
+		"running":   running,
+		"exit_code": exitCode,
+	})
+}
+
+func (s *Server) handleToolSessionProcessInput(c *echo.Context) error {
+	if s.processMgr == nil || s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool runtime not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+	s.tryRestoreToolSessionRuntime(c.Request().Context(), id)
+
+	var body struct {
+		Data string `json:"data"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if body.Data == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "input data is required"})
+	}
+
+	if err := s.processMgr.Write(id, body.Data); err != nil {
+		if isProcessSessionNotFound(err) {
+			if s.tryRestoreToolSessionRuntime(c.Request().Context(), id) {
+				retryErr := s.processMgr.Write(id, body.Data)
+				if retryErr == nil {
+					_ = s.toolSess.TouchSession(c.Request().Context(), id, toolsessions.StateRunning)
+					return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+				}
+				err = retryErr
+			}
+		}
+		if isProcessSessionNotFound(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "tool process not found"})
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "not running") {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "tool process is not running"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	_ = s.toolSess.TouchSession(c.Request().Context(), id, toolsessions.StateRunning)
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleToolSessionProcessKill(c *echo.Context) error {
+	if s.processMgr == nil || s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool runtime not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+
+	err := s.processMgr.Kill(id)
+	if err != nil && !isProcessSessionNotFound(err) && !strings.Contains(strings.ToLower(err.Error()), "not running") {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	s.tryKillTmuxSession(id)
+	_ = s.toolSess.TerminateSession(c.Request().Context(), id, "killed from webui")
+	return c.JSON(http.StatusOK, map[string]string{"status": "killed"})
+}
+
+func (s *Server) handleUpdateToolSessionAccess(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+	var body struct {
+		Mode          string `json:"mode"`
+		Password      string `json:"password"`
+		PublicBaseURL string `json:"public_base_url"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	mode := strings.TrimSpace(body.Mode)
+	if mode == "" {
+		mode = toolsessions.AccessModeNone
+	}
+	password, err := s.toolSess.ConfigureSessionAccess(c.Request().Context(), id, mode, body.Password)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	sess, err := s.toolSess.GetSession(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	accessURL := ""
+	if sess.AccessMode != toolsessions.AccessModeNone {
+		accessURL = s.buildToolSessionAccessURL(c, id, body.PublicBaseURL)
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"session":         sess,
+		"access_mode":     sess.AccessMode,
+		"access_url":      accessURL,
+		"access_password": password,
+	})
+}
+
+func (s *Server) handleGenerateToolSessionOTP(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if err := s.ensureSessionOwner(c, id); err != nil {
+		return err
+	}
+
+	var body struct {
+		TTLSeconds int `json:"ttl_seconds"`
+	}
+	_ = c.Bind(&body)
+	var ttl time.Duration
+	if body.TTLSeconds > 0 {
+		ttl = time.Duration(body.TTLSeconds) * time.Second
+	}
+
+	code, expiresAt, err := s.toolSess.GenerateSessionOTP(c.Request().Context(), id, ttl)
+	if err != nil {
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		case errors.Is(err, os.ErrPermission):
+			return c.JSON(http.StatusConflict, map[string]string{"error": "external access is disabled for this session"})
+		default:
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"session_id":   id,
+		"otp_code":     code,
+		"expires_at":   expiresAt.Unix(),
+		"ttl_seconds":  int(time.Until(expiresAt).Seconds()),
+		"generated_at": time.Now().Unix(),
+	})
+}
+
+func (s *Server) handleToolSessionAccessLogin(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	var body struct {
+		SessionID string `json:"session_id"`
+		Password  string `json:"password"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	sess, err := s.toolSess.VerifySessionAccess(c.Request().Context(), body.SessionID, body.Password)
+	if err != nil {
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		case errors.Is(err, os.ErrPermission):
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid or expired password"})
+		default:
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	}
+	username := strings.TrimSpace(sess.Owner)
+	if username == "" {
+		username = "tool:" + sess.ID
+	}
+	token, err := s.generateToken(username)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"token":      token,
+		"session_id": sess.ID,
+	})
+}
+
+func (s *Server) ensureSessionOwner(c *echo.Context, sessionID string) error {
+	sess, err := s.toolSess.GetSession(c.Request().Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	owner := s.currentUsername(c)
+	if strings.TrimSpace(sess.Owner) != "" && sess.Owner != owner {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "session does not belong to current user"})
+	}
+	return nil
+}
+
+func (s *Server) currentUsername(c *echo.Context) string {
+	user := c.Get("user")
+	token, ok := user.(*jwt.Token)
+	if !ok || token == nil {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	sub, _ := claims["sub"].(string)
+	return strings.TrimSpace(sub)
+}
+
+func resolveToolCommand(toolName, command string) string {
+	cmd := strings.TrimSpace(command)
+	if cmd != "" {
+		return cmd
+	}
+	tool := strings.TrimSpace(strings.ToLower(toolName))
+	switch tool {
+	case "codex":
+		return "codex"
+	case "claude":
+		return "claude"
+	case "opencode":
+		return "opencode"
+	case "aider":
+		return "aider"
+	default:
+		return strings.TrimSpace(toolName)
+	}
+}
+
+func resolveToolCommandWithArgs(toolName, command, commandArgs string) string {
+	args := strings.TrimSpace(commandArgs)
+	if args == "" {
+		return resolveToolCommand(toolName, command)
+	}
+	base := resolveToolCommand(toolName, "")
+	if base == "" {
+		base = strings.TrimSpace(toolName)
+	}
+	if base == "" {
+		return ""
+	}
+	return strings.TrimSpace(base + " " + args)
+}
+
+const (
+	toolProxyModeInherit = "inherit"
+	toolProxyModeClear   = "clear"
+	toolProxyModeCustom  = "custom"
+)
+
+func normalizeToolProxyMode(mode string) string {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case toolProxyModeClear:
+		return toolProxyModeClear
+	case toolProxyModeCustom:
+		return toolProxyModeCustom
+	default:
+		return toolProxyModeInherit
+	}
+}
+
+func cloneMap(src map[string]interface{}) map[string]interface{} {
+	if len(src) == 0 {
+		return map[string]interface{}{}
+	}
+	dst := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func toolProxyFromMetadata(metadata map[string]interface{}) (string, string) {
+	if len(metadata) == 0 {
+		return toolProxyModeInherit, ""
+	}
+	rawMode, _ := metadata["proxy_mode"].(string)
+	mode := normalizeToolProxyMode(rawMode)
+	rawURL, _ := metadata["proxy_url"].(string)
+	if mode != toolProxyModeCustom {
+		return mode, ""
+	}
+	return mode, strings.TrimSpace(rawURL)
+}
+
+func withToolProxyMetadata(metadata map[string]interface{}, mode, proxyURL string) map[string]interface{} {
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+	mode = normalizeToolProxyMode(mode)
+	metadata["proxy_mode"] = mode
+	if mode == toolProxyModeCustom && strings.TrimSpace(proxyURL) != "" {
+		metadata["proxy_url"] = strings.TrimSpace(proxyURL)
+	} else {
+		delete(metadata, "proxy_url")
+	}
+	return metadata
+}
+
+func resolveToolProxyConfig(existingMode, existingURL, inputMode, inputURL string) (string, string, error) {
+	mode := normalizeToolProxyMode(existingMode)
+	urlValue := strings.TrimSpace(existingURL)
+
+	if strings.TrimSpace(inputMode) != "" {
+		mode = normalizeToolProxyMode(inputMode)
+	}
+	if strings.TrimSpace(inputURL) != "" {
+		urlValue = strings.TrimSpace(inputURL)
+	}
+
+	if mode != toolProxyModeCustom {
+		return mode, "", nil
+	}
+	if urlValue == "" {
+		return "", "", fmt.Errorf("proxy url is required when proxy mode is custom")
+	}
+	parsed, err := url.Parse(urlValue)
+	if err != nil || strings.TrimSpace(parsed.Scheme) == "" {
+		return "", "", fmt.Errorf("invalid proxy url")
+	}
+	return mode, urlValue, nil
+}
+
+func applyToolProxyToCommand(command, proxyMode, proxyURL string) string {
+	cmd := strings.TrimSpace(command)
+	mode := normalizeToolProxyMode(proxyMode)
+	switch mode {
+	case toolProxyModeClear:
+		return "env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u NO_PROXY -u http_proxy -u https_proxy -u all_proxy -u no_proxy " + cmd
+	case toolProxyModeCustom:
+		value := strconv.Quote(strings.TrimSpace(proxyURL))
+		return fmt.Sprintf("env HTTP_PROXY=%s HTTPS_PROXY=%s ALL_PROXY=%s http_proxy=%s https_proxy=%s all_proxy=%s %s",
+			value, value, value, value, value, value, cmd)
+	default:
+		return cmd
+	}
+}
+
+func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID string) bool {
+	if s.processMgr == nil || s.toolSess == nil {
+		return false
+	}
+	id := strings.TrimSpace(sessionID)
+	if id == "" {
+		return false
+	}
+	if _, err := s.processMgr.GetStatus(id); err == nil {
+		return true
+	} else if !isProcessSessionNotFound(err) {
+		return false
+	}
+
+	sess, err := s.toolSess.GetSession(ctx, id)
+	if err != nil {
+		return false
+	}
+	if sess.State == toolsessions.StateTerminated || sess.State == toolsessions.StateArchived {
+		return false
+	}
+
+	attachCmd, tmuxName, ok := buildToolReattachCommand(id)
+	if !ok {
+		return false
+	}
+	workdir := strings.TrimSpace(sess.Workdir)
+	if workdir == "" {
+		workdir = s.config.WorkspacePath()
+	}
+	if err := s.processMgr.Start(context.Background(), id, attachCmd, workdir); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "session already exists") {
+			return true
+		}
+		s.logger.Warn("Failed to restore tool session runtime from tmux",
+			zap.String("session_id", id),
+			zap.String("tmux_session", tmuxName),
+			zap.Error(err),
+		)
+		return false
+	}
+
+	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", map[string]interface{}{
+		"launch_cmd":   attachCmd,
+		"tmux_session": tmuxName,
+		"workdir":      workdir,
+	})
+	_ = s.toolSess.TouchSession(context.Background(), id, toolsessions.StateRunning)
+	s.logger.Info("Restored tool session runtime from tmux",
+		zap.String("session_id", id),
+		zap.String("tmux_session", tmuxName),
+	)
+	return true
+}
+
+func tmuxAvailable() bool {
+	_, err := exec.LookPath("tmux")
+	return err == nil
+}
+
+func toolShellPath() string {
+	candidates := []string{
+		"/bin/sh",
+		"/usr/bin/sh",
+		"/bin/bash",
+		"/usr/bin/bash",
+		"/usr/local/bin/bash",
+		"/bin/zsh",
+		"/usr/bin/zsh",
+		"/usr/local/bin/zsh",
+		"/bin/ash",
+		"/usr/bin/ash",
+		"/system/bin/sh",
+		"/usr/bin/fish",
+		"/bin/fish",
+		"/usr/local/bin/fish",
+	}
+	for _, path := range candidates {
+		if !isExecutableShell(path) {
+			continue
+		}
+		return path
+	}
+	lookupNames := []string{"sh", "bash", "zsh", "ash", "fish"}
+	for _, name := range lookupNames {
+		lookedUp, err := exec.LookPath(name)
+		if err != nil {
+			continue
+		}
+		if isExecutableShell(lookedUp) {
+			return lookedUp
+		}
+	}
+	return "sh"
+}
+
+func isExecutableShell(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.Mode()&0o111 != 0
+}
+
+func buildToolRuntimeCommand(command, sessionID string) (string, string) {
+	if !tmuxAvailable() {
+		return command, ""
+	}
+	name := tmuxSessionName(sessionID)
+	// Run the requested command inside tmux so the terminal session can survive reconnects.
+	wrapped := fmt.Sprintf("tmux new-session -A -s %s %s -c %s", name, strconv.Quote(toolShellPath()), strconv.Quote(command))
+	return wrapped, name
+}
+
+func buildToolReattachCommand(sessionID string) (string, string, bool) {
+	if !tmuxAvailable() {
+		return "", "", false
+	}
+	name := tmuxSessionName(sessionID)
+	if !tmuxSessionExists(name) {
+		return "", "", false
+	}
+	return fmt.Sprintf("tmux attach-session -t %s", name), name, true
+}
+
+func tmuxSessionExists(name string) bool {
+	if !tmuxAvailable() {
+		return false
+	}
+	return exec.Command("tmux", "has-session", "-t", strings.TrimSpace(name)).Run() == nil
+}
+
+func tmuxSessionName(sessionID string) string {
+	raw := strings.TrimSpace(strings.ToLower(sessionID))
+	if raw == "" {
+		return "nekobot_session"
+	}
+	var b strings.Builder
+	b.WriteString("nekobot_")
+	for _, r := range raw {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	name := b.String()
+	if len(name) > 40 {
+		name = name[:40]
+	}
+	if name == "nekobot_" {
+		return "nekobot_session"
+	}
+	return name
+}
+
+func (s *Server) tryKillTmuxSession(sessionID string) {
+	if !tmuxAvailable() {
+		return
+	}
+	_ = exec.Command("tmux", "kill-session", "-t", tmuxSessionName(sessionID)).Run()
+}
+
+func isProcessSessionNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "session not found")
+}
+
+func (s *Server) buildToolSessionAccessURL(c *echo.Context, sessionID, overrideBase string) string {
+	base := strings.TrimSpace(overrideBase)
+	if base == "" {
+		base = strings.TrimSpace(s.config.WebUI.PublicBaseURL)
+	}
+	if base == "" {
+		base = requestScheme(c) + "://" + c.Request().Host
+	}
+	if !strings.Contains(base, "://") {
+		base = requestScheme(c) + "://" + strings.TrimPrefix(base, "/")
+	}
+	base = strings.TrimRight(base, "/")
+	values := url.Values{}
+	values.Set("tab", "tools")
+	values.Set("tool_session", strings.TrimSpace(sessionID))
+	return base + "/?" + values.Encode()
+}
+
+func requestScheme(c *echo.Context) string {
+	scheme := "http"
+	if c.Request().TLS != nil {
+		scheme = "https"
+	}
+	if forwardedProto := strings.TrimSpace(c.Request().Header.Get("X-Forwarded-Proto")); forwardedProto != "" {
+		scheme = forwardedProto
+	}
+	return scheme
+}
+
 // --- Channel Handlers ---
 
 func (s *Server) handleGetChannels(c *echo.Context) error {
@@ -777,21 +1945,31 @@ type chatWSResponse struct {
 	Timestamp int64  `json:"timestamp,omitempty"` // Unix timestamp
 }
 
+type toolWSMessage struct {
+	Type string `json:"type"` // "input", "ping", "kill", "resize"
+	Data string `json:"data,omitempty"`
+	Cols int    `json:"cols,omitempty"`
+	Rows int    `json:"rows,omitempty"`
+}
+
+type toolWSResponse struct {
+	Type      string `json:"type"`                 // "ready", "output", "status", "error", "pong"
+	SessionID string `json:"session_id,omitempty"` // for ready
+	Data      string `json:"data,omitempty"`       // terminal output
+	Total     int    `json:"total,omitempty"`      // output chunk cursor
+	Running   bool   `json:"running,omitempty"`
+	ExitCode  int    `json:"exit_code,omitempty"`
+	Missing   bool   `json:"missing,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
+
 func (s *Server) handleChatWS(c *echo.Context) error {
 	// Authenticate via token query param (since WebSocket can't use Authorization header easily)
 	tokenStr := c.QueryParam("token")
 	if tokenStr == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
 	}
-
-	secret := s.getJWTSecret()
-	parsed, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method")
-		}
-		return []byte(secret), nil
-	})
-	if err != nil || !parsed.Valid {
+	if _, err := s.parseJWTSubject(tokenStr); err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
 
@@ -918,6 +2096,198 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 	}
 }
 
+func (s *Server) handleToolSessionWS(c *echo.Context) error {
+	if s.processMgr == nil || s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool runtime not available"})
+	}
+
+	tokenStr := strings.TrimSpace(c.QueryParam("token"))
+	if tokenStr == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
+	}
+	username, err := s.parseJWTSubject(tokenStr)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+	}
+
+	sessionID := strings.TrimSpace(c.QueryParam("session_id"))
+	if sessionID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session_id required"})
+	}
+	sess, err := s.toolSess.GetSession(c.Request().Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if strings.TrimSpace(sess.Owner) != "" && sess.Owner != username {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "session does not belong to current user"})
+	}
+	s.tryRestoreToolSessionRuntime(c.Request().Context(), sessionID)
+
+	conn, err := wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
+	if err != nil {
+		s.logger.Error("Tool session WS upgrade failed", zap.Error(err))
+		return nil
+	}
+	defer conn.Close()
+
+	var writeMu sync.Mutex
+	writeJSON := func(v interface{}) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		return conn.WriteJSON(v)
+	}
+
+	_ = writeJSON(toolWSResponse{
+		Type:      "ready",
+		SessionID: sessionID,
+		Running:   true,
+	})
+
+	conn.SetReadLimit(65536)
+	conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+		return nil
+	})
+
+	done := make(chan struct{})
+	var doneOnce sync.Once
+	markDone := func() {
+		doneOnce.Do(func() { close(done) })
+	}
+	defer markDone()
+
+	go func() {
+		defer markDone()
+		for {
+			_, payload, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+
+			var msg toolWSMessage
+			if err := json.Unmarshal(payload, &msg); err != nil {
+				_ = writeJSON(toolWSResponse{Type: "error", Message: "invalid message format"})
+				continue
+			}
+			switch msg.Type {
+			case "ping":
+				_ = writeJSON(toolWSResponse{Type: "pong"})
+			case "kill":
+				if s.processMgr != nil {
+					_ = s.processMgr.Kill(sessionID)
+				}
+				s.tryKillTmuxSession(sessionID)
+				_ = s.toolSess.TerminateSession(context.Background(), sessionID, "killed from tool ws")
+			case "resize":
+				if msg.Cols <= 0 || msg.Rows <= 0 {
+					continue
+				}
+				if err := s.processMgr.Resize(sessionID, msg.Cols, msg.Rows); err != nil && isProcessSessionNotFound(err) {
+					if s.tryRestoreToolSessionRuntime(context.Background(), sessionID) {
+						_ = s.processMgr.Resize(sessionID, msg.Cols, msg.Rows)
+					}
+				}
+			case "input":
+				if msg.Data == "" {
+					continue
+				}
+				if err := s.processMgr.Write(sessionID, msg.Data); err != nil {
+					if isProcessSessionNotFound(err) && s.tryRestoreToolSessionRuntime(context.Background(), sessionID) {
+						err = s.processMgr.Write(sessionID, msg.Data)
+					}
+				}
+				if err != nil {
+					_ = writeJSON(toolWSResponse{Type: "error", Message: err.Error()})
+					continue
+				}
+				_ = s.toolSess.TouchSession(context.Background(), sessionID, toolsessions.StateRunning)
+			}
+		}
+	}()
+
+	offset := 0
+	lastRunning := true
+	lastExit := 0
+	lastMissing := false
+	statusInit := false
+
+	ticker := time.NewTicker(220 * time.Millisecond)
+	defer ticker.Stop()
+
+	pingTicker := time.NewTicker(30 * time.Second)
+	defer pingTicker.Stop()
+
+	for {
+		select {
+		case <-done:
+			return nil
+		case <-pingTicker.C:
+			writeMu.Lock()
+			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			err := conn.WriteMessage(websocket.PingMessage, nil)
+			writeMu.Unlock()
+			if err != nil {
+				return nil
+			}
+		case <-ticker.C:
+			chunks, total, outErr := s.processMgr.GetOutput(sessionID, offset, 500)
+			if outErr == nil {
+				offset = total
+				if len(chunks) > 0 {
+					_ = writeJSON(toolWSResponse{
+						Type:  "output",
+						Data:  strings.Join(chunks, ""),
+						Total: total,
+					})
+				}
+			}
+
+			status, statusErr := s.processMgr.GetStatus(sessionID)
+			if statusErr != nil {
+				missing := isProcessSessionNotFound(statusErr)
+				if !statusInit || missing != lastMissing {
+					_ = writeJSON(toolWSResponse{
+						Type:    "status",
+						Running: false,
+						Missing: missing,
+					})
+					statusInit = true
+					lastMissing = missing
+				}
+				continue
+			}
+
+			if status.Running {
+				_ = s.toolSess.TouchSession(context.Background(), sessionID, toolsessions.StateRunning)
+			} else {
+				if rec, err := s.toolSess.GetSession(context.Background(), sessionID); err == nil &&
+					rec.State != toolsessions.StateTerminated &&
+					rec.State != toolsessions.StateArchived {
+					_ = s.toolSess.TerminateSession(context.Background(), sessionID, fmt.Sprintf("process exited with code %d", status.ExitCode))
+				}
+			}
+
+			if !statusInit || status.Running != lastRunning || status.ExitCode != lastExit || lastMissing {
+				_ = writeJSON(toolWSResponse{
+					Type:     "status",
+					Running:  status.Running,
+					ExitCode: status.ExitCode,
+					Missing:  false,
+				})
+				statusInit = true
+				lastRunning = status.Running
+				lastExit = status.ExitCode
+				lastMissing = false
+			}
+		}
+	}
+}
+
 func sendWSError(conn *websocket.Conn, errMsg string) {
 	resp := chatWSResponse{
 		Type:      "error",
@@ -1021,6 +2391,28 @@ func (s *Server) handleDenyRequest(c *echo.Context) error {
 }
 
 // --- Helpers ---
+
+func (s *Server) parseJWTSubject(tokenStr string) (string, error) {
+	parsed, err := jwt.Parse(strings.TrimSpace(tokenStr), func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(s.getJWTSecret()), nil
+	})
+	if err != nil || parsed == nil || !parsed.Valid {
+		return "", fmt.Errorf("invalid token")
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", fmt.Errorf("invalid token claims")
+	}
+	sub, _ := claims["sub"].(string)
+	sub = strings.TrimSpace(sub)
+	if sub == "" {
+		return "", fmt.Errorf("subject is empty")
+	}
+	return sub, nil
+}
 
 func (s *Server) getJWTSecret() string {
 	if s.config.WebUI.Secret != "" {

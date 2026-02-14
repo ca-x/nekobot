@@ -310,5 +310,14 @@
         "update_timeout": "5m"
       }
     }
+  },
+  "webui": {
+    "enabled": true,
+    "port": 0,
+    "public_base_url": "",
+    "secret": "",
+    "username": "admin",
+    "password": "",
+    "tool_session_otp_ttl_seconds": 180
   }
 }

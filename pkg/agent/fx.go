@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -10,14 +12,18 @@ import (
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
-	"nekobot/pkg/skills"
 	_ "nekobot/pkg/providers/init" // Register all providers
+	"nekobot/pkg/skills"
 )
 
 // Module provides agent for fx dependency injection.
 var Module = fx.Module("agent",
 	fx.Provide(ProvideAgent),
 )
+
+func errNoProviderConfigured() error {
+	return fmt.Errorf("no provider configured")
+}
 
 // ProvideAgent provides an agent instance.
 func ProvideAgent(
@@ -29,22 +35,32 @@ func ProvideAgent(
 	lc fx.Lifecycle,
 ) (*Agent, error) {
 	// Get provider config
-	providerName := cfg.Agents.Defaults.Provider
-	if providerName == "" {
-		providerName = "claude" // default
+	providerName := strings.TrimSpace(cfg.Agents.Defaults.Provider)
+	if providerName == "" && len(cfg.Providers) > 0 {
+		providerName = strings.TrimSpace(cfg.Providers[0].Name)
 	}
 
 	providerCfg := cfg.GetProviderConfig(providerName)
 	if providerCfg == nil {
-		log.Warn("Provider not found, using default",
+		log.Warn("Provider not found, using first configured provider",
 			zap.String("provider", providerName),
 		)
-		providerName = "claude"
+		if len(cfg.Providers) == 0 {
+			return nil, errNoProviderConfigured()
+		}
+		providerName = strings.TrimSpace(cfg.Providers[0].Name)
 		providerCfg = cfg.GetProviderConfig(providerName)
+	}
+	if providerCfg == nil {
+		return nil, errNoProviderConfigured()
+	}
+	providerKind := strings.TrimSpace(providerCfg.ProviderKind)
+	if providerKind == "" {
+		providerKind = providerName
 	}
 
 	// Create provider client
-	client, err := providers.NewClient(providerName, &providers.RelayInfo{
+	client, err := providers.NewClient(providerKind, &providers.RelayInfo{
 		ProviderName: providerName,
 		APIKey:       providerCfg.APIKey,
 		APIBase:      providerCfg.APIBase,
@@ -73,6 +89,7 @@ func ProvideAgent(
 		OnStart: func(ctx context.Context) error {
 			log.Info("Agent initialized",
 				zap.String("provider", providerName),
+				zap.String("provider_kind", providerKind),
 				zap.String("model", cfg.Agents.Defaults.Model),
 				zap.String("workspace", cfg.WorkspacePath()),
 				zap.Int("skills_total", len(skillsMgr.ListEnabled())),

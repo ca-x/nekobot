@@ -264,6 +264,35 @@ nekobot skills list --builtin
 
 ---
 
+## WebUI 工具会话 OTP 配置
+
+可以通过 `webui.tool_session_otp_ttl_seconds` 配置工具会话一次性访问密码（OTP）的有效期（秒）：
+
+```json
+{
+  "webui": {
+    "enabled": true,
+    "port": 0,
+    "public_base_url": "https://nekobot.example.com",
+    "username": "admin",
+    "password": "",
+    "tool_session_otp_ttl_seconds": 180
+  }
+}
+```
+
+- 默认值：`180`（3 分钟）
+- 最小值：`30`
+- 最大值：`3600`（1 小时）
+
+`webui.public_base_url` 用于生成工具会话分享链接的基础地址：
+
+- 会话里手动填写了「公网访问地址」时，优先使用手动填写值
+- 否则优先使用 `webui.public_base_url`
+- 若未配置，则回退为当前访问 WebUI 的域名/IP
+
+---
+
 ## 常见问题
 
 ### Q: 如何查看当前使用的配置文件？
