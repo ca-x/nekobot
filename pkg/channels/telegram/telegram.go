@@ -330,6 +330,7 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 		c.log.Warn("Unauthorized access attempt",
 			zap.Int64("user_id", message.From.ID),
 			zap.String("username", message.From.UserName))
+		c.sendAccessDenied(message)
 		return
 	}
 
@@ -392,24 +393,19 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 		messages: make([]agent.Message, 0),
 	}
 
+	thinkingMsgID := c.sendThinkingMessage(message.Chat.ID, message.MessageID, "🤔 正在思考中...")
+
 	// Process with agent
 	response, err := c.agent.Chat(ctx, sess, content)
 	if err != nil {
 		c.log.Error("Agent chat failed", zap.Error(err))
 
 		// Send error message
-		reply := tgbotapi.NewMessage(message.Chat.ID, "Sorry, I encountered an error processing your message.")
-		c.bot.Send(reply)
+		c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, "❌ 抱歉，处理消息时出现错误。")
 		return
 	}
 
-	// Send response back
-	reply := tgbotapi.NewMessage(message.Chat.ID, response)
-	reply.ReplyToMessageID = message.MessageID
-
-	if _, err := c.bot.Send(reply); err != nil {
-		c.log.Error("Failed to send reply", zap.Error(err))
-	}
+	c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, response)
 }
 
 func (c *Channel) tryTranscribeAudio(message *tgbotapi.Message) (string, bool) {
@@ -511,22 +507,70 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.requestTimeout())
 	defer cancel()
 
+	thinkingMsgID := c.sendThinkingMessage(message.Chat.ID, message.MessageID, "🤔 正在处理命令...")
+
 	resp, err := cmd.Handler(ctx, req)
 	if err != nil {
 		c.log.Error("Command execution failed",
 			zap.String("command", cmdName),
 			zap.Error(err))
 
-		reply := tgbotapi.NewMessage(message.Chat.ID, "❌ Command failed: "+err.Error())
-		c.bot.Send(reply)
+		c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, "❌ Command failed: "+err.Error())
 		return
 	}
 
-	// Send response
-	reply := tgbotapi.NewMessage(message.Chat.ID, resp.Content)
+	c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, resp.Content)
+}
 
+func (c *Channel) sendThinkingMessage(chatID int64, replyTo int, text string) int {
+	if c.bot == nil {
+		return 0
+	}
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	if replyTo > 0 {
+		msg.ReplyToMessageID = replyTo
+	}
+	sent, err := c.bot.Send(msg)
+	if err != nil {
+		c.log.Debug("Failed to send thinking message", zap.Error(err))
+		return 0
+	}
+	return sent.MessageID
+}
+
+func (c *Channel) finishThinkingMessage(chatID int64, replyTo int, thinkingMsgID int, text string) {
+	if c.bot == nil {
+		return
+	}
+
+	if thinkingMsgID > 0 {
+		edit := tgbotapi.NewEditMessageText(chatID, thinkingMsgID, text)
+		if _, err := c.bot.Send(edit); err == nil {
+			return
+		} else {
+			c.log.Warn("Failed to edit thinking message", zap.Error(err))
+		}
+	}
+
+	reply := tgbotapi.NewMessage(chatID, text)
+	if replyTo > 0 {
+		reply.ReplyToMessageID = replyTo
+	}
 	if _, err := c.bot.Send(reply); err != nil {
-		c.log.Error("Failed to send command response", zap.Error(err))
+		c.log.Error("Failed to send Telegram reply", zap.Error(err))
+	}
+}
+
+func (c *Channel) sendAccessDenied(message *tgbotapi.Message) {
+	if c.bot == nil || message == nil {
+		return
+	}
+
+	reply := tgbotapi.NewMessage(message.Chat.ID, "❌ 你不在 allow_from 白名单中，暂时不能使用这个 agent。")
+	reply.ReplyToMessageID = message.MessageID
+	if _, err := c.bot.Send(reply); err != nil {
+		c.log.Debug("Failed to send access denied message", zap.Error(err))
 	}
 }
 
