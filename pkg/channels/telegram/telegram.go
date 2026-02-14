@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -613,7 +612,16 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 		return
 	}
 
-	if proposal, ok := parseSkillInstallProposal(resp.Content); ok {
+	if resp.Interaction != nil && resp.Interaction.Type == commands.InteractionTypeSkillInstallConfirm {
+		proposal := commands.SkillInstallProposal{
+			Repo:    strings.TrimSpace(resp.Interaction.Repo),
+			Reason:  strings.TrimSpace(resp.Interaction.Reason),
+			Message: strings.TrimSpace(resp.Interaction.Message),
+		}
+		if proposal.Repo == "" {
+			c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, resp.Content)
+			return
+		}
 		c.finishThinkingMessage(
 			message.Chat.ID,
 			message.MessageID,
@@ -624,7 +632,11 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 				fmt.Sprintf("候補スキルが見つかりました: %s\n下のボタンでインストール確認してください。", proposal.Repo),
 			),
 		)
-		c.sendSkillInstallConfirmation(message.Chat.ID, message.From.ID, message.MessageID, cmdName, proposal)
+		commandName := cmdName
+		if strings.TrimSpace(resp.Interaction.Command) != "" {
+			commandName = strings.TrimSpace(resp.Interaction.Command)
+		}
+		c.sendSkillInstallConfirmation(message.Chat.ID, message.From.ID, message.MessageID, commandName, proposal)
 		return
 	}
 
@@ -1017,7 +1029,7 @@ func (c *Channel) settingsSkillModeKeyboard(lang string) tgbotapi.InlineKeyboard
 	)
 }
 
-func (c *Channel) sendSkillInstallConfirmation(chatID, userID int64, replyTo int, command string, proposal skillInstallProposal) {
+func (c *Channel) sendSkillInstallConfirmation(chatID, userID int64, replyTo int, command string, proposal commands.SkillInstallProposal) {
 	lang := "zh"
 	if p, ok, _ := c.getProfile(context.Background(), userID); ok {
 		lang = userprefs.NormalizeLanguage(p.Language)
@@ -1076,35 +1088,6 @@ func (c *Channel) answerCallback(id, text string, alert bool) {
 	cb := tgbotapi.NewCallback(id, text)
 	cb.ShowAlert = alert
 	_, _ = c.bot.Request(cb)
-}
-
-type skillInstallProposal struct {
-	Repo    string
-	Reason  string
-	Message string
-}
-
-var repoPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`)
-
-func parseSkillInstallProposal(content string) (skillInstallProposal, bool) {
-	var p skillInstallProposal
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(line, "SKILL_INSTALL_PROPOSAL:"):
-			p.Repo = strings.TrimSpace(strings.TrimPrefix(line, "SKILL_INSTALL_PROPOSAL:"))
-		case strings.HasPrefix(line, "REASON:"):
-			p.Reason = strings.TrimSpace(strings.TrimPrefix(line, "REASON:"))
-		case strings.HasPrefix(line, "MESSAGE:"):
-			p.Message = strings.TrimSpace(strings.TrimPrefix(line, "MESSAGE:"))
-		}
-	}
-
-	if p.Repo == "" || !repoPattern.MatchString(p.Repo) {
-		return skillInstallProposal{}, false
-	}
-	return p, true
 }
 
 func (c *Channel) settingsText(lang, zh, en, ja string) string {

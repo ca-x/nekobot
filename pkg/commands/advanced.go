@@ -508,15 +508,19 @@ func skillHandler(skillsMgr *skills.Manager, ag *agent.Agent, prefsMgr *userpref
 		}
 
 		confirmedRepo := parseConfirmedInstallRepo(userTask)
+		if fromMeta := strings.TrimSpace(req.Metadata["skill_install_confirmed_repo"]); fromMeta != "" {
+			confirmedRepo = fromMeta
+		}
 		if skillName == "find-skills" && installMode == "npx_preferred" {
 			prompt := fmt.Sprintf(
-				"你正在处理 Telegram slash command /%s，对应技能 %q。\n"+
+				"你正在处理 %s 渠道的 slash command /%s，对应技能 %q。\n"+
 					"必须调用技能 %q（skill invoke）并按技能指引执行。\n"+
 					"%s\n"+
 					"要求：\n"+
 					"1) 只做最少必要的工具调用，避免重复尝试；\n"+
 					"2) 除非用户已确认，否则不要安装；\n"+
 					"3) 成功时不要返回技能说明文本。\n",
+				req.Channel,
 				req.Command,
 				skill.Name,
 				skill.Name,
@@ -552,11 +556,29 @@ func skillHandler(skillsMgr *skills.Manager, ag *agent.Agent, prefsMgr *userpref
 					ReplyInline: true,
 				}, nil
 			}
+
+			if proposal, ok := ParseSkillInstallProposal(reply); ok {
+				msg := strings.TrimSpace(proposal.Message)
+				if msg == "" {
+					msg = fmt.Sprintf("已找到候选技能：%s\n请确认是否安装。", proposal.Repo)
+				}
+				return CommandResponse{
+					Content:     msg,
+					ReplyInline: true,
+					Interaction: &CommandInteraction{
+						Type:    InteractionTypeSkillInstallConfirm,
+						Repo:    proposal.Repo,
+						Reason:  proposal.Reason,
+						Message: proposal.Message,
+						Command: req.Command,
+					},
+				}, nil
+			}
 			return CommandResponse{Content: reply, ReplyInline: true}, nil
 		}
 
 		prompt := fmt.Sprintf(
-			"你正在处理 Telegram slash command /%s。\n"+
+			"你正在处理 %s 渠道的 slash command /%s。\n"+
 				"必须调用技能 %q（skill invoke）并按技能指引执行。\n"+
 				"用户安装偏好：%s\n"+
 				"要求：\n"+
@@ -564,6 +586,7 @@ func skillHandler(skillsMgr *skills.Manager, ag *agent.Agent, prefsMgr *userpref
 				"2) 成功时只返回最终执行结果，不要返回技能说明；\n"+
 				"3) 失败时只返回一行错误原因。\n"+
 				"用户请求：%s",
+			req.Channel,
 			req.Command,
 			skill.Name,
 			installModeHint,

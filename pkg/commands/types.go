@@ -51,4 +51,20 @@ type CommandResponse struct {
 	// ReplyInline indicates if the response should be sent inline (true)
 	// or as a regular message through the bus (false)
 	ReplyInline bool
+	// Interaction contains optional structured interaction payload.
+	Interaction *CommandInteraction
+}
+
+// CommandInteraction describes optional interactive follow-up actions.
+type CommandInteraction struct {
+	// Type identifies interaction type (e.g., "skill_install_confirm").
+	Type string
+	// Repo is used by skill-install confirmation flows.
+	Repo string
+	// Reason is optional explanation text.
+	Reason string
+	// Message is a user-facing prompt.
+	Message string
+	// Command is command name to re-run after confirmation.
+	Command string
 }
