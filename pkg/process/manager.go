@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -67,8 +69,17 @@ func (m *Manager) Start(ctx context.Context, sessionID, command, workdir string)
 	shellPath := resolveShellPath()
 	cmd := exec.CommandContext(ctx, shellPath, "-c", command)
 	cmd.Env = buildProcessEnv(os.Environ())
-	if workdir != "" {
-		cmd.Dir = workdir
+	normalizedWorkdir := strings.TrimSpace(workdir)
+	if normalizedWorkdir != "" {
+		var err error
+		normalizedWorkdir, err = normalizeWorkdir(normalizedWorkdir)
+		if err != nil {
+			return fmt.Errorf("normalize workdir: %w", err)
+		}
+		if err := os.MkdirAll(normalizedWorkdir, 0o755); err != nil {
+			return fmt.Errorf("prepare workdir: %w", err)
+		}
+		cmd.Dir = normalizedWorkdir
 	}
 
 	// Start with PTY and a safe default size so TUI tools can render immediately.
@@ -84,7 +95,7 @@ func (m *Manager) Start(ctx context.Context, sessionID, command, workdir string)
 	session := &Session{
 		ID:        sessionID,
 		Command:   command,
-		Workdir:   workdir,
+		Workdir:   normalizedWorkdir,
 		StartedAt: time.Now(),
 		Running:   true,
 		PTY:       ptmx,
@@ -444,6 +455,56 @@ func isExecutableFile(path string) bool {
 		return false
 	}
 	return info.Mode()&0o111 != 0
+}
+
+func normalizeWorkdir(raw string) (string, error) {
+	path := strings.TrimSpace(raw)
+	if path == "" {
+		return "", nil
+	}
+
+	path = expandTildePath(path)
+	path = os.ExpandEnv(path)
+	if !filepath.IsAbs(path) {
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return "", err
+		}
+		path = abs
+	}
+	return filepath.Clean(path), nil
+}
+
+func expandTildePath(path string) string {
+	if path == "" || path[0] != '~' {
+		return path
+	}
+
+	sepIdx := strings.IndexRune(path, '/')
+	prefix := path
+	suffix := ""
+	if sepIdx >= 0 {
+		prefix = path[:sepIdx]
+		suffix = path[sepIdx:]
+	}
+
+	if prefix == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil || strings.TrimSpace(home) == "" {
+			return path
+		}
+		return home + suffix
+	}
+
+	userName := strings.TrimPrefix(prefix, "~")
+	if userName == "" {
+		return path
+	}
+	u, err := user.Lookup(userName)
+	if err != nil || strings.TrimSpace(u.HomeDir) == "" {
+		return path
+	}
+	return u.HomeDir + suffix
 }
 
 // SessionStatus represents session status information.
