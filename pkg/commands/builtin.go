@@ -81,7 +81,7 @@ func helpHandler(registry *Registry) CommandHandler {
 			var sb strings.Builder
 			sb.WriteString("可用命令：\n\n")
 			for _, cmd := range cmds {
-				desc := strings.TrimSpace(cmd.Description)
+				desc := compactDescription(cmd.Description, 60)
 				if desc == "" {
 					desc = "Command"
 				}
@@ -95,7 +95,7 @@ func helpHandler(registry *Registry) CommandHandler {
 		sb.WriteString("🤖 **Available Commands**\n\n")
 
 		for _, cmd := range cmds {
-			sb.WriteString(fmt.Sprintf("**/%s** - %s\n", cmd.Name, cmd.Description))
+			sb.WriteString(fmt.Sprintf("**/%s** - %s\n", cmd.Name, compactDescription(cmd.Description, 72)))
 		}
 
 		sb.WriteString("\nUse `/help [command]` for detailed information.")
@@ -105,6 +105,21 @@ func helpHandler(registry *Registry) CommandHandler {
 			ReplyInline: true,
 		}, nil
 	}
+}
+
+func compactDescription(desc string, limit int) string {
+	desc = strings.Join(strings.Fields(strings.TrimSpace(desc)), " ")
+	if limit <= 0 {
+		limit = 72
+	}
+	runes := []rune(desc)
+	if len(runes) <= limit {
+		return desc
+	}
+	if limit <= 1 {
+		return "…"
+	}
+	return string(runes[:limit-1]) + "…"
 }
 
 // startHandler handles the /start command.

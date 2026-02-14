@@ -71,6 +71,8 @@ type pendingSkillInstall struct {
 	CreatedAt time.Time
 }
 
+const telegramMaxMessageChars = 3800
+
 // New creates a new Telegram channel.
 func New(
 	log *logger.Logger,
@@ -1199,8 +1201,13 @@ func (c *Channel) finishThinkingMessage(chatID int64, replyTo int, thinkingMsgID
 		return
 	}
 
-	if thinkingMsgID > 0 {
-		edit := tgbotapi.NewEditMessageText(chatID, thinkingMsgID, text)
+	chunks := splitTelegramText(text, telegramMaxMessageChars)
+	if len(chunks) == 0 {
+		chunks = []string{"（无输出）"}
+	}
+
+	if thinkingMsgID > 0 && len(chunks) == 1 {
+		edit := tgbotapi.NewEditMessageText(chatID, thinkingMsgID, chunks[0])
 		if _, err := c.bot.Send(edit); err == nil {
 			return
 		} else {
@@ -1208,13 +1215,76 @@ func (c *Channel) finishThinkingMessage(chatID int64, replyTo int, thinkingMsgID
 		}
 	}
 
-	reply := tgbotapi.NewMessage(chatID, text)
-	if replyTo > 0 {
-		reply.ReplyToMessageID = replyTo
+	if thinkingMsgID > 0 && len(chunks) > 1 {
+		notice := tgbotapi.NewEditMessageText(
+			chatID,
+			thinkingMsgID,
+			fmt.Sprintf("✅ 输出较长，已分 %d 条发送。", len(chunks)),
+		)
+		if _, err := c.bot.Send(notice); err != nil {
+			c.log.Debug("Failed to update thinking notice", zap.Error(err))
+		}
 	}
-	if _, err := c.bot.Send(reply); err != nil {
-		c.log.Error("Failed to send Telegram reply", zap.Error(err))
+
+	for i, chunk := range chunks {
+		reply := tgbotapi.NewMessage(chatID, chunk)
+		if i == 0 && replyTo > 0 {
+			reply.ReplyToMessageID = replyTo
+		}
+		if _, err := c.bot.Send(reply); err != nil {
+			c.log.Error("Failed to send Telegram reply", zap.Error(err), zap.Int("part", i+1), zap.Int("parts", len(chunks)))
+			return
+		}
 	}
+}
+
+func splitTelegramText(text string, limit int) []string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+
+	if limit <= 0 {
+		limit = telegramMaxMessageChars
+	}
+
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return []string{text}
+	}
+
+	chunks := make([]string, 0, len(runes)/limit+1)
+	start := 0
+	for start < len(runes) {
+		end := start + limit
+		if end >= len(runes) {
+			chunk := strings.TrimSpace(string(runes[start:]))
+			if chunk != "" {
+				chunks = append(chunks, chunk)
+			}
+			break
+		}
+
+		splitAt := end
+		for i := end; i > start+limit/2; i-- {
+			if runes[i-1] == '\n' {
+				splitAt = i
+				break
+			}
+		}
+
+		chunk := strings.TrimSpace(string(runes[start:splitAt]))
+		if chunk == "" {
+			splitAt = end
+			chunk = strings.TrimSpace(string(runes[start:splitAt]))
+		}
+		if chunk != "" {
+			chunks = append(chunks, chunk)
+		}
+		start = splitAt
+	}
+
+	return chunks
 }
 
 func (c *Channel) sendAccessDenied(message *tgbotapi.Message) {
