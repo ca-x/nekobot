@@ -40,6 +40,7 @@ function switchLang(lang) {
   renderChannelsTable();
   renderModelSelect();
   renderProviderSelect();
+  renderChatProviderSelect();
 }
 
 /* ========== Theme ========== */
@@ -71,7 +72,9 @@ const state = {
   channels: {},
   editingChannel: "",
   providers: [],
-  editingProviderName: ""
+  editingProviderName: "",
+  defaultProvider: "",
+  chatProvider: ""
 };
 
 const $ = (id) => document.getElementById(id);
@@ -161,7 +164,12 @@ async function loadModels() {
       seen.add(key);
       models.push({ provider: p, model: m });
     };
-    var currentProvider = (cfg && cfg.agents && cfg.agents.defaults && cfg.agents.defaults.provider) || "default";
+    var currentProvider = (cfg && cfg.agents && cfg.agents.defaults && cfg.agents.defaults.provider) || "";
+    state.defaultProvider = currentProvider;
+    if (!state.chatProvider) state.chatProvider = currentProvider;
+    if (cfg && cfg.agents && cfg.agents.defaults && Array.isArray(cfg.agents.defaults.fallback)) {
+      $("fallbackInput").value = cfg.agents.defaults.fallback.join(", ");
+    }
     addModel(currentProvider, (cfg && cfg.agents && cfg.agents.defaults && cfg.agents.defaults.model) || "");
     for (var i = 0; i < providers.length; i++) {
       var p = providers[i];
@@ -175,6 +183,7 @@ async function loadModels() {
     state.models = [];
   }
   renderModelSelect();
+  renderChatProviderSelect();
   if (state.models.length > 0) {
     $("modelInput").value = state.models[0].model;
   }
@@ -191,9 +200,32 @@ function renderModelSelect() {
     var item = state.models[i];
     var opt = document.createElement("option");
     opt.value = item.model;
+    opt.dataset.provider = item.provider;
     opt.textContent = item.model + " (" + item.provider + ")";
     sel.appendChild(opt);
   }
+}
+
+function renderChatProviderSelect() {
+  var sel = $("chatProviderSelect");
+  if (!sel) return;
+  sel.innerHTML = "";
+
+  var auto = document.createElement("option");
+  auto.value = "";
+  auto.textContent = t("defaultProvider");
+  sel.appendChild(auto);
+
+  for (var i = 0; i < state.providers.length; i++) {
+    var opt = document.createElement("option");
+    opt.value = state.providers[i].name;
+    opt.textContent = state.providers[i].name;
+    sel.appendChild(opt);
+  }
+
+  var target = state.chatProvider || state.defaultProvider || "";
+  if (target) sel.value = target;
+  state.chatProvider = sel.value || "";
 }
 
 /* ========== Providers ========== */
@@ -246,6 +278,7 @@ async function loadProviders() {
     var data = await api("/api/providers");
     state.providers = Array.isArray(data) ? data : [];
     renderProviderSelect();
+    renderChatProviderSelect();
     if (state.providers.length > 0) {
       openProvider(state.editingProviderName || state.providers[0].name);
     } else {
@@ -482,7 +515,10 @@ function sendChat() {
   if (!text || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
   var customModel = $("modelInput").value.trim();
   var model = customModel || $("modelSelect").value;
-  state.ws.send(JSON.stringify({ type: "message", content: text, model: model }));
+  var provider = $("chatProviderSelect").value.trim();
+  var fallback = $("fallbackInput").value.split(",").map(function(name) { return name.trim(); }).filter(Boolean);
+  state.chatProvider = provider;
+  state.ws.send(JSON.stringify({ type: "message", content: text, model: model, provider: provider, fallback: fallback }));
   pushChat("user", text);
   $("chatInput").value = "";
 }
@@ -549,6 +585,14 @@ function setupEvents() {
   $("modelSelect").addEventListener("change", function() {
     var selected = $("modelSelect").value;
     if (selected) $("modelInput").value = selected;
+    var option = $("modelSelect").selectedOptions && $("modelSelect").selectedOptions[0];
+    if (option && option.dataset && option.dataset.provider && option.dataset.provider !== "default") {
+      $("chatProviderSelect").value = option.dataset.provider;
+      state.chatProvider = option.dataset.provider;
+    }
+  });
+  $("chatProviderSelect").addEventListener("change", function(e) {
+    state.chatProvider = e.target.value || "";
   });
   $("chatInput").addEventListener("keydown", function(e) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }

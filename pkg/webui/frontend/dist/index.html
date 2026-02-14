@@ -81,8 +81,10 @@
       <!-- Chat Tab -->
       <section id="tab-chat">
         <div class="chat-controls">
+          <select id="chatProviderSelect"></select>
           <select id="modelSelect"></select>
           <input id="modelInput" data-i18n-ph="customModel" placeholder="Custom model override">
+          <input id="fallbackInput" data-i18n-ph="fallbackProviders" placeholder="Fallback providers (comma-separated)">
           <button id="connectWsBtn" class="btn btn-sm" data-i18n="reconnect">Reconnect</button>
           <button id="clearChatBtn" class="btn btn-sm" data-i18n="clearSession">Clear</button>
         </div>

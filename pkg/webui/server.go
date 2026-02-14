@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -742,9 +743,11 @@ func (cs *chatSession) AddMessage(msg agent.Message) {
 }
 
 type chatWSMessage struct {
-	Type    string `json:"type"`    // "message", "ping", "clear"
-	Content string `json:"content"` // User message text
-	Model   string `json:"model"`   // Optional model override
+	Type     string   `json:"type"`               // "message", "ping", "clear"
+	Content  string   `json:"content"`            // User message text
+	Model    string   `json:"model"`              // Optional model override
+	Provider string   `json:"provider,omitempty"` // Optional provider override
+	Fallback []string `json:"fallback,omitempty"` // Optional fallback provider order
 }
 
 type chatWSResponse struct {
@@ -854,6 +857,14 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				continue
 			}
 			model := strings.TrimSpace(msg.Model)
+			provider := strings.TrimSpace(msg.Provider)
+			fallback := normalizeProviderNames(msg.Fallback)
+
+			// Keep provider/fallback choices in sync with the saved config so restarts preserve them.
+			if err := s.persistChatRouting(provider, fallback); err != nil {
+				sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err))
+				continue
+			}
 
 			// Add user message to session
 			sess.AddMessage(agent.Message{
@@ -862,7 +873,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			})
 
 			// Process with agent
-			response, err := s.agent.ChatWithModel(context.Background(), sess, content, model)
+			response, err := s.agent.ChatWithProviderModelAndFallback(context.Background(), sess, content, provider, model, fallback)
 			if err != nil {
 				sendWSError(conn, fmt.Sprintf("agent error: %v", err))
 				continue
@@ -896,6 +907,69 @@ func sendWSError(conn *websocket.Conn, errMsg string) {
 	if data, err := json.Marshal(resp); err == nil {
 		conn.WriteMessage(websocket.TextMessage, data)
 	}
+}
+
+func normalizeProviderNames(names []string) []string {
+	if len(names) == 0 {
+		return []string{}
+	}
+	seen := make(map[string]struct{}, len(names))
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
+}
+
+func (s *Server) hasProvider(name string) bool {
+	for _, p := range s.config.Providers {
+		if strings.TrimSpace(p.Name) == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) persistChatRouting(provider string, fallback []string) error {
+	changed := false
+
+	if provider != "" {
+		if !s.hasProvider(provider) {
+			return fmt.Errorf("provider not found: %s", provider)
+		}
+		if strings.TrimSpace(s.config.Agents.Defaults.Provider) != provider {
+			s.config.Agents.Defaults.Provider = provider
+			changed = true
+		}
+	}
+
+	for _, name := range fallback {
+		if !s.hasProvider(name) {
+			return fmt.Errorf("fallback provider not found: %s", name)
+		}
+	}
+	if !reflect.DeepEqual(s.config.Agents.Defaults.Fallback, fallback) {
+		s.config.Agents.Defaults.Fallback = fallback
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
+
+	if err := config.ValidateConfig(s.config); err != nil {
+		return err
+	}
+
+	return s.persistConfig()
 }
 
 // --- Approval Handlers ---
