@@ -276,28 +276,86 @@ func (c *Channel) syncSlashCommands() {
 		return
 	}
 
-	// Telegram supports at most 100 commands.
-	sort.Slice(telegramCmds, func(i, j int) bool {
-		return telegramCmds[i].Command < telegramCmds[j].Command
-	})
+	sortTelegramCommands(telegramCmds)
 	if len(telegramCmds) > 100 {
 		telegramCmds = telegramCmds[:100]
 	}
 
-	if _, err := c.bot.Request(tgbotapi.NewSetMyCommands(telegramCmds...)); err != nil {
-		c.log.Warn("Failed to sync Telegram slash commands (default scope)", zap.Error(err))
-		return
-	}
-	if _, err := c.bot.Request(
-		tgbotapi.NewSetMyCommandsWithScope(
-			tgbotapi.NewBotCommandScopeAllPrivateChats(),
-			telegramCmds...,
-		),
-	); err != nil {
-		c.log.Warn("Failed to sync Telegram slash commands (private scope)", zap.Error(err))
+	scopes := []struct {
+		name   string
+		setter func() tgbotapi.Chattable
+	}{
+		{
+			name: "default",
+			setter: func() tgbotapi.Chattable {
+				return tgbotapi.NewSetMyCommands(telegramCmds...)
+			},
+		},
+		{
+			name: "all_private_chats",
+			setter: func() tgbotapi.Chattable {
+				return tgbotapi.NewSetMyCommandsWithScope(
+					tgbotapi.NewBotCommandScopeAllPrivateChats(),
+					telegramCmds...,
+				)
+			},
+		},
+		{
+			name: "all_group_chats",
+			setter: func() tgbotapi.Chattable {
+				return tgbotapi.NewSetMyCommandsWithScope(
+					tgbotapi.NewBotCommandScopeAllGroupChats(),
+					telegramCmds...,
+				)
+			},
+		},
+		{
+			name: "all_chat_administrators",
+			setter: func() tgbotapi.Chattable {
+				return tgbotapi.NewSetMyCommandsWithScope(
+					tgbotapi.NewBotCommandScopeAllChatAdministrators(),
+					telegramCmds...,
+				)
+			},
+		},
 	}
 
-	c.log.Info("Synced Telegram slash commands", zap.Int("count", len(telegramCmds)))
+	okScopes := 0
+	for _, scope := range scopes {
+		if _, err := c.bot.Request(scope.setter()); err != nil {
+			c.log.Warn("Failed to sync Telegram slash commands", zap.String("scope", scope.name), zap.Error(err))
+			continue
+		}
+		okScopes++
+	}
+
+	if okScopes == 0 {
+		return
+	}
+
+	c.log.Info("Synced Telegram slash commands",
+		zap.Int("count", len(telegramCmds)),
+		zap.Int("scopes", okScopes))
+}
+
+func sortTelegramCommands(commands []tgbotapi.BotCommand) {
+	core := map[string]struct{}{
+		"start":    {},
+		"help":     {},
+		"settings": {},
+		"model":    {},
+		"agent":    {},
+		"skills":   {},
+	}
+
+	sort.Slice(commands, func(i, j int) bool {
+		_, iCore := core[commands[i].Command]
+		_, jCore := core[commands[j].Command]
+		if iCore != jCore {
+			return iCore
+		}
+		return commands[i].Command < commands[j].Command
+	})
 }
 
 func sanitizeTelegramCommandName(name string) string {
