@@ -55,6 +55,7 @@ type UnifiedResponse struct {
 	ID           string              `json:"id"`
 	Model        string              `json:"model"`
 	Content      string              `json:"content"`
+	Thinking     string              `json:"thinking,omitempty"`  // Model's internal reasoning (extended thinking)
 	ToolCalls    []UnifiedToolCall   `json:"tool_calls,omitempty"`
 	FinishReason string              `json:"finish_reason"` // "stop", "length", "tool_calls", etc.
 	Usage        *UnifiedUsage       `json:"usage,omitempty"`
@@ -75,6 +76,7 @@ type UnifiedStreamChunk struct {
 type UnifiedDelta struct {
 	Role      string            `json:"role,omitempty"`
 	Content   string            `json:"content,omitempty"`
+	Thinking  string            `json:"thinking,omitempty"` // Incremental thinking content
 	ToolCalls []UnifiedToolCall `json:"tool_calls,omitempty"`
 }
 

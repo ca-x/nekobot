@@ -154,6 +154,14 @@ func (a *Agent) Chat(ctx context.Context, sess SessionInterface, userMessage str
 			Temperature: a.config.Agents.Defaults.Temperature,
 		}
 
+		// Pass extended thinking config via Extra
+		if a.config.Agents.Defaults.ExtendedThinking {
+			req.Extra = map[string]interface{}{
+				"extended_thinking": true,
+				"thinking_budget":   a.config.Agents.Defaults.ThinkingBudget,
+			}
+		}
+
 		// Call LLM
 		resp, err := a.client.Chat(ctx, req)
 		if err != nil {
@@ -165,6 +173,13 @@ func (a *Agent) Chat(ctx context.Context, sess SessionInterface, userMessage str
 			zap.Int("tool_calls", len(resp.ToolCalls)),
 			zap.String("finish_reason", resp.FinishReason),
 		)
+
+		// Log thinking content if present
+		if resp.Thinking != "" {
+			a.logger.Debug("LLM thinking",
+				zap.String("thinking", truncate(resp.Thinking, 200)),
+			)
+		}
 
 		// Add assistant message to history
 		assistantMsg := providers.UnifiedMessage{

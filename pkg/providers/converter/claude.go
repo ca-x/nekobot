@@ -18,6 +18,12 @@ func NewClaudeConverter() *ClaudeConverter {
 	return &ClaudeConverter{}
 }
 
+// claudeThinkingConfig represents the thinking configuration in Claude API.
+type claudeThinkingConfig struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
+}
+
 // claudeRequest represents the Claude API request format.
 type claudeRequest struct {
 	Model       string                   `json:"model"`
@@ -29,6 +35,7 @@ type claudeRequest struct {
 	Stream      bool                     `json:"stream,omitempty"`
 	Tools       []map[string]interface{} `json:"tools,omitempty"`
 	ToolChoice  interface{}              `json:"tool_choice,omitempty"`
+	Thinking    *claudeThinkingConfig    `json:"thinking,omitempty"`
 }
 
 // claudeMessage represents a single message in Claude format.
@@ -150,6 +157,23 @@ func (c *ClaudeConverter) ToProviderRequest(unified *providers.UnifiedRequest) (
 		}
 	}
 
+	// Apply extended thinking if configured via Extra
+	if unified.Extra != nil {
+		if enabled, ok := unified.Extra["extended_thinking"].(bool); ok && enabled {
+			budget := 10000 // default budget
+			if b, ok := unified.Extra["thinking_budget"].(int); ok && b > 0 {
+				budget = b
+			}
+			req.Thinking = &claudeThinkingConfig{
+				Type:         "enabled",
+				BudgetTokens: budget,
+			}
+			// Claude requires temperature=1 when thinking is enabled
+			req.Temperature = 0
+			req.TopP = 0
+		}
+	}
+
 	return req, nil
 }
 
@@ -193,6 +217,11 @@ func (c *ClaudeConverter) FromProviderResponse(providerResp interface{}) (*provi
 		blockType, _ := block["type"].(string)
 
 		switch blockType {
+		case "thinking":
+			if thinking, ok := block["thinking"].(string); ok {
+				unified.Thinking += thinking
+			}
+
 		case "text":
 			if text, ok := block["text"].(string); ok {
 				unified.Content += text
@@ -260,11 +289,16 @@ func (c *ClaudeConverter) FromProviderStreamChunk(rawChunk []byte) (*providers.U
 		if chunk.Delta != nil {
 			deltaType, _ := chunk.Delta["type"].(string)
 
-			if deltaType == "text_delta" {
+			switch deltaType {
+			case "thinking_delta":
+				if thinking, ok := chunk.Delta["thinking"].(string); ok {
+					unified.Delta.Thinking = thinking
+				}
+			case "text_delta":
 				if text, ok := chunk.Delta["text"].(string); ok {
 					unified.Delta.Content = text
 				}
-			} else if deltaType == "input_json_delta" {
+			case "input_json_delta":
 				// Accumulate partial JSON for tool inputs
 				if partialJSON, ok := chunk.Delta["partial_json"].(string); ok {
 					// Store partial JSON in a tool call delta

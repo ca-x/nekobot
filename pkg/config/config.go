@@ -47,6 +47,8 @@ type AgentDefaults struct {
 	MaxToolIterations   int      `mapstructure:"max_tool_iterations" json:"max_tool_iterations"`
 	SkillsDir           string   `mapstructure:"skills_dir" json:"skills_dir"`
 	SkillsAutoReload    bool     `mapstructure:"skills_auto_reload" json:"skills_auto_reload"`
+	ExtendedThinking    bool     `mapstructure:"extended_thinking" json:"extended_thinking"`
+	ThinkingBudget      int      `mapstructure:"thinking_budget" json:"thinking_budget"`
 }
 
 // ChannelsConfig contains all channel configurations.
