@@ -13,7 +13,9 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -53,6 +55,7 @@ type Server struct {
 	commands   *commands.Registry
 	prefs      *userprefs.Manager
 	port       int
+	startedAt  time.Time
 }
 
 // NewServer creates a new WebUI server.
@@ -73,16 +76,17 @@ func NewServer(
 	}
 
 	s := &Server{
-		config:   cfg,
-		loader:   loader,
-		logger:   log,
-		agent:    ag,
-		approval: approvalMgr,
-		channels: chanMgr,
-		bus:      messageBus,
-		commands: cmdRegistry,
-		prefs:    prefsMgr,
-		port:     port,
+		config:    cfg,
+		loader:    loader,
+		logger:    log,
+		agent:     ag,
+		approval:  approvalMgr,
+		channels:  chanMgr,
+		bus:       messageBus,
+		commands:  cmdRegistry,
+		prefs:     prefsMgr,
+		port:      port,
+		startedAt: time.Now(),
 	}
 
 	s.setup()
@@ -705,10 +709,26 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 // --- Status Handler ---
 
 func (s *Server) handleStatus(c *echo.Context) error {
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
+	uptime := time.Since(s.startedAt)
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"version":        version.GetVersion(),
-		"uptime":         time.Since(time.Now()).String(), // placeholder
-		"provider_count": len(s.config.Providers),
+		"version":            version.GetVersion(),
+		"commit":             version.GitCommit,
+		"build_time":         version.BuildTime,
+		"os":                 runtime.GOOS,
+		"arch":               runtime.GOARCH,
+		"go_version":         runtime.Version(),
+		"pid":                os.Getpid(),
+		"uptime":             uptime.Round(time.Second).String(),
+		"uptime_seconds":     int64(uptime.Seconds()),
+		"memory_alloc_bytes": mem.Alloc,
+		"memory_sys_bytes":   mem.Sys,
+		"provider_count":     len(s.config.Providers),
+		"gateway_host":       s.config.Gateway.Host,
+		"gateway_port":       s.config.Gateway.Port,
 		"gateway": map[string]interface{}{
 			"host": s.config.Gateway.Host,
 			"port": s.config.Gateway.Port,

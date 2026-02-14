@@ -3,9 +3,15 @@ package commands
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
+	"time"
+
+	"nekobot/pkg/version"
 )
+
+var processStartTime = time.Now()
 
 // RegisterBuiltinCommands registers built-in commands.
 func RegisterBuiltinCommands(registry *Registry) error {
@@ -138,12 +144,28 @@ Type /help to see available commands, or just send me a message to start chattin
 
 // statusHandler handles the /status command.
 func statusHandler(ctx context.Context, req CommandRequest) (CommandResponse, error) {
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
 	content := fmt.Sprintf(`✅ **Nanobot Status**
 
 Channel: %s
 Status: 🟢 Online
+Version: %s
+OS: %s/%s
+Go: %s
+Uptime: %s
+Memory: %.2f MB
 
-Ready to assist you!`, req.Channel)
+Ready to assist you!`,
+		req.Channel,
+		version.GetVersion(),
+		runtime.GOOS,
+		runtime.GOARCH,
+		runtime.Version(),
+		time.Since(processStartTime).Round(time.Second),
+		float64(mem.Alloc)/1024.0/1024.0,
+	)
 
 	return CommandResponse{
 		Content:     content,
