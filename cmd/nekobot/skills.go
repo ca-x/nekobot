@@ -84,7 +84,8 @@ func runSkillsSources(cmd *cobra.Command, args []string) {
 	// Get sources
 	sources := loader.GetSources()
 
-	fmt.Println("Skill source paths (in priority order):\n")
+	fmt.Println("Skill source paths (in priority order):")
+	fmt.Println()
 	for _, source := range sources {
 		fmt.Printf("[Priority %d] %s (%s)\n", source.Priority, source.Path, source.Type)
 	}

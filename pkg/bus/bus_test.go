@@ -11,8 +11,7 @@ import (
 func TestLocalBus(t *testing.T) {
 	// Create logger
 	log, err := logger.New(&logger.Config{
-		Level:  "info",
-		Output: "console",
+		Level: "info",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
@@ -69,7 +68,7 @@ func TestLocalBus(t *testing.T) {
 }
 
 func TestBusMultipleHandlers(t *testing.T) {
-	log, _ := logger.New(&logger.Config{Level: "error", Output: "console"})
+	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 	bus := NewLocalBus(log, 10)
 	bus.Start()
 	defer bus.Stop()
@@ -102,7 +101,7 @@ func TestBusMultipleHandlers(t *testing.T) {
 }
 
 func TestBusOutbound(t *testing.T) {
-	log, _ := logger.New(&logger.Config{Level: "error", Output: "console"})
+	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 	bus := NewLocalBus(log, 10)
 	bus.Start()
 	defer bus.Stop()
@@ -138,7 +137,7 @@ func TestBusOutbound(t *testing.T) {
 }
 
 func BenchmarkBusThroughput(b *testing.B) {
-	log, _ := logger.New(&logger.Config{Level: "error", Output: "console"})
+	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 	bus := NewLocalBus(log, 1000)
 	bus.Start()
 	defer bus.Stop()

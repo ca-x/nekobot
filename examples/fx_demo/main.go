@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"go.uber.org/fx"
+	"go.uber.org/zap"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 )
@@ -32,15 +33,11 @@ func runApp(
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			log.Info("Application starting",
-				log.Logger.With(
-					log.Logger.With(
-						log.Logger.With(),
-					),
-				),
+				zap.String("component", "fx-demo"),
 			)
 
 			log.Info("Configuration loaded",
-				log.Logger.With(),
+				zap.String("workspace", cfg.WorkspacePath()),
 			)
 
 			log.Info("Using model: " + cfg.Agents.Defaults.Model)

@@ -16,8 +16,7 @@ func TestFileStore(t *testing.T) {
 	statePath := filepath.Join(tmpDir, "state.json")
 
 	log, err := logger.New(&logger.Config{
-		Level:  "error",
-		Output: "console",
+		Level: "error",
 	})
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
@@ -153,7 +152,7 @@ func TestFileStoreAutoSave(t *testing.T) {
 	tmpDir := t.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")
 
-	log, _ := logger.New(&logger.Config{Level: "error", Output: "console"})
+	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 
 	store, err := NewFileStore(log, &FileStoreConfig{
 		FilePath:     statePath,
@@ -198,7 +197,7 @@ func TestFileStoreUpdateFunc(t *testing.T) {
 	tmpDir := t.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")
 
-	log, _ := logger.New(&logger.Config{Level: "error", Output: "console"})
+	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 
 	store, err := NewFileStore(log, &FileStoreConfig{
 		FilePath: statePath,
@@ -249,7 +248,7 @@ func TestFileStoreClear(t *testing.T) {
 	tmpDir := t.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")
 
-	log, _ := logger.New(&logger.Config{Level: "error", Output: "console"})
+	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 
 	store, err := NewFileStore(log, &FileStoreConfig{
 		FilePath: statePath,
@@ -286,7 +285,7 @@ func BenchmarkFileStoreSet(b *testing.B) {
 	tmpDir := b.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")
 
-	log, _ := logger.New(&logger.Config{Level: "error", Output: "console"})
+	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 	store, _ := NewFileStore(log, &FileStoreConfig{
 		FilePath: statePath,
 		AutoSave: false,
@@ -305,7 +304,7 @@ func BenchmarkFileStoreGet(b *testing.B) {
 	tmpDir := b.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")
 
-	log, _ := logger.New(&logger.Config{Level: "error", Output: "console"})
+	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 	store, _ := NewFileStore(log, &FileStoreConfig{
 		FilePath: statePath,
 		AutoSave: false,

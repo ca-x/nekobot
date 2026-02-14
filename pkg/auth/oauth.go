@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,14 +16,14 @@ import (
 
 // OAuthProviderConfig contains OAuth configuration for a provider.
 type OAuthProviderConfig struct {
-	Provider              string
-	AuthorizeURL          string
-	TokenURL              string
+	Provider               string
+	AuthorizeURL           string
+	TokenURL               string
 	DeviceAuthorizationURL string
-	ClientID              string
-	ClientSecret          string
-	Scopes                []string
-	RequiresPKCE          bool
+	ClientID               string
+	ClientSecret           string
+	Scopes                 []string
+	RequiresPKCE           bool
 }
 
 // OAuthTokenResponse represents the OAuth token response.
@@ -67,7 +68,7 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 	stateCh := make(chan string, 1)
 
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr: ":8080",
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path != "/callback" {
 				http.Error(w, "Not found", http.StatusNotFound)
@@ -382,7 +383,7 @@ func pollDeviceToken(cfg OAuthProviderConfig, deviceCode string) (*OAuthTokenRes
 			Error string `json:"error"`
 		}
 		if err := json.Unmarshal(body, &errorResp); err == nil {
-			return nil, fmt.Errorf(errorResp.Error)
+			return nil, errors.New(errorResp.Error)
 		}
 		return nil, fmt.Errorf("token poll failed: %s - %s", resp.Status, string(body))
 	}

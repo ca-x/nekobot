@@ -214,11 +214,14 @@ func runAuthStatus(cmd *cobra.Command, args []string) {
 	creds := store.List()
 	if len(creds) == 0 {
 		fmt.Println("No authentication credentials stored.")
-		fmt.Println("\nUse 'nekobot auth login --provider <name>' to authenticate.")
+		fmt.Println()
+		fmt.Println("Use 'nekobot auth login --provider <name>' to authenticate.")
 		return
 	}
 
-	fmt.Println("\n🔐 Authentication Status\n")
+	fmt.Println()
+	fmt.Println("🔐 Authentication Status")
+	fmt.Println()
 	fmt.Println("Provider      | Status    | Method      | Expires")
 	fmt.Println("------------- | --------- | ----------- | --------------------")
 

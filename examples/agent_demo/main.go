@@ -11,6 +11,18 @@ import (
 	"nekobot/pkg/logger"
 )
 
+type demoSession struct {
+	messages []agent.Message
+}
+
+func (s *demoSession) GetMessages() []agent.Message {
+	return s.messages
+}
+
+func (s *demoSession) AddMessage(msg agent.Message) {
+	s.messages = append(s.messages, msg)
+}
+
 func main() {
 	app := fx.New(
 		// Core modules
@@ -33,10 +45,13 @@ func run(
 ) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			log.Info("Starting NekoBot demo")
+			log.Info("Starting NekoBot demo",
+				zap.String("model", cfg.Agents.Defaults.Model))
+
+			sess := &demoSession{}
 
 			// Example: simple chat
-			response, err := ag.Chat(ctx, "Hello! Please list the files in the current directory using the list_dir tool.")
+			response, err := ag.Chat(ctx, sess, "Hello! Please list the files in the current directory using the list_dir tool.")
 			if err != nil {
 				log.Error("Chat failed", zap.Error(err))
 				return err
@@ -47,7 +62,7 @@ func run(
 			fmt.Println("===================")
 
 			// Example: write and read file
-			response2, err := ag.Chat(ctx, "Please create a file called 'test.txt' with the content 'Hello from NekoBot!' using write_file tool.")
+			response2, err := ag.Chat(ctx, sess, "Please create a file called 'test.txt' with the content 'Hello from NekoBot!' using write_file tool.")
 			if err != nil {
 				log.Error("Chat failed", zap.Error(err))
 				return err
