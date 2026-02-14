@@ -238,18 +238,18 @@ func (s *Server) handleLogin(c *echo.Context) error {
 // --- Provider Handlers ---
 
 func (s *Server) handleGetProviders(c *echo.Context) error {
-	// Return providers with API keys masked
+	// Return provider profiles for dashboard editing.
 	providers := make([]map[string]interface{}, len(s.config.Providers))
 	for i, p := range s.config.Providers {
 		providers[i] = map[string]interface{}{
 			"name":          p.Name,
 			"provider_kind": p.ProviderKind,
+			"api_key":       p.APIKey,
 			"api_base":      p.APIBase,
 			"proxy":         p.Proxy,
 			"models":        p.Models,
 			"default_model": p.DefaultModel,
 			"timeout":       p.Timeout,
-			"has_api_key":   p.APIKey != "",
 		}
 	}
 	return c.JSON(http.StatusOK, providers)
@@ -317,19 +317,21 @@ func (s *Server) handleDeleteProvider(c *echo.Context) error {
 // --- Channel Handlers ---
 
 func (s *Server) handleGetChannels(c *echo.Context) error {
-	// Return channel configs (with secrets masked)
+	// Return editable channel configs for dashboard.
 	channels := map[string]interface{}{
-		"telegram":   map[string]interface{}{"enabled": s.config.Channels.Telegram.Enabled, "has_token": s.config.Channels.Telegram.Token != ""},
-		"discord":    map[string]interface{}{"enabled": s.config.Channels.Discord.Enabled, "has_token": s.config.Channels.Discord.Token != ""},
-		"slack":      map[string]interface{}{"enabled": s.config.Channels.Slack.Enabled, "has_token": s.config.Channels.Slack.BotToken != ""},
-		"whatsapp":   map[string]interface{}{"enabled": s.config.Channels.WhatsApp.Enabled, "bridge_url": s.config.Channels.WhatsApp.BridgeURL},
-		"feishu":     map[string]interface{}{"enabled": s.config.Channels.Feishu.Enabled, "has_app_id": s.config.Channels.Feishu.AppID != ""},
-		"dingtalk":   map[string]interface{}{"enabled": s.config.Channels.DingTalk.Enabled, "has_client_id": s.config.Channels.DingTalk.ClientID != ""},
-		"qq":         map[string]interface{}{"enabled": s.config.Channels.QQ.Enabled, "has_app_id": s.config.Channels.QQ.AppID != ""},
-		"wework":     map[string]interface{}{"enabled": s.config.Channels.WeWork.Enabled, "has_corp_id": s.config.Channels.WeWork.CorpID != ""},
-		"serverchan": map[string]interface{}{"enabled": s.config.Channels.ServerChan.Enabled},
-		"googlechat": map[string]interface{}{"enabled": s.config.Channels.GoogleChat.Enabled},
-		"maixcam":    map[string]interface{}{"enabled": s.config.Channels.MaixCam.Enabled, "host": s.config.Channels.MaixCam.Host, "port": s.config.Channels.MaixCam.Port},
+		"telegram":        s.config.Channels.Telegram,
+		"discord":         s.config.Channels.Discord,
+		"slack":           s.config.Channels.Slack,
+		"whatsapp":        s.config.Channels.WhatsApp,
+		"feishu":          s.config.Channels.Feishu,
+		"dingtalk":        s.config.Channels.DingTalk,
+		"qq":              s.config.Channels.QQ,
+		"wework":          s.config.Channels.WeWork,
+		"serverchan":      s.config.Channels.ServerChan,
+		"googlechat":      s.config.Channels.GoogleChat,
+		"maixcam":         s.config.Channels.MaixCam,
+		"teams":           s.config.Channels.Teams,
+		"infoflow":        s.config.Channels.Infoflow,
 	}
 	return c.JSON(http.StatusOK, channels)
 }

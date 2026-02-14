@@ -177,13 +177,16 @@
 
       <div class="tabs mt">
         <button class="tab active" data-tab="chat">Chat Playground</button>
+        <button class="tab" data-tab="providers">Providers</button>
         <button class="tab" data-tab="channels">Channels</button>
+        <button class="tab" data-tab="config">Config</button>
         <button class="tab" data-tab="status">System</button>
       </div>
 
       <section id="tab-chat">
         <div class="row">
           <select id="modelSelect"></select>
+          <input id="modelInput" placeholder="Custom model override (optional)">
           <button id="connectWsBtn">Reconnect WS</button>
           <button id="clearChatBtn">Clear Session</button>
         </div>
@@ -192,6 +195,18 @@
           <textarea id="chatInput" rows="2" style="flex:1;" placeholder="Type message and press Send"></textarea>
           <button id="sendBtn" class="primary">Send</button>
         </div>
+      </section>
+
+      <section id="tab-providers" class="hidden">
+        <div class="row">
+          <select id="providerSelect"></select>
+          <button id="refreshProvidersBtn">Refresh</button>
+          <button id="newProviderBtn">New</button>
+          <button id="saveProviderBtn" class="primary">Save</button>
+          <button id="deleteProviderBtn" class="danger">Delete</button>
+          <span id="providerMsg" style="color:#9ca3af;"></span>
+        </div>
+        <textarea id="providerEditor" rows="14" class="mt" style="width:100%;" spellcheck="false"></textarea>
       </section>
 
       <section id="tab-channels" class="hidden">
@@ -204,6 +219,15 @@
           </thead>
           <tbody id="channelsBody"></tbody>
         </table>
+        <div id="channelEditor" class="mt hidden">
+          <h3 id="channelEditorTitle">Edit Channel</h3>
+          <textarea id="channelEditorInput" rows="12" style="width:100%;" spellcheck="false"></textarea>
+          <div class="row mt">
+            <button id="saveChannelBtn" class="primary">Save</button>
+            <button id="cancelChannelBtn">Cancel</button>
+            <span id="channelEditorMsg" style="color:#9ca3af;"></span>
+          </div>
+        </div>
       </section>
 
       <section id="tab-status" class="hidden">
@@ -212,6 +236,15 @@
         </div>
         <pre id="statusPre" class="mt">{}</pre>
       </section>
+
+      <section id="tab-config" class="hidden">
+        <div class="row">
+          <button id="refreshConfigBtn">Refresh</button>
+          <button id="saveConfigBtn" class="primary">Save</button>
+          <span id="configMsg" style="color:#9ca3af;"></span>
+        </div>
+        <textarea id="configEditor" rows="16" class="mt" style="width:100%;" spellcheck="false"></textarea>
+      </section>
     </div>
   </div>
 
@@ -219,7 +252,11 @@
     const state = {
       token: localStorage.getItem("nekobot_webui_token") || "",
       ws: null,
-      models: []
+      models: [],
+      channels: {},
+      editingChannel: "",
+      providers: [],
+      editingProviderName: ""
     };
 
     const $ = (id) => document.getElementById(id);
@@ -285,36 +322,59 @@
     }
 
     async function initMain() {
-      await Promise.all([loadModels(), loadChannels(), loadStatus()]);
+      await Promise.all([loadModels(), loadProviders(), loadChannels(), loadConfig(), loadStatus()]);
       connectWS();
     }
 
     async function loadModels() {
       try {
-        const providers = await api("/api/providers");
+        const [providers, cfg] = await Promise.all([
+          api("/api/providers"),
+          api("/api/config")
+        ]);
         const models = [];
+        const seen = new Set();
+
+        const addModel = (provider, model) => {
+          const m = String(model || "").trim();
+          if (!m) return;
+          const p = String(provider || "default").trim() || "default";
+          const key = `${p}::${m}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          models.push({ provider: p, model: m });
+        };
+
+        const currentProvider = cfg?.agents?.defaults?.provider || "default";
+        addModel(currentProvider, cfg?.agents?.defaults?.model || "");
+
         for (const p of providers) {
-          if (p.default_model) models.push(`${p.name}:${p.default_model}`);
+          if (p.default_model) addModel(p.name, p.default_model);
           if (Array.isArray(p.models)) {
-            for (const m of p.models) models.push(`${p.name}:${m}`);
+            for (const m of p.models) addModel(p.name, m);
           }
         }
-        state.models = Array.from(new Set(models));
+        state.models = models;
       } catch (_) {
         state.models = [];
       }
+
       const sel = $("modelSelect");
       sel.innerHTML = "";
       const auto = document.createElement("option");
       auto.value = "";
       auto.textContent = "Default model";
       sel.appendChild(auto);
+
       for (const item of state.models) {
-        const [provider, model] = item.split(":");
         const opt = document.createElement("option");
-        opt.value = model;
-        opt.textContent = `${model} (${provider})`;
+        opt.value = item.model;
+        opt.textContent = `${item.model} (${item.provider})`;
         sel.appendChild(opt);
+      }
+
+      if (state.models.length > 0) {
+        $("modelInput").value = state.models[0].model;
       }
     }
 
@@ -323,9 +383,13 @@
       body.innerHTML = "";
       try {
         const data = await api("/api/channels");
+        state.channels = data;
         const names = Object.keys(data).sort();
         for (const name of names) {
           const cfg = data[name] || {};
+          if (typeof cfg !== "object" || cfg === null || !Object.prototype.hasOwnProperty.call(cfg, "enabled")) {
+            continue;
+          }
           const tr = document.createElement("tr");
           const statusCell = document.createElement("td");
           statusCell.textContent = "-";
@@ -333,7 +397,10 @@
             <td>${name}</td>
             <td><span class="badge ${cfg.enabled ? "on" : "off"}">${cfg.enabled ? "on" : "off"}</span></td>
             <td></td>
-            <td><button data-test="${name}">Test</button></td>
+            <td>
+              <button data-test="${name}">Test</button>
+              <button data-edit="${name}">Edit</button>
+            </td>
           `;
           tr.children[2].replaceWith(statusCell);
           body.appendChild(tr);
@@ -343,6 +410,133 @@
         tr.innerHTML = `<td colspan="4" style="color:#fca5a5;">${err.message}</td>`;
         body.appendChild(tr);
       }
+    }
+
+    function defaultProviderTemplate() {
+      return {
+        name: "new-provider",
+        provider_kind: "openai",
+        api_base: "",
+        api_key: "",
+        models: [],
+        default_model: "",
+        timeout: 60
+      };
+    }
+
+    function setProviderMessage(text, isError = false) {
+      const el = $("providerMsg");
+      el.style.color = isError ? "#fca5a5" : "#9ca3af";
+      el.textContent = text || "";
+    }
+
+    function renderProviderSelect() {
+      const sel = $("providerSelect");
+      sel.innerHTML = "";
+
+      for (const p of state.providers) {
+        const opt = document.createElement("option");
+        opt.value = p.name;
+        opt.textContent = p.name;
+        sel.appendChild(opt);
+      }
+
+      if (!state.providers.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "No providers";
+        sel.appendChild(opt);
+      }
+    }
+
+    function openProvider(name) {
+      const provider = state.providers.find(p => p.name === name);
+      if (!provider) {
+        state.editingProviderName = "";
+        $("providerEditor").value = JSON.stringify(defaultProviderTemplate(), null, 2);
+        return;
+      }
+      state.editingProviderName = provider.name;
+      $("providerEditor").value = JSON.stringify(provider, null, 2);
+      $("providerSelect").value = provider.name;
+    }
+
+    async function loadProviders() {
+      try {
+        const data = await api("/api/providers");
+        state.providers = Array.isArray(data) ? data : [];
+        renderProviderSelect();
+        if (state.providers.length > 0) {
+          const first = state.providers[0].name;
+          openProvider(state.editingProviderName || first);
+        } else {
+          state.editingProviderName = "";
+          $("providerEditor").value = JSON.stringify(defaultProviderTemplate(), null, 2);
+        }
+        setProviderMessage("");
+      } catch (err) {
+        setProviderMessage(err.message, true);
+      }
+    }
+
+    async function saveProvider() {
+      let payload;
+      try {
+        payload = JSON.parse($("providerEditor").value || "{}");
+      } catch (err) {
+        setProviderMessage(`Invalid JSON: ${err.message}`, true);
+        return;
+      }
+
+      if (!payload.name || !String(payload.name).trim()) {
+        setProviderMessage("Provider name is required", true);
+        return;
+      }
+
+      try {
+        if (state.editingProviderName) {
+          await api(`/api/providers/${encodeURIComponent(state.editingProviderName)}`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+          });
+        } else {
+          await api("/api/providers", {
+            method: "POST",
+            body: JSON.stringify(payload)
+          });
+        }
+        state.editingProviderName = payload.name;
+        setProviderMessage("Saved.");
+        await loadProviders();
+        await loadModels();
+      } catch (err) {
+        setProviderMessage(err.message, true);
+      }
+    }
+
+    async function deleteProvider() {
+      const name = state.editingProviderName || $("providerSelect").value;
+      if (!name) {
+        setProviderMessage("No provider selected", true);
+        return;
+      }
+      if (!confirm(`Delete provider ?`)) return;
+
+      try {
+        await api(`/api/providers/${encodeURIComponent(name)}`, { method: "DELETE" });
+        state.editingProviderName = "";
+        setProviderMessage("Deleted.");
+        await loadProviders();
+        await loadModels();
+      } catch (err) {
+        setProviderMessage(err.message, true);
+      }
+    }
+
+    function newProvider() {
+      state.editingProviderName = "";
+      $("providerEditor").value = JSON.stringify(defaultProviderTemplate(), null, 2);
+      setProviderMessage("Creating new provider.");
     }
 
     async function testChannel(name, statusCell) {
@@ -361,6 +555,44 @@
         $("statusPre").textContent = JSON.stringify(status, null, 2);
       } catch (err) {
         $("statusPre").textContent = `Error: ${err.message}`;
+      }
+    }
+
+    function setConfigMessage(text, isError = false) {
+      const el = $("configMsg");
+      el.style.color = isError ? "#fca5a5" : "#9ca3af";
+      el.textContent = text || "";
+    }
+
+    async function loadConfig() {
+      try {
+        const cfg = await api("/api/config");
+        $("configEditor").value = JSON.stringify(cfg, null, 2);
+        setConfigMessage("");
+      } catch (err) {
+        setConfigMessage(err.message, true);
+      }
+    }
+
+    async function saveConfig() {
+      let payload;
+      try {
+        payload = JSON.parse($("configEditor").value || "{}");
+      } catch (err) {
+        setConfigMessage(`Invalid JSON: ${err.message}`, true);
+        return;
+      }
+
+      setConfigMessage("Saving...");
+      try {
+        await api("/api/config", {
+          method: "PUT",
+          body: JSON.stringify(payload)
+        });
+        setConfigMessage("Saved.");
+        await Promise.all([loadStatus(), loadModels()]);
+      } catch (err) {
+        setConfigMessage(err.message, true);
       }
     }
 
@@ -388,10 +620,54 @@
     function sendChat() {
       const text = $("chatInput").value.trim();
       if (!text || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
-      const model = $("modelSelect").value;
+      const customModel = $("modelInput").value.trim();
+      const model = customModel || $("modelSelect").value;
       state.ws.send(JSON.stringify({ type: "message", content: text, model }));
       pushChat("user", text);
       $("chatInput").value = "";
+    }
+
+    function openChannelEditor(name) {
+      state.editingChannel = name;
+      const cfg = state.channels[name] || {};
+      $("channelEditorTitle").textContent = `Edit Channel: ${name}`;
+      $("channelEditorInput").value = JSON.stringify(cfg, null, 2);
+      $("channelEditorMsg").textContent = "";
+      $("channelEditor").classList.remove("hidden");
+    }
+
+    function closeChannelEditor() {
+      state.editingChannel = "";
+      $("channelEditor").classList.add("hidden");
+      $("channelEditorMsg").textContent = "";
+    }
+
+    async function saveChannelConfig() {
+      if (!state.editingChannel) return;
+      const msgEl = $("channelEditorMsg");
+      let payload;
+      try {
+        payload = JSON.parse($("channelEditorInput").value || "{}");
+      } catch (err) {
+        msgEl.style.color = "#fca5a5";
+        msgEl.textContent = `Invalid JSON: ${err.message}`;
+        return;
+      }
+
+      msgEl.style.color = "#9ca3af";
+      msgEl.textContent = "Saving...";
+      try {
+        await api(`/api/channels/${encodeURIComponent(state.editingChannel)}`, {
+          method: "PUT",
+          body: JSON.stringify(payload)
+        });
+        msgEl.style.color = "#86efac";
+        msgEl.textContent = "Saved. Restart gateway/channel if needed.";
+        await loadChannels();
+      } catch (err) {
+        msgEl.style.color = "#fca5a5";
+        msgEl.textContent = err.message;
+      }
     }
 
     function setupEvents() {
@@ -449,13 +725,17 @@
           document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
           btn.classList.add("active");
           const tab = btn.dataset.tab;
-          ["chat", "channels", "status"].forEach(name => {
+          ["chat", "providers", "channels", "config", "status"].forEach(name => {
             $(`tab-${name}`).classList.toggle("hidden", name !== tab);
           });
         });
       });
 
       $("sendBtn").addEventListener("click", sendChat);
+      $("modelSelect").addEventListener("change", () => {
+        const selected = $("modelSelect").value;
+        if (selected) $("modelInput").value = selected;
+      });
       $("chatInput").addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
@@ -473,11 +753,28 @@
       $("refreshChannelsBtn").addEventListener("click", loadChannels);
       $("channelsBody").addEventListener("click", (e) => {
         const btn = e.target.closest("button[data-test]");
-        if (!btn) return;
-        const name = btn.dataset.test;
-        const row = btn.closest("tr");
-        testChannel(name, row.children[2]);
+        if (btn) {
+          const name = btn.dataset.test;
+          const row = btn.closest("tr");
+          testChannel(name, row.children[2]);
+          return;
+        }
+
+        const editBtn = e.target.closest("button[data-edit]");
+        if (!editBtn) return;
+        openChannelEditor(editBtn.dataset.edit);
       });
+      $("saveChannelBtn").addEventListener("click", saveChannelConfig);
+      $("cancelChannelBtn").addEventListener("click", closeChannelEditor);
+
+      $("refreshProvidersBtn").addEventListener("click", loadProviders);
+      $("providerSelect").addEventListener("change", (e) => openProvider(e.target.value));
+      $("newProviderBtn").addEventListener("click", newProvider);
+      $("saveProviderBtn").addEventListener("click", saveProvider);
+      $("deleteProviderBtn").addEventListener("click", deleteProvider);
+
+      $("refreshConfigBtn").addEventListener("click", loadConfig);
+      $("saveConfigBtn").addEventListener("click", saveConfig);
 
       $("refreshStatusBtn").addEventListener("click", loadStatus);
     }
