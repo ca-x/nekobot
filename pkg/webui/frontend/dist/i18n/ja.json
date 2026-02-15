@@ -136,7 +136,17 @@
   "testing": "テスト中...",
   "editChannelTitle": "チャンネル編集：{0}",
   "cancel": "キャンセル",
+  "reset": "リセット",
   "channelSaved": "保存しました。必要に応じてチャンネルを再起動してください。",
   "saving": "保存中...",
-  "configSaved": "設定を保存しました。"
+  "configSaved": "設定を保存しました。",
+  "configSectionAgents": "Agents",
+  "configSectionGateway": "Gateway",
+  "configSectionTools": "Tools",
+  "configSectionHeartbeat": "Heartbeat",
+  "configSectionApproval": "Approval",
+  "configSectionLogger": "Logger",
+  "configSectionWebUI": "WebUI",
+  "configSectionHint": "{0} を編集中。このセクションはデータベースに保存されます。",
+  "configSectionSaved": "{0} を保存しました。"
 }

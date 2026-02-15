@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"nekobot/pkg/storage/ent/attachtoken"
+	"nekobot/pkg/storage/ent/configsection"
+	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/toolevent"
 	"nekobot/pkg/storage/ent/toolsession"
 	"reflect"
@@ -75,9 +77,11 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			attachtoken.Table: attachtoken.ValidColumn,
-			toolevent.Table:   toolevent.ValidColumn,
-			toolsession.Table: toolsession.ValidColumn,
+			attachtoken.Table:   attachtoken.ValidColumn,
+			configsection.Table: configsection.ValidColumn,
+			provider.Table:      provider.ValidColumn,
+			toolevent.Table:     toolevent.ValidColumn,
+			toolsession.Table:   toolsession.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

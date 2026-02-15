@@ -20,6 +20,30 @@ func (f AttachTokenFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttachTokenMutation", m)
 }
 
+// The ConfigSectionFunc type is an adapter to allow the use of ordinary
+// function as ConfigSection mutator.
+type ConfigSectionFunc func(context.Context, *ent.ConfigSectionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ConfigSectionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ConfigSectionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ConfigSectionMutation", m)
+}
+
+// The ProviderFunc type is an adapter to allow the use of ordinary
+// function as Provider mutator.
+type ProviderFunc func(context.Context, *ent.ProviderMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ProviderFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ProviderMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ProviderMutation", m)
+}
+
 // The ToolEventFunc type is an adapter to allow the use of ordinary
 // function as ToolEvent mutator.
 type ToolEventFunc func(context.Context, *ent.ToolEventMutation) (ent.Value, error)

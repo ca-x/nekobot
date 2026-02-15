@@ -136,7 +136,17 @@
   "testing": "测试中...",
   "editChannelTitle": "编辑频道：{0}",
   "cancel": "取消",
+  "reset": "重置",
   "channelSaved": "已保存。如需要请重启频道。",
   "saving": "保存中...",
-  "configSaved": "配置已保存。"
+  "configSaved": "配置已保存。",
+  "configSectionAgents": "Agent",
+  "configSectionGateway": "网关",
+  "configSectionTools": "工具",
+  "configSectionHeartbeat": "心跳",
+  "configSectionApproval": "审批",
+  "configSectionLogger": "日志",
+  "configSectionWebUI": "WebUI",
+  "configSectionHint": "正在编辑 {0}，该配置会保存到数据库。",
+  "configSectionSaved": "{0} 已保存。"
 }

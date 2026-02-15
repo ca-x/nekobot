@@ -4,6 +4,8 @@ package ent
 
 import (
 	"nekobot/pkg/storage/ent/attachtoken"
+	"nekobot/pkg/storage/ent/configsection"
+	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/schema"
 	"nekobot/pkg/storage/ent/toolevent"
 	"nekobot/pkg/storage/ent/toolsession"
@@ -28,6 +30,74 @@ func init() {
 	attachtokenDescID := attachtokenFields[0].Descriptor()
 	// attachtoken.DefaultID holds the default value on creation for the id field.
 	attachtoken.DefaultID = attachtokenDescID.Default.(func() string)
+	configsectionFields := schema.ConfigSection{}.Fields()
+	_ = configsectionFields
+	// configsectionDescSection is the schema descriptor for section field.
+	configsectionDescSection := configsectionFields[0].Descriptor()
+	// configsection.SectionValidator is a validator for the "section" field. It is called by the builders before save.
+	configsection.SectionValidator = configsectionDescSection.Validators[0].(func(string) error)
+	// configsectionDescPayloadJSON is the schema descriptor for payload_json field.
+	configsectionDescPayloadJSON := configsectionFields[1].Descriptor()
+	// configsection.DefaultPayloadJSON holds the default value on creation for the payload_json field.
+	configsection.DefaultPayloadJSON = configsectionDescPayloadJSON.Default.(string)
+	// configsectionDescCreatedAt is the schema descriptor for created_at field.
+	configsectionDescCreatedAt := configsectionFields[2].Descriptor()
+	// configsection.DefaultCreatedAt holds the default value on creation for the created_at field.
+	configsection.DefaultCreatedAt = configsectionDescCreatedAt.Default.(func() time.Time)
+	// configsectionDescUpdatedAt is the schema descriptor for updated_at field.
+	configsectionDescUpdatedAt := configsectionFields[3].Descriptor()
+	// configsection.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	configsection.DefaultUpdatedAt = configsectionDescUpdatedAt.Default.(func() time.Time)
+	// configsection.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	configsection.UpdateDefaultUpdatedAt = configsectionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	providerFields := schema.Provider{}.Fields()
+	_ = providerFields
+	// providerDescName is the schema descriptor for name field.
+	providerDescName := providerFields[1].Descriptor()
+	// provider.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	provider.NameValidator = providerDescName.Validators[0].(func(string) error)
+	// providerDescProviderKind is the schema descriptor for provider_kind field.
+	providerDescProviderKind := providerFields[2].Descriptor()
+	// provider.ProviderKindValidator is a validator for the "provider_kind" field. It is called by the builders before save.
+	provider.ProviderKindValidator = providerDescProviderKind.Validators[0].(func(string) error)
+	// providerDescAPIKey is the schema descriptor for api_key field.
+	providerDescAPIKey := providerFields[3].Descriptor()
+	// provider.DefaultAPIKey holds the default value on creation for the api_key field.
+	provider.DefaultAPIKey = providerDescAPIKey.Default.(string)
+	// providerDescAPIBase is the schema descriptor for api_base field.
+	providerDescAPIBase := providerFields[4].Descriptor()
+	// provider.DefaultAPIBase holds the default value on creation for the api_base field.
+	provider.DefaultAPIBase = providerDescAPIBase.Default.(string)
+	// providerDescProxy is the schema descriptor for proxy field.
+	providerDescProxy := providerFields[5].Descriptor()
+	// provider.DefaultProxy holds the default value on creation for the proxy field.
+	provider.DefaultProxy = providerDescProxy.Default.(string)
+	// providerDescModelsJSON is the schema descriptor for models_json field.
+	providerDescModelsJSON := providerFields[6].Descriptor()
+	// provider.DefaultModelsJSON holds the default value on creation for the models_json field.
+	provider.DefaultModelsJSON = providerDescModelsJSON.Default.(string)
+	// providerDescDefaultModel is the schema descriptor for default_model field.
+	providerDescDefaultModel := providerFields[7].Descriptor()
+	// provider.DefaultDefaultModel holds the default value on creation for the default_model field.
+	provider.DefaultDefaultModel = providerDescDefaultModel.Default.(string)
+	// providerDescTimeout is the schema descriptor for timeout field.
+	providerDescTimeout := providerFields[8].Descriptor()
+	// provider.DefaultTimeout holds the default value on creation for the timeout field.
+	provider.DefaultTimeout = providerDescTimeout.Default.(int)
+	// providerDescCreatedAt is the schema descriptor for created_at field.
+	providerDescCreatedAt := providerFields[9].Descriptor()
+	// provider.DefaultCreatedAt holds the default value on creation for the created_at field.
+	provider.DefaultCreatedAt = providerDescCreatedAt.Default.(func() time.Time)
+	// providerDescUpdatedAt is the schema descriptor for updated_at field.
+	providerDescUpdatedAt := providerFields[10].Descriptor()
+	// provider.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	provider.DefaultUpdatedAt = providerDescUpdatedAt.Default.(func() time.Time)
+	// provider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	provider.UpdateDefaultUpdatedAt = providerDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// providerDescID is the schema descriptor for id field.
+	providerDescID := providerFields[0].Descriptor()
+	// provider.DefaultID holds the default value on creation for the id field.
+	provider.DefaultID = providerDescID.Default.(func() string)
 	tooleventFields := schema.ToolEvent{}.Fields()
 	_ = tooleventFields
 	// tooleventDescPayloadJSON is the schema descriptor for payload_json field.

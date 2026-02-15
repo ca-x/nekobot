@@ -12,6 +12,8 @@ import (
 	"nekobot/pkg/storage/ent/migrate"
 
 	"nekobot/pkg/storage/ent/attachtoken"
+	"nekobot/pkg/storage/ent/configsection"
+	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/toolevent"
 	"nekobot/pkg/storage/ent/toolsession"
 
@@ -27,6 +29,10 @@ type Client struct {
 	Schema *migrate.Schema
 	// AttachToken is the client for interacting with the AttachToken builders.
 	AttachToken *AttachTokenClient
+	// ConfigSection is the client for interacting with the ConfigSection builders.
+	ConfigSection *ConfigSectionClient
+	// Provider is the client for interacting with the Provider builders.
+	Provider *ProviderClient
 	// ToolEvent is the client for interacting with the ToolEvent builders.
 	ToolEvent *ToolEventClient
 	// ToolSession is the client for interacting with the ToolSession builders.
@@ -43,6 +49,8 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.AttachToken = NewAttachTokenClient(c.config)
+	c.ConfigSection = NewConfigSectionClient(c.config)
+	c.Provider = NewProviderClient(c.config)
 	c.ToolEvent = NewToolEventClient(c.config)
 	c.ToolSession = NewToolSessionClient(c.config)
 }
@@ -135,11 +143,13 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:         ctx,
-		config:      cfg,
-		AttachToken: NewAttachTokenClient(cfg),
-		ToolEvent:   NewToolEventClient(cfg),
-		ToolSession: NewToolSessionClient(cfg),
+		ctx:           ctx,
+		config:        cfg,
+		AttachToken:   NewAttachTokenClient(cfg),
+		ConfigSection: NewConfigSectionClient(cfg),
+		Provider:      NewProviderClient(cfg),
+		ToolEvent:     NewToolEventClient(cfg),
+		ToolSession:   NewToolSessionClient(cfg),
 	}, nil
 }
 
@@ -157,11 +167,13 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:         ctx,
-		config:      cfg,
-		AttachToken: NewAttachTokenClient(cfg),
-		ToolEvent:   NewToolEventClient(cfg),
-		ToolSession: NewToolSessionClient(cfg),
+		ctx:           ctx,
+		config:        cfg,
+		AttachToken:   NewAttachTokenClient(cfg),
+		ConfigSection: NewConfigSectionClient(cfg),
+		Provider:      NewProviderClient(cfg),
+		ToolEvent:     NewToolEventClient(cfg),
+		ToolSession:   NewToolSessionClient(cfg),
 	}, nil
 }
 
@@ -191,6 +203,8 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	c.AttachToken.Use(hooks...)
+	c.ConfigSection.Use(hooks...)
+	c.Provider.Use(hooks...)
 	c.ToolEvent.Use(hooks...)
 	c.ToolSession.Use(hooks...)
 }
@@ -199,6 +213,8 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	c.AttachToken.Intercept(interceptors...)
+	c.ConfigSection.Intercept(interceptors...)
+	c.Provider.Intercept(interceptors...)
 	c.ToolEvent.Intercept(interceptors...)
 	c.ToolSession.Intercept(interceptors...)
 }
@@ -208,6 +224,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *AttachTokenMutation:
 		return c.AttachToken.mutate(ctx, m)
+	case *ConfigSectionMutation:
+		return c.ConfigSection.mutate(ctx, m)
+	case *ProviderMutation:
+		return c.Provider.mutate(ctx, m)
 	case *ToolEventMutation:
 		return c.ToolEvent.mutate(ctx, m)
 	case *ToolSessionMutation:
@@ -347,6 +367,272 @@ func (c *AttachTokenClient) mutate(ctx context.Context, m *AttachTokenMutation) 
 		return (&AttachTokenDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AttachToken mutation op: %q", m.Op())
+	}
+}
+
+// ConfigSectionClient is a client for the ConfigSection schema.
+type ConfigSectionClient struct {
+	config
+}
+
+// NewConfigSectionClient returns a client for the ConfigSection from the given config.
+func NewConfigSectionClient(c config) *ConfigSectionClient {
+	return &ConfigSectionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `configsection.Hooks(f(g(h())))`.
+func (c *ConfigSectionClient) Use(hooks ...Hook) {
+	c.hooks.ConfigSection = append(c.hooks.ConfigSection, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `configsection.Intercept(f(g(h())))`.
+func (c *ConfigSectionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ConfigSection = append(c.inters.ConfigSection, interceptors...)
+}
+
+// Create returns a builder for creating a ConfigSection entity.
+func (c *ConfigSectionClient) Create() *ConfigSectionCreate {
+	mutation := newConfigSectionMutation(c.config, OpCreate)
+	return &ConfigSectionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ConfigSection entities.
+func (c *ConfigSectionClient) CreateBulk(builders ...*ConfigSectionCreate) *ConfigSectionCreateBulk {
+	return &ConfigSectionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ConfigSectionClient) MapCreateBulk(slice any, setFunc func(*ConfigSectionCreate, int)) *ConfigSectionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ConfigSectionCreateBulk{err: fmt.Errorf("calling to ConfigSectionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ConfigSectionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ConfigSectionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ConfigSection.
+func (c *ConfigSectionClient) Update() *ConfigSectionUpdate {
+	mutation := newConfigSectionMutation(c.config, OpUpdate)
+	return &ConfigSectionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ConfigSectionClient) UpdateOne(_m *ConfigSection) *ConfigSectionUpdateOne {
+	mutation := newConfigSectionMutation(c.config, OpUpdateOne, withConfigSection(_m))
+	return &ConfigSectionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ConfigSectionClient) UpdateOneID(id int) *ConfigSectionUpdateOne {
+	mutation := newConfigSectionMutation(c.config, OpUpdateOne, withConfigSectionID(id))
+	return &ConfigSectionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ConfigSection.
+func (c *ConfigSectionClient) Delete() *ConfigSectionDelete {
+	mutation := newConfigSectionMutation(c.config, OpDelete)
+	return &ConfigSectionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ConfigSectionClient) DeleteOne(_m *ConfigSection) *ConfigSectionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ConfigSectionClient) DeleteOneID(id int) *ConfigSectionDeleteOne {
+	builder := c.Delete().Where(configsection.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ConfigSectionDeleteOne{builder}
+}
+
+// Query returns a query builder for ConfigSection.
+func (c *ConfigSectionClient) Query() *ConfigSectionQuery {
+	return &ConfigSectionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeConfigSection},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ConfigSection entity by its id.
+func (c *ConfigSectionClient) Get(ctx context.Context, id int) (*ConfigSection, error) {
+	return c.Query().Where(configsection.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ConfigSectionClient) GetX(ctx context.Context, id int) *ConfigSection {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ConfigSectionClient) Hooks() []Hook {
+	return c.hooks.ConfigSection
+}
+
+// Interceptors returns the client interceptors.
+func (c *ConfigSectionClient) Interceptors() []Interceptor {
+	return c.inters.ConfigSection
+}
+
+func (c *ConfigSectionClient) mutate(ctx context.Context, m *ConfigSectionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ConfigSectionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ConfigSectionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ConfigSectionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ConfigSectionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ConfigSection mutation op: %q", m.Op())
+	}
+}
+
+// ProviderClient is a client for the Provider schema.
+type ProviderClient struct {
+	config
+}
+
+// NewProviderClient returns a client for the Provider from the given config.
+func NewProviderClient(c config) *ProviderClient {
+	return &ProviderClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `provider.Hooks(f(g(h())))`.
+func (c *ProviderClient) Use(hooks ...Hook) {
+	c.hooks.Provider = append(c.hooks.Provider, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `provider.Intercept(f(g(h())))`.
+func (c *ProviderClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Provider = append(c.inters.Provider, interceptors...)
+}
+
+// Create returns a builder for creating a Provider entity.
+func (c *ProviderClient) Create() *ProviderCreate {
+	mutation := newProviderMutation(c.config, OpCreate)
+	return &ProviderCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Provider entities.
+func (c *ProviderClient) CreateBulk(builders ...*ProviderCreate) *ProviderCreateBulk {
+	return &ProviderCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ProviderClient) MapCreateBulk(slice any, setFunc func(*ProviderCreate, int)) *ProviderCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ProviderCreateBulk{err: fmt.Errorf("calling to ProviderClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ProviderCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ProviderCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Provider.
+func (c *ProviderClient) Update() *ProviderUpdate {
+	mutation := newProviderMutation(c.config, OpUpdate)
+	return &ProviderUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ProviderClient) UpdateOne(_m *Provider) *ProviderUpdateOne {
+	mutation := newProviderMutation(c.config, OpUpdateOne, withProvider(_m))
+	return &ProviderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ProviderClient) UpdateOneID(id string) *ProviderUpdateOne {
+	mutation := newProviderMutation(c.config, OpUpdateOne, withProviderID(id))
+	return &ProviderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Provider.
+func (c *ProviderClient) Delete() *ProviderDelete {
+	mutation := newProviderMutation(c.config, OpDelete)
+	return &ProviderDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ProviderClient) DeleteOne(_m *Provider) *ProviderDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ProviderClient) DeleteOneID(id string) *ProviderDeleteOne {
+	builder := c.Delete().Where(provider.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ProviderDeleteOne{builder}
+}
+
+// Query returns a query builder for Provider.
+func (c *ProviderClient) Query() *ProviderQuery {
+	return &ProviderQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeProvider},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Provider entity by its id.
+func (c *ProviderClient) Get(ctx context.Context, id string) (*Provider, error) {
+	return c.Query().Where(provider.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ProviderClient) GetX(ctx context.Context, id string) *Provider {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ProviderClient) Hooks() []Hook {
+	return c.hooks.Provider
+}
+
+// Interceptors returns the client interceptors.
+func (c *ProviderClient) Interceptors() []Interceptor {
+	return c.inters.Provider
+}
+
+func (c *ProviderClient) mutate(ctx context.Context, m *ProviderMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ProviderCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ProviderUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ProviderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ProviderDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Provider mutation op: %q", m.Op())
 	}
 }
 
@@ -619,9 +905,9 @@ func (c *ToolSessionClient) mutate(ctx context.Context, m *ToolSessionMutation) 
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AttachToken, ToolEvent, ToolSession []ent.Hook
+		AttachToken, ConfigSection, Provider, ToolEvent, ToolSession []ent.Hook
 	}
 	inters struct {
-		AttachToken, ToolEvent, ToolSession []ent.Interceptor
+		AttachToken, ConfigSection, Provider, ToolEvent, ToolSession []ent.Interceptor
 	}
 )

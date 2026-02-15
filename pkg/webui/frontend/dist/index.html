@@ -213,10 +213,13 @@
       <!-- Config Tab -->
       <section id="tab-config" class="hidden">
         <div class="toolbar">
+          <select id="configSectionSelect"></select>
           <button id="refreshConfigBtn" class="btn btn-sm" data-i18n="refresh">Refresh</button>
+          <button id="resetConfigBtn" class="btn btn-sm" data-i18n="reset">Reset</button>
           <button id="saveConfigBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
           <span id="configMsg" class="msg-text"></span>
         </div>
+        <div id="configSectionHint" class="msg-text mt-sm"></div>
         <textarea id="configEditor" rows="16" class="editor-area" spellcheck="false"></textarea>
       </section>
 

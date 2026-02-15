@@ -7,62 +7,9 @@
     "max_age": 7,
     "compress": true
   },
-  "agents": {
-    "defaults": {
-      "workspace": "~/.nekobot/workspace",
-      "restrict_to_workspace": true,
-      "provider": "anthropic",
-      "fallback": [],
-      "model": "claude-3-5-sonnet-20241022",
-      "max_tokens": 4096,
-      "temperature": 0.7,
-      "max_tool_iterations": 10,
-      "skills_dir": "~/.nekobot/skills",
-      "skills_auto_reload": true,
-      "extended_thinking": false,
-      "thinking_budget": 1024
-    }
-  },
-  "providers": [
-    {
-      "name": "anthropic",
-      "provider_kind": "anthropic",
-      "api_key": "",
-      "api_base": "https://api.anthropic.com",
-      "models": [
-        "claude-3-5-sonnet-20241022"
-      ],
-      "default_model": "claude-3-5-sonnet-20241022",
-      "timeout": 30
-    }
-  ],
   "gateway": {
     "host": "0.0.0.0",
     "port": 8080
-  },
-  "tools": {
-    "web": {
-      "search": {
-        "brave_api_key": "",
-        "max_results": 5,
-        "duckduckgo_enabled": true,
-        "duckduckgo_max_results": 5
-      },
-      "fetch": {
-        "max_chars": 50000
-      }
-    },
-    "exec": {
-      "timeout_seconds": 30,
-      "sandbox": {
-        "enabled": false,
-        "image": "python:3.12-alpine",
-        "network_mode": "none",
-        "mounts": [],
-        "timeout": 30,
-        "auto_cleanup": true
-      }
-    }
   },
   "webui": {
     "enabled": true,

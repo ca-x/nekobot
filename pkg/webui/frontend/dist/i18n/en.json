@@ -136,7 +136,17 @@
   "testing": "Testing...",
   "editChannelTitle": "Edit Channel: {0}",
   "cancel": "Cancel",
+  "reset": "Reset",
   "channelSaved": "Saved. Restart channel if needed.",
   "saving": "Saving...",
-  "configSaved": "Configuration saved."
+  "configSaved": "Configuration saved.",
+  "configSectionAgents": "Agents",
+  "configSectionGateway": "Gateway",
+  "configSectionTools": "Tools",
+  "configSectionHeartbeat": "Heartbeat",
+  "configSectionApproval": "Approval",
+  "configSectionLogger": "Logger",
+  "configSectionWebUI": "WebUI",
+  "configSectionHint": "Editing {0}. This section is persisted to database.",
+  "configSectionSaved": "{0} saved."
 }

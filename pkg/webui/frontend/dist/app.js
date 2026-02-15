@@ -63,6 +63,8 @@ function switchLang(lang) {
   renderToolSessionsList();
   renderToolTabs();
   renderToolPanels();
+  renderConfigSectionSelect();
+  if (state.loadedConfig) renderConfigEditorForSection();
   if (!$("providerDialog").classList.contains("hidden")) {
     $("providerDialogTitle").textContent = t(state.providerDialogMode === "edit" ? "editProviderDialogTitle" : "newProviderDialogTitle");
   }
@@ -169,7 +171,8 @@ const state = {
   toolPollBusy: false,
   toolPollTimer: null,
   toolSessionRefreshTimer: null,
-  pendingToolSessionID: ""
+  pendingToolSessionID: "",
+  configSection: "agents"
 };
 
 const $ = (id) => document.getElementById(id);
@@ -1818,6 +1821,53 @@ async function saveChannelConfig() {
 }
 
 /* ========== Config ========== */
+var CONFIG_SECTIONS = ["agents", "gateway", "tools", "heartbeat", "approval", "logger", "webui"];
+
+function normalizeConfigSection(section) {
+  var key = String(section || "").trim().toLowerCase();
+  if (!CONFIG_SECTIONS.includes(key)) return "agents";
+  return key;
+}
+
+function configSectionLabel(section) {
+  switch (normalizeConfigSection(section)) {
+    case "agents": return t("configSectionAgents");
+    case "gateway": return t("configSectionGateway");
+    case "tools": return t("configSectionTools");
+    case "heartbeat": return t("configSectionHeartbeat");
+    case "approval": return t("configSectionApproval");
+    case "logger": return t("configSectionLogger");
+    case "webui": return t("configSectionWebUI");
+    default: return section;
+  }
+}
+
+function renderConfigSectionSelect() {
+  var sel = $("configSectionSelect");
+  if (!sel) return;
+  var current = normalizeConfigSection(state.configSection);
+  sel.innerHTML = "";
+  for (var i = 0; i < CONFIG_SECTIONS.length; i++) {
+    var section = CONFIG_SECTIONS[i];
+    var opt = document.createElement("option");
+    opt.value = section;
+    opt.textContent = configSectionLabel(section);
+    sel.appendChild(opt);
+  }
+  sel.value = current;
+}
+
+function renderConfigEditorForSection() {
+  var section = normalizeConfigSection(state.configSection);
+  var payload = {};
+  if (state.loadedConfig && Object.prototype.hasOwnProperty.call(state.loadedConfig, section)) {
+    payload = state.loadedConfig[section];
+  }
+  $("configEditor").value = JSON.stringify(payload || {}, null, 2);
+  var hint = $("configSectionHint");
+  if (hint) hint.textContent = t("configSectionHint", configSectionLabel(section));
+}
+
 function setConfigMessage(text, isError) {
   var el = $("configMsg");
   el.className = "msg-text" + (isError ? " err" : "");
@@ -1828,27 +1878,37 @@ async function loadConfig() {
   try {
     var cfg = await api("/api/config");
     state.loadedConfig = cfg || null;
-    $("configEditor").value = JSON.stringify(cfg, null, 2);
+    renderConfigSectionSelect();
+    renderConfigEditorForSection();
     setConfigMessage("");
   } catch (err) {
     state.loadedConfig = null;
+    $("configEditor").value = "{}";
     setConfigMessage(err.message, true);
   }
 }
 
 async function saveConfig() {
+  var section = normalizeConfigSection(state.configSection);
   var payload;
   try { payload = JSON.parse($("configEditor").value || "{}"); } catch (err) {
     setConfigMessage(t("invalidJson", err.message), true); return;
   }
   setConfigMessage(t("saving"));
+  var body = {};
+  body[section] = payload;
   try {
-    await api("/api/config", { method: "PUT", body: JSON.stringify(payload) });
-    setConfigMessage(t("configSaved"));
+    await api("/api/config", { method: "PUT", body: JSON.stringify(body) });
+    setConfigMessage(t("configSectionSaved", configSectionLabel(section)));
     await Promise.all([loadStatus(), loadModels()]);
   } catch (err) {
     setConfigMessage(err.message, true);
   }
+}
+
+function resetConfigEditor() {
+  renderConfigEditorForSection();
+  setConfigMessage("");
 }
 
 /* ========== Status ========== */
@@ -2134,7 +2194,13 @@ function setupEvents() {
     });
   });
 
+  $("configSectionSelect").addEventListener("change", function(e) {
+    state.configSection = normalizeConfigSection(e.target.value);
+    renderConfigEditorForSection();
+    setConfigMessage("");
+  });
   $("refreshConfigBtn").addEventListener("click", loadConfig);
+  $("resetConfigBtn").addEventListener("click", resetConfigEditor);
   $("saveConfigBtn").addEventListener("click", saveConfig);
   $("refreshStatusBtn").addEventListener("click", loadStatus);
 

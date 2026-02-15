@@ -9,6 +9,12 @@ import (
 // AttachToken is the predicate function for attachtoken builders.
 type AttachToken func(*sql.Selector)
 
+// ConfigSection is the predicate function for configsection builders.
+type ConfigSection func(*sql.Selector)
+
+// Provider is the predicate function for provider builders.
+type Provider func(*sql.Selector)
+
 // ToolEvent is the predicate function for toolevent builders.
 type ToolEvent func(*sql.Selector)
 

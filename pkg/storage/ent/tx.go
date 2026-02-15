@@ -14,6 +14,10 @@ type Tx struct {
 	config
 	// AttachToken is the client for interacting with the AttachToken builders.
 	AttachToken *AttachTokenClient
+	// ConfigSection is the client for interacting with the ConfigSection builders.
+	ConfigSection *ConfigSectionClient
+	// Provider is the client for interacting with the Provider builders.
+	Provider *ProviderClient
 	// ToolEvent is the client for interacting with the ToolEvent builders.
 	ToolEvent *ToolEventClient
 	// ToolSession is the client for interacting with the ToolSession builders.
@@ -150,6 +154,8 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.AttachToken = NewAttachTokenClient(tx.config)
+	tx.ConfigSection = NewConfigSectionClient(tx.config)
+	tx.Provider = NewProviderClient(tx.config)
 	tx.ToolEvent = NewToolEventClient(tx.config)
 	tx.ToolSession = NewToolSessionClient(tx.config)
 }

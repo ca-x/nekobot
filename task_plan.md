@@ -101,3 +101,21 @@ Implement all missing features from goclaw/picoclaw into nekobot, fix config iss
 - Discord: Can use message components (buttons) for similar approval UX
 - Frontend pages should be embedded into binary via Go embed (already set up)
 - User prefers /ui-skills for frontend design
+
+---
+
+## Current Task (2026-02-15): Provider DB Storage + Dashboard UX
+
+### Goal
+- Move provider CRUD persistence from config file to database-backed storage.
+- Fix frontend inability/confusion when adding provider.
+- Improve dashboard provider操作体验 with a more direct save flow.
+
+### Execution Plan
+- [x] 1. Add `providerstore` module (SQLite) with CRUD + config sync.
+- [x] 2. Integrate provider store into gateway/webui runtime and API handlers.
+- [x] 3. Improve provider dialog UX in dashboard (apply-and-save, clearer feedback).
+- [x] 4. Add/adjust tests and run targeted verification.
+- [x] 5. Centralize Ent generated code into single shared location (`pkg/storage/ent`).
+- [x] 6. Move additional runtime config persistence from config.json to shared database and sync docs/examples.
+- [x] 7. Re-plan configuration options and improve dashboard config interaction (section-based editing + outdated config content cleanup).

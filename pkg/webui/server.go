@@ -1940,6 +1940,7 @@ func (s *Server) handleGetConfig(c *echo.Context) error {
 		"heartbeat": s.config.Heartbeat,
 		"approval":  s.config.Approval,
 		"logger":    s.config.Logger,
+		"webui":     s.config.WebUI,
 	})
 }
 
@@ -1951,6 +1952,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		Heartbeat *config.HeartbeatConfig `json:"heartbeat"`
 		Approval  *config.ApprovalConfig  `json:"approval"`
 		Logger    *config.LoggerConfig    `json:"logger"`
+		WebUI     *config.WebUIConfig     `json:"webui"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -1975,13 +1977,16 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	if body.Logger != nil {
 		s.config.Logger = *body.Logger
 	}
+	if body.WebUI != nil {
+		s.config.WebUI = *body.WebUI
+	}
 
 	// Validate
 	if err := config.ValidateConfig(s.config); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	sections := make([]string, 0, 6)
+	sections := make([]string, 0, 7)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -1999,6 +2004,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.Logger != nil {
 		sections = append(sections, "logger")
+	}
+	if body.WebUI != nil {
+		sections = append(sections, "webui")
 	}
 
 	// Persist runtime config sections to database.

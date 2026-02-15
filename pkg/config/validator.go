@@ -102,12 +102,6 @@ func (v *Validator) validateAgents(cfg *AgentsConfig) {
 
 // validateProviders validates provider configuration.
 func (v *Validator) validateProviders(cfg *ProvidersConfig) {
-	// Check that at least one provider is configured
-	if len(*cfg) == 0 {
-		v.addError("providers", "at least one provider must be configured")
-		return
-	}
-
 	// Track profile names to ensure uniqueness
 	names := make(map[string]bool)
 
@@ -125,13 +119,8 @@ func (v *Validator) validateProviders(cfg *ProvidersConfig) {
 		}
 
 		// Validate provider type
-		validTypes := map[string]bool{
-			"openai":    true,
-			"anthropic": true,
-			"gemini":    true,
-		}
-		if !validTypes[profile.ProviderKind] {
-			v.addError(prefix+".provider_kind", fmt.Sprintf("invalid provider type: %s (must be one of: openai, anthropic, gemini)", profile.ProviderKind))
+		if strings.TrimSpace(profile.ProviderKind) == "" {
+			v.addError(prefix+".provider_kind", "provider_kind is required")
 		}
 
 		// API key is required (can be placeholder for local providers)

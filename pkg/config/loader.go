@@ -42,7 +42,7 @@ func NewLoader() *Loader {
 
 // Load loads the configuration from file and environment variables.
 // If configPath is empty, it will search default paths.
-// If the file doesn't exist, it returns the default configuration.
+// If the file doesn't exist, it auto-creates one.
 func (l *Loader) Load(configPath string) (*Config, error) {
 	// Start with default config
 	cfg := DefaultConfig()
@@ -51,16 +51,34 @@ func (l *Loader) Load(configPath string) (*Config, error) {
 	if strings.TrimSpace(configPath) == "" {
 		configPath = strings.TrimSpace(os.Getenv(ConfigPathEnv))
 	}
+	explicitPath := strings.TrimSpace(configPath) != ""
+	resolvedPath, err := resolveConfigPath(configPath)
+	if err != nil {
+		return nil, err
+	}
+	if explicitPath {
+		// Keep -c config colocated with its workspace by default.
+		cfg.Agents.Defaults.Workspace = defaultWorkspaceForConfigPath(resolvedPath)
+		cfg.Storage.DBDir = filepath.Dir(resolvedPath)
+	}
 
 	// If specific path is provided, use it
-	if configPath != "" {
-		l.viper.SetConfigFile(configPath)
+	if explicitPath {
+		l.viper.SetConfigFile(resolvedPath)
 	}
 
 	// Try to read config file
 	if err := l.viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Config file not found, use defaults
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok || os.IsNotExist(err) {
+			if strings.TrimSpace(cfg.Storage.DBDir) == "" {
+				cfg.Storage.DBDir = filepath.Dir(resolvedPath)
+			}
+			if err := SaveToFile(cfg, resolvedPath); err != nil {
+				return nil, fmt.Errorf("creating config file: %w", err)
+			}
+			if _, err := EnsureRuntimeDBFile(cfg); err != nil {
+				return nil, err
+			}
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("reading config file: %w", err)
@@ -74,6 +92,29 @@ func (l *Loader) Load(configPath string) (*Config, error) {
 	// Backward compatibility: migrate tools.web.search.api_key -> brave_api_key in-memory.
 	if cfg.Tools.Web.Search.BraveAPIKey == "" {
 		cfg.Tools.Web.Search.BraveAPIKey = cfg.Tools.Web.Search.LegacyAPIKey
+	}
+	if !explicitPath {
+		used := strings.TrimSpace(l.viper.ConfigFileUsed())
+		if used != "" {
+			resolvedPath = used
+		}
+	} else {
+		desiredWorkspace := defaultWorkspaceForConfigPath(resolvedPath)
+		desiredDBDir := filepath.Dir(resolvedPath)
+		changed := false
+		if strings.TrimSpace(cfg.Agents.Defaults.Workspace) != desiredWorkspace {
+			cfg.Agents.Defaults.Workspace = desiredWorkspace
+			changed = true
+		}
+		if strings.TrimSpace(cfg.Storage.DBDir) != desiredDBDir {
+			cfg.Storage.DBDir = desiredDBDir
+			changed = true
+		}
+		if changed {
+			if err := SaveToFile(cfg, resolvedPath); err != nil {
+				return nil, fmt.Errorf("updating workspace in config file: %w", err)
+			}
+		}
 	}
 
 	return cfg, nil
@@ -113,6 +154,7 @@ func (l *Loader) Save(path string, cfg *Config) error {
 
 	// Set all values from config
 	v.Set("agents", cfg.Agents)
+	v.Set("storage", cfg.Storage)
 	v.Set("channels", cfg.Channels)
 	v.Set("providers", cfg.Providers)
 	v.Set("transcription", cfg.Transcription)
@@ -187,29 +229,73 @@ func (l *Loader) IsSet(key string) bool {
 // InitDefaultConfig creates a default config file if it doesn't exist.
 // Returns the path to the config file and whether it was newly created.
 func InitDefaultConfig() (configPath string, created bool, err error) {
-	home, err := GetConfigHome()
+	resolvedPath, err := resolveConfigPath(strings.TrimSpace(os.Getenv(ConfigPathEnv)))
 	if err != nil {
 		return "", false, err
 	}
-
-	configPath = filepath.Join(home, "config.json")
+	configPath = resolvedPath
+	explicitPath := strings.TrimSpace(os.Getenv(ConfigPathEnv)) != ""
 
 	// Check if config file already exists
 	if _, err := os.Stat(configPath); err == nil {
+		if explicitPath {
+			loader := NewLoader()
+			cfg, loadErr := loader.LoadFromFile(configPath)
+			if loadErr == nil {
+				desiredWorkspace := defaultWorkspaceForConfigPath(configPath)
+				desiredDBDir := filepath.Dir(configPath)
+				changed := false
+				if strings.TrimSpace(cfg.Agents.Defaults.Workspace) != desiredWorkspace {
+					cfg.Agents.Defaults.Workspace = desiredWorkspace
+					changed = true
+				}
+				if strings.TrimSpace(cfg.Storage.DBDir) != desiredDBDir {
+					cfg.Storage.DBDir = desiredDBDir
+					changed = true
+				}
+				if changed {
+					if saveErr := SaveToFile(cfg, configPath); saveErr != nil {
+						return "", false, fmt.Errorf("updating workspace in config file: %w", saveErr)
+					}
+				}
+			}
+		}
 		return configPath, false, nil // File exists, not created
 	}
 
-	// Create config directory
-	if err := os.MkdirAll(home, 0755); err != nil {
-		return "", false, fmt.Errorf("creating config directory: %w", err)
+	cfg := DefaultConfig()
+	cfg.Storage.DBDir = filepath.Dir(configPath)
+	if explicitPath {
+		cfg.Agents.Defaults.Workspace = defaultWorkspaceForConfigPath(configPath)
 	}
-
-	// Write default config template to file
-	if err := os.WriteFile(configPath, []byte(DefaultConfigTemplate), 0644); err != nil {
+	if err := SaveToFile(cfg, configPath); err != nil {
 		return "", false, fmt.Errorf("writing default config: %w", err)
+	}
+	if _, err := EnsureRuntimeDBFile(cfg); err != nil {
+		return "", false, err
 	}
 
 	return configPath, true, nil
+}
+
+func resolveConfigPath(configPath string) (string, error) {
+	path := strings.TrimSpace(configPath)
+	if path == "" {
+		home, err := GetConfigHome()
+		if err != nil {
+			return "", err
+		}
+		path = filepath.Join(home, "config.json")
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve config path: %w", err)
+	}
+	return abs, nil
+}
+
+func defaultWorkspaceForConfigPath(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), "workspace")
 }
 
 // EnsureWorkspace creates the workspace directory if it doesn't exist.

@@ -21,11 +21,11 @@ nekobot agent --config /path/to/custom/config.json
 配置项可以通过环境变量覆盖，前缀为 `NEKOBOT_`，使用下划线分隔：
 
 ```bash
-# 覆盖 providers.anthropic.api_key
-export NEKOBOT_PROVIDERS_ANTHROPIC_API_KEY="sk-ant-xxx"
+# 覆盖 gateway.port
+export NEKOBOT_GATEWAY_PORT="18790"
 
-# 覆盖 agents.defaults.model
-export NEKOBOT_AGENTS_DEFAULTS_MODEL="claude-3-5-sonnet-20241022"
+# 覆盖 logger.level
+export NEKOBOT_LOGGER_LEVEL="debug"
 
 # 启动应用
 nekobot agent
@@ -35,11 +35,12 @@ nekobot agent
 
 从当前版本开始，WebUI 变更的主要运行时配置默认写入同一个数据库文件：
 
-- 数据库文件：`${workspace}/tool_sessions.db`
+- 数据库文件名：`nekobot.db`
+- 数据库目录优先级：`NEKOBOT_DB_DIR` > `storage.db_dir` > 可执行文件目录 > 当前工作目录
 - 表：`config_sections`（agents/channels/gateway/tools/heartbeat/approval/logger/webui）
-- providers 单独使用 `providers` 表（同一个 `tool_sessions.db`）
+- providers 单独使用 `providers` 表（同一个 `nekobot.db`）
 
-这意味着 `config.json` 可以只保留基础启动配置（如 workspace、初始 provider、WebUI 基本项），
+这意味着 `config.json` 可以只保留基础启动配置（如 gateway/webui/logger），
 其余日常改动由数据库持久化。
 
 ---
@@ -225,48 +226,38 @@ nekobot skills list --builtin
   "logger": {
     "level": "info"
   },
-  "agents": {
-    "defaults": {
-      "workspace": "~/.nekobot/workspace",
-      "provider": "anthropic",
-      "model": "claude-3-5-sonnet-20241022"
-    }
-  },
-  "providers": [
-    {
-      "name": "anthropic",
-      "provider_kind": "anthropic",
-      "api_key": "sk-ant-xxx",
-      "api_base": "https://api.anthropic.com"
-    }
-  ]
-}
-```
-
-### 启用 Gateway 和 Channels
-
-```json
-{
   "gateway": {
     "host": "0.0.0.0",
     "port": 8080
   },
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "bot_token": "xxx:yyy",
-      "allow_from": ["123456789"]
-    },
-    "discord": {
-      "enabled": true,
-      "bot_token": "xxx.yyy.zzz",
-      "allow_from": ["user-id-1", "user-id-2"]
+  "webui": {
+    "enabled": true,
+    "port": 0
+  }
+}
+```
+
+然后在 WebUI 中配置 providers/agents/tools/channels（会保存到上面的数据库目录下 `nekobot.db`）。
+
+### 运行时配置（推荐在 WebUI 中编辑）
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "provider": "anthropic",
+      "model": "claude-3-5-sonnet-20241022"
+    }
+  },
+  "tools": {
+    "exec": {
+      "timeout_seconds": 30
     }
   }
 }
 ```
 
-### 启用 Heartbeat 和 Cron
+### 启用 Heartbeat（运行时配置）
 
 ```json
 {

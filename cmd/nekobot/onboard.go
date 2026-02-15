@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -90,44 +91,56 @@ func runOnboard(cmd *cobra.Command, args []string) {
 	fmt.Printf("✅ Workspace created at: %s\n", workspaceDir)
 	fmt.Println("")
 
-	// Check for existing config
-	configHome, err := config.GetConfigHome()
+	targetConfigPath := strings.TrimSpace(configPath)
+	if targetConfigPath == "" {
+		configHome, err := config.GetConfigHome()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to get config home: %v\n", err)
+			os.Exit(1)
+		}
+		targetConfigPath = filepath.Join(configHome, "config.json")
+	}
+	targetConfigPath, err = filepath.Abs(targetConfigPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to get config home: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to resolve config path: %v\n", err)
 		os.Exit(1)
 	}
+	configPath = targetConfigPath
 
-	configPath := filepath.Join(configHome, "config.json")
+	cfg := onboardDefaultConfig(workspaceDir)
 	configExists := false
 	if _, err := os.Stat(configPath); err == nil {
 		configExists = true
+		loader := config.NewLoader()
+		loaded, loadErr := loader.LoadFromFile(configPath)
+		if loadErr == nil {
+			cfg = loaded
+		}
+	}
+	cfg.Agents.Defaults.Workspace = workspaceDir
+	cfg.Storage.DBDir = filepath.Dir(configPath)
+
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to save config: %v\n", err)
+		os.Exit(1)
+	}
+
+	dbPath, err := config.EnsureRuntimeDBFile(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize runtime database: %v\n", err)
+		os.Exit(1)
 	}
 
 	if configExists {
-		fmt.Printf("📝 Configuration already exists at: %s\n", configPath)
-		fmt.Println("   Skipping config creation.")
+		fmt.Printf("📝 Configuration updated at: %s\n", configPath)
 	} else {
-		fmt.Println("📝 Creating default configuration...")
-
-		// Create config directory
-		if err := os.MkdirAll(configHome, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to create config directory: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Create default config
-		defaultConfig := onboardDefaultConfig(workspaceDir)
-		if err := config.SaveToFile(defaultConfig, configPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to save config: %v\n", err)
-			os.Exit(1)
-		}
-
 		fmt.Printf("✅ Configuration created at: %s\n", configPath)
 		fmt.Println("")
 		fmt.Println("⚠️  Important: Add your API key to the config file:")
 		fmt.Printf("   Edit: %s\n", configPath)
 		fmt.Println("   Set: providers.<provider>.api_key")
 	}
+	fmt.Printf("🗄️ Runtime database ready: %s\n", dbPath)
 
 	fmt.Println("")
 	fmt.Println("🎉 Onboarding complete!")

@@ -10,12 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	_ "github.com/lib-x/entsqlite"
 	"go.uber.org/zap"
 
 	"nekobot/pkg/config"
@@ -27,7 +25,6 @@ import (
 )
 
 const (
-	defaultDBName        = "tool_sessions.db"
 	defaultOTPTTL        = 3 * time.Minute
 	minOTPTTLSeconds     = 30
 	maxOTPTTLSeconds     = 3600
@@ -49,29 +46,11 @@ type sessionOTP struct {
 	expiresAt time.Time
 }
 
-// NewManager creates a new tool-session manager using SQLite + Ent.
-func NewManager(cfg *config.Config, log *logger.Logger) (*Manager, error) {
-	workspace := strings.TrimSpace(cfg.WorkspacePath())
-	if workspace == "" {
-		return nil, fmt.Errorf("workspace path is empty")
+// NewManager creates a new tool-session manager with an injected shared Ent client.
+func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Manager, error) {
+	if client == nil {
+		return nil, fmt.Errorf("ent client is nil")
 	}
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		return nil, fmt.Errorf("create workspace directory: %w", err)
-	}
-
-	dbPath := filepath.Join(workspace, defaultDBName)
-	dsn := fmt.Sprintf("file:%s?cache=shared&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(10000)", dbPath)
-
-	client, err := ent.Open("sqlite3", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("open tool sessions database: %w", err)
-	}
-
-	if err := client.Schema.Create(context.Background()); err != nil {
-		_ = client.Close()
-		return nil, fmt.Errorf("migrate tool sessions database: %w", err)
-	}
-
 	mgr := &Manager{
 		log:       log,
 		client:    client,
@@ -79,6 +58,7 @@ func NewManager(cfg *config.Config, log *logger.Logger) (*Manager, error) {
 		otpTTL:    normalizeOTPTTLSeconds(cfg.WebUI.ToolSessionOTPTTLSeconds),
 		otpCodes:  map[string]sessionOTP{},
 	}
+	dbPath, _ := config.RuntimeDBPath(cfg)
 
 	log.Info("Tool session storage initialized",
 		zap.String("db_path", dbPath),
@@ -87,15 +67,12 @@ func NewManager(cfg *config.Config, log *logger.Logger) (*Manager, error) {
 	return mgr, nil
 }
 
-// Close releases DB resources.
+// Close releases manager resources. Shared Ent client is closed by config module.
 func (m *Manager) Close() error {
-	if m == nil || m.client == nil {
-		return nil
-	}
 	m.otpMu.Lock()
 	m.otpCodes = map[string]sessionOTP{}
 	m.otpMu.Unlock()
-	return m.client.Close()
+	return nil
 }
 
 // Lifecycle returns the current lifecycle config.

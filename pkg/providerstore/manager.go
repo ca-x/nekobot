@@ -2,24 +2,19 @@ package providerstore
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
-	_ "github.com/lib-x/entsqlite"
 	"go.uber.org/zap"
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/storage/ent/provider"
 )
-
-// Reuse the existing runtime database file so WebUI data is consolidated.
-const defaultDBName = "tool_sessions.db"
 
 var (
 	// ErrProviderExists indicates a provider with the same name already exists.
@@ -30,59 +25,35 @@ var (
 
 // Manager persists provider profiles in SQLite and keeps runtime config in sync.
 type Manager struct {
-	cfg *config.Config
-	log *logger.Logger
-	db  *sql.DB
-	mu  sync.Mutex
+	cfg    *config.Config
+	log    *logger.Logger
+	client *ent.Client
+	mu     sync.Mutex
 }
 
-// NewManager creates provider storage and initializes data from config when needed.
-func NewManager(cfg *config.Config, log *logger.Logger) (*Manager, error) {
-	workspace := strings.TrimSpace(cfg.WorkspacePath())
-	if workspace == "" {
-		return nil, fmt.Errorf("workspace path is empty")
+// NewManager creates provider storage with an injected shared Ent client.
+func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Manager, error) {
+	if client == nil {
+		return nil, fmt.Errorf("ent client is nil")
 	}
-	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		return nil, fmt.Errorf("create workspace directory: %w", err)
-	}
-
-	dbPath := filepath.Join(workspace, defaultDBName)
-	dsn := fmt.Sprintf("file:%s?cache=shared&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(10000)", dbPath)
-	db, err := sql.Open("sqlite3", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("open providers database: %w", err)
-	}
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("ping providers database: %w", err)
-	}
-
 	m := &Manager{
-		cfg: cfg,
-		log: log,
-		db:  db,
+		cfg:    cfg,
+		log:    log,
+		client: client,
 	}
 
-	ctx := context.Background()
-	if err := m.initSchema(ctx); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	if err := m.bootstrap(ctx); err != nil {
-		_ = db.Close()
+	if err := m.syncConfig(context.Background()); err != nil {
 		return nil, err
 	}
 
+	dbPath, _ := config.RuntimeDBPath(cfg)
 	log.Info("Provider storage initialized", zap.String("db_path", dbPath))
 	return m, nil
 }
 
-// Close releases DB resources.
+// Close releases manager resources. Shared Ent client is closed by config module.
 func (m *Manager) Close() error {
-	if m == nil || m.db == nil {
-		return nil
-	}
-	return m.db.Close()
+	return nil
 }
 
 // List returns all providers sorted by name.
@@ -106,16 +77,12 @@ func (m *Manager) Get(ctx context.Context, name string) (*config.ProviderProfile
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	row := m.db.QueryRowContext(ctx, `
-		SELECT name, provider_kind, api_key, api_base, proxy, models_json, default_model, timeout
-		FROM providers
-		WHERE name = ?
-	`, name)
-	profile, err := scanProviderRow(row.Scan)
+	rec, err := m.getRecordLocked(ctx, name)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrProviderNotFound
-		}
+		return nil, err
+	}
+	profile, err := toConfigProvider(rec)
+	if err != nil {
 		return nil, err
 	}
 	return &profile, nil
@@ -161,7 +128,7 @@ func (m *Manager) Update(ctx context.Context, name string, profile config.Provid
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	current, err := m.getLocked(ctx, name)
+	current, err := m.getRecordLocked(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -192,36 +159,24 @@ func (m *Manager) Update(ctx context.Context, name string, profile config.Provid
 		return nil, err
 	}
 
-	result, err := m.db.ExecContext(ctx, `
-		UPDATE providers
-		SET
-			name = ?,
-			provider_kind = ?,
-			api_key = ?,
-			api_base = ?,
-			proxy = ?,
-			models_json = ?,
-			default_model = ?,
-			timeout = ?,
-			updated_at = CURRENT_TIMESTAMP
-		WHERE name = ?
-	`,
-		normalized.Name,
-		normalized.ProviderKind,
-		normalized.APIKey,
-		normalized.APIBase,
-		normalized.Proxy,
-		modelsJSON,
-		normalized.DefaultModel,
-		normalized.Timeout,
-		name,
-	)
+	_, err = m.client.Provider.UpdateOneID(current.ID).
+		SetName(normalized.Name).
+		SetProviderKind(normalized.ProviderKind).
+		SetAPIKey(normalized.APIKey).
+		SetAPIBase(normalized.APIBase).
+		SetProxy(normalized.Proxy).
+		SetModelsJSON(modelsJSON).
+		SetDefaultModel(normalized.DefaultModel).
+		SetTimeout(normalized.Timeout).
+		Save(ctx)
 	if err != nil {
+		if ent.IsConstraintError(err) {
+			return nil, ErrProviderExists
+		}
+		if ent.IsNotFound(err) {
+			return nil, ErrProviderNotFound
+		}
 		return nil, fmt.Errorf("update provider: %w", err)
-	}
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
-		return nil, ErrProviderNotFound
 	}
 
 	if err := m.syncConfigLocked(ctx); err != nil {
@@ -242,11 +197,10 @@ func (m *Manager) Delete(ctx context.Context, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	result, err := m.db.ExecContext(ctx, `DELETE FROM providers WHERE name = ?`, name)
+	affected, err := m.client.Provider.Delete().Where(provider.NameEQ(name)).Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("delete provider: %w", err)
 	}
-	affected, _ := result.RowsAffected()
 	if affected == 0 {
 		return ErrProviderNotFound
 	}
@@ -254,59 +208,10 @@ func (m *Manager) Delete(ctx context.Context, name string) error {
 	return m.syncConfigLocked(ctx)
 }
 
-func (m *Manager) initSchema(ctx context.Context) error {
-	_, err := m.db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS providers (
-			name TEXT PRIMARY KEY,
-			provider_kind TEXT NOT NULL,
-			api_key TEXT NOT NULL DEFAULT '',
-			api_base TEXT NOT NULL DEFAULT '',
-			proxy TEXT NOT NULL DEFAULT '',
-			models_json TEXT NOT NULL DEFAULT '[]',
-			default_model TEXT NOT NULL DEFAULT '',
-			timeout INTEGER NOT NULL DEFAULT 60,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		return fmt.Errorf("create providers schema: %w", err)
-	}
-	return nil
-}
-
-func (m *Manager) bootstrap(ctx context.Context) error {
+func (m *Manager) syncConfig(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	providers, err := m.listLocked(ctx)
-	if err != nil {
-		return err
-	}
-
-	if len(providers) == 0 && len(m.cfg.Providers) > 0 {
-		for _, raw := range m.cfg.Providers {
-			profile, err := normalizeProvider(raw)
-			if err != nil {
-				m.log.Warn("Skip invalid provider during database bootstrap", zap.String("provider", raw.Name), zap.Error(err))
-				continue
-			}
-			if err := m.insertLocked(ctx, profile); err != nil {
-				return err
-			}
-		}
-
-		providers, err = m.listLocked(ctx)
-		if err != nil {
-			return err
-		}
-	}
-
-	if len(providers) > 0 {
-		m.cfg.Providers = cloneProviders(providers)
-	}
-
-	return nil
+	return m.syncConfigLocked(ctx)
 }
 
 func (m *Manager) syncConfigLocked(ctx context.Context) error {
@@ -319,53 +224,39 @@ func (m *Manager) syncConfigLocked(ctx context.Context) error {
 }
 
 func (m *Manager) listLocked(ctx context.Context) ([]config.ProviderProfile, error) {
-	rows, err := m.db.QueryContext(ctx, `
-		SELECT name, provider_kind, api_key, api_base, proxy, models_json, default_model, timeout
-		FROM providers
-		ORDER BY name ASC
-	`)
+	records, err := m.client.Provider.Query().Order(ent.Asc(provider.FieldName)).All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("query providers: %w", err)
 	}
-	defer rows.Close()
 
-	providers := make([]config.ProviderProfile, 0)
-	for rows.Next() {
-		profile, err := scanProviderRow(rows.Scan)
+	providers := make([]config.ProviderProfile, 0, len(records))
+	for _, rec := range records {
+		profile, err := toConfigProvider(rec)
 		if err != nil {
 			return nil, err
 		}
 		providers = append(providers, profile)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate providers: %w", err)
-	}
-
 	return providers, nil
 }
 
-func (m *Manager) getLocked(ctx context.Context, name string) (*config.ProviderProfile, error) {
-	row := m.db.QueryRowContext(ctx, `
-		SELECT name, provider_kind, api_key, api_base, proxy, models_json, default_model, timeout
-		FROM providers
-		WHERE name = ?
-	`, name)
-	profile, err := scanProviderRow(row.Scan)
+func (m *Manager) getRecordLocked(ctx context.Context, name string) (*ent.Provider, error) {
+	rec, err := m.client.Provider.Query().Where(provider.NameEQ(name)).Only(ctx)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if ent.IsNotFound(err) {
 			return nil, ErrProviderNotFound
 		}
-		return nil, err
+		return nil, fmt.Errorf("get provider: %w", err)
 	}
-	return &profile, nil
+	return rec, nil
 }
 
 func (m *Manager) existsLocked(ctx context.Context, name string) (bool, error) {
-	var count int
-	if err := m.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM providers WHERE name = ?`, name).Scan(&count); err != nil {
+	exists, err := m.client.Provider.Query().Where(provider.NameEQ(name)).Exist(ctx)
+	if err != nil {
 		return false, fmt.Errorf("check provider exists: %w", err)
 	}
-	return count > 0, nil
+	return exists, nil
 }
 
 func (m *Manager) insertLocked(ctx context.Context, profile config.ProviderProfile) error {
@@ -373,51 +264,42 @@ func (m *Manager) insertLocked(ctx context.Context, profile config.ProviderProfi
 	if err != nil {
 		return err
 	}
-	if _, err := m.db.ExecContext(ctx, `
-		INSERT INTO providers(name, provider_kind, api_key, api_base, proxy, models_json, default_model, timeout)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`,
-		profile.Name,
-		profile.ProviderKind,
-		profile.APIKey,
-		profile.APIBase,
-		profile.Proxy,
-		modelsJSON,
-		profile.DefaultModel,
-		profile.Timeout,
-	); err != nil {
+	_, err = m.client.Provider.Create().
+		SetName(profile.Name).
+		SetProviderKind(profile.ProviderKind).
+		SetAPIKey(profile.APIKey).
+		SetAPIBase(profile.APIBase).
+		SetProxy(profile.Proxy).
+		SetModelsJSON(modelsJSON).
+		SetDefaultModel(profile.DefaultModel).
+		SetTimeout(profile.Timeout).
+		Save(ctx)
+	if err != nil {
+		if ent.IsConstraintError(err) {
+			return ErrProviderExists
+		}
 		return fmt.Errorf("insert provider: %w", err)
 	}
 	return nil
 }
 
-func scanProviderRow(scan func(dest ...interface{}) error) (config.ProviderProfile, error) {
-	var (
-		name         string
-		providerKind string
-		apiKey       string
-		apiBase      string
-		proxy        string
-		modelsJSON   string
-		defaultModel string
-		timeout      int
-	)
-	if err := scan(&name, &providerKind, &apiKey, &apiBase, &proxy, &modelsJSON, &defaultModel, &timeout); err != nil {
-		return config.ProviderProfile{}, err
+func toConfigProvider(rec *ent.Provider) (config.ProviderProfile, error) {
+	if rec == nil {
+		return config.ProviderProfile{}, fmt.Errorf("provider record is nil")
 	}
-	models, err := unmarshalModels(modelsJSON)
+	models, err := unmarshalModels(rec.ModelsJSON)
 	if err != nil {
 		return config.ProviderProfile{}, err
 	}
 	profile := config.ProviderProfile{
-		Name:         name,
-		ProviderKind: providerKind,
-		APIKey:       apiKey,
-		APIBase:      apiBase,
-		Proxy:        proxy,
+		Name:         rec.Name,
+		ProviderKind: rec.ProviderKind,
+		APIKey:       rec.APIKey,
+		APIBase:      rec.APIBase,
+		Proxy:        rec.Proxy,
 		Models:       models,
-		DefaultModel: defaultModel,
-		Timeout:      timeout,
+		DefaultModel: rec.DefaultModel,
+		Timeout:      rec.Timeout,
 	}
 	normalized, err := normalizeProvider(profile)
 	if err != nil {

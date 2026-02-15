@@ -7,35 +7,38 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/storage/ent"
 )
 
 func TestManagerCRUDAndConfigSync(t *testing.T) {
 	ctx := context.Background()
 	cfg := config.DefaultConfig()
-	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Storage.DBDir = t.TempDir()
 	cfg.Providers = []config.ProviderProfile{
 		{
-			Name:         "anthropic",
-			ProviderKind: "anthropic",
-			APIKey:       "k1",
-			Models:       []string{"claude-sonnet-4"},
-			Timeout:      30,
+			Name:         "stale-config-provider",
+			ProviderKind: "openai",
 		},
 	}
 
 	log := newTestLogger(t)
-	mgr, err := NewManager(cfg, log)
+	client := newTestEntClient(t, cfg)
+	defer client.Close()
+	mgr, err := NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
 	}
-	defer mgr.Close()
+	_ = mgr.Close()
 
 	providers, err := mgr.List(ctx)
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
-	if len(providers) != 1 || providers[0].Name != "anthropic" {
-		t.Fatalf("unexpected bootstrap providers: %+v", providers)
+	if len(providers) != 0 {
+		t.Fatalf("expected empty providers, got %+v", providers)
+	}
+	if len(cfg.Providers) != 0 {
+		t.Fatalf("expected config providers to sync from empty DB, got %+v", cfg.Providers)
 	}
 
 	created, err := mgr.Create(ctx, config.ProviderProfile{
@@ -83,27 +86,32 @@ func TestManagerCRUDAndConfigSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
-	if len(providers) != 1 || providers[0].Name != "anthropic" {
-		t.Fatalf("unexpected providers after delete: %+v", providers)
+	if len(providers) != 0 {
+		t.Fatalf("expected providers to be empty after delete: %+v", providers)
 	}
 
-	if len(cfg.Providers) != 1 || cfg.Providers[0].Name != "anthropic" {
+	if len(cfg.Providers) != 0 {
 		t.Fatalf("config providers not synced: %+v", cfg.Providers)
 	}
 }
 
 func TestManagerPrefersExistingDatabaseProviders(t *testing.T) {
 	ctx := context.Background()
-	workspace := t.TempDir()
+	dbDir := t.TempDir()
 	log := newTestLogger(t)
 
 	cfg1 := config.DefaultConfig()
-	cfg1.Agents.Defaults.Workspace = workspace
+	cfg1.Storage.DBDir = dbDir
 	cfg1.Providers = []config.ProviderProfile{{Name: "anthropic", ProviderKind: "anthropic"}}
+	client1 := newTestEntClient(t, cfg1)
+	defer client1.Close()
 
-	mgr1, err := NewManager(cfg1, log)
+	mgr1, err := NewManager(cfg1, log, client1)
 	if err != nil {
 		t.Fatalf("NewManager first failed: %v", err)
+	}
+	if _, err := mgr1.Create(ctx, config.ProviderProfile{Name: "anthropic", ProviderKind: "anthropic"}); err != nil {
+		t.Fatalf("create anthropic in first manager failed: %v", err)
 	}
 	if _, err := mgr1.Create(ctx, config.ProviderProfile{Name: "openai", ProviderKind: "openai"}); err != nil {
 		t.Fatalf("create in first manager failed: %v", err)
@@ -111,10 +119,12 @@ func TestManagerPrefersExistingDatabaseProviders(t *testing.T) {
 	_ = mgr1.Close()
 
 	cfg2 := config.DefaultConfig()
-	cfg2.Agents.Defaults.Workspace = workspace
+	cfg2.Storage.DBDir = dbDir
 	cfg2.Providers = []config.ProviderProfile{{Name: "gemini", ProviderKind: "gemini"}}
+	client2 := newTestEntClient(t, cfg2)
+	defer client2.Close()
 
-	mgr2, err := NewManager(cfg2, log)
+	mgr2, err := NewManager(cfg2, log, client2)
 	if err != nil {
 		t.Fatalf("NewManager second failed: %v", err)
 	}
@@ -148,4 +158,17 @@ func newTestLogger(t *testing.T) *logger.Logger {
 		t.Fatalf("create logger: %v", err)
 	}
 	return log
+}
+
+func newTestEntClient(t *testing.T, cfg *config.Config) *ent.Client {
+	t.Helper()
+	client, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open runtime ent client: %v", err)
+	}
+	if err := config.EnsureRuntimeEntSchema(client); err != nil {
+		_ = client.Close()
+		t.Fatalf("ensure runtime schema: %v", err)
+	}
+	return client
 }

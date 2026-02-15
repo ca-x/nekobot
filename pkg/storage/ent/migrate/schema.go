@@ -46,6 +46,59 @@ var (
 			},
 		},
 	}
+	// ConfigSectionsColumns holds the columns for the "config_sections" table.
+	ConfigSectionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "section", Type: field.TypeString},
+		{Name: "payload_json", Type: field.TypeString, Default: "{}"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// ConfigSectionsTable holds the schema information for the "config_sections" table.
+	ConfigSectionsTable = &schema.Table{
+		Name:       "config_sections",
+		Columns:    ConfigSectionsColumns,
+		PrimaryKey: []*schema.Column{ConfigSectionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "configsection_section",
+				Unique:  true,
+				Columns: []*schema.Column{ConfigSectionsColumns[1]},
+			},
+		},
+	}
+	// ProvidersColumns holds the columns for the "providers" table.
+	ProvidersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "name", Type: field.TypeString},
+		{Name: "provider_kind", Type: field.TypeString},
+		{Name: "api_key", Type: field.TypeString, Default: ""},
+		{Name: "api_base", Type: field.TypeString, Default: ""},
+		{Name: "proxy", Type: field.TypeString, Default: ""},
+		{Name: "models_json", Type: field.TypeString, Default: "[]"},
+		{Name: "default_model", Type: field.TypeString, Default: ""},
+		{Name: "timeout", Type: field.TypeInt, Default: 60},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// ProvidersTable holds the schema information for the "providers" table.
+	ProvidersTable = &schema.Table{
+		Name:       "providers",
+		Columns:    ProvidersColumns,
+		PrimaryKey: []*schema.Column{ProvidersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "provider_name",
+				Unique:  true,
+				Columns: []*schema.Column{ProvidersColumns[1]},
+			},
+			{
+				Name:    "provider_provider_kind",
+				Unique:  false,
+				Columns: []*schema.Column{ProvidersColumns[2]},
+			},
+		},
+	}
 	// ToolEventsColumns holds the columns for the "tool_events" table.
 	ToolEventsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -137,6 +190,8 @@ var (
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		AttachTokensTable,
+		ConfigSectionsTable,
+		ProvidersTable,
 		ToolEventsTable,
 		ToolSessionsTable,
 	}

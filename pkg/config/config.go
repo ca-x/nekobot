@@ -16,6 +16,7 @@ import (
 // Config represents the complete nanobot configuration.
 type Config struct {
 	Logger        LoggerConfig        `mapstructure:"logger" json:"logger"`
+	Storage       StorageConfig       `mapstructure:"storage" json:"storage"`
 	Agents        AgentsConfig        `mapstructure:"agents" json:"agents"`
 	Channels      ChannelsConfig      `mapstructure:"channels" json:"channels"`
 	Providers     ProvidersConfig     `mapstructure:"providers" json:"providers"`
@@ -30,6 +31,18 @@ type Config struct {
 	Approval      ApprovalConfig      `mapstructure:"approval" json:"approval"`
 	WebUI         WebUIConfig         `mapstructure:"webui" json:"webui"`
 	mu            sync.RWMutex
+}
+
+const (
+	// WorkspaceDirEnv overrides workspace path resolution at runtime.
+	WorkspaceDirEnv = "NEKOBOT_WORKSPACE_DIR"
+	// DBDirEnv overrides SQLite database directory at runtime.
+	DBDirEnv = "NEKOBOT_DB_DIR"
+)
+
+// StorageConfig holds local runtime storage paths.
+type StorageConfig struct {
+	DBDir string `mapstructure:"db_dir" json:"db_dir"`
 }
 
 // AgentsConfig contains agent-related configuration.
@@ -303,6 +316,9 @@ func DefaultConfig() *Config {
 			MaxAge:     7,
 			Compress:   true,
 		},
+		Storage: StorageConfig{
+			DBDir: "", // Empty means executable directory.
+		},
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
 				Workspace:           workspace,
@@ -441,9 +457,36 @@ func DefaultConfig() *Config {
 
 // WorkspacePath returns the expanded workspace path.
 func (c *Config) WorkspacePath() string {
+	if env := strings.TrimSpace(os.Getenv(WorkspaceDirEnv)); env != "" {
+		return expandPath(env)
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return expandPath(c.Agents.Defaults.Workspace)
+}
+
+// DatabaseDir returns the runtime SQLite directory.
+// Priority: NEKOBOT_DB_DIR > storage.db_dir > executable directory > current directory.
+func (c *Config) DatabaseDir() string {
+	if env := strings.TrimSpace(os.Getenv(DBDirEnv)); env != "" {
+		return expandPath(env)
+	}
+
+	c.mu.RLock()
+	cfgDir := strings.TrimSpace(c.Storage.DBDir)
+	c.mu.RUnlock()
+	if cfgDir != "" {
+		return expandPath(cfgDir)
+	}
+
+	exe, err := os.Executable()
+	if err == nil && strings.TrimSpace(exe) != "" {
+		return filepath.Dir(exe)
+	}
+	if wd, err := os.Getwd(); err == nil && strings.TrimSpace(wd) != "" {
+		return wd
+	}
+	return "."
 }
 
 // GetProviderConfig returns the configuration for a specific provider.
