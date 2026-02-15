@@ -266,9 +266,9 @@ func (s *Server) handleInitPassword(c *echo.Context) error {
 		s.config.WebUI.Secret = generateSecret()
 	}
 
-	// Persist config to file
-	if err := s.persistConfig(); err != nil {
-		s.logger.Warn("Failed to persist init config", zap.Error(err))
+	// Persist runtime WebUI auth config to database.
+	if err := config.SaveDatabaseSections(s.config, "webui"); err != nil {
+		s.logger.Warn("Failed to persist init config to database", zap.Error(err))
 	}
 
 	token, err := s.generateToken(s.config.WebUI.Username)
@@ -488,7 +488,7 @@ func (s *Server) ensureRoutingProvidersValid() error {
 	if !changed {
 		return nil
 	}
-	return s.persistConfig()
+	return config.SaveDatabaseSections(s.config, "agents")
 }
 
 func (s *Server) handleDiscoverProviderModels(c *echo.Context) error {
@@ -1866,8 +1866,8 @@ func (s *Server) handleUpdateChannel(c *echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "unknown channel: " + name})
 	}
 
-	// Persist
-	if err := s.persistConfig(); err != nil {
+	// Persist runtime channel config to database.
+	if err := config.SaveDatabaseSections(s.config, "channels"); err != nil {
 		s.logger.Error("Failed to persist channel config", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config"})
 	}
@@ -1981,10 +1981,32 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	// Persist to file
-	if err := s.persistConfig(); err != nil {
-		s.logger.Error("Failed to persist config", zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config"})
+	sections := make([]string, 0, 6)
+	if body.Agents != nil {
+		sections = append(sections, "agents")
+	}
+	if body.Gateway != nil {
+		sections = append(sections, "gateway")
+	}
+	if body.Tools != nil {
+		sections = append(sections, "tools")
+	}
+	if body.Heartbeat != nil {
+		sections = append(sections, "heartbeat")
+	}
+	if body.Approval != nil {
+		sections = append(sections, "approval")
+	}
+	if body.Logger != nil {
+		sections = append(sections, "logger")
+	}
+
+	// Persist runtime config sections to database.
+	if len(sections) > 0 {
+		if err := config.SaveDatabaseSections(s.config, sections...); err != nil {
+			s.logger.Error("Failed to persist config sections", zap.Error(err), zap.Strings("sections", sections))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config"})
+		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "saved"})
@@ -2475,7 +2497,7 @@ func (s *Server) persistChatRouting(provider string, fallback []string) error {
 		return err
 	}
 
-	return s.persistConfig()
+	return config.SaveDatabaseSections(s.config, "agents")
 }
 
 // --- Approval Handlers ---

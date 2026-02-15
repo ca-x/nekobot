@@ -31,6 +31,17 @@ export NEKOBOT_AGENTS_DEFAULTS_MODEL="claude-3-5-sonnet-20241022"
 nekobot agent
 ```
 
+### 运行时配置存储（SQLite）
+
+从当前版本开始，WebUI 变更的主要运行时配置默认写入同一个数据库文件：
+
+- 数据库文件：`${workspace}/tool_sessions.db`
+- 表：`config_sections`（agents/channels/gateway/tools/heartbeat/approval/logger/webui）
+- providers 单独使用 `providers` 表（同一个 `tool_sessions.db`）
+
+这意味着 `config.json` 可以只保留基础启动配置（如 workspace、初始 provider、WebUI 基本项），
+其余日常改动由数据库持久化。
+
 ---
 
 ## Skills 加载顺序
@@ -211,6 +222,9 @@ nekobot skills list --builtin
 
 ```json
 {
+  "logger": {
+    "level": "info"
+  },
   "agents": {
     "defaults": {
       "workspace": "~/.nekobot/workspace",
@@ -218,11 +232,14 @@ nekobot skills list --builtin
       "model": "claude-3-5-sonnet-20241022"
     }
   },
-  "providers": {
-    "anthropic": {
-      "api_key": "sk-ant-xxx"
+  "providers": [
+    {
+      "name": "anthropic",
+      "provider_kind": "anthropic",
+      "api_key": "sk-ant-xxx",
+      "api_base": "https://api.anthropic.com"
     }
-  }
+  ]
 }
 ```
 

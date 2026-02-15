@@ -34,6 +34,11 @@ func ProvideConfig(loader *Loader, lc fx.Lifecycle) (*Config, error) {
 		return nil, err
 	}
 
+	// Runtime sections are persisted in SQLite; apply DB overrides on top of file config.
+	if err := ApplyDatabaseOverrides(cfg); err != nil {
+		return nil, err
+	}
+
 	// Validate configuration
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, err
