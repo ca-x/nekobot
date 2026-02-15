@@ -20,10 +20,10 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
-	"nekobot/pkg/toolsessions/ent"
-	"nekobot/pkg/toolsessions/ent/attachtoken"
-	"nekobot/pkg/toolsessions/ent/toolevent"
-	"nekobot/pkg/toolsessions/ent/toolsession"
+	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/storage/ent/attachtoken"
+	"nekobot/pkg/storage/ent/toolevent"
+	"nekobot/pkg/storage/ent/toolsession"
 )
 
 const (
