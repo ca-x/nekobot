@@ -17,6 +17,7 @@ import (
 	"nekobot/pkg/cron"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/providers"
+	"nekobot/pkg/providerstore"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/tools"
@@ -127,6 +128,7 @@ func runCronAdd(cmd *cobra.Command, args []string) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		providerstore.Module,
 		agent.Module,
 		cron.Module,
 
@@ -170,6 +172,7 @@ func runCronList(cmd *cobra.Command, args []string) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		providerstore.Module,
 		agent.Module,
 		cron.Module,
 
@@ -255,6 +258,7 @@ func runCronRemove(cmd *cobra.Command, args []string) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		providerstore.Module,
 		agent.Module,
 		cron.Module,
 
@@ -294,6 +298,7 @@ func runCronEnable(cmd *cobra.Command, args []string) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		providerstore.Module,
 		agent.Module,
 		cron.Module,
 
@@ -333,6 +338,7 @@ func runCronDisable(cmd *cobra.Command, args []string) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		providerstore.Module,
 		agent.Module,
 		cron.Module,
 

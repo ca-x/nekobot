@@ -41,6 +41,7 @@ import (
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
+	"nekobot/pkg/providerstore"
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/userprefs"
 	"nekobot/pkg/version"
@@ -62,6 +63,7 @@ type Server struct {
 	prefs      *userprefs.Manager
 	toolSess   *toolsessions.Manager
 	processMgr *process.Manager
+	providers  *providerstore.Manager
 	port       int
 	startedAt  time.Time
 }
@@ -79,6 +81,7 @@ func NewServer(
 	prefsMgr *userprefs.Manager,
 	toolSessionMgr *toolsessions.Manager,
 	processManager *process.Manager,
+	providerStore *providerstore.Manager,
 ) *Server {
 	port := cfg.WebUI.Port
 	if port == 0 {
@@ -97,6 +100,7 @@ func NewServer(
 		prefs:      prefsMgr,
 		toolSess:   toolSessionMgr,
 		processMgr: processManager,
+		providers:  providerStore,
 		port:       port,
 		startedAt:  time.Now(),
 	}
@@ -299,19 +303,19 @@ func (s *Server) handleLogin(c *echo.Context) error {
 // --- Provider Handlers ---
 
 func (s *Server) handleGetProviders(c *echo.Context) error {
-	// Return provider profiles for dashboard editing.
-	providers := make([]map[string]interface{}, len(s.config.Providers))
-	for i, p := range s.config.Providers {
-		providers[i] = map[string]interface{}{
-			"name":          p.Name,
-			"provider_kind": p.ProviderKind,
-			"api_key":       p.APIKey,
-			"api_base":      p.APIBase,
-			"proxy":         p.Proxy,
-			"models":        p.Models,
-			"default_model": p.DefaultModel,
-			"timeout":       p.Timeout,
+	profiles := s.config.Providers
+	if s.providers != nil {
+		loaded, err := s.providers.List(c.Request().Context())
+		if err != nil {
+			s.logger.Error("Failed to load providers from database", zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load providers"})
 		}
+		profiles = loaded
+	}
+
+	providers := make([]map[string]interface{}, len(profiles))
+	for i, p := range profiles {
+		providers[i] = providerProfileToMap(p)
 	}
 	return c.JSON(http.StatusOK, providers)
 }
@@ -322,13 +326,30 @@ func (s *Server) handleCreateProvider(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	s.config.Providers = append(s.config.Providers, profile)
-
-	if err := s.persistConfig(); err != nil {
-		s.logger.Error("Failed to persist provider config", zap.Error(err))
+	if s.providers != nil {
+		created, err := s.providers.Create(c.Request().Context(), profile)
+		if err != nil {
+			return s.handleProviderStoreError(c, err)
+		}
+		if err := s.ensureRoutingProvidersValid(); err != nil {
+			s.logger.Warn("Failed to persist routing config after provider create", zap.Error(err))
+		}
+		return c.JSON(http.StatusCreated, map[string]interface{}{
+			"status":   "created",
+			"provider": providerProfileToMap(*created),
+		})
 	}
 
-	return c.JSON(http.StatusCreated, map[string]string{"status": "created"})
+	s.config.Providers = append(s.config.Providers, profile)
+	if err := s.persistConfig(); err != nil {
+		s.logger.Error("Failed to persist provider config", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save provider"})
+	}
+
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"status":   "created",
+		"provider": providerProfileToMap(profile),
+	})
 }
 
 func (s *Server) handleUpdateProvider(c *echo.Context) error {
@@ -336,6 +357,20 @@ func (s *Server) handleUpdateProvider(c *echo.Context) error {
 	var profile config.ProviderProfile
 	if err := c.Bind(&profile); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if s.providers != nil {
+		updated, err := s.providers.Update(c.Request().Context(), name, profile)
+		if err != nil {
+			return s.handleProviderStoreError(c, err)
+		}
+		if err := s.ensureRoutingProvidersValid(); err != nil {
+			s.logger.Warn("Failed to persist routing config after provider update", zap.Error(err))
+		}
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"status":   "updated",
+			"provider": providerProfileToMap(*updated),
+		})
 	}
 
 	for i, p := range s.config.Providers {
@@ -348,9 +383,13 @@ func (s *Server) handleUpdateProvider(c *echo.Context) error {
 
 			if err := s.persistConfig(); err != nil {
 				s.logger.Error("Failed to persist provider config", zap.Error(err))
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save provider"})
 			}
 
-			return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"status":   "updated",
+				"provider": providerProfileToMap(profile),
+			})
 		}
 	}
 
@@ -360,12 +399,23 @@ func (s *Server) handleUpdateProvider(c *echo.Context) error {
 func (s *Server) handleDeleteProvider(c *echo.Context) error {
 	name := c.Param("name")
 
+	if s.providers != nil {
+		if err := s.providers.Delete(c.Request().Context(), name); err != nil {
+			return s.handleProviderStoreError(c, err)
+		}
+		if err := s.ensureRoutingProvidersValid(); err != nil {
+			s.logger.Warn("Failed to persist routing config after provider delete", zap.Error(err))
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+	}
+
 	for i, p := range s.config.Providers {
 		if p.Name == name {
 			s.config.Providers = append(s.config.Providers[:i], s.config.Providers[i+1:]...)
 
 			if err := s.persistConfig(); err != nil {
 				s.logger.Error("Failed to persist provider config", zap.Error(err))
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save provider"})
 			}
 
 			return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
@@ -373,6 +423,72 @@ func (s *Server) handleDeleteProvider(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusNotFound, map[string]string{"error": "provider not found"})
+}
+
+func providerProfileToMap(p config.ProviderProfile) map[string]interface{} {
+	return map[string]interface{}{
+		"name":          p.Name,
+		"provider_kind": p.ProviderKind,
+		"api_key":       p.APIKey,
+		"api_base":      p.APIBase,
+		"proxy":         p.Proxy,
+		"models":        p.Models,
+		"default_model": p.DefaultModel,
+		"timeout":       p.Timeout,
+	}
+}
+
+func (s *Server) handleProviderStoreError(c *echo.Context, err error) error {
+	if err == nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "provider operation failed"})
+	}
+	switch {
+	case errors.Is(err, providerstore.ErrProviderExists):
+		return c.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
+	case errors.Is(err, providerstore.ErrProviderNotFound):
+		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	default:
+		s.logger.Error("Provider store operation failed", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+}
+
+// ensureRoutingProvidersValid keeps default/fallback provider routing consistent after CRUD changes.
+func (s *Server) ensureRoutingProvidersValid() error {
+	changed := false
+
+	defaultProvider := strings.TrimSpace(s.config.Agents.Defaults.Provider)
+	if defaultProvider != "" && !s.hasProvider(defaultProvider) {
+		s.config.Agents.Defaults.Provider = ""
+		changed = true
+	}
+	if strings.TrimSpace(s.config.Agents.Defaults.Provider) == "" && len(s.config.Providers) > 0 {
+		s.config.Agents.Defaults.Provider = strings.TrimSpace(s.config.Providers[0].Name)
+		changed = true
+	}
+
+	filteredFallback := make([]string, 0, len(s.config.Agents.Defaults.Fallback))
+	for _, name := range s.config.Agents.Defaults.Fallback {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		if !s.hasProvider(trimmed) {
+			changed = true
+			continue
+		}
+		filteredFallback = append(filteredFallback, trimmed)
+	}
+	filteredFallback = normalizeProviderNames(filteredFallback)
+	if !reflect.DeepEqual(s.config.Agents.Defaults.Fallback, filteredFallback) {
+		s.config.Agents.Defaults.Fallback = filteredFallback
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
+	return s.persistConfig()
 }
 
 func (s *Server) handleDiscoverProviderModels(c *echo.Context) error {

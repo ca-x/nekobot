@@ -13,6 +13,7 @@ import (
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	_ "nekobot/pkg/providers/init" // Register all providers
+	"nekobot/pkg/providerstore"
 	"nekobot/pkg/skills"
 )
 
@@ -25,15 +26,28 @@ func errNoProviderConfigured() error {
 	return fmt.Errorf("no provider configured")
 }
 
+type provideAgentDeps struct {
+	fx.In
+
+	Cfg           *config.Config
+	Log           *logger.Logger
+	SkillsMgr     *skills.Manager
+	ProcessMgr    *process.Manager
+	ApprovalMgr   *approval.Manager
+	LC            fx.Lifecycle
+	ProviderStore *providerstore.Manager `optional:"true"`
+}
+
 // ProvideAgent provides an agent instance.
-func ProvideAgent(
-	cfg *config.Config,
-	log *logger.Logger,
-	skillsMgr *skills.Manager,
-	processMgr *process.Manager,
-	approvalMgr *approval.Manager,
-	lc fx.Lifecycle,
-) (*Agent, error) {
+func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
+	cfg := deps.Cfg
+	log := deps.Log
+	skillsMgr := deps.SkillsMgr
+	processMgr := deps.ProcessMgr
+	approvalMgr := deps.ApprovalMgr
+	lc := deps.LC
+	_ = deps.ProviderStore // Ensure provider store initializes first when module is present.
+
 	// Get provider config
 	providerName := strings.TrimSpace(cfg.Agents.Defaults.Provider)
 	if providerName == "" && len(cfg.Providers) > 0 {

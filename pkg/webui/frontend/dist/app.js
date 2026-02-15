@@ -1665,7 +1665,7 @@ function closeProviderDialog() {
   $("providerDialog").classList.add("hidden");
 }
 
-function applyProviderDialog() {
+async function applyProviderDialog() {
   var name = $("providerDialogName").value.trim();
   if (!name) {
     setProviderMessage(t("providerNameRequired"), true);
@@ -1694,7 +1694,8 @@ function applyProviderDialog() {
   writeProviderEditor(payload);
   updateProviderModelPicker(payload);
   closeProviderDialog();
-  setProviderMessage(t("providerDraftUpdated"));
+  setProviderMessage(t(state.providerDialogMode === "edit" ? "saving" : "creatingNew"));
+  await saveProvider();
 }
 
 async function fetchProviderModels() {
