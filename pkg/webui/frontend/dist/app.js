@@ -1808,7 +1808,18 @@ async function applyProviderDialog() {
   if (!payload.default_model && payload.models.length > 0) payload.default_model = payload.models[0];
 
   writeProviderEditor(payload);
+  populateProviderForm(payload);
   updateProviderModelPicker(payload);
+  updateProviderFormTitle();
+
+  // Ensure form area is visible (it may be hidden by empty state)
+  var emptyState = $("providerEmptyState");
+  var formFields = $("providerFormFields");
+  var formHeader = document.querySelector(".provider-form-header");
+  if (emptyState) emptyState.classList.add("hidden");
+  if (formFields) formFields.classList.remove("hidden");
+  if (formHeader) formHeader.classList.remove("hidden");
+
   closeProviderDialog();
   setProviderMessage(t("providerDraftUpdated"));
 }
