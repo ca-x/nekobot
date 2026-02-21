@@ -17,6 +17,7 @@ const adminCredSection = "webui_auth"
 // AdminCredential holds WebUI admin authentication data stored in the database.
 type AdminCredential struct {
 	Username     string `json:"username"`
+	Nickname     string `json:"nickname"`
 	PasswordHash string `json:"password_hash"`
 	JWTSecret    string `json:"jwt_secret"`
 }

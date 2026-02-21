@@ -65,6 +65,7 @@ function switchLang(lang) {
   renderToolPanels();
   renderConfigSectionSelect();
   if (state.loadedConfig) renderConfigEditorForSection();
+  renderAccountButton();
   if (!$("providerDialog").classList.contains("hidden")) {
     $("providerDialogTitle").textContent = t(state.providerDialogMode === "edit" ? "editProviderDialogTitle" : "newProviderDialogTitle");
   }
@@ -165,6 +166,8 @@ const state = {
   toolAccessOTPTimer: null,
   toolSessionDraft: loadToolSessionDraft(),
   loadedConfig: null,
+  configMode: "form",
+  profile: { username: "", nickname: "" },
   toolInputQueue: {},
   toolInputSending: {},
   toolReloadTicker: 0,
@@ -296,7 +299,7 @@ async function checkInitAndAuth() {
 }
 
 async function initMain() {
-  await Promise.all([loadModels(), loadProviders(), loadChannels(), loadConfig(), loadStatus(), loadToolSessions()]);
+  await Promise.all([loadModels(), loadProviders(), loadChannels(), loadConfig(), loadStatus(), loadToolSessions(), loadProfile()]);
   startToolPoller();
   connectWS();
 }
@@ -1943,8 +1946,142 @@ async function saveChannelConfig() {
   }
 }
 
+/* ========== Account / Profile ========== */
+
+async function loadProfile() {
+  try {
+    var p = await api("/api/auth/profile");
+    state.profile = { username: p.username || "", nickname: p.nickname || "" };
+  } catch (_) {
+    state.profile = { username: "", nickname: "" };
+  }
+  renderAccountButton();
+}
+
+function renderAccountButton() {
+  var label = $("accountBtnLabel");
+  if (!label) return;
+  label.textContent = state.profile.nickname || state.profile.username || "Admin";
+}
+
+function openAccountDialog() {
+  $("accountNickname").value = state.profile.nickname || "";
+  $("accountUsername").value = state.profile.username || "";
+  $("accountOldPassword").value = "";
+  $("accountNewPassword").value = "";
+  $("accountDialog").classList.remove("hidden");
+}
+
+function closeAccountDialog() {
+  $("accountDialog").classList.add("hidden");
+}
+
+async function saveAccount() {
+  var nickname = $("accountNickname").value.trim();
+  var username = $("accountUsername").value.trim();
+  var oldPw = $("accountOldPassword").value;
+  var newPw = $("accountNewPassword").value;
+
+  if (newPw && !oldPw) {
+    showToast(t("oldPasswordRequired"), "error");
+    return;
+  }
+
+  try {
+    // Update profile (nickname / username)
+    var profileResult = await api("/api/auth/profile", {
+      method: "PUT",
+      body: JSON.stringify({ username: username, nickname: nickname })
+    });
+    state.profile.nickname = profileResult.nickname || "";
+    state.profile.username = profileResult.username || "";
+    if (profileResult.token) {
+      state.token = profileResult.token;
+      localStorage.setItem("nekobot_webui_token", state.token);
+    }
+    renderAccountButton();
+    showToast(t("profileSaved"), "success");
+
+    // Change password if requested
+    if (newPw) {
+      var pwResult = await api("/api/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ old_password: oldPw, new_password: newPw })
+      });
+      if (pwResult.token) {
+        state.token = pwResult.token;
+        localStorage.setItem("nekobot_webui_token", state.token);
+      }
+      showToast(t("passwordChanged"), "success");
+    }
+
+    closeAccountDialog();
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+}
+
 /* ========== Config ========== */
 var CONFIG_SECTIONS = ["agents", "gateway", "tools", "heartbeat", "approval", "logger", "webui"];
+
+var CONFIG_SCHEMA = {
+  agents: {
+    _group: "defaults",
+    "defaults.provider": { type: "provider-select", label: "Provider" },
+    "defaults.model": { type: "model-select", label: "Model" },
+    "defaults.workspace": { type: "text", label: "Workspace" },
+    "defaults.restrict_to_workspace": { type: "bool", label: "Restrict to workspace" },
+    "defaults.fallback": { type: "tags", label: "Fallback providers" },
+    "defaults.max_tokens": { type: "number", label: "Max tokens", min: 0 },
+    "defaults.temperature": { type: "number", label: "Temperature", min: 0, max: 2, step: 0.1 },
+    "defaults.max_tool_iterations": { type: "number", label: "Max tool iterations", min: 1 },
+    "defaults.extended_thinking": { type: "bool", label: "Extended thinking" },
+    "defaults.thinking_budget": { type: "number", label: "Thinking budget", min: 0 },
+    "defaults.skills_dir": { type: "text", label: "Skills directory" },
+    "defaults.skills_auto_reload": { type: "bool", label: "Auto-reload skills" }
+  },
+  gateway: {
+    "host": { type: "text", label: "Host" },
+    "port": { type: "number", label: "Port", min: 0, max: 65535 }
+  },
+  tools: {
+    "web.search.brave_api_key": { type: "text", label: "Brave API key" },
+    "web.search.max_results": { type: "number", label: "Search max results", min: 1 },
+    "web.search.duckduckgo_enabled": { type: "bool", label: "DuckDuckGo enabled" },
+    "web.search.duckduckgo_max_results": { type: "number", label: "DuckDuckGo max results", min: 1 },
+    "web.fetch.max_chars": { type: "number", label: "Fetch max chars", min: 0 },
+    "exec.timeout_seconds": { type: "number", label: "Exec timeout (s)", min: 1 },
+    "exec.sandbox.enabled": { type: "bool", label: "Sandbox enabled" },
+    "exec.sandbox.image": { type: "text", label: "Sandbox image" },
+    "exec.sandbox.network_mode": { type: "text", label: "Sandbox network mode" },
+    "exec.sandbox.mounts": { type: "tags", label: "Sandbox mounts" },
+    "exec.sandbox.timeout": { type: "number", label: "Sandbox timeout (s)", min: 0 },
+    "exec.sandbox.auto_cleanup": { type: "bool", label: "Sandbox auto cleanup" }
+  },
+  heartbeat: {
+    "enabled": { type: "bool", label: "Enabled" },
+    "interval_minutes": { type: "number", label: "Interval (minutes)", min: 5 }
+  },
+  approval: {
+    "mode": { type: "select", label: "Mode", options: ["auto", "prompt", "manual"] },
+    "allowlist": { type: "tags", label: "Allowlist" },
+    "denylist": { type: "tags", label: "Denylist" }
+  },
+  logger: {
+    "level": { type: "select", label: "Level", options: ["debug", "info", "warn", "error", "fatal"] },
+    "output_path": { type: "text", label: "Output path" },
+    "max_size": { type: "number", label: "Max size (MB)", min: 0 },
+    "max_backups": { type: "number", label: "Max backups", min: 0 },
+    "max_age": { type: "number", label: "Max age (days)", min: 0 },
+    "compress": { type: "bool", label: "Compress" }
+  },
+  webui: {
+    "enabled": { type: "bool", label: "Enabled" },
+    "port": { type: "number", label: "Port", min: 0, max: 65535 },
+    "public_base_url": { type: "text", label: "Public base URL" },
+    "tool_session_otp_ttl_seconds": { type: "number", label: "OTP TTL (seconds)", min: 10 }
+  }
+};
 
 function normalizeConfigSection(section) {
   var key = String(section || "").trim().toLowerCase();
@@ -1980,15 +2117,310 @@ function renderConfigSectionSelect() {
   sel.value = current;
 }
 
+/* --- Nested value helpers --- */
+function getNestedValue(obj, dotPath) {
+  var parts = dotPath.split(".");
+  var cur = obj;
+  for (var i = 0; i < parts.length; i++) {
+    if (cur == null || typeof cur !== "object") return undefined;
+    cur = cur[parts[i]];
+  }
+  return cur;
+}
+
+function setNestedValue(obj, dotPath, value) {
+  var parts = dotPath.split(".");
+  var cur = obj;
+  for (var i = 0; i < parts.length - 1; i++) {
+    if (cur[parts[i]] == null || typeof cur[parts[i]] !== "object") {
+      cur[parts[i]] = {};
+    }
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length - 1]] = value;
+}
+
+/* --- Provider/model options for selects --- */
+function getProviderNames() {
+  return (state.providers || []).map(function(p) { return p.name; });
+}
+
+function getModelNames() {
+  return (state.models || []).map(function(m) { return m.model; });
+}
+
+/* --- Form rendering --- */
+function renderConfigForm(section, data) {
+  var container = $("configFormContainer");
+  if (!container) return;
+  container.innerHTML = "";
+
+  var schema = CONFIG_SCHEMA[section];
+  if (!schema) {
+    container.innerHTML = "";
+    return;
+  }
+
+  var form = document.createElement("div");
+  form.className = "config-form";
+
+  var schemaKeys = Object.keys(schema).filter(function(k) { return k.charAt(0) !== "_"; });
+  var handledPaths = {};
+
+  for (var i = 0; i < schemaKeys.length; i++) {
+    var key = schemaKeys[i];
+    var def = schema[key];
+    handledPaths[key] = true;
+    var value = getNestedValue(data, key);
+    form.appendChild(createFormField(key, def, value, section));
+  }
+
+  // Fallback: find fields in data not covered by schema
+  var flatData = flattenObject(data, "");
+  var extraKeys = Object.keys(flatData).filter(function(k) { return !handledPaths[k]; });
+  for (var j = 0; j < extraKeys.length; j++) {
+    var ek = extraKeys[j];
+    var ev = flatData[ek];
+    var autoType = "text";
+    if (typeof ev === "boolean") autoType = "bool";
+    else if (typeof ev === "number") autoType = "number";
+    else if (Array.isArray(ev)) autoType = "tags";
+    form.appendChild(createFormField(ek, { type: autoType, label: ek }, ev, section));
+  }
+
+  container.appendChild(form);
+}
+
+function flattenObject(obj, prefix) {
+  var result = {};
+  if (obj == null || typeof obj !== "object" || Array.isArray(obj)) return result;
+  var keys = Object.keys(obj);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var fullKey = prefix ? prefix + "." + k : k;
+    var val = obj[k];
+    if (val != null && typeof val === "object" && !Array.isArray(val)) {
+      var nested = flattenObject(val, fullKey);
+      Object.assign(result, nested);
+    } else {
+      result[fullKey] = val;
+    }
+  }
+  return result;
+}
+
+function createFormField(key, def, value, section) {
+  var field = document.createElement("div");
+  field.className = "config-form-field";
+  if (def.type === "tags") field.classList.add("wide");
+
+  var label = document.createElement("span");
+  label.className = "config-form-label";
+  label.textContent = def.label || key;
+  field.appendChild(label);
+
+  var control = document.createElement("div");
+  control.className = "config-form-control";
+
+  switch (def.type) {
+    case "bool":
+      var toggle = document.createElement("label");
+      toggle.className = "toggle-switch";
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!value;
+      cb.dataset.cfgKey = key;
+      cb.dataset.cfgType = "bool";
+      var slider = document.createElement("span");
+      slider.className = "toggle-slider";
+      toggle.appendChild(cb);
+      toggle.appendChild(slider);
+      control.appendChild(toggle);
+      break;
+
+    case "select":
+      var sel = document.createElement("select");
+      sel.dataset.cfgKey = key;
+      sel.dataset.cfgType = "select";
+      var opts = def.options || [];
+      for (var i = 0; i < opts.length; i++) {
+        var o = document.createElement("option");
+        o.value = opts[i];
+        o.textContent = opts[i];
+        sel.appendChild(o);
+      }
+      sel.value = String(value || opts[0] || "");
+      control.appendChild(sel);
+      break;
+
+    case "provider-select":
+      var psel = document.createElement("select");
+      psel.dataset.cfgKey = key;
+      psel.dataset.cfgType = "select";
+      var emptyOpt = document.createElement("option");
+      emptyOpt.value = "";
+      emptyOpt.textContent = "— default —";
+      psel.appendChild(emptyOpt);
+      var pnames = getProviderNames();
+      for (var pi = 0; pi < pnames.length; pi++) {
+        var po = document.createElement("option");
+        po.value = pnames[pi];
+        po.textContent = pnames[pi];
+        psel.appendChild(po);
+      }
+      psel.value = String(value || "");
+      control.appendChild(psel);
+      break;
+
+    case "model-select":
+      var msel = document.createElement("select");
+      msel.dataset.cfgKey = key;
+      msel.dataset.cfgType = "select";
+      var mEmpty = document.createElement("option");
+      mEmpty.value = "";
+      mEmpty.textContent = "— default —";
+      msel.appendChild(mEmpty);
+      var mnames = getModelNames();
+      var seen = {};
+      for (var mi = 0; mi < mnames.length; mi++) {
+        if (seen[mnames[mi]]) continue;
+        seen[mnames[mi]] = true;
+        var mo = document.createElement("option");
+        mo.value = mnames[mi];
+        mo.textContent = mnames[mi];
+        msel.appendChild(mo);
+      }
+      // Ensure current value is an option even if not in list
+      if (value && !seen[value]) {
+        var curOpt = document.createElement("option");
+        curOpt.value = value;
+        curOpt.textContent = value;
+        msel.appendChild(curOpt);
+      }
+      msel.value = String(value || "");
+      control.appendChild(msel);
+      break;
+
+    case "number":
+      var num = document.createElement("input");
+      num.type = "number";
+      num.dataset.cfgKey = key;
+      num.dataset.cfgType = "number";
+      if (def.min != null) num.min = def.min;
+      if (def.max != null) num.max = def.max;
+      if (def.step != null) num.step = def.step;
+      num.value = value != null ? value : "";
+      control.appendChild(num);
+      break;
+
+    case "tags":
+      var ta = document.createElement("textarea");
+      ta.className = "config-tags-input";
+      ta.rows = 2;
+      ta.dataset.cfgKey = key;
+      ta.dataset.cfgType = "tags";
+      ta.value = Array.isArray(value) ? value.join("\n") : String(value || "");
+      control.appendChild(ta);
+      field.classList.add("wide");
+      break;
+
+    default: // text
+      var inp = document.createElement("input");
+      inp.type = "text";
+      inp.dataset.cfgKey = key;
+      inp.dataset.cfgType = "text";
+      inp.value = value != null ? String(value) : "";
+      control.appendChild(inp);
+      break;
+  }
+
+  field.appendChild(control);
+  return field;
+}
+
+function collectConfigFormValues() {
+  var container = $("configFormContainer");
+  if (!container) return {};
+  var result = {};
+  var controls = container.querySelectorAll("[data-cfg-key]");
+  for (var i = 0; i < controls.length; i++) {
+    var el = controls[i];
+    var key = el.dataset.cfgKey;
+    var type = el.dataset.cfgType;
+    var val;
+    switch (type) {
+      case "bool":
+        val = el.checked;
+        break;
+      case "number":
+        val = el.value === "" ? 0 : Number(el.value);
+        break;
+      case "tags":
+        val = el.value.split("\n").map(function(s) { return s.trim(); }).filter(Boolean);
+        break;
+      default:
+        val = el.value;
+        break;
+    }
+    setNestedValue(result, key, val);
+  }
+  return result;
+}
+
+/* --- Mode toggle and rendering --- */
+function toggleConfigMode() {
+  if (state.configMode === "form") {
+    // Switch to JSON: sync form values to editor
+    var section = normalizeConfigSection(state.configSection);
+    var payload = collectConfigFormValues();
+    $("configEditor").value = JSON.stringify(payload, null, 2);
+    state.configMode = "json";
+  } else {
+    // Switch to form: parse JSON editor back to data
+    var section2 = normalizeConfigSection(state.configSection);
+    try {
+      var parsed = JSON.parse($("configEditor").value || "{}");
+      if (state.loadedConfig) state.loadedConfig[section2] = parsed;
+    } catch (_) {}
+    state.configMode = "form";
+  }
+  renderConfigEditorForSection();
+}
+
+function updateConfigModeButton() {
+  var btn = $("toggleConfigModeBtn");
+  if (!btn) return;
+  if (state.configMode === "json") {
+    btn.textContent = t("configFormMode");
+  } else {
+    btn.textContent = t("configJsonMode");
+  }
+}
+
 function renderConfigEditorForSection() {
   var section = normalizeConfigSection(state.configSection);
   var payload = {};
   if (state.loadedConfig && Object.prototype.hasOwnProperty.call(state.loadedConfig, section)) {
     payload = state.loadedConfig[section];
   }
-  $("configEditor").value = JSON.stringify(payload || {}, null, 2);
+
   var hint = $("configSectionHint");
   if (hint) hint.textContent = t("configSectionHint", configSectionLabel(section));
+
+  var editorEl = $("configEditor");
+  var formEl = $("configFormContainer");
+
+  if (state.configMode === "json") {
+    editorEl.classList.remove("hidden");
+    if (formEl) formEl.classList.add("hidden");
+    editorEl.value = JSON.stringify(payload || {}, null, 2);
+  } else {
+    editorEl.classList.add("hidden");
+    if (formEl) formEl.classList.remove("hidden");
+    renderConfigForm(section, payload || {});
+  }
+
+  updateConfigModeButton();
 }
 
 function setConfigMessage(text, isError) {
@@ -2007,6 +2439,7 @@ async function loadConfig() {
   } catch (err) {
     state.loadedConfig = null;
     $("configEditor").value = "{}";
+    $("configFormContainer").innerHTML = "";
     setConfigMessage(err.message, true);
   }
 }
@@ -2014,9 +2447,18 @@ async function loadConfig() {
 async function saveConfig() {
   var section = normalizeConfigSection(state.configSection);
   var payload;
-  try { payload = JSON.parse($("configEditor").value || "{}"); } catch (err) {
-    setConfigMessage(t("invalidJson", err.message), true); return;
+
+  if (state.configMode === "json") {
+    try {
+      payload = JSON.parse($("configEditor").value || "{}");
+    } catch (err) {
+      setConfigMessage(t("invalidJson", err.message), true);
+      return;
+    }
+  } else {
+    payload = collectConfigFormValues();
   }
+
   setConfigMessage(t("saving"));
   var body = {};
   body[section] = payload;
@@ -2170,6 +2612,13 @@ function setupEvents() {
     Object.keys(state.toolSockets).forEach(closeToolSocket);
     stopToolPoller();
     showAuth();
+  });
+
+  $("accountBtn").addEventListener("click", openAccountDialog);
+  $("accountDialogCancelBtn").addEventListener("click", closeAccountDialog);
+  $("accountDialogSaveBtn").addEventListener("click", saveAccount);
+  $("accountDialog").addEventListener("click", function(e) {
+    if (e.target === $("accountDialog")) closeAccountDialog();
   });
 
   document.querySelectorAll(".tab").forEach(function(btn) {
@@ -2375,6 +2824,7 @@ function setupEvents() {
   $("refreshConfigBtn").addEventListener("click", loadConfig);
   $("resetConfigBtn").addEventListener("click", resetConfigEditor);
   $("saveConfigBtn").addEventListener("click", saveConfig);
+  $("toggleConfigModeBtn").addEventListener("click", toggleConfigMode);
   $("exportConfigBtn").addEventListener("click", exportConfig);
   $("importConfigBtn").addEventListener("click", function() { $("importConfigFile").click(); });
   $("importConfigFile").addEventListener("change", function(e) {

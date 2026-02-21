@@ -173,8 +173,10 @@ func (s *Server) setup() {
 	// Status
 	api.GET("/status", s.handleStatus)
 
-	// Auth management (change password)
+	// Auth management (change password, profile)
 	api.POST("/auth/change-password", s.handleChangePassword)
+	api.GET("/auth/profile", s.handleGetProfile)
+	api.PUT("/auth/profile", s.handleUpdateProfile)
 
 	// Tool session routes
 	api.GET("/tool-sessions", s.handleListToolSessions)
@@ -375,6 +377,7 @@ func (s *Server) handleChangePassword(c *echo.Context) error {
 
 	updated := &config.AdminCredential{
 		Username:     cred.Username,
+		Nickname:     cred.Nickname,
 		PasswordHash: hash,
 		JWTSecret:    config.GenerateJWTSecret(), // rotate secret to invalidate old tokens
 	}
@@ -395,6 +398,74 @@ func (s *Server) handleChangePassword(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "password changed", "token": token})
+}
+
+func (s *Server) handleGetProfile(c *echo.Context) error {
+	s.credMu.RLock()
+	cred := s.adminCred
+	s.credMu.RUnlock()
+
+	if cred == nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "not initialized"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"username": cred.Username,
+		"nickname": cred.Nickname,
+	})
+}
+
+func (s *Server) handleUpdateProfile(c *echo.Context) error {
+	var body struct {
+		Username string `json:"username"`
+		Nickname string `json:"nickname"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	s.credMu.Lock()
+	defer s.credMu.Unlock()
+
+	cred := s.adminCred
+	if cred == nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "not initialized"})
+	}
+
+	updated := &config.AdminCredential{
+		Username:     cred.Username,
+		Nickname:     strings.TrimSpace(body.Nickname),
+		PasswordHash: cred.PasswordHash,
+		JWTSecret:    cred.JWTSecret,
+	}
+
+	newUsername := strings.TrimSpace(body.Username)
+	if newUsername != "" {
+		updated.Username = newUsername
+	}
+
+	if err := config.SaveAdminCredential(s.entClient, updated); err != nil {
+		s.logger.Error("Failed to persist updated profile", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save profile"})
+	}
+
+	s.adminCred = updated
+
+	resp := map[string]string{
+		"username": updated.Username,
+		"nickname": updated.Nickname,
+	}
+
+	// If username changed, issue a new token.
+	if updated.Username != cred.Username {
+		token, err := s.generateToken(updated.Username)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
+		}
+		resp["token"] = token
+	}
+
+	return c.JSON(http.StatusOK, resp)
 }
 
 // --- Provider Handlers ---

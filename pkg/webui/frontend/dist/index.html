@@ -69,6 +69,7 @@
         <h2 data-i18n="dashboard">Dashboard</h2>
         <div class="spacer"></div>
         <span id="wsState" class="ws-status"><span class="ws-dot"></span><span data-i18n="wsDisconnected">Disconnected</span></span>
+        <button id="accountBtn" class="account-btn"><i class="ri-user-3-line"></i><span id="accountBtnLabel">Admin</span></button>
         <button id="logoutBtn" class="btn btn-danger btn-sm" data-i18n="logout">Logout</button>
       </div>
 
@@ -280,13 +281,15 @@
           <button id="resetConfigBtn" class="btn btn-sm" data-i18n="reset">Reset</button>
           <button id="saveConfigBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
           <div class="spacer"></div>
+          <button id="toggleConfigModeBtn" class="btn btn-sm" data-i18n="advancedJson">Advanced JSON</button>
           <button id="exportConfigBtn" class="btn btn-sm" data-i18n="exportConfig">Export</button>
           <button id="importConfigBtn" class="btn btn-sm" data-i18n="importConfig">Import</button>
           <input id="importConfigFile" type="file" accept=".json" class="hidden">
           <span id="configMsg" class="msg-text"></span>
         </div>
         <div id="configSectionHint" class="msg-text mt-sm"></div>
-        <textarea id="configEditor" rows="16" class="editor-area" spellcheck="false"></textarea>
+        <div id="configFormContainer"></div>
+        <textarea id="configEditor" rows="16" class="editor-area hidden" spellcheck="false"></textarea>
       </section>
 
       <!-- Status Tab -->
@@ -451,6 +454,35 @@
         <div class="toolbar mt">
           <div class="spacer"></div>
           <button id="toolAccessDialogCloseBtn" class="btn btn-sm btn-primary" data-i18n="close">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="accountDialog" class="dialog-overlay hidden">
+      <div class="dialog-card">
+        <h3 data-i18n="accountSettings">Account Settings</h3>
+        <div class="dialog-grid">
+          <label class="dialog-field">
+            <span data-i18n="nickname">Nickname</span>
+            <input id="accountNickname" data-i18n-ph="nickname" placeholder="Nickname">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="username">Username</span>
+            <input id="accountUsername" data-i18n-ph="username" placeholder="Username">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="oldPassword">Current password</span>
+            <input id="accountOldPassword" type="password" data-i18n-ph="oldPassword" placeholder="Current password">
+          </label>
+          <label class="dialog-field">
+            <span data-i18n="newPassword">New password</span>
+            <input id="accountNewPassword" type="password" data-i18n-ph="newPassword" placeholder="New password">
+            <small class="field-help" data-i18n="newPasswordHint">Leave blank to keep current password.</small>
+          </label>
+        </div>
+        <div class="toolbar mt">
+          <button id="accountDialogCancelBtn" class="btn btn-sm" data-i18n="cancel">Cancel</button>
+          <button id="accountDialogSaveBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
         </div>
       </div>
     </div>

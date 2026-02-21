@@ -159,5 +159,17 @@
   "advancedJson": "高度な JSON",
   "hideAdvancedJson": "JSON を隠す",
   "noProvidersHint": "プロバイダーはまだ設定されていません。「新規」をクリックして追加してください。",
-  "sessionExpired": "セッションの有効期限が切れました。再度ログインしてください。"
+  "sessionExpired": "セッションの有効期限が切れました。再度ログインしてください。",
+  "accountSettings": "アカウント設定",
+  "nickname": "ニックネーム",
+  "oldPassword": "現在のパスワード",
+  "newPassword": "新しいパスワード",
+  "newPasswordHint": "変更しない場合は空欄のままにしてください。",
+  "profileSaved": "プロフィールを保存しました。",
+  "passwordChanged": "パスワードを変更しました。",
+  "oldPasswordRequired": "パスワードを変更するには現在のパスワードが必要です。",
+  "cfgTrue": "オン",
+  "cfgFalse": "オフ",
+  "configFormMode": "フォーム",
+  "configJsonMode": "JSON"
 }

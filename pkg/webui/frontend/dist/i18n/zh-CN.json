@@ -159,5 +159,17 @@
   "advancedJson": "高级 JSON",
   "hideAdvancedJson": "隐藏 JSON",
   "noProvidersHint": "尚未配置供应商。点击「新建」添加一个。",
-  "sessionExpired": "会话已过期，请重新登录。"
+  "sessionExpired": "会话已过期，请重新登录。",
+  "accountSettings": "账户设置",
+  "nickname": "昵称",
+  "oldPassword": "当前密码",
+  "newPassword": "新密码",
+  "newPasswordHint": "留空则不修改密码。",
+  "profileSaved": "资料已保存。",
+  "passwordChanged": "密码已修改。",
+  "oldPasswordRequired": "修改密码需要输入当前密码。",
+  "cfgTrue": "开",
+  "cfgFalse": "关",
+  "configFormMode": "表单",
+  "configJsonMode": "JSON"
 }

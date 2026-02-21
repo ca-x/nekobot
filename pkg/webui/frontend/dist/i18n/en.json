@@ -159,5 +159,17 @@
   "advancedJson": "Advanced JSON",
   "hideAdvancedJson": "Hide JSON",
   "noProvidersHint": "No providers configured yet. Click \"New\" to add one.",
-  "sessionExpired": "Session expired, please login again."
+  "sessionExpired": "Session expired, please login again.",
+  "accountSettings": "Account Settings",
+  "nickname": "Nickname",
+  "oldPassword": "Current password",
+  "newPassword": "New password",
+  "newPasswordHint": "Leave blank to keep current password.",
+  "profileSaved": "Profile saved.",
+  "passwordChanged": "Password changed.",
+  "oldPasswordRequired": "Current password is required to change password.",
+  "cfgTrue": "On",
+  "cfgFalse": "Off",
+  "configFormMode": "Form",
+  "configJsonMode": "JSON"
 }
