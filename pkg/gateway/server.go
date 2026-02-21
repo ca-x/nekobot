@@ -21,6 +21,7 @@ import (
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/version"
 )
 
@@ -69,24 +70,26 @@ func (s *simpleSession) AddMessage(msg agent.Message) {
 
 // Server is the WebSocket/REST gateway server.
 type Server struct {
-	config  *config.Config
-	logger  *logger.Logger
-	agent   *agent.Agent
-	bus     bus.Bus
-	mux     *http.ServeMux
-	server  *http.Server
-	clients map[string]*Client
-	mu      sync.RWMutex
+	config    *config.Config
+	logger    *logger.Logger
+	agent     *agent.Agent
+	bus       bus.Bus
+	entClient *ent.Client
+	mux       *http.ServeMux
+	server    *http.Server
+	clients   map[string]*Client
+	mu        sync.RWMutex
 }
 
 // NewServer creates a new gateway server.
-func NewServer(cfg *config.Config, log *logger.Logger, ag *agent.Agent, messageBus bus.Bus) *Server {
+func NewServer(cfg *config.Config, log *logger.Logger, ag *agent.Agent, messageBus bus.Bus, entClient *ent.Client) *Server {
 	s := &Server{
-		config:  cfg,
-		logger:  log,
-		agent:   ag,
-		bus:     messageBus,
-		clients: make(map[string]*Client),
+		config:    cfg,
+		logger:    log,
+		agent:     ag,
+		bus:       messageBus,
+		entClient: entClient,
+		clients:   make(map[string]*Client),
 	}
 
 	s.setupRoutes()
@@ -415,9 +418,9 @@ func (s *Server) authenticateWS(r *http.Request) (userID, username string, err e
 		return "", "", fmt.Errorf("no token provided")
 	}
 
-	// Validate JWT using WebUI secret
-	secret := s.config.WebUI.Secret
-	if secret == "" {
+	// Validate JWT using admin credential from database
+	cred, err := config.LoadAdminCredential(s.entClient)
+	if err != nil || cred == nil || cred.JWTSecret == "" {
 		return "", "", fmt.Errorf("server not initialized")
 	}
 
@@ -425,7 +428,7 @@ func (s *Server) authenticateWS(r *http.Request) (userID, username string, err e
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return []byte(secret), nil
+		return []byte(cred.JWTSecret), nil
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("invalid token: %w", err)

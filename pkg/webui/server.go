@@ -6,8 +6,6 @@ package webui
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,6 +40,7 @@ import (
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
+	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/userprefs"
 	"nekobot/pkg/version"
@@ -64,6 +63,9 @@ type Server struct {
 	toolSess   *toolsessions.Manager
 	processMgr *process.Manager
 	providers  *providerstore.Manager
+	entClient  *ent.Client
+	adminCred  *config.AdminCredential
+	credMu     sync.RWMutex
 	port       int
 	startedAt  time.Time
 }
@@ -82,10 +84,17 @@ func NewServer(
 	toolSessionMgr *toolsessions.Manager,
 	processManager *process.Manager,
 	providerStore *providerstore.Manager,
+	entClient *ent.Client,
 ) *Server {
 	port := cfg.WebUI.Port
 	if port == 0 {
 		port = cfg.Gateway.Port + 1
+	}
+
+	// Load admin credential from DB (nil if not yet initialized).
+	cred, err := config.LoadAdminCredential(entClient)
+	if err != nil {
+		log.Warn("Failed to load admin credential from database", zap.Error(err))
 	}
 
 	s := &Server{
@@ -101,6 +110,8 @@ func NewServer(
 		toolSess:   toolSessionMgr,
 		processMgr: processManager,
 		providers:  providerStore,
+		entClient:  entClient,
+		adminCred:  cred,
 		port:       port,
 		startedAt:  time.Now(),
 	}
@@ -131,9 +142,14 @@ func (s *Server) setup() {
 
 	// Protected API routes
 	api := e.Group("/api")
-	secret := s.getJWTSecret()
 	api.Use(echojwt.WithConfig(echojwt.Config{
-		SigningKey: []byte(secret),
+		SigningKey: nil, // Use KeyFunc instead for dynamic secret.
+		KeyFunc: func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method")
+			}
+			return []byte(s.getJWTSecret()), nil
+		},
 	}))
 
 	// Provider routes
@@ -156,6 +172,9 @@ func (s *Server) setup() {
 
 	// Status
 	api.GET("/status", s.handleStatus)
+
+	// Auth management (change password)
+	api.POST("/auth/change-password", s.handleChangePassword)
 
 	// Tool session routes
 	api.GET("/tool-sessions", s.handleListToolSessions)
@@ -236,12 +255,17 @@ func (s *Server) Stop(ctx context.Context) error {
 // --- Auth Handlers ---
 
 func (s *Server) handleInitStatus(c *echo.Context) error {
-	initialized := s.config.WebUI.Password != ""
+	s.credMu.RLock()
+	initialized := s.adminCred != nil && s.adminCred.PasswordHash != ""
+	s.credMu.RUnlock()
 	return c.JSON(http.StatusOK, map[string]bool{"initialized": initialized})
 }
 
 func (s *Server) handleInitPassword(c *echo.Context) error {
-	if s.config.WebUI.Password != "" {
+	s.credMu.RLock()
+	alreadyInit := s.adminCred != nil && s.adminCred.PasswordHash != ""
+	s.credMu.RUnlock()
+	if alreadyInit {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "already initialized"})
 	}
 
@@ -257,23 +281,32 @@ func (s *Server) handleInitPassword(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "password required"})
 	}
 
-	// Set credentials (in production, hash the password)
-	if body.Username != "" {
-		s.config.WebUI.Username = body.Username
-	}
-	s.config.WebUI.Password = body.Password
-
-	// Generate JWT secret if not set
-	if s.config.WebUI.Secret == "" {
-		s.config.WebUI.Secret = generateSecret()
+	hash, err := config.HashPassword(body.Password)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to hash password"})
 	}
 
-	// Persist runtime WebUI auth config to database.
-	if err := config.SaveDatabaseSections(s.config, "webui"); err != nil {
-		s.logger.Warn("Failed to persist init config to database", zap.Error(err))
+	username := strings.TrimSpace(body.Username)
+	if username == "" {
+		username = "admin"
 	}
 
-	token, err := s.generateToken(s.config.WebUI.Username)
+	cred := &config.AdminCredential{
+		Username:     username,
+		PasswordHash: hash,
+		JWTSecret:    config.GenerateJWTSecret(),
+	}
+
+	if err := config.SaveAdminCredential(s.entClient, cred); err != nil {
+		s.logger.Error("Failed to persist admin credential", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save credentials"})
+	}
+
+	s.credMu.Lock()
+	s.adminCred = cred
+	s.credMu.Unlock()
+
+	token, err := s.generateToken(cred.Username)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
 	}
@@ -290,7 +323,15 @@ func (s *Server) handleLogin(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	if body.Username != s.config.WebUI.Username || body.Password != s.config.WebUI.Password {
+	s.credMu.RLock()
+	cred := s.adminCred
+	s.credMu.RUnlock()
+
+	if cred == nil || cred.PasswordHash == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "not initialized"})
+	}
+
+	if body.Username != cred.Username || !config.CheckPassword(cred.PasswordHash, body.Password) {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 	}
 
@@ -300,6 +341,60 @@ func (s *Server) handleLogin(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"token": token})
+}
+
+func (s *Server) handleChangePassword(c *echo.Context) error {
+	var body struct {
+		OldPassword string `json:"old_password"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if body.NewPassword == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "new_password required"})
+	}
+
+	s.credMu.RLock()
+	cred := s.adminCred
+	s.credMu.RUnlock()
+
+	if cred == nil || cred.PasswordHash == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "not initialized"})
+	}
+
+	if !config.CheckPassword(cred.PasswordHash, body.OldPassword) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "old password is incorrect"})
+	}
+
+	hash, err := config.HashPassword(body.NewPassword)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to hash password"})
+	}
+
+	updated := &config.AdminCredential{
+		Username:     cred.Username,
+		PasswordHash: hash,
+		JWTSecret:    config.GenerateJWTSecret(), // rotate secret to invalidate old tokens
+	}
+
+	if err := config.SaveAdminCredential(s.entClient, updated); err != nil {
+		s.logger.Error("Failed to persist updated credential", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save credentials"})
+	}
+
+	s.credMu.Lock()
+	s.adminCred = updated
+	s.credMu.Unlock()
+
+	// Issue a new token with the rotated secret.
+	token, err := s.generateToken(updated.Username)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "password changed", "token": token})
 }
 
 // --- Provider Handlers ---
@@ -2633,13 +2728,14 @@ func (s *Server) parseJWTSubject(tokenStr string) (string, error) {
 }
 
 func (s *Server) getJWTSecret() string {
-	if s.config.WebUI.Secret != "" {
-		return s.config.WebUI.Secret
+	s.credMu.RLock()
+	defer s.credMu.RUnlock()
+	if s.adminCred != nil && s.adminCred.JWTSecret != "" {
+		return s.adminCred.JWTSecret
 	}
-	// Generate a temporary secret (will be lost on restart if not persisted)
-	secret := generateSecret()
-	s.config.WebUI.Secret = secret
-	return secret
+	// No credential stored yet — generate an ephemeral secret.
+	// It will be replaced once the admin initializes their password.
+	return "nekobot-ephemeral-secret"
 }
 
 func (s *Server) generateToken(username string) (string, error) {
@@ -2651,11 +2747,5 @@ func (s *Server) generateToken(username string) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.getJWTSecret()))
-}
-
-func generateSecret() string {
-	b := make([]byte, 32)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }
 

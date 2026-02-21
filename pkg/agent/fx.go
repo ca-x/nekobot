@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"go.uber.org/fx"
@@ -21,10 +20,6 @@ import (
 var Module = fx.Module("agent",
 	fx.Provide(ProvideAgent),
 )
-
-func errNoProviderConfigured() error {
-	return fmt.Errorf("no provider configured")
-}
 
 type provideAgentDeps struct {
 	fx.In
@@ -54,36 +49,40 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 		providerName = strings.TrimSpace(cfg.Providers[0].Name)
 	}
 
+	var client *providers.Client
+	var providerKind string
+
 	providerCfg := cfg.GetProviderConfig(providerName)
-	if providerCfg == nil {
+	if providerCfg == nil && len(cfg.Providers) > 0 {
 		log.Warn("Provider not found, using first configured provider",
 			zap.String("provider", providerName),
 		)
-		if len(cfg.Providers) == 0 {
-			return nil, errNoProviderConfigured()
-		}
 		providerName = strings.TrimSpace(cfg.Providers[0].Name)
 		providerCfg = cfg.GetProviderConfig(providerName)
 	}
-	if providerCfg == nil {
-		return nil, errNoProviderConfigured()
-	}
-	providerKind := strings.TrimSpace(providerCfg.ProviderKind)
-	if providerKind == "" {
-		providerKind = providerName
-	}
 
-	// Create provider client
-	client, err := providers.NewClient(providerKind, &providers.RelayInfo{
-		ProviderName: providerName,
-		APIKey:       providerCfg.APIKey,
-		APIBase:      providerCfg.APIBase,
-		Model:        cfg.Agents.Defaults.Model,
-		Proxy:        providerCfg.Proxy,
-		Timeout:      providerCfg.GetTimeout(),
-	})
-	if err != nil {
-		return nil, err
+	if providerCfg == nil {
+		// No provider configured yet — start with a nil client.
+		// Chat will fail at runtime with a clear error until a provider is added.
+		log.Warn("No provider configured; agent will not be able to chat until a provider is added")
+	} else {
+		providerKind = strings.TrimSpace(providerCfg.ProviderKind)
+		if providerKind == "" {
+			providerKind = providerName
+		}
+
+		var err error
+		client, err = providers.NewClient(providerKind, &providers.RelayInfo{
+			ProviderName: providerName,
+			APIKey:       providerCfg.APIKey,
+			APIBase:      providerCfg.APIBase,
+			Model:        cfg.Agents.Defaults.Model,
+			Proxy:        providerCfg.Proxy,
+			Timeout:      providerCfg.GetTimeout(),
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Create agent with process manager

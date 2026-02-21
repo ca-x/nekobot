@@ -449,7 +449,6 @@ func DefaultConfig() *Config {
 			Enabled:                  true,
 			Port:                     0, // 0 means gateway port + 1
 			PublicBaseURL:            "",
-			Username:                 "admin",
 			ToolSessionOTPTTLSeconds: 180,
 		},
 	}
@@ -602,8 +601,5 @@ type WebUIConfig struct {
 	Enabled                  bool   `mapstructure:"enabled" json:"enabled"`                                           // Enable WebUI (default true in daemon mode)
 	Port                     int    `mapstructure:"port" json:"port"`                                                 // WebUI port (default: gateway port + 1)
 	PublicBaseURL            string `mapstructure:"public_base_url" json:"public_base_url"`                           // Preferred external base URL for share links
-	Secret                   string `mapstructure:"secret" json:"secret"`                                             // JWT secret for auth (auto-generated on first run)
-	Username                 string `mapstructure:"username" json:"username"`                                         // Admin username (default: admin)
-	Password                 string `mapstructure:"password" json:"password"`                                         // Admin password (set on first run)
 	ToolSessionOTPTTLSeconds int    `mapstructure:"tool_session_otp_ttl_seconds" json:"tool_session_otp_ttl_seconds"` // One-time password TTL for tool sessions (seconds)
 }
