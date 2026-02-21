@@ -110,7 +110,7 @@
   "apiEndpoint": "API エンドポイント",
   "proxyAddress": "プロキシアドレス",
   "apiKey": "API キー",
-  "apply": "適用",
+  "apply": "確認",
   "newProviderDialogTitle": "新しいプロバイダー",
   "editProviderDialogTitle": "プロバイダーを編集",
   "providerDraftUpdated": "プロバイダー下書きを更新しました。保存してください。",
@@ -148,5 +148,15 @@
   "configSectionLogger": "Logger",
   "configSectionWebUI": "WebUI",
   "configSectionHint": "{0} を編集中。このセクションはデータベースに保存されます。",
-  "configSectionSaved": "{0} を保存しました。"
+  "configSectionSaved": "{0} を保存しました。",
+  "exportConfig": "エクスポート",
+  "importConfig": "インポート",
+  "exporting": "エクスポート中...",
+  "exported": "設定をエクスポートしました。",
+  "importing": "インポート中...",
+  "imported": "インポート完了: {0} セクション、{1} プロバイダー。",
+  "importFailed": "インポートに失敗しました。",
+  "advancedJson": "高度な JSON",
+  "hideAdvancedJson": "JSON を隠す",
+  "noProvidersHint": "プロバイダーはまだ設定されていません。「新規」をクリックして追加してください。"
 }

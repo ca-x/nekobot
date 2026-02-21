@@ -7,6 +7,10 @@
     "max_age": 7,
     "compress": true
   },
+  "storage": {
+    "type": "sqlite",
+    "db_dir": ""
+  },
   "gateway": {
     "host": "0.0.0.0",
     "port": 8080

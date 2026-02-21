@@ -153,34 +153,96 @@
       <!-- Providers Tab -->
       <section id="tab-providers" class="hidden">
         <div class="toolbar">
-          <select id="providerSelect"></select>
           <button id="refreshProvidersBtn" class="btn btn-sm" data-i18n="refresh">Refresh</button>
-          <button id="newProviderBtn" class="btn btn-sm" data-i18n="newProvider">New</button>
-          <button id="editProviderBtn" class="btn btn-sm" data-i18n="editProvider">Edit</button>
-          <button id="fetchProviderModelsBtn" class="btn btn-sm" data-i18n="fetchModels">Discover Models</button>
-          <button id="saveProviderBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
-          <button id="deleteProviderBtn" class="btn btn-sm btn-danger" data-i18n="delete">Delete</button>
+          <button id="newProviderBtn" class="btn btn-sm btn-primary" data-i18n="newProvider">New</button>
           <span id="providerMsg" class="msg-text"></span>
         </div>
-        <div class="toolbar mt-sm">
-          <div id="providerModelPicker" class="provider-model-picker hidden">
-            <div class="provider-model-picker-head">
-              <input id="providerModelFilter" data-i18n-ph="filterModels" placeholder="Filter models">
-              <span id="providerModelCounter" class="msg-text"></span>
+        <div class="provider-layout">
+          <aside class="provider-sidebar">
+            <div id="providerCardList" class="provider-card-list"></div>
+          </aside>
+          <div class="provider-main">
+            <div class="provider-form-header">
+              <h3 id="providerFormTitle" class="provider-form-title" data-i18n="noProviderSelected">No provider selected</h3>
+              <div class="provider-form-actions">
+                <button id="editProviderBtn" class="btn btn-sm" data-i18n="editProvider">Edit</button>
+                <button id="fetchProviderModelsBtn" class="btn btn-sm" data-i18n="fetchModels">Discover Models</button>
+                <button id="saveProviderBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
+                <button id="deleteProviderBtn" class="btn btn-sm btn-danger" data-i18n="delete">Delete</button>
+              </div>
             </div>
-            <select id="providerModelSelect" multiple size="8"></select>
+            <div id="providerFormFields" class="provider-form-fields">
+              <label class="form-field">
+                <span data-i18n="providerName">Provider name</span>
+                <input id="providerFormName" data-i18n-ph="providerName" placeholder="Provider name">
+              </label>
+              <label class="form-field">
+                <span data-i18n="providerType">Provider type</span>
+                <select id="providerFormKind">
+                  <option value="openai">openai</option>
+                  <option value="anthropic">anthropic</option>
+                  <option value="gemini">gemini</option>
+                  <option value="ollama">ollama</option>
+                  <option value="groq">groq</option>
+                  <option value="lmstudio">lmstudio</option>
+                  <option value="vllm">vllm</option>
+                  <option value="generic">generic</option>
+                </select>
+              </label>
+              <label class="form-field form-field-wide">
+                <span data-i18n="apiEndpoint">API endpoint</span>
+                <input id="providerFormApiBase" data-i18n-ph="apiEndpoint" placeholder="API endpoint">
+              </label>
+              <label class="form-field form-field-wide">
+                <span data-i18n="apiKey">API key</span>
+                <input id="providerFormApiKey" type="password" data-i18n-ph="apiKey" placeholder="API key">
+              </label>
+              <label class="form-field">
+                <span data-i18n="proxyAddress">Proxy</span>
+                <input id="providerFormProxy" data-i18n-ph="proxyAddress" placeholder="Proxy URL (optional)">
+              </label>
+              <label class="form-field">
+                <span>Timeout (s)</span>
+                <input id="providerFormTimeout" type="number" min="1" value="60" placeholder="60">
+              </label>
+            </div>
             <div class="toolbar mt-sm">
-              <button id="selectAllProviderModelsBtn" class="btn btn-sm" data-i18n="selectAllModels">Select all</button>
-              <button id="clearProviderModelsBtn" class="btn btn-sm" data-i18n="clearModelSelection">Clear</button>
-              <button id="applyProviderModelsBtn" class="btn btn-sm btn-primary" data-i18n="applyModelSelection">Apply</button>
+              <div id="providerModelPicker" class="provider-model-picker hidden">
+                <div class="provider-model-picker-head">
+                  <input id="providerModelFilter" data-i18n-ph="filterModels" placeholder="Filter models">
+                  <span id="providerModelCounter" class="msg-text"></span>
+                </div>
+                <select id="providerModelSelect" multiple size="8"></select>
+                <div class="toolbar mt-sm">
+                  <button id="selectAllProviderModelsBtn" class="btn btn-sm" data-i18n="selectAllModels">Select all</button>
+                  <button id="clearProviderModelsBtn" class="btn btn-sm" data-i18n="clearModelSelection">Clear</button>
+                  <button id="applyProviderModelsBtn" class="btn btn-sm btn-primary" data-i18n="applyModelSelection">Apply</button>
+                </div>
+              </div>
+              <div id="providerManualModelRow" class="toolbar">
+                <input id="providerModelInput" data-i18n-ph="manualModel" placeholder="Manual model name" style="max-width:260px;">
+                <button id="addProviderModelBtn" class="btn btn-sm" data-i18n="addModel">Add</button>
+              </div>
             </div>
-          </div>
-          <div id="providerManualModelRow" class="toolbar">
-            <input id="providerModelInput" data-i18n-ph="manualModel" placeholder="Manual model name" style="max-width:260px;">
-            <button id="addProviderModelBtn" class="btn btn-sm" data-i18n="addModel">Add</button>
+            <div class="provider-advanced-toggle mt-sm">
+              <button id="toggleProviderJsonBtn" class="btn btn-sm" data-i18n="advancedJson">Advanced JSON</button>
+            </div>
+            <div id="providerJsonWrap" class="provider-json-wrap hidden">
+              <textarea id="providerEditor" rows="14" class="editor-area" spellcheck="false"></textarea>
+            </div>
+            <div id="providerEmptyState" class="provider-empty-state hidden">
+              <div class="provider-empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                  <path d="M2 17l10 5 10-5"/>
+                  <path d="M2 12l10 5 10-5"/>
+                </svg>
+              </div>
+              <p data-i18n="noProvidersHint">No providers configured yet. Click "New" to add one.</p>
+            </div>
           </div>
         </div>
-        <textarea id="providerEditor" rows="14" class="editor-area" spellcheck="false"></textarea>
+        <select id="providerSelect" class="hidden"></select>
       </section>
 
       <!-- Channels Tab -->
@@ -217,6 +279,10 @@
           <button id="refreshConfigBtn" class="btn btn-sm" data-i18n="refresh">Refresh</button>
           <button id="resetConfigBtn" class="btn btn-sm" data-i18n="reset">Reset</button>
           <button id="saveConfigBtn" class="btn btn-sm btn-primary" data-i18n="save">Save</button>
+          <div class="spacer"></div>
+          <button id="exportConfigBtn" class="btn btn-sm" data-i18n="exportConfig">Export</button>
+          <button id="importConfigBtn" class="btn btn-sm" data-i18n="importConfig">Import</button>
+          <input id="importConfigFile" type="file" accept=".json" class="hidden">
           <span id="configMsg" class="msg-text"></span>
         </div>
         <div id="configSectionHint" class="msg-text mt-sm"></div>

@@ -151,6 +151,8 @@ func (s *Server) setup() {
 	// Config routes
 	api.GET("/config", s.handleGetConfig)
 	api.PUT("/config", s.handleSaveConfig)
+	api.GET("/config/export", s.handleExportConfig)
+	api.POST("/config/import", s.handleImportConfig)
 
 	// Status
 	api.GET("/status", s.handleStatus)
@@ -303,18 +305,14 @@ func (s *Server) handleLogin(c *echo.Context) error {
 // --- Provider Handlers ---
 
 func (s *Server) handleGetProviders(c *echo.Context) error {
-	profiles := s.config.Providers
-	if s.providers != nil {
-		loaded, err := s.providers.List(c.Request().Context())
-		if err != nil {
-			s.logger.Error("Failed to load providers from database", zap.Error(err))
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load providers"})
-		}
-		profiles = loaded
+	loaded, err := s.providers.List(c.Request().Context())
+	if err != nil {
+		s.logger.Error("Failed to load providers from database", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load providers"})
 	}
 
-	providers := make([]map[string]interface{}, len(profiles))
-	for i, p := range profiles {
+	providers := make([]map[string]interface{}, len(loaded))
+	for i, p := range loaded {
 		providers[i] = providerProfileToMap(p)
 	}
 	return c.JSON(http.StatusOK, providers)
@@ -326,29 +324,16 @@ func (s *Server) handleCreateProvider(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	if s.providers != nil {
-		created, err := s.providers.Create(c.Request().Context(), profile)
-		if err != nil {
-			return s.handleProviderStoreError(c, err)
-		}
-		if err := s.ensureRoutingProvidersValid(); err != nil {
-			s.logger.Warn("Failed to persist routing config after provider create", zap.Error(err))
-		}
-		return c.JSON(http.StatusCreated, map[string]interface{}{
-			"status":   "created",
-			"provider": providerProfileToMap(*created),
-		})
+	created, err := s.providers.Create(c.Request().Context(), profile)
+	if err != nil {
+		return s.handleProviderStoreError(c, err)
 	}
-
-	s.config.Providers = append(s.config.Providers, profile)
-	if err := s.persistConfig(); err != nil {
-		s.logger.Error("Failed to persist provider config", zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save provider"})
+	if err := s.ensureRoutingProvidersValid(); err != nil {
+		s.logger.Warn("Failed to persist routing config after provider create", zap.Error(err))
 	}
-
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"status":   "created",
-		"provider": providerProfileToMap(profile),
+		"provider": providerProfileToMap(*created),
 	})
 }
 
@@ -359,70 +344,29 @@ func (s *Server) handleUpdateProvider(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	if s.providers != nil {
-		updated, err := s.providers.Update(c.Request().Context(), name, profile)
-		if err != nil {
-			return s.handleProviderStoreError(c, err)
-		}
-		if err := s.ensureRoutingProvidersValid(); err != nil {
-			s.logger.Warn("Failed to persist routing config after provider update", zap.Error(err))
-		}
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"status":   "updated",
-			"provider": providerProfileToMap(*updated),
-		})
+	updated, err := s.providers.Update(c.Request().Context(), name, profile)
+	if err != nil {
+		return s.handleProviderStoreError(c, err)
 	}
-
-	for i, p := range s.config.Providers {
-		if p.Name == name {
-			// Preserve API key if not provided in update
-			if profile.APIKey == "" {
-				profile.APIKey = p.APIKey
-			}
-			s.config.Providers[i] = profile
-
-			if err := s.persistConfig(); err != nil {
-				s.logger.Error("Failed to persist provider config", zap.Error(err))
-				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save provider"})
-			}
-
-			return c.JSON(http.StatusOK, map[string]interface{}{
-				"status":   "updated",
-				"provider": providerProfileToMap(profile),
-			})
-		}
+	if err := s.ensureRoutingProvidersValid(); err != nil {
+		s.logger.Warn("Failed to persist routing config after provider update", zap.Error(err))
 	}
-
-	return c.JSON(http.StatusNotFound, map[string]string{"error": "provider not found"})
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":   "updated",
+		"provider": providerProfileToMap(*updated),
+	})
 }
 
 func (s *Server) handleDeleteProvider(c *echo.Context) error {
 	name := c.Param("name")
 
-	if s.providers != nil {
-		if err := s.providers.Delete(c.Request().Context(), name); err != nil {
-			return s.handleProviderStoreError(c, err)
-		}
-		if err := s.ensureRoutingProvidersValid(); err != nil {
-			s.logger.Warn("Failed to persist routing config after provider delete", zap.Error(err))
-		}
-		return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+	if err := s.providers.Delete(c.Request().Context(), name); err != nil {
+		return s.handleProviderStoreError(c, err)
 	}
-
-	for i, p := range s.config.Providers {
-		if p.Name == name {
-			s.config.Providers = append(s.config.Providers[:i], s.config.Providers[i+1:]...)
-
-			if err := s.persistConfig(); err != nil {
-				s.logger.Error("Failed to persist provider config", zap.Error(err))
-				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save provider"})
-			}
-
-			return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
-		}
+	if err := s.ensureRoutingProvidersValid(); err != nil {
+		s.logger.Warn("Failed to persist routing config after provider delete", zap.Error(err))
 	}
-
-	return c.JSON(http.StatusNotFound, map[string]string{"error": "provider not found"})
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func providerProfileToMap(p config.ProviderProfile) map[string]interface{} {
@@ -2020,6 +1964,134 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "saved"})
 }
 
+func (s *Server) handleExportConfig(c *echo.Context) error {
+	// Collect providers from the store
+	providerProfiles, err := s.providers.List(c.Request().Context())
+	if err != nil {
+		s.logger.Error("Failed to export providers", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load providers"})
+	}
+	providerList := make([]map[string]interface{}, len(providerProfiles))
+	for i, p := range providerProfiles {
+		providerList[i] = providerProfileToMap(p)
+	}
+
+	export := map[string]interface{}{
+		"agents":    s.config.Agents,
+		"gateway":   s.config.Gateway,
+		"tools":     s.config.Tools,
+		"heartbeat": s.config.Heartbeat,
+		"approval":  s.config.Approval,
+		"logger":    s.config.Logger,
+		"webui":     s.config.WebUI,
+		"providers": providerList,
+	}
+
+	c.Response().Header().Set("Content-Disposition", `attachment; filename="nekobot-config-export.json"`)
+	return c.JSON(http.StatusOK, export)
+}
+
+func (s *Server) handleImportConfig(c *echo.Context) error {
+	var body struct {
+		Agents    *config.AgentsConfig    `json:"agents"`
+		Gateway   *config.GatewayConfig   `json:"gateway"`
+		Tools     *config.ToolsConfig     `json:"tools"`
+		Heartbeat *config.HeartbeatConfig `json:"heartbeat"`
+		Approval  *config.ApprovalConfig  `json:"approval"`
+		Logger    *config.LoggerConfig    `json:"logger"`
+		WebUI     *config.WebUIConfig     `json:"webui"`
+		Providers []config.ProviderProfile `json:"providers"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
+	}
+
+	// Apply config sections
+	if body.Agents != nil {
+		s.config.Agents = *body.Agents
+	}
+	if body.Gateway != nil {
+		s.config.Gateway = *body.Gateway
+	}
+	if body.Tools != nil {
+		s.config.Tools = *body.Tools
+	}
+	if body.Heartbeat != nil {
+		s.config.Heartbeat = *body.Heartbeat
+	}
+	if body.Approval != nil {
+		s.config.Approval = *body.Approval
+	}
+	if body.Logger != nil {
+		s.config.Logger = *body.Logger
+	}
+	if body.WebUI != nil {
+		s.config.WebUI = *body.WebUI
+	}
+
+	// Validate
+	if err := config.ValidateConfig(s.config); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	// Persist runtime sections to database
+	sections := make([]string, 0, 7)
+	if body.Agents != nil {
+		sections = append(sections, "agents")
+	}
+	if body.Gateway != nil {
+		sections = append(sections, "gateway")
+	}
+	if body.Tools != nil {
+		sections = append(sections, "tools")
+	}
+	if body.Heartbeat != nil {
+		sections = append(sections, "heartbeat")
+	}
+	if body.Approval != nil {
+		sections = append(sections, "approval")
+	}
+	if body.Logger != nil {
+		sections = append(sections, "logger")
+	}
+	if body.WebUI != nil {
+		sections = append(sections, "webui")
+	}
+	if len(sections) > 0 {
+		if err := config.SaveDatabaseSections(s.config, sections...); err != nil {
+			s.logger.Error("Failed to persist imported config sections", zap.Error(err), zap.Strings("sections", sections))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config sections"})
+		}
+	}
+
+	// Import providers
+	importedProviders := 0
+	if len(body.Providers) > 0 {
+		ctx := c.Request().Context()
+		for _, profile := range body.Providers {
+			if profile.Name == "" {
+				continue
+			}
+			// Try update first, then create
+			_, err := s.providers.Update(ctx, profile.Name, profile)
+			if err != nil {
+				_, createErr := s.providers.Create(ctx, profile)
+				if createErr != nil {
+					s.logger.Warn("Failed to import provider", zap.String("name", profile.Name), zap.Error(createErr))
+					continue
+				}
+			}
+			importedProviders++
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":             "imported",
+		"sections_saved":     len(sections),
+		"providers_imported": importedProviders,
+	})
+}
+
 // --- Status Handler ---
 
 func (s *Server) handleStatus(c *echo.Context) error {
@@ -2587,16 +2659,3 @@ func generateSecret() string {
 	return hex.EncodeToString(b)
 }
 
-// persistConfig saves the current config to the file it was loaded from.
-func (s *Server) persistConfig() error {
-	configPath := s.loader.GetConfigPath()
-	if configPath == "" {
-		// No config file loaded yet, save to default location
-		home, err := config.GetConfigHome()
-		if err != nil {
-			return fmt.Errorf("getting config home: %w", err)
-		}
-		configPath = home + "/config.json"
-	}
-	return s.loader.Save(configPath, s.config)
-}

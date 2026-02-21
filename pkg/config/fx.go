@@ -7,7 +7,6 @@ import (
 	"nekobot/pkg/storage/ent"
 
 	"go.uber.org/fx"
-	"go.uber.org/zap"
 )
 
 // Module provides configuration for fx dependency injection.
@@ -83,46 +82,3 @@ func ProvideLoggerConfig(cfg *Config) *LoggerConfig {
 	return &cfg.Logger
 }
 
-// ProvideConfigWithPath provides configuration from a specific path.
-func ProvideConfigWithPath(path string) func(*Loader, fx.Lifecycle) (*Config, error) {
-	return func(loader *Loader, lc fx.Lifecycle) (*Config, error) {
-		cfg, err := loader.LoadFromFile(path)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := ValidateConfig(cfg); err != nil {
-			return nil, err
-		}
-
-		return cfg, nil
-	}
-}
-
-// ProvideWatcher provides a configuration watcher with hot-reload.
-func ProvideWatcher(loader *Loader, cfg *Config, lc fx.Lifecycle, logger *zap.Logger) (*Watcher, error) {
-	watcher := NewWatcher(loader, cfg)
-
-	// Add handler to log config changes
-	watcher.AddHandler(func(newCfg *Config) error {
-		logger.Info("Configuration reloaded",
-			zap.String("model", newCfg.Agents.Defaults.Model),
-		)
-		return nil
-	})
-
-	// Register lifecycle hooks
-	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			logger.Info("Starting configuration watcher")
-			return watcher.Start()
-		},
-		OnStop: func(ctx context.Context) error {
-			logger.Info("Stopping configuration watcher")
-			watcher.Stop()
-			return nil
-		},
-	})
-
-	return watcher, nil
-}

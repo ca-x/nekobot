@@ -125,7 +125,9 @@ func (l *Loader) LoadFromFile(path string) (*Config, error) {
 	return l.Load(path)
 }
 
-// Save saves the configuration to a file.
+// Save saves the bootstrap configuration sections to a file.
+// Runtime sections (agents, channels, tools, heartbeat, approval, providers,
+// transcription, etc.) are now persisted in the database and are NOT written here.
 func (l *Loader) Save(path string, cfg *Config) error {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
@@ -152,20 +154,10 @@ func (l *Loader) Save(path string, cfg *Config) error {
 	v := viper.New()
 	v.SetConfigType(format)
 
-	// Set all values from config
-	v.Set("agents", cfg.Agents)
+	// Only write bootstrap sections — runtime sections live in the database.
+	v.Set("logger", cfg.Logger)
 	v.Set("storage", cfg.Storage)
-	v.Set("channels", cfg.Channels)
-	v.Set("providers", cfg.Providers)
-	v.Set("transcription", cfg.Transcription)
 	v.Set("gateway", cfg.Gateway)
-	v.Set("tools", cfg.Tools)
-	v.Set("heartbeat", cfg.Heartbeat)
-	v.Set("redis", cfg.Redis)
-	v.Set("state", cfg.State)
-	v.Set("bus", cfg.Bus)
-	v.Set("memory", cfg.Memory)
-	v.Set("approval", cfg.Approval)
 	v.Set("webui", cfg.WebUI)
 
 	// Write to file
@@ -196,35 +188,6 @@ func (l *Loader) GetConfigPath() string {
 	return l.viper.ConfigFileUsed()
 }
 
-// Set sets a configuration value.
-func (l *Loader) Set(key string, value interface{}) {
-	l.viper.Set(key, value)
-}
-
-// Get gets a configuration value.
-func (l *Loader) Get(key string) interface{} {
-	return l.viper.Get(key)
-}
-
-// GetString gets a string configuration value.
-func (l *Loader) GetString(key string) string {
-	return l.viper.GetString(key)
-}
-
-// GetInt gets an integer configuration value.
-func (l *Loader) GetInt(key string) int {
-	return l.viper.GetInt(key)
-}
-
-// GetBool gets a boolean configuration value.
-func (l *Loader) GetBool(key string) bool {
-	return l.viper.GetBool(key)
-}
-
-// IsSet checks if a key is set in the configuration.
-func (l *Loader) IsSet(key string) bool {
-	return l.viper.IsSet(key)
-}
 
 // InitDefaultConfig creates a default config file if it doesn't exist.
 // Returns the path to the config file and whether it was newly created.

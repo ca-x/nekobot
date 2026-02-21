@@ -1544,6 +1544,39 @@ function renderProviderSelect() {
     opt.textContent = t("noProviders");
     sel.appendChild(opt);
   }
+  renderProviderCardList();
+}
+
+function renderProviderCardList() {
+  var list = $("providerCardList");
+  if (!list) return;
+  list.innerHTML = "";
+  var emptyState = $("providerEmptyState");
+  var formFields = $("providerFormFields");
+  var formHeader = document.querySelector(".provider-form-header");
+
+  if (!state.providers.length) {
+    if (emptyState) emptyState.classList.remove("hidden");
+    if (formFields) formFields.classList.add("hidden");
+    if (formHeader) formHeader.classList.add("hidden");
+    return;
+  }
+  if (emptyState) emptyState.classList.add("hidden");
+  if (formFields) formFields.classList.remove("hidden");
+  if (formHeader) formHeader.classList.remove("hidden");
+
+  for (var i = 0; i < state.providers.length; i++) {
+    var p = state.providers[i];
+    var card = document.createElement("div");
+    card.className = "provider-card" + (p.name === state.editingProviderName ? " active" : "");
+    card.dataset.providerCard = p.name;
+    var kindText = String(p.provider_kind || "openai").trim();
+    var modelCount = Array.isArray(p.models) ? p.models.length : 0;
+    card.innerHTML =
+      '<div class="provider-card-name">' + p.name + '</div>' +
+      '<div class="provider-card-meta">' + kindText + (modelCount > 0 ? (' · ' + modelCount + ' model' + (modelCount > 1 ? 's' : '')) : '') + '</div>';
+    list.appendChild(card);
+  }
 }
 
 function openProvider(name) {
@@ -1553,14 +1586,71 @@ function openProvider(name) {
     var emptyPayload = defaultProviderTemplate();
     $("providerEditor").value = JSON.stringify(emptyPayload, null, 2);
     $("providerModelInput").value = "";
+    populateProviderForm(emptyPayload);
     updateProviderModelPicker(emptyPayload);
+    updateProviderFormTitle();
+    renderProviderCardList();
     return;
   }
   state.editingProviderName = provider.name;
   $("providerEditor").value = JSON.stringify(provider, null, 2);
   $("providerSelect").value = provider.name;
   $("providerModelInput").value = "";
+  populateProviderForm(provider);
   updateProviderModelPicker(provider);
+  updateProviderFormTitle();
+  renderProviderCardList();
+}
+
+function populateProviderForm(payload) {
+  var nameEl = $("providerFormName");
+  var kindEl = $("providerFormKind");
+  var apiBaseEl = $("providerFormApiBase");
+  var apiKeyEl = $("providerFormApiKey");
+  var proxyEl = $("providerFormProxy");
+  var timeoutEl = $("providerFormTimeout");
+  if (nameEl) nameEl.value = String(payload.name || "").trim();
+  if (kindEl) kindEl.value = String(payload.provider_kind || "openai").trim() || "openai";
+  if (apiBaseEl) apiBaseEl.value = String(payload.api_base || "").trim();
+  if (apiKeyEl) apiKeyEl.value = String(payload.api_key || "").trim();
+  if (proxyEl) proxyEl.value = String(payload.proxy || "").trim();
+  if (timeoutEl) timeoutEl.value = typeof payload.timeout === "number" ? payload.timeout : 60;
+}
+
+function readProviderForm() {
+  return {
+    name: ($("providerFormName") || {}).value || "",
+    provider_kind: ($("providerFormKind") || {}).value || "openai",
+    api_base: ($("providerFormApiBase") || {}).value || "",
+    api_key: ($("providerFormApiKey") || {}).value || "",
+    proxy: ($("providerFormProxy") || {}).value || "",
+    timeout: parseInt(($("providerFormTimeout") || {}).value, 10) || 60
+  };
+}
+
+function syncFormToEditor() {
+  var payload;
+  try { payload = readProviderEditor(); } catch (_) { payload = defaultProviderTemplate(); }
+  var form = readProviderForm();
+  payload.name = form.name.trim();
+  payload.provider_kind = form.provider_kind.trim() || "openai";
+  payload.api_base = form.api_base.trim();
+  payload.api_key = form.api_key.trim();
+  payload.proxy = form.proxy.trim();
+  payload.timeout = form.timeout;
+  writeProviderEditor(payload);
+}
+
+function updateProviderFormTitle() {
+  var titleEl = $("providerFormTitle");
+  if (!titleEl) return;
+  if (state.editingProviderName) {
+    titleEl.textContent = state.editingProviderName;
+  } else if (state.providers.length > 0) {
+    titleEl.textContent = t("noProviderSelected");
+  } else {
+    titleEl.textContent = t("noProviders");
+  }
 }
 
 function readProviderEditor() { return JSON.parse($("providerEditor").value || "{}"); }
@@ -1573,7 +1663,12 @@ async function loadProviders() {
     renderProviderSelect();
     renderChatProviderSelect();
     if (state.providers.length > 0) {
-      openProvider(state.editingProviderName || state.providers[0].name);
+      // If editingProviderName is set but not found (e.g. just created), keep editor as-is
+      if (state.editingProviderName && !state.providers.find(function(p) { return p.name === state.editingProviderName; })) {
+        // Provider not yet in list (race condition) — don't clear the editor
+      } else {
+        openProvider(state.editingProviderName || state.providers[0].name);
+      }
     } else {
       state.editingProviderName = "";
       var emptyPayload = defaultProviderTemplate();
@@ -1587,6 +1682,7 @@ async function loadProviders() {
 }
 
 async function saveProvider() {
+  syncFormToEditor();
   var payload;
   try { payload = readProviderEditor(); } catch (err) {
     setProviderMessage(t("invalidJson", err.message), true); return;
@@ -1644,7 +1740,13 @@ function editProvider() {
 function openProviderDialog() {
   var payload = defaultProviderTemplate();
   if (state.providerDialogMode === "edit") {
-    try { payload = readProviderEditor(); } catch (_) {}
+    // Read from server state to avoid stale editor content
+    var serverProvider = state.providers.find(function(p) { return p.name === state.editingProviderName; });
+    if (serverProvider) {
+      payload = JSON.parse(JSON.stringify(serverProvider));
+    } else {
+      try { payload = readProviderEditor(); } catch (_) {}
+    }
   } else {
     payload.name = "";
     payload.api_key = "";
@@ -1677,7 +1779,9 @@ async function applyProviderDialog() {
 
   var payload;
   if (state.providerDialogMode === "edit") {
-    try { payload = readProviderEditor(); } catch (_) { payload = defaultProviderTemplate(); }
+    // Read from server state (not editor textarea) to avoid stale content
+    var serverProvider = state.providers.find(function(p) { return p.name === state.editingProviderName; });
+    payload = serverProvider ? JSON.parse(JSON.stringify(serverProvider)) : defaultProviderTemplate();
   } else {
     payload = defaultProviderTemplate();
     state.editingProviderName = "";
@@ -1697,8 +1801,7 @@ async function applyProviderDialog() {
   writeProviderEditor(payload);
   updateProviderModelPicker(payload);
   closeProviderDialog();
-  setProviderMessage(t(state.providerDialogMode === "edit" ? "saving" : "creatingNew"));
-  await saveProvider();
+  setProviderMessage(t("providerDraftUpdated"));
 }
 
 async function fetchProviderModels() {
@@ -1911,6 +2014,39 @@ function resetConfigEditor() {
   setConfigMessage("");
 }
 
+async function exportConfig() {
+  setConfigMessage(t("exporting"));
+  try {
+    var data = await api("/api/config/export");
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "nekobot-config-export.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setConfigMessage(t("exported"));
+  } catch (err) {
+    setConfigMessage(err.message, true);
+  }
+}
+
+async function importConfig(file) {
+  if (!file) return;
+  setConfigMessage(t("importing"));
+  try {
+    var text = await file.text();
+    var payload = JSON.parse(text);
+    var result = await api("/api/config/import", { method: "POST", body: JSON.stringify(payload) });
+    setConfigMessage(t("imported", result.sections_saved || 0, result.providers_imported || 0));
+    await Promise.all([loadConfig(), loadProviders(), loadModels(), loadStatus()]);
+  } catch (err) {
+    setConfigMessage(err.message || t("importFailed"), true);
+  }
+}
+
 /* ========== Status ========== */
 function updateVersionBadge(versionValue) {
   var badge = $("versionBadge");
@@ -2074,9 +2210,26 @@ function setupEvents() {
 
   $("refreshProvidersBtn").addEventListener("click", loadProviders);
   $("providerSelect").addEventListener("change", function(e) { openProvider(e.target.value); });
+  $("providerCardList").addEventListener("click", function(e) {
+    var card = e.target.closest(".provider-card[data-provider-card]");
+    if (card) openProvider(card.dataset.providerCard);
+  });
   $("newProviderBtn").addEventListener("click", newProvider);
   $("editProviderBtn").addEventListener("click", editProvider);
   $("fetchProviderModelsBtn").addEventListener("click", fetchProviderModels);
+  $("toggleProviderJsonBtn").addEventListener("click", function() {
+    var wrap = $("providerJsonWrap");
+    var isHidden = wrap.classList.contains("hidden");
+    if (isHidden) {
+      syncFormToEditor();
+    }
+    wrap.classList.toggle("hidden");
+    $("toggleProviderJsonBtn").textContent = isHidden ? t("hideAdvancedJson") : t("advancedJson");
+  });
+  ["providerFormName", "providerFormKind", "providerFormApiBase", "providerFormApiKey", "providerFormProxy", "providerFormTimeout"].forEach(function(id) {
+    var el = $(id);
+    if (el) el.addEventListener("input", syncFormToEditor);
+  });
   $("providerModelFilter").addEventListener("input", function(e) {
     state.providerModelFilter = e.target.value || "";
     renderProviderModelPicker();
@@ -2202,6 +2355,13 @@ function setupEvents() {
   $("refreshConfigBtn").addEventListener("click", loadConfig);
   $("resetConfigBtn").addEventListener("click", resetConfigEditor);
   $("saveConfigBtn").addEventListener("click", saveConfig);
+  $("exportConfigBtn").addEventListener("click", exportConfig);
+  $("importConfigBtn").addEventListener("click", function() { $("importConfigFile").click(); });
+  $("importConfigFile").addEventListener("change", function(e) {
+    var file = e.target.files && e.target.files[0];
+    if (file) importConfig(file);
+    e.target.value = "";
+  });
   $("refreshStatusBtn").addEventListener("click", loadStatus);
 
   initToolTerminals();

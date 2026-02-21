@@ -73,37 +73,6 @@ func Example_validation() {
 	}
 }
 
-// Example_hotReload demonstrates configuration hot-reload.
-func Example_hotReload() {
-	tmpDir := os.TempDir()
-	configPath := filepath.Join(tmpDir, "nanobot-watch-test.json")
-	defer os.Remove(configPath)
-
-	cfg := config.DefaultConfig()
-	loader := config.NewLoader()
-	if err := loader.Save(configPath, cfg); err != nil {
-		log.Fatal(err)
-	}
-
-	loadedCfg, err := loader.LoadFromFile(configPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	watcher := config.NewWatcher(loader, loadedCfg)
-	watcher.AddHandler(func(newCfg *config.Config) error {
-		fmt.Printf("Config changed! New model: %s\n", newCfg.Agents.Defaults.Model)
-		return nil
-	})
-
-	if err := watcher.Start(); err != nil {
-		log.Fatal(err)
-	}
-	defer watcher.Stop()
-
-	fmt.Println("Watching for config changes...")
-}
-
 // Example_providerConfig demonstrates getting provider-specific configuration.
 func Example_providerConfig() {
 	cfg := config.DefaultConfig()

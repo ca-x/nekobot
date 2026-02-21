@@ -110,7 +110,7 @@
   "apiEndpoint": "API endpoint",
   "proxyAddress": "Proxy address",
   "apiKey": "API key",
-  "apply": "Apply",
+  "apply": "Confirm",
   "newProviderDialogTitle": "New Provider",
   "editProviderDialogTitle": "Edit Provider",
   "providerDraftUpdated": "Provider draft updated. Click Save to persist.",
@@ -148,5 +148,15 @@
   "configSectionLogger": "Logger",
   "configSectionWebUI": "WebUI",
   "configSectionHint": "Editing {0}. This section is persisted to database.",
-  "configSectionSaved": "{0} saved."
+  "configSectionSaved": "{0} saved.",
+  "exportConfig": "Export",
+  "importConfig": "Import",
+  "exporting": "Exporting...",
+  "exported": "Configuration exported.",
+  "importing": "Importing...",
+  "imported": "Imported: {0} section(s) and {1} provider(s).",
+  "importFailed": "Import failed.",
+  "advancedJson": "Advanced JSON",
+  "hideAdvancedJson": "Hide JSON",
+  "noProvidersHint": "No providers configured yet. Click \"New\" to add one."
 }
