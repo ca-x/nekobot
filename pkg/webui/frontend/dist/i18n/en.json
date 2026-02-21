@@ -158,5 +158,6 @@
   "importFailed": "Import failed.",
   "advancedJson": "Advanced JSON",
   "hideAdvancedJson": "Hide JSON",
-  "noProvidersHint": "No providers configured yet. Click \"New\" to add one."
+  "noProvidersHint": "No providers configured yet. Click \"New\" to add one.",
+  "sessionExpired": "Session expired, please login again."
 }

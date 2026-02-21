@@ -158,5 +158,6 @@
   "importFailed": "导入失败。",
   "advancedJson": "高级 JSON",
   "hideAdvancedJson": "隐藏 JSON",
-  "noProvidersHint": "尚未配置供应商。点击"新建"添加一个。"
+  "noProvidersHint": "尚未配置供应商。点击"新建"添加一个。",
+  "sessionExpired": "会话已过期，请重新登录。"
 }

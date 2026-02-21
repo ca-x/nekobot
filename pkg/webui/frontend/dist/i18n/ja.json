@@ -158,5 +158,6 @@
   "importFailed": "インポートに失敗しました。",
   "advancedJson": "高度な JSON",
   "hideAdvancedJson": "JSON を隠す",
-  "noProvidersHint": "プロバイダーはまだ設定されていません。「新規」をクリックして追加してください。"
+  "noProvidersHint": "プロバイダーはまだ設定されていません。「新規」をクリックして追加してください。",
+  "sessionExpired": "セッションの有効期限が切れました。再度ログインしてください。"
 }

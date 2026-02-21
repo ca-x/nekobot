@@ -205,6 +205,13 @@ async function api(path, options) {
   const text = await resp.text();
   var payload = {};
   try { payload = text ? JSON.parse(text) : {}; } catch (_) { payload = { raw: text }; }
+  if (resp.status === 401 && path !== "/api/status") {
+    state.token = "";
+    localStorage.removeItem("nekobot_webui_token");
+    showAuth();
+    checkInitAndAuth();
+    throw new Error(t("sessionExpired") || "Session expired, please login again");
+  }
   if (!resp.ok) throw new Error(payload.error || "HTTP " + resp.status);
   return payload;
 }
@@ -276,10 +283,12 @@ async function checkInitAndAuth() {
   showAuth();
   var init = await fetch("/api/auth/init-status").then(function(r) { return r.json(); });
   if (init.initialized) {
+    $("authHint").setAttribute("data-i18n", "loginHint");
     $("authHint").textContent = t("loginHint");
     $("authLogin").classList.remove("hidden");
     $("authInit").classList.add("hidden");
   } else {
+    $("authHint").setAttribute("data-i18n", "firstRunHint");
     $("authHint").textContent = t("firstRunHint");
     $("authInit").classList.remove("hidden");
     $("authLogin").classList.add("hidden");
