@@ -586,6 +586,8 @@ select { cursor: pointer; }
 }
 .badge-on { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok); }
 .badge-off { background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger); }
+.badge-agent { background: var(--accent-bg); color: var(--accent-text); border: 1px solid var(--accent); }
+.badge-channel { background: var(--soft); color: var(--text-secondary); border: 1px solid var(--border-strong); }
 
 /* ===== Provider Layout ===== */
 .provider-layout {

@@ -762,6 +762,8 @@ func normalizeSource(source string) string {
 		return SourceChannel
 	case SourceWebUI:
 		return SourceWebUI
+	case SourceAgent:
+		return SourceAgent
 	case "":
 		return SourceWebUI
 	default:

@@ -12,6 +12,7 @@ const (
 const (
 	SourceWebUI   = "webui"
 	SourceChannel = "channel"
+	SourceAgent   = "agent"
 )
 
 const (

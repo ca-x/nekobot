@@ -171,5 +171,7 @@
   "cfgTrue": "On",
   "cfgFalse": "Off",
   "configFormMode": "Form",
-  "configJsonMode": "JSON"
+  "configJsonMode": "JSON",
+  "sourceAgent": "Agent",
+  "sourceChannel": "Channel"
 }

@@ -676,6 +676,12 @@ function renderToolSessionsList() {
     var title = getToolTitle(item);
     var stateText = item.state || "-";
     var running = stateText === "running";
+    var sourceBadge = "";
+    if (item.source === "agent") {
+      sourceBadge = '<span class="badge badge-agent">' + t("sourceAgent") + '</span>';
+    } else if (item.source === "channel") {
+      sourceBadge = '<span class="badge badge-channel">' + t("sourceChannel") + '</span>';
+    }
     var accessEnabled = String(item.access_mode || "").trim().toLowerCase() !== "none";
     var accessRecord = getToolAccessRecord(item.id);
     var accessButtonHTML = accessEnabled
@@ -684,6 +690,7 @@ function renderToolSessionsList() {
     row.innerHTML =
       '<div class="tool-session-item-head">' +
         '<span class="tool-session-title">' + title + '</span>' +
+        sourceBadge +
         '<span class="badge ' + (running ? "badge-on" : "badge-off") + '">' + stateText + '</span>' +
       '</div>' +
       '<div class="tool-session-meta">' + (item.tool || "-") + " · " + (item.command || "-") + '</div>' +

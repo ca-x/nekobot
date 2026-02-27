@@ -171,5 +171,7 @@
   "cfgTrue": "オン",
   "cfgFalse": "オフ",
   "configFormMode": "フォーム",
-  "configJsonMode": "JSON"
+  "configJsonMode": "JSON",
+  "sourceAgent": "Agent",
+  "sourceChannel": "チャンネル"
 }

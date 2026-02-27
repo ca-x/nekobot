@@ -171,5 +171,7 @@
   "cfgTrue": "开",
   "cfgFalse": "关",
   "configFormMode": "表单",
-  "configJsonMode": "JSON"
+  "configJsonMode": "JSON",
+  "sourceAgent": "Agent",
+  "sourceChannel": "频道"
 }

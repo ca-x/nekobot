@@ -14,6 +14,7 @@ import (
 	_ "nekobot/pkg/providers/init" // Register all providers
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/toolsessions"
 )
 
 // Module provides agent for fx dependency injection.
@@ -29,6 +30,7 @@ type provideAgentDeps struct {
 	SkillsMgr     *skills.Manager
 	ProcessMgr    *process.Manager
 	ApprovalMgr   *approval.Manager
+	ToolSessMgr   *toolsessions.Manager `optional:"true"`
 	LC            fx.Lifecycle
 	ProviderStore *providerstore.Manager `optional:"true"`
 }
@@ -40,6 +42,7 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 	skillsMgr := deps.SkillsMgr
 	processMgr := deps.ProcessMgr
 	approvalMgr := deps.ApprovalMgr
+	toolSessMgr := deps.ToolSessMgr
 	lc := deps.LC
 	_ = deps.ProviderStore // Ensure provider store initializes first when module is present.
 
@@ -86,7 +89,7 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 	}
 
 	// Create agent with process manager
-	agent, err := New(cfg, log, client, processMgr, approvalMgr)
+	agent, err := New(cfg, log, client, processMgr, approvalMgr, toolSessMgr)
 	if err != nil {
 		return nil, err
 	}

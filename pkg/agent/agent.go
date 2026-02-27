@@ -14,6 +14,7 @@ import (
 	"nekobot/pkg/providers"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/tools"
+	"nekobot/pkg/toolsessions"
 )
 
 // SessionInterface defines the interface for a conversation session.
@@ -45,7 +46,7 @@ type Config struct {
 }
 
 // New creates a new agent with the given configuration.
-func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Client, processMgr *process.Manager, approvalMgr *approval.Manager) (*Agent, error) {
+func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Client, processMgr *process.Manager, approvalMgr *approval.Manager, toolSessionMgr *toolsessions.Manager) (*Agent, error) {
 	workspace := cfg.WorkspacePath()
 
 	// Create tool registry
@@ -72,6 +73,12 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 	// Register process tool
 	toolRegistry.MustRegister(tools.NewProcessTool(processMgr))
 	log.Info("PTY process management enabled")
+
+	// Register tool session tool (if tool session manager is available)
+	if toolSessionMgr != nil {
+		toolRegistry.MustRegister(tools.NewToolSessionTool(processMgr, toolSessionMgr, workspace))
+		log.Info("Tool session tool enabled")
+	}
 
 	// Register web search tool (Brave first, optional DuckDuckGo fallback)
 	if webSearch := tools.NewWebSearchTool(tools.WebSearchToolOptions{
