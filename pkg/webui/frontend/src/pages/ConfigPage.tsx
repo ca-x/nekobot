@@ -17,7 +17,7 @@ import Header from '@/components/layout/Header';
 import { useConfig, useSaveConfig, useExportConfig, useImportConfig } from '@/hooks/useConfig';
 import { Download, Upload, Save, RotateCcw, Code, FormInput } from 'lucide-react';
 
-const CONFIG_SECTIONS = ['agents', 'gateway', 'tools', 'heartbeat', 'approval', 'logger', 'webui'] as const;
+const CONFIG_SECTIONS = ['agents', 'gateway', 'tools', 'memory', 'heartbeat', 'approval', 'logger', 'webui'] as const;
 type ConfigSection = (typeof CONFIG_SECTIONS)[number];
 
 function sectionLabel(section: ConfigSection): string {
@@ -25,6 +25,7 @@ function sectionLabel(section: ConfigSection): string {
     agents: t('configSectionAgents'),
     gateway: t('configSectionGateway'),
     tools: t('configSectionTools'),
+    memory: t('configSectionMemory'),
     heartbeat: t('configSectionHeartbeat'),
     approval: t('configSectionApproval'),
     logger: t('configSectionLogger'),

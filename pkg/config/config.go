@@ -56,6 +56,7 @@ type AgentDefaults struct {
 	RestrictToWorkspace bool     `mapstructure:"restrict_to_workspace" json:"restrict_to_workspace"`
 	Provider            string   `mapstructure:"provider" json:"provider"`
 	Fallback            []string `mapstructure:"fallback" json:"fallback"`
+	Orchestrator        string   `mapstructure:"orchestrator" json:"orchestrator"`
 	Model               string   `mapstructure:"model" json:"model"`
 	MaxTokens           int      `mapstructure:"max_tokens" json:"max_tokens"`
 	Temperature         float64  `mapstructure:"temperature" json:"temperature"`
@@ -324,6 +325,7 @@ func DefaultConfig() *Config {
 				Workspace:           workspace,
 				RestrictToWorkspace: true,
 				Provider:            "",
+				Orchestrator:        "blades",
 				Model:               "claude-sonnet-4-5-20250929",
 				MaxTokens:           8192,
 				Temperature:         0.7,
@@ -440,6 +442,34 @@ func DefaultConfig() *Config {
 			Type:   "local",
 			Prefix: "nekobot:bus:",
 		},
+		Memory: MemoryConfig{
+			Enabled: true,
+			Semantic: SemanticMemoryConfig{
+				Enabled:       true,
+				DefaultTopK:   5,
+				MaxTopK:       20,
+				SearchPolicy:  "hybrid",
+				IncludeScores: false,
+			},
+			Episodic: EpisodicMemoryConfig{
+				Enabled:               true,
+				SummaryWindowMessages: 20,
+				MaxSummaries:          200,
+			},
+			ShortTerm: ShortTermMemoryConfig{
+				Enabled:         true,
+				RawHistoryLimit: 200,
+			},
+			QMD: QMDConfig{
+				Enabled: false,
+				Command: "qmd",
+				Update: QMDUpdateConfig{
+					Interval:       "30m",
+					CommandTimeout: "30s",
+					UpdateTimeout:  "5m",
+				},
+			},
+		},
 		Approval: ApprovalConfig{
 			Mode:      "auto",
 			Allowlist: []string{},
@@ -552,9 +582,35 @@ func expandPath(path string) string {
 	return path
 }
 
-// MemoryConfig for memory and QMD integration.
+// MemoryConfig for long-term memory integration and retrieval behavior.
 type MemoryConfig struct {
-	QMD QMDConfig `mapstructure:"qmd" json:"qmd"`
+	Enabled   bool                  `mapstructure:"enabled" json:"enabled"`
+	Semantic  SemanticMemoryConfig  `mapstructure:"semantic" json:"semantic"`
+	Episodic  EpisodicMemoryConfig  `mapstructure:"episodic" json:"episodic"`
+	ShortTerm ShortTermMemoryConfig `mapstructure:"short_term" json:"short_term"`
+	QMD       QMDConfig             `mapstructure:"qmd" json:"qmd"`
+}
+
+// SemanticMemoryConfig controls semantic memory retrieval behavior.
+type SemanticMemoryConfig struct {
+	Enabled       bool   `mapstructure:"enabled" json:"enabled"`
+	DefaultTopK   int    `mapstructure:"default_top_k" json:"default_top_k"`
+	MaxTopK       int    `mapstructure:"max_top_k" json:"max_top_k"`
+	SearchPolicy  string `mapstructure:"search_policy" json:"search_policy"` // "vector" or "hybrid"
+	IncludeScores bool   `mapstructure:"include_scores" json:"include_scores"`
+}
+
+// EpisodicMemoryConfig controls summary-based episodic memory behavior.
+type EpisodicMemoryConfig struct {
+	Enabled               bool `mapstructure:"enabled" json:"enabled"`
+	SummaryWindowMessages int  `mapstructure:"summary_window_messages" json:"summary_window_messages"`
+	MaxSummaries          int  `mapstructure:"max_summaries" json:"max_summaries"`
+}
+
+// ShortTermMemoryConfig controls raw conversation memory window.
+type ShortTermMemoryConfig struct {
+	Enabled         bool `mapstructure:"enabled" json:"enabled"`
+	RawHistoryLimit int  `mapstructure:"raw_history_limit" json:"raw_history_limit"`
 }
 
 // QMDConfig for QMD (Query Markdown) integration.

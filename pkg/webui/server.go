@@ -2050,6 +2050,7 @@ func (s *Server) handleGetConfig(c *echo.Context) error {
 		"heartbeat": s.config.Heartbeat,
 		"approval":  s.config.Approval,
 		"logger":    s.config.Logger,
+		"memory":    s.config.Memory,
 		"webui":     s.config.WebUI,
 	})
 }
@@ -2062,6 +2063,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		Heartbeat *config.HeartbeatConfig `json:"heartbeat"`
 		Approval  *config.ApprovalConfig  `json:"approval"`
 		Logger    *config.LoggerConfig    `json:"logger"`
+		Memory    *config.MemoryConfig    `json:"memory"`
 		WebUI     *config.WebUIConfig     `json:"webui"`
 	}
 	if err := c.Bind(&body); err != nil {
@@ -2087,6 +2089,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	if body.Logger != nil {
 		s.config.Logger = *body.Logger
 	}
+	if body.Memory != nil {
+		s.config.Memory = *body.Memory
+	}
 	if body.WebUI != nil {
 		s.config.WebUI = *body.WebUI
 	}
@@ -2096,7 +2101,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	sections := make([]string, 0, 7)
+	sections := make([]string, 0, 8)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -2114,6 +2119,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.Logger != nil {
 		sections = append(sections, "logger")
+	}
+	if body.Memory != nil {
+		sections = append(sections, "memory")
 	}
 	if body.WebUI != nil {
 		sections = append(sections, "webui")
@@ -2149,6 +2157,7 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 		"heartbeat": s.config.Heartbeat,
 		"approval":  s.config.Approval,
 		"logger":    s.config.Logger,
+		"memory":    s.config.Memory,
 		"webui":     s.config.WebUI,
 		"providers": providerList,
 	}
@@ -2159,13 +2168,14 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 
 func (s *Server) handleImportConfig(c *echo.Context) error {
 	var body struct {
-		Agents    *config.AgentsConfig    `json:"agents"`
-		Gateway   *config.GatewayConfig   `json:"gateway"`
-		Tools     *config.ToolsConfig     `json:"tools"`
-		Heartbeat *config.HeartbeatConfig `json:"heartbeat"`
-		Approval  *config.ApprovalConfig  `json:"approval"`
-		Logger    *config.LoggerConfig    `json:"logger"`
-		WebUI     *config.WebUIConfig     `json:"webui"`
+		Agents    *config.AgentsConfig     `json:"agents"`
+		Gateway   *config.GatewayConfig    `json:"gateway"`
+		Tools     *config.ToolsConfig      `json:"tools"`
+		Heartbeat *config.HeartbeatConfig  `json:"heartbeat"`
+		Approval  *config.ApprovalConfig   `json:"approval"`
+		Logger    *config.LoggerConfig     `json:"logger"`
+		Memory    *config.MemoryConfig     `json:"memory"`
+		WebUI     *config.WebUIConfig      `json:"webui"`
 		Providers []config.ProviderProfile `json:"providers"`
 	}
 	if err := c.Bind(&body); err != nil {
@@ -2191,6 +2201,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	if body.Logger != nil {
 		s.config.Logger = *body.Logger
 	}
+	if body.Memory != nil {
+		s.config.Memory = *body.Memory
+	}
 	if body.WebUI != nil {
 		s.config.WebUI = *body.WebUI
 	}
@@ -2201,7 +2214,7 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 
 	// Persist runtime sections to database
-	sections := make([]string, 0, 7)
+	sections := make([]string, 0, 8)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -2219,6 +2232,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 	if body.Logger != nil {
 		sections = append(sections, "logger")
+	}
+	if body.Memory != nil {
+		sections = append(sections, "memory")
 	}
 	if body.WebUI != nil {
 		sections = append(sections, "webui")
@@ -2819,4 +2835,3 @@ func (s *Server) generateToken(username string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.getJWTSecret()))
 }
-

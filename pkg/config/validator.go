@@ -74,6 +74,9 @@ func (v *Validator) Validate(cfg *Config) error {
 	// Validate heartbeat configuration
 	v.validateHeartbeat(&cfg.Heartbeat)
 
+	// Validate memory configuration
+	v.validateMemory(&cfg.Memory)
+
 	if len(v.errors) > 0 {
 		return v.errors
 	}
@@ -97,6 +100,13 @@ func (v *Validator) validateAgents(cfg *AgentsConfig) {
 
 	if cfg.Defaults.MaxToolIterations < 1 {
 		v.addError("agents.defaults.max_tool_iterations", "max_tool_iterations must be at least 1")
+	}
+
+	orchestrator := strings.TrimSpace(strings.ToLower(cfg.Defaults.Orchestrator))
+	if orchestrator == "" {
+		v.addError("agents.defaults.orchestrator", "orchestrator is required")
+	} else if orchestrator != "legacy" && orchestrator != "blades" {
+		v.addError("agents.defaults.orchestrator", "orchestrator must be one of: legacy, blades")
 	}
 }
 
@@ -269,6 +279,44 @@ func (v *Validator) validateTranscription(cfg *TranscriptionConfig) {
 func (v *Validator) validateHeartbeat(cfg *HeartbeatConfig) {
 	if cfg.Enabled && cfg.IntervalMinutes < 5 {
 		v.addError("heartbeat.interval_minutes", "interval must be at least 5 minutes when heartbeat is enabled")
+	}
+}
+
+// validateMemory validates memory configuration.
+func (v *Validator) validateMemory(cfg *MemoryConfig) {
+	if !cfg.Enabled {
+		return
+	}
+
+	if cfg.Semantic.Enabled {
+		if cfg.Semantic.DefaultTopK < 1 {
+			v.addError("memory.semantic.default_top_k", "default_top_k must be at least 1")
+		}
+		if cfg.Semantic.MaxTopK < 1 {
+			v.addError("memory.semantic.max_top_k", "max_top_k must be at least 1")
+		}
+		if cfg.Semantic.DefaultTopK > cfg.Semantic.MaxTopK {
+			v.addError("memory.semantic.default_top_k", "default_top_k must be less than or equal to max_top_k")
+		}
+		policy := strings.TrimSpace(strings.ToLower(cfg.Semantic.SearchPolicy))
+		if policy == "" {
+			v.addError("memory.semantic.search_policy", "search_policy is required when semantic memory is enabled")
+		} else if policy != "vector" && policy != "hybrid" {
+			v.addError("memory.semantic.search_policy", "search_policy must be one of: vector, hybrid")
+		}
+	}
+
+	if cfg.Episodic.Enabled {
+		if cfg.Episodic.SummaryWindowMessages < 1 {
+			v.addError("memory.episodic.summary_window_messages", "summary_window_messages must be at least 1")
+		}
+		if cfg.Episodic.MaxSummaries < 1 {
+			v.addError("memory.episodic.max_summaries", "max_summaries must be at least 1")
+		}
+	}
+
+	if cfg.ShortTerm.Enabled && cfg.ShortTerm.RawHistoryLimit < 1 {
+		v.addError("memory.short_term.raw_history_limit", "raw_history_limit must be at least 1")
 	}
 }
 

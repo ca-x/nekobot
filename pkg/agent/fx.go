@@ -100,12 +100,18 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 	// Register skill tool
 	agent.RegisterSkillTool(skillsMgr)
 
+	orchestrator := strings.TrimSpace(strings.ToLower(cfg.Agents.Defaults.Orchestrator))
+	if orchestrator == "" {
+		orchestrator = orchestratorBlades
+	}
+
 	// Register lifecycle hooks
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			log.Info("Agent initialized",
 				zap.String("provider", providerName),
 				zap.String("provider_kind", providerKind),
+				zap.String("orchestrator", orchestrator),
 				zap.String("model", cfg.Agents.Defaults.Model),
 				zap.String("workspace", cfg.WorkspacePath()),
 				zap.Int("skills_total", len(skillsMgr.ListEnabled())),

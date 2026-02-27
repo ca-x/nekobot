@@ -18,6 +18,7 @@ var runtimeConfigSections = []string{
 	"heartbeat",
 	"approval",
 	"logger",
+	"memory",
 	"webui",
 }
 
@@ -161,6 +162,8 @@ func marshalSection(cfg *Config, section string) ([]byte, error) {
 		return json.Marshal(cfg.Approval)
 	case "logger":
 		return json.Marshal(cfg.Logger)
+	case "memory":
+		return json.Marshal(cfg.Memory)
 	case "webui":
 		return json.Marshal(cfg.WebUI)
 	default:
@@ -215,6 +218,12 @@ func applySection(cfg *Config, section string, payload []byte) error {
 			return fmt.Errorf("decode logger config: %w", err)
 		}
 		cfg.Logger = v
+	case "memory":
+		var v MemoryConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode memory config: %w", err)
+		}
+		cfg.Memory = v
 	case "webui":
 		var v WebUIConfig
 		if err := json.Unmarshal(payload, &v); err != nil {

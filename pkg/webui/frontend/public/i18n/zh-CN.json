@@ -143,6 +143,7 @@
   "configSectionAgents": "Agent",
   "configSectionGateway": "网关",
   "configSectionTools": "工具",
+  "configSectionMemory": "记忆",
   "configSectionHeartbeat": "心跳",
   "configSectionApproval": "审批",
   "configSectionLogger": "日志",

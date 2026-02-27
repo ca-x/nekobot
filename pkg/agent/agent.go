@@ -17,6 +17,11 @@ import (
 	"nekobot/pkg/toolsessions"
 )
 
+const (
+	orchestratorLegacy = "legacy"
+	orchestratorBlades = "blades"
+)
+
 // SessionInterface defines the interface for a conversation session.
 type SessionInterface interface {
 	GetMessages() []Message
@@ -150,6 +155,46 @@ func (a *Agent) ChatWithProviderModelAndFallback(ctx context.Context, sess Sessi
 }
 
 func (a *Agent) chatWithProviderModel(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
+	orchestrator, err := a.resolveOrchestrator()
+	if err != nil {
+		return "", err
+	}
+
+	a.logger.Debug("Dispatching chat orchestration",
+		zap.String("orchestrator", orchestrator),
+	)
+
+	switch orchestrator {
+	case orchestratorBlades:
+		return a.chatWithBladesOrchestrator(ctx, sess, userMessage, provider, model, fallback)
+	case orchestratorLegacy:
+		return a.chatWithLegacyOrchestrator(ctx, sess, userMessage, provider, model, fallback)
+	default:
+		return "", fmt.Errorf("unsupported orchestrator: %s", orchestrator)
+	}
+}
+
+func (a *Agent) resolveOrchestrator() (string, error) {
+	orchestrator := strings.TrimSpace(strings.ToLower(a.config.Agents.Defaults.Orchestrator))
+	if orchestrator == "" {
+		return orchestratorBlades, nil
+	}
+
+	switch orchestrator {
+	case orchestratorLegacy, orchestratorBlades:
+		return orchestrator, nil
+	default:
+		return "", fmt.Errorf("unsupported orchestrator: %s", orchestrator)
+	}
+}
+
+func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
+	// Keep the blades path as the default entrypoint while preserving legacy execution internals.
+	// This keeps behavior stable while we complete the dedicated blades runtime integration.
+	return a.chatWithLegacyOrchestrator(ctx, sess, userMessage, provider, model, fallback)
+}
+
+func (a *Agent) chatWithLegacyOrchestrator(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
 	a.logger.Info("Processing chat message",
 		zap.String("message", truncate(userMessage, 100)),
 	)
