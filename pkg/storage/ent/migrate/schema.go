@@ -67,6 +67,47 @@ var (
 			},
 		},
 	}
+	// CronJobsColumns holds the columns for the "cron_jobs" table.
+	CronJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "name", Type: field.TypeString},
+		{Name: "schedule_kind", Type: field.TypeString, Default: "cron"},
+		{Name: "schedule", Type: field.TypeString, Default: ""},
+		{Name: "at_time", Type: field.TypeTime, Nullable: true},
+		{Name: "every_duration", Type: field.TypeString, Default: ""},
+		{Name: "prompt", Type: field.TypeString},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "delete_after_run", Type: field.TypeBool, Default: false},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "last_run", Type: field.TypeTime, Nullable: true},
+		{Name: "next_run", Type: field.TypeTime, Nullable: true},
+		{Name: "run_count", Type: field.TypeInt, Default: 0},
+		{Name: "last_error", Type: field.TypeString, Default: ""},
+		{Name: "last_success", Type: field.TypeBool, Default: false},
+	}
+	// CronJobsTable holds the schema information for the "cron_jobs" table.
+	CronJobsTable = &schema.Table{
+		Name:       "cron_jobs",
+		Columns:    CronJobsColumns,
+		PrimaryKey: []*schema.Column{CronJobsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "cronjob_enabled_next_run",
+				Unique:  false,
+				Columns: []*schema.Column{CronJobsColumns[7], CronJobsColumns[11]},
+			},
+			{
+				Name:    "cronjob_schedule_kind",
+				Unique:  false,
+				Columns: []*schema.Column{CronJobsColumns[2]},
+			},
+			{
+				Name:    "cronjob_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{CronJobsColumns[9]},
+			},
+		},
+	}
 	// ProvidersColumns holds the columns for the "providers" table.
 	ProvidersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -191,6 +232,7 @@ var (
 	Tables = []*schema.Table{
 		AttachTokensTable,
 		ConfigSectionsTable,
+		CronJobsTable,
 		ProvidersTable,
 		ToolEventsTable,
 		ToolSessionsTable,

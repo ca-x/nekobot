@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/configsection"
+	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/toolevent"
 	"nekobot/pkg/storage/ent/toolsession"
@@ -79,6 +80,7 @@ func checkColumn(t, c string) error {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			attachtoken.Table:   attachtoken.ValidColumn,
 			configsection.Table: configsection.ValidColumn,
+			cronjob.Table:       cronjob.ValidColumn,
 			provider.Table:      provider.ValidColumn,
 			toolevent.Table:     toolevent.ValidColumn,
 			toolsession.Table:   toolsession.ValidColumn,

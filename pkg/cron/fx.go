@@ -6,8 +6,8 @@ import (
 	"go.uber.org/fx"
 
 	"nekobot/pkg/agent"
-	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/storage/ent"
 )
 
 // Module is the fx module for cron.
@@ -20,9 +20,9 @@ func NewManager(
 	lc fx.Lifecycle,
 	log *logger.Logger,
 	ag *agent.Agent,
-	cfg *config.Config,
+	client *ent.Client,
 ) *Manager {
-	manager := New(log, ag, cfg.WorkspacePath())
+	manager := New(log, ag, client)
 
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {

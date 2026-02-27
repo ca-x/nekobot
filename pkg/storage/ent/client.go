@@ -13,6 +13,7 @@ import (
 
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/configsection"
+	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/toolevent"
 	"nekobot/pkg/storage/ent/toolsession"
@@ -31,6 +32,8 @@ type Client struct {
 	AttachToken *AttachTokenClient
 	// ConfigSection is the client for interacting with the ConfigSection builders.
 	ConfigSection *ConfigSectionClient
+	// CronJob is the client for interacting with the CronJob builders.
+	CronJob *CronJobClient
 	// Provider is the client for interacting with the Provider builders.
 	Provider *ProviderClient
 	// ToolEvent is the client for interacting with the ToolEvent builders.
@@ -50,6 +53,7 @@ func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.AttachToken = NewAttachTokenClient(c.config)
 	c.ConfigSection = NewConfigSectionClient(c.config)
+	c.CronJob = NewCronJobClient(c.config)
 	c.Provider = NewProviderClient(c.config)
 	c.ToolEvent = NewToolEventClient(c.config)
 	c.ToolSession = NewToolSessionClient(c.config)
@@ -147,6 +151,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		config:        cfg,
 		AttachToken:   NewAttachTokenClient(cfg),
 		ConfigSection: NewConfigSectionClient(cfg),
+		CronJob:       NewCronJobClient(cfg),
 		Provider:      NewProviderClient(cfg),
 		ToolEvent:     NewToolEventClient(cfg),
 		ToolSession:   NewToolSessionClient(cfg),
@@ -171,6 +176,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		config:        cfg,
 		AttachToken:   NewAttachTokenClient(cfg),
 		ConfigSection: NewConfigSectionClient(cfg),
+		CronJob:       NewCronJobClient(cfg),
 		Provider:      NewProviderClient(cfg),
 		ToolEvent:     NewToolEventClient(cfg),
 		ToolSession:   NewToolSessionClient(cfg),
@@ -202,21 +208,23 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
-	c.AttachToken.Use(hooks...)
-	c.ConfigSection.Use(hooks...)
-	c.Provider.Use(hooks...)
-	c.ToolEvent.Use(hooks...)
-	c.ToolSession.Use(hooks...)
+	for _, n := range []interface{ Use(...Hook) }{
+		c.AttachToken, c.ConfigSection, c.CronJob, c.Provider, c.ToolEvent,
+		c.ToolSession,
+	} {
+		n.Use(hooks...)
+	}
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
-	c.AttachToken.Intercept(interceptors...)
-	c.ConfigSection.Intercept(interceptors...)
-	c.Provider.Intercept(interceptors...)
-	c.ToolEvent.Intercept(interceptors...)
-	c.ToolSession.Intercept(interceptors...)
+	for _, n := range []interface{ Intercept(...Interceptor) }{
+		c.AttachToken, c.ConfigSection, c.CronJob, c.Provider, c.ToolEvent,
+		c.ToolSession,
+	} {
+		n.Intercept(interceptors...)
+	}
 }
 
 // Mutate implements the ent.Mutator interface.
@@ -226,6 +234,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AttachToken.mutate(ctx, m)
 	case *ConfigSectionMutation:
 		return c.ConfigSection.mutate(ctx, m)
+	case *CronJobMutation:
+		return c.CronJob.mutate(ctx, m)
 	case *ProviderMutation:
 		return c.Provider.mutate(ctx, m)
 	case *ToolEventMutation:
@@ -500,6 +510,139 @@ func (c *ConfigSectionClient) mutate(ctx context.Context, m *ConfigSectionMutati
 		return (&ConfigSectionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ConfigSection mutation op: %q", m.Op())
+	}
+}
+
+// CronJobClient is a client for the CronJob schema.
+type CronJobClient struct {
+	config
+}
+
+// NewCronJobClient returns a client for the CronJob from the given config.
+func NewCronJobClient(c config) *CronJobClient {
+	return &CronJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `cronjob.Hooks(f(g(h())))`.
+func (c *CronJobClient) Use(hooks ...Hook) {
+	c.hooks.CronJob = append(c.hooks.CronJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `cronjob.Intercept(f(g(h())))`.
+func (c *CronJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CronJob = append(c.inters.CronJob, interceptors...)
+}
+
+// Create returns a builder for creating a CronJob entity.
+func (c *CronJobClient) Create() *CronJobCreate {
+	mutation := newCronJobMutation(c.config, OpCreate)
+	return &CronJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CronJob entities.
+func (c *CronJobClient) CreateBulk(builders ...*CronJobCreate) *CronJobCreateBulk {
+	return &CronJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CronJobClient) MapCreateBulk(slice any, setFunc func(*CronJobCreate, int)) *CronJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CronJobCreateBulk{err: fmt.Errorf("calling to CronJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CronJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CronJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CronJob.
+func (c *CronJobClient) Update() *CronJobUpdate {
+	mutation := newCronJobMutation(c.config, OpUpdate)
+	return &CronJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CronJobClient) UpdateOne(_m *CronJob) *CronJobUpdateOne {
+	mutation := newCronJobMutation(c.config, OpUpdateOne, withCronJob(_m))
+	return &CronJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CronJobClient) UpdateOneID(id string) *CronJobUpdateOne {
+	mutation := newCronJobMutation(c.config, OpUpdateOne, withCronJobID(id))
+	return &CronJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CronJob.
+func (c *CronJobClient) Delete() *CronJobDelete {
+	mutation := newCronJobMutation(c.config, OpDelete)
+	return &CronJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CronJobClient) DeleteOne(_m *CronJob) *CronJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CronJobClient) DeleteOneID(id string) *CronJobDeleteOne {
+	builder := c.Delete().Where(cronjob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CronJobDeleteOne{builder}
+}
+
+// Query returns a query builder for CronJob.
+func (c *CronJobClient) Query() *CronJobQuery {
+	return &CronJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCronJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CronJob entity by its id.
+func (c *CronJobClient) Get(ctx context.Context, id string) (*CronJob, error) {
+	return c.Query().Where(cronjob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CronJobClient) GetX(ctx context.Context, id string) *CronJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *CronJobClient) Hooks() []Hook {
+	return c.hooks.CronJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *CronJobClient) Interceptors() []Interceptor {
+	return c.inters.CronJob
+}
+
+func (c *CronJobClient) mutate(ctx context.Context, m *CronJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CronJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CronJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CronJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CronJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CronJob mutation op: %q", m.Op())
 	}
 }
 
@@ -905,9 +1048,10 @@ func (c *ToolSessionClient) mutate(ctx context.Context, m *ToolSessionMutation) 
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AttachToken, ConfigSection, Provider, ToolEvent, ToolSession []ent.Hook
+		AttachToken, ConfigSection, CronJob, Provider, ToolEvent, ToolSession []ent.Hook
 	}
 	inters struct {
-		AttachToken, ConfigSection, Provider, ToolEvent, ToolSession []ent.Interceptor
+		AttachToken, ConfigSection, CronJob, Provider, ToolEvent,
+		ToolSession []ent.Interceptor
 	}
 )

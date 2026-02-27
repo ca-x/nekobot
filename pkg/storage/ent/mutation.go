@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/configsection"
+	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/predicate"
 	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/toolevent"
@@ -30,6 +31,7 @@ const (
 	// Node types.
 	TypeAttachToken   = "AttachToken"
 	TypeConfigSection = "ConfigSection"
+	TypeCronJob       = "CronJob"
 	TypeProvider      = "Provider"
 	TypeToolEvent     = "ToolEvent"
 	TypeToolSession   = "ToolSession"
@@ -1145,6 +1147,1136 @@ func (m *ConfigSectionMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ConfigSectionMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ConfigSection edge %s", name)
+}
+
+// CronJobMutation represents an operation that mutates the CronJob nodes in the graph.
+type CronJobMutation struct {
+	config
+	op               Op
+	typ              string
+	id               *string
+	name             *string
+	schedule_kind    *string
+	schedule         *string
+	at_time          *time.Time
+	every_duration   *string
+	prompt           *string
+	enabled          *bool
+	delete_after_run *bool
+	created_at       *time.Time
+	last_run         *time.Time
+	next_run         *time.Time
+	run_count        *int
+	addrun_count     *int
+	last_error       *string
+	last_success     *bool
+	clearedFields    map[string]struct{}
+	done             bool
+	oldValue         func(context.Context) (*CronJob, error)
+	predicates       []predicate.CronJob
+}
+
+var _ ent.Mutation = (*CronJobMutation)(nil)
+
+// cronjobOption allows management of the mutation configuration using functional options.
+type cronjobOption func(*CronJobMutation)
+
+// newCronJobMutation creates new mutation for the CronJob entity.
+func newCronJobMutation(c config, op Op, opts ...cronjobOption) *CronJobMutation {
+	m := &CronJobMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeCronJob,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withCronJobID sets the ID field of the mutation.
+func withCronJobID(id string) cronjobOption {
+	return func(m *CronJobMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *CronJob
+		)
+		m.oldValue = func(ctx context.Context) (*CronJob, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().CronJob.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withCronJob sets the old CronJob of the mutation.
+func withCronJob(node *CronJob) cronjobOption {
+	return func(m *CronJobMutation) {
+		m.oldValue = func(context.Context) (*CronJob, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m CronJobMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m CronJobMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of CronJob entities.
+func (m *CronJobMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *CronJobMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *CronJobMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().CronJob.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetName sets the "name" field.
+func (m *CronJobMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *CronJobMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *CronJobMutation) ResetName() {
+	m.name = nil
+}
+
+// SetScheduleKind sets the "schedule_kind" field.
+func (m *CronJobMutation) SetScheduleKind(s string) {
+	m.schedule_kind = &s
+}
+
+// ScheduleKind returns the value of the "schedule_kind" field in the mutation.
+func (m *CronJobMutation) ScheduleKind() (r string, exists bool) {
+	v := m.schedule_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScheduleKind returns the old "schedule_kind" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldScheduleKind(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScheduleKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScheduleKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScheduleKind: %w", err)
+	}
+	return oldValue.ScheduleKind, nil
+}
+
+// ResetScheduleKind resets all changes to the "schedule_kind" field.
+func (m *CronJobMutation) ResetScheduleKind() {
+	m.schedule_kind = nil
+}
+
+// SetSchedule sets the "schedule" field.
+func (m *CronJobMutation) SetSchedule(s string) {
+	m.schedule = &s
+}
+
+// Schedule returns the value of the "schedule" field in the mutation.
+func (m *CronJobMutation) Schedule() (r string, exists bool) {
+	v := m.schedule
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSchedule returns the old "schedule" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldSchedule(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSchedule is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSchedule requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSchedule: %w", err)
+	}
+	return oldValue.Schedule, nil
+}
+
+// ResetSchedule resets all changes to the "schedule" field.
+func (m *CronJobMutation) ResetSchedule() {
+	m.schedule = nil
+}
+
+// SetAtTime sets the "at_time" field.
+func (m *CronJobMutation) SetAtTime(t time.Time) {
+	m.at_time = &t
+}
+
+// AtTime returns the value of the "at_time" field in the mutation.
+func (m *CronJobMutation) AtTime() (r time.Time, exists bool) {
+	v := m.at_time
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAtTime returns the old "at_time" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldAtTime(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAtTime is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAtTime requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAtTime: %w", err)
+	}
+	return oldValue.AtTime, nil
+}
+
+// ClearAtTime clears the value of the "at_time" field.
+func (m *CronJobMutation) ClearAtTime() {
+	m.at_time = nil
+	m.clearedFields[cronjob.FieldAtTime] = struct{}{}
+}
+
+// AtTimeCleared returns if the "at_time" field was cleared in this mutation.
+func (m *CronJobMutation) AtTimeCleared() bool {
+	_, ok := m.clearedFields[cronjob.FieldAtTime]
+	return ok
+}
+
+// ResetAtTime resets all changes to the "at_time" field.
+func (m *CronJobMutation) ResetAtTime() {
+	m.at_time = nil
+	delete(m.clearedFields, cronjob.FieldAtTime)
+}
+
+// SetEveryDuration sets the "every_duration" field.
+func (m *CronJobMutation) SetEveryDuration(s string) {
+	m.every_duration = &s
+}
+
+// EveryDuration returns the value of the "every_duration" field in the mutation.
+func (m *CronJobMutation) EveryDuration() (r string, exists bool) {
+	v := m.every_duration
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEveryDuration returns the old "every_duration" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldEveryDuration(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEveryDuration is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEveryDuration requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEveryDuration: %w", err)
+	}
+	return oldValue.EveryDuration, nil
+}
+
+// ResetEveryDuration resets all changes to the "every_duration" field.
+func (m *CronJobMutation) ResetEveryDuration() {
+	m.every_duration = nil
+}
+
+// SetPrompt sets the "prompt" field.
+func (m *CronJobMutation) SetPrompt(s string) {
+	m.prompt = &s
+}
+
+// Prompt returns the value of the "prompt" field in the mutation.
+func (m *CronJobMutation) Prompt() (r string, exists bool) {
+	v := m.prompt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPrompt returns the old "prompt" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldPrompt(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPrompt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPrompt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPrompt: %w", err)
+	}
+	return oldValue.Prompt, nil
+}
+
+// ResetPrompt resets all changes to the "prompt" field.
+func (m *CronJobMutation) ResetPrompt() {
+	m.prompt = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *CronJobMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *CronJobMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *CronJobMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetDeleteAfterRun sets the "delete_after_run" field.
+func (m *CronJobMutation) SetDeleteAfterRun(b bool) {
+	m.delete_after_run = &b
+}
+
+// DeleteAfterRun returns the value of the "delete_after_run" field in the mutation.
+func (m *CronJobMutation) DeleteAfterRun() (r bool, exists bool) {
+	v := m.delete_after_run
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeleteAfterRun returns the old "delete_after_run" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldDeleteAfterRun(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeleteAfterRun is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeleteAfterRun requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeleteAfterRun: %w", err)
+	}
+	return oldValue.DeleteAfterRun, nil
+}
+
+// ResetDeleteAfterRun resets all changes to the "delete_after_run" field.
+func (m *CronJobMutation) ResetDeleteAfterRun() {
+	m.delete_after_run = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *CronJobMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *CronJobMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *CronJobMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetLastRun sets the "last_run" field.
+func (m *CronJobMutation) SetLastRun(t time.Time) {
+	m.last_run = &t
+}
+
+// LastRun returns the value of the "last_run" field in the mutation.
+func (m *CronJobMutation) LastRun() (r time.Time, exists bool) {
+	v := m.last_run
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastRun returns the old "last_run" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldLastRun(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastRun is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastRun requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastRun: %w", err)
+	}
+	return oldValue.LastRun, nil
+}
+
+// ClearLastRun clears the value of the "last_run" field.
+func (m *CronJobMutation) ClearLastRun() {
+	m.last_run = nil
+	m.clearedFields[cronjob.FieldLastRun] = struct{}{}
+}
+
+// LastRunCleared returns if the "last_run" field was cleared in this mutation.
+func (m *CronJobMutation) LastRunCleared() bool {
+	_, ok := m.clearedFields[cronjob.FieldLastRun]
+	return ok
+}
+
+// ResetLastRun resets all changes to the "last_run" field.
+func (m *CronJobMutation) ResetLastRun() {
+	m.last_run = nil
+	delete(m.clearedFields, cronjob.FieldLastRun)
+}
+
+// SetNextRun sets the "next_run" field.
+func (m *CronJobMutation) SetNextRun(t time.Time) {
+	m.next_run = &t
+}
+
+// NextRun returns the value of the "next_run" field in the mutation.
+func (m *CronJobMutation) NextRun() (r time.Time, exists bool) {
+	v := m.next_run
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNextRun returns the old "next_run" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldNextRun(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNextRun is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNextRun requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNextRun: %w", err)
+	}
+	return oldValue.NextRun, nil
+}
+
+// ClearNextRun clears the value of the "next_run" field.
+func (m *CronJobMutation) ClearNextRun() {
+	m.next_run = nil
+	m.clearedFields[cronjob.FieldNextRun] = struct{}{}
+}
+
+// NextRunCleared returns if the "next_run" field was cleared in this mutation.
+func (m *CronJobMutation) NextRunCleared() bool {
+	_, ok := m.clearedFields[cronjob.FieldNextRun]
+	return ok
+}
+
+// ResetNextRun resets all changes to the "next_run" field.
+func (m *CronJobMutation) ResetNextRun() {
+	m.next_run = nil
+	delete(m.clearedFields, cronjob.FieldNextRun)
+}
+
+// SetRunCount sets the "run_count" field.
+func (m *CronJobMutation) SetRunCount(i int) {
+	m.run_count = &i
+	m.addrun_count = nil
+}
+
+// RunCount returns the value of the "run_count" field in the mutation.
+func (m *CronJobMutation) RunCount() (r int, exists bool) {
+	v := m.run_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunCount returns the old "run_count" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldRunCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunCount: %w", err)
+	}
+	return oldValue.RunCount, nil
+}
+
+// AddRunCount adds i to the "run_count" field.
+func (m *CronJobMutation) AddRunCount(i int) {
+	if m.addrun_count != nil {
+		*m.addrun_count += i
+	} else {
+		m.addrun_count = &i
+	}
+}
+
+// AddedRunCount returns the value that was added to the "run_count" field in this mutation.
+func (m *CronJobMutation) AddedRunCount() (r int, exists bool) {
+	v := m.addrun_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRunCount resets all changes to the "run_count" field.
+func (m *CronJobMutation) ResetRunCount() {
+	m.run_count = nil
+	m.addrun_count = nil
+}
+
+// SetLastError sets the "last_error" field.
+func (m *CronJobMutation) SetLastError(s string) {
+	m.last_error = &s
+}
+
+// LastError returns the value of the "last_error" field in the mutation.
+func (m *CronJobMutation) LastError() (r string, exists bool) {
+	v := m.last_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastError returns the old "last_error" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldLastError(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastError: %w", err)
+	}
+	return oldValue.LastError, nil
+}
+
+// ResetLastError resets all changes to the "last_error" field.
+func (m *CronJobMutation) ResetLastError() {
+	m.last_error = nil
+}
+
+// SetLastSuccess sets the "last_success" field.
+func (m *CronJobMutation) SetLastSuccess(b bool) {
+	m.last_success = &b
+}
+
+// LastSuccess returns the value of the "last_success" field in the mutation.
+func (m *CronJobMutation) LastSuccess() (r bool, exists bool) {
+	v := m.last_success
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastSuccess returns the old "last_success" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldLastSuccess(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastSuccess is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastSuccess requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastSuccess: %w", err)
+	}
+	return oldValue.LastSuccess, nil
+}
+
+// ResetLastSuccess resets all changes to the "last_success" field.
+func (m *CronJobMutation) ResetLastSuccess() {
+	m.last_success = nil
+}
+
+// Where appends a list predicates to the CronJobMutation builder.
+func (m *CronJobMutation) Where(ps ...predicate.CronJob) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the CronJobMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *CronJobMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.CronJob, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *CronJobMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *CronJobMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (CronJob).
+func (m *CronJobMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *CronJobMutation) Fields() []string {
+	fields := make([]string, 0, 14)
+	if m.name != nil {
+		fields = append(fields, cronjob.FieldName)
+	}
+	if m.schedule_kind != nil {
+		fields = append(fields, cronjob.FieldScheduleKind)
+	}
+	if m.schedule != nil {
+		fields = append(fields, cronjob.FieldSchedule)
+	}
+	if m.at_time != nil {
+		fields = append(fields, cronjob.FieldAtTime)
+	}
+	if m.every_duration != nil {
+		fields = append(fields, cronjob.FieldEveryDuration)
+	}
+	if m.prompt != nil {
+		fields = append(fields, cronjob.FieldPrompt)
+	}
+	if m.enabled != nil {
+		fields = append(fields, cronjob.FieldEnabled)
+	}
+	if m.delete_after_run != nil {
+		fields = append(fields, cronjob.FieldDeleteAfterRun)
+	}
+	if m.created_at != nil {
+		fields = append(fields, cronjob.FieldCreatedAt)
+	}
+	if m.last_run != nil {
+		fields = append(fields, cronjob.FieldLastRun)
+	}
+	if m.next_run != nil {
+		fields = append(fields, cronjob.FieldNextRun)
+	}
+	if m.run_count != nil {
+		fields = append(fields, cronjob.FieldRunCount)
+	}
+	if m.last_error != nil {
+		fields = append(fields, cronjob.FieldLastError)
+	}
+	if m.last_success != nil {
+		fields = append(fields, cronjob.FieldLastSuccess)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *CronJobMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case cronjob.FieldName:
+		return m.Name()
+	case cronjob.FieldScheduleKind:
+		return m.ScheduleKind()
+	case cronjob.FieldSchedule:
+		return m.Schedule()
+	case cronjob.FieldAtTime:
+		return m.AtTime()
+	case cronjob.FieldEveryDuration:
+		return m.EveryDuration()
+	case cronjob.FieldPrompt:
+		return m.Prompt()
+	case cronjob.FieldEnabled:
+		return m.Enabled()
+	case cronjob.FieldDeleteAfterRun:
+		return m.DeleteAfterRun()
+	case cronjob.FieldCreatedAt:
+		return m.CreatedAt()
+	case cronjob.FieldLastRun:
+		return m.LastRun()
+	case cronjob.FieldNextRun:
+		return m.NextRun()
+	case cronjob.FieldRunCount:
+		return m.RunCount()
+	case cronjob.FieldLastError:
+		return m.LastError()
+	case cronjob.FieldLastSuccess:
+		return m.LastSuccess()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *CronJobMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case cronjob.FieldName:
+		return m.OldName(ctx)
+	case cronjob.FieldScheduleKind:
+		return m.OldScheduleKind(ctx)
+	case cronjob.FieldSchedule:
+		return m.OldSchedule(ctx)
+	case cronjob.FieldAtTime:
+		return m.OldAtTime(ctx)
+	case cronjob.FieldEveryDuration:
+		return m.OldEveryDuration(ctx)
+	case cronjob.FieldPrompt:
+		return m.OldPrompt(ctx)
+	case cronjob.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case cronjob.FieldDeleteAfterRun:
+		return m.OldDeleteAfterRun(ctx)
+	case cronjob.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case cronjob.FieldLastRun:
+		return m.OldLastRun(ctx)
+	case cronjob.FieldNextRun:
+		return m.OldNextRun(ctx)
+	case cronjob.FieldRunCount:
+		return m.OldRunCount(ctx)
+	case cronjob.FieldLastError:
+		return m.OldLastError(ctx)
+	case cronjob.FieldLastSuccess:
+		return m.OldLastSuccess(ctx)
+	}
+	return nil, fmt.Errorf("unknown CronJob field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *CronJobMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case cronjob.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case cronjob.FieldScheduleKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScheduleKind(v)
+		return nil
+	case cronjob.FieldSchedule:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSchedule(v)
+		return nil
+	case cronjob.FieldAtTime:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAtTime(v)
+		return nil
+	case cronjob.FieldEveryDuration:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEveryDuration(v)
+		return nil
+	case cronjob.FieldPrompt:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPrompt(v)
+		return nil
+	case cronjob.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case cronjob.FieldDeleteAfterRun:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeleteAfterRun(v)
+		return nil
+	case cronjob.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case cronjob.FieldLastRun:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastRun(v)
+		return nil
+	case cronjob.FieldNextRun:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNextRun(v)
+		return nil
+	case cronjob.FieldRunCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunCount(v)
+		return nil
+	case cronjob.FieldLastError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastError(v)
+		return nil
+	case cronjob.FieldLastSuccess:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastSuccess(v)
+		return nil
+	}
+	return fmt.Errorf("unknown CronJob field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *CronJobMutation) AddedFields() []string {
+	var fields []string
+	if m.addrun_count != nil {
+		fields = append(fields, cronjob.FieldRunCount)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *CronJobMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case cronjob.FieldRunCount:
+		return m.AddedRunCount()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *CronJobMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case cronjob.FieldRunCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRunCount(v)
+		return nil
+	}
+	return fmt.Errorf("unknown CronJob numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *CronJobMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(cronjob.FieldAtTime) {
+		fields = append(fields, cronjob.FieldAtTime)
+	}
+	if m.FieldCleared(cronjob.FieldLastRun) {
+		fields = append(fields, cronjob.FieldLastRun)
+	}
+	if m.FieldCleared(cronjob.FieldNextRun) {
+		fields = append(fields, cronjob.FieldNextRun)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *CronJobMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *CronJobMutation) ClearField(name string) error {
+	switch name {
+	case cronjob.FieldAtTime:
+		m.ClearAtTime()
+		return nil
+	case cronjob.FieldLastRun:
+		m.ClearLastRun()
+		return nil
+	case cronjob.FieldNextRun:
+		m.ClearNextRun()
+		return nil
+	}
+	return fmt.Errorf("unknown CronJob nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *CronJobMutation) ResetField(name string) error {
+	switch name {
+	case cronjob.FieldName:
+		m.ResetName()
+		return nil
+	case cronjob.FieldScheduleKind:
+		m.ResetScheduleKind()
+		return nil
+	case cronjob.FieldSchedule:
+		m.ResetSchedule()
+		return nil
+	case cronjob.FieldAtTime:
+		m.ResetAtTime()
+		return nil
+	case cronjob.FieldEveryDuration:
+		m.ResetEveryDuration()
+		return nil
+	case cronjob.FieldPrompt:
+		m.ResetPrompt()
+		return nil
+	case cronjob.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case cronjob.FieldDeleteAfterRun:
+		m.ResetDeleteAfterRun()
+		return nil
+	case cronjob.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case cronjob.FieldLastRun:
+		m.ResetLastRun()
+		return nil
+	case cronjob.FieldNextRun:
+		m.ResetNextRun()
+		return nil
+	case cronjob.FieldRunCount:
+		m.ResetRunCount()
+		return nil
+	case cronjob.FieldLastError:
+		m.ResetLastError()
+		return nil
+	case cronjob.FieldLastSuccess:
+		m.ResetLastSuccess()
+		return nil
+	}
+	return fmt.Errorf("unknown CronJob field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *CronJobMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *CronJobMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *CronJobMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *CronJobMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *CronJobMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *CronJobMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *CronJobMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown CronJob unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *CronJobMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown CronJob edge %s", name)
 }
 
 // ProviderMutation represents an operation that mutates the Provider nodes in the graph.

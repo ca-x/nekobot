@@ -5,6 +5,7 @@ package ent
 import (
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/configsection"
+	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/schema"
 	"nekobot/pkg/storage/ent/toolevent"
@@ -50,6 +51,56 @@ func init() {
 	configsection.DefaultUpdatedAt = configsectionDescUpdatedAt.Default.(func() time.Time)
 	// configsection.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	configsection.UpdateDefaultUpdatedAt = configsectionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	cronjobFields := schema.CronJob{}.Fields()
+	_ = cronjobFields
+	// cronjobDescName is the schema descriptor for name field.
+	cronjobDescName := cronjobFields[1].Descriptor()
+	// cronjob.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	cronjob.NameValidator = cronjobDescName.Validators[0].(func(string) error)
+	// cronjobDescScheduleKind is the schema descriptor for schedule_kind field.
+	cronjobDescScheduleKind := cronjobFields[2].Descriptor()
+	// cronjob.DefaultScheduleKind holds the default value on creation for the schedule_kind field.
+	cronjob.DefaultScheduleKind = cronjobDescScheduleKind.Default.(string)
+	// cronjobDescSchedule is the schema descriptor for schedule field.
+	cronjobDescSchedule := cronjobFields[3].Descriptor()
+	// cronjob.DefaultSchedule holds the default value on creation for the schedule field.
+	cronjob.DefaultSchedule = cronjobDescSchedule.Default.(string)
+	// cronjobDescEveryDuration is the schema descriptor for every_duration field.
+	cronjobDescEveryDuration := cronjobFields[5].Descriptor()
+	// cronjob.DefaultEveryDuration holds the default value on creation for the every_duration field.
+	cronjob.DefaultEveryDuration = cronjobDescEveryDuration.Default.(string)
+	// cronjobDescPrompt is the schema descriptor for prompt field.
+	cronjobDescPrompt := cronjobFields[6].Descriptor()
+	// cronjob.PromptValidator is a validator for the "prompt" field. It is called by the builders before save.
+	cronjob.PromptValidator = cronjobDescPrompt.Validators[0].(func(string) error)
+	// cronjobDescEnabled is the schema descriptor for enabled field.
+	cronjobDescEnabled := cronjobFields[7].Descriptor()
+	// cronjob.DefaultEnabled holds the default value on creation for the enabled field.
+	cronjob.DefaultEnabled = cronjobDescEnabled.Default.(bool)
+	// cronjobDescDeleteAfterRun is the schema descriptor for delete_after_run field.
+	cronjobDescDeleteAfterRun := cronjobFields[8].Descriptor()
+	// cronjob.DefaultDeleteAfterRun holds the default value on creation for the delete_after_run field.
+	cronjob.DefaultDeleteAfterRun = cronjobDescDeleteAfterRun.Default.(bool)
+	// cronjobDescCreatedAt is the schema descriptor for created_at field.
+	cronjobDescCreatedAt := cronjobFields[9].Descriptor()
+	// cronjob.DefaultCreatedAt holds the default value on creation for the created_at field.
+	cronjob.DefaultCreatedAt = cronjobDescCreatedAt.Default.(func() time.Time)
+	// cronjobDescRunCount is the schema descriptor for run_count field.
+	cronjobDescRunCount := cronjobFields[12].Descriptor()
+	// cronjob.DefaultRunCount holds the default value on creation for the run_count field.
+	cronjob.DefaultRunCount = cronjobDescRunCount.Default.(int)
+	// cronjobDescLastError is the schema descriptor for last_error field.
+	cronjobDescLastError := cronjobFields[13].Descriptor()
+	// cronjob.DefaultLastError holds the default value on creation for the last_error field.
+	cronjob.DefaultLastError = cronjobDescLastError.Default.(string)
+	// cronjobDescLastSuccess is the schema descriptor for last_success field.
+	cronjobDescLastSuccess := cronjobFields[14].Descriptor()
+	// cronjob.DefaultLastSuccess holds the default value on creation for the last_success field.
+	cronjob.DefaultLastSuccess = cronjobDescLastSuccess.Default.(bool)
+	// cronjobDescID is the schema descriptor for id field.
+	cronjobDescID := cronjobFields[0].Descriptor()
+	// cronjob.DefaultID holds the default value on creation for the id field.
+	cronjob.DefaultID = cronjobDescID.Default.(func() string)
 	providerFields := schema.Provider{}.Fields()
 	_ = providerFields
 	// providerDescName is the schema descriptor for name field.

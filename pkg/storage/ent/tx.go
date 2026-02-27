@@ -16,6 +16,8 @@ type Tx struct {
 	AttachToken *AttachTokenClient
 	// ConfigSection is the client for interacting with the ConfigSection builders.
 	ConfigSection *ConfigSectionClient
+	// CronJob is the client for interacting with the CronJob builders.
+	CronJob *CronJobClient
 	// Provider is the client for interacting with the Provider builders.
 	Provider *ProviderClient
 	// ToolEvent is the client for interacting with the ToolEvent builders.
@@ -155,6 +157,7 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.AttachToken = NewAttachTokenClient(tx.config)
 	tx.ConfigSection = NewConfigSectionClient(tx.config)
+	tx.CronJob = NewCronJobClient(tx.config)
 	tx.Provider = NewProviderClient(tx.config)
 	tx.ToolEvent = NewToolEventClient(tx.config)
 	tx.ToolSession = NewToolSessionClient(tx.config)

@@ -32,6 +32,18 @@ func (f ConfigSectionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Valu
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ConfigSectionMutation", m)
 }
 
+// The CronJobFunc type is an adapter to allow the use of ordinary
+// function as CronJob mutator.
+type CronJobFunc func(context.Context, *ent.CronJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CronJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CronJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CronJobMutation", m)
+}
+
 // The ProviderFunc type is an adapter to allow the use of ordinary
 // function as Provider mutator.
 type ProviderFunc func(context.Context, *ent.ProviderMutation) (ent.Value, error)

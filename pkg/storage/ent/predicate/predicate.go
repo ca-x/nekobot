@@ -12,6 +12,9 @@ type AttachToken func(*sql.Selector)
 // ConfigSection is the predicate function for configsection builders.
 type ConfigSection func(*sql.Selector)
 
+// CronJob is the predicate function for cronjob builders.
+type CronJob func(*sql.Selector)
+
 // Provider is the predicate function for provider builders.
 type Provider func(*sql.Selector)
 
