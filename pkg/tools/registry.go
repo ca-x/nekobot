@@ -4,6 +4,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -67,25 +68,35 @@ func (r *Registry) Get(name string) (Tool, bool) {
 	return tool, exists
 }
 
-// List returns all registered tool names.
-func (r *Registry) List() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
+// sortedNames returns tool names in sorted order for deterministic iteration.
+// Deterministic ordering improves LLM provider KV cache hit rates.
+func (r *Registry) sortedNames() []string {
 	names := make([]string, 0, len(r.tools))
 	for name := range r.tools {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 
+// List returns all registered tool names in sorted order.
+func (r *Registry) List() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return r.sortedNames()
+}
+
 // GetDescriptions returns formatted descriptions of all tools for the agent.
+// Tools are returned in sorted order for deterministic system prompts.
 func (r *Registry) GetDescriptions() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	descriptions := make([]string, 0, len(r.tools))
-	for _, tool := range r.tools {
+	names := r.sortedNames()
+	descriptions := make([]string, 0, len(names))
+	for _, name := range names {
+		tool := r.tools[name]
 		desc := fmt.Sprintf("**%s**: %s", tool.Name(), tool.Description())
 		descriptions = append(descriptions, desc)
 	}
@@ -93,13 +104,15 @@ func (r *Registry) GetDescriptions() []string {
 }
 
 // GetToolDefinitions returns tool definitions in the format expected by LLM providers.
-// This can be passed directly to the provider's tool parameter.
+// Tools are returned in sorted order for cache stability.
 func (r *Registry) GetToolDefinitions() []map[string]interface{} {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	definitions := make([]map[string]interface{}, 0, len(r.tools))
-	for _, tool := range r.tools {
+	names := r.sortedNames()
+	definitions := make([]map[string]interface{}, 0, len(names))
+	for _, name := range names {
+		tool := r.tools[name]
 		definitions = append(definitions, map[string]interface{}{
 			"type": "function",
 			"function": map[string]interface{}{
