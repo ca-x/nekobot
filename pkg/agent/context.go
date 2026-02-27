@@ -193,7 +193,7 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 }
 
 // BuildMessages builds the message array for the provider.
-// It includes system prompt, conversation history, and the current message.
+// It includes system prompt, sanitized conversation history, and the current message.
 func (cb *ContextBuilder) BuildMessages(history []Message, currentMessage string) []Message {
 	messages := []Message{}
 
@@ -204,8 +204,8 @@ func (cb *ContextBuilder) BuildMessages(history []Message, currentMessage string
 		Content: systemPrompt,
 	})
 
-	// Conversation history
-	messages = append(messages, history...)
+	// Sanitized conversation history
+	messages = append(messages, sanitizeHistory(history)...)
 
 	// Current user message
 	messages = append(messages, Message{
@@ -214,6 +214,68 @@ func (cb *ContextBuilder) BuildMessages(history []Message, currentMessage string
 	})
 
 	return messages
+}
+
+// sanitizeHistory removes invalid message sequences from conversation history.
+// This prevents provider errors caused by orphaned tool messages, duplicate
+// system messages, or invalid tool-call/tool-result pairings.
+func sanitizeHistory(history []Message) []Message {
+	if len(history) == 0 {
+		return history
+	}
+
+	sanitized := make([]Message, 0, len(history))
+	for _, msg := range history {
+		switch msg.Role {
+		case "system":
+			// Drop system messages from history. BuildMessages always
+			// constructs its own system message; extra system messages
+			// break providers that only accept one (Anthropic, etc.).
+			continue
+
+		case "tool":
+			if len(sanitized) == 0 {
+				// Drop orphaned leading tool message.
+				continue
+			}
+			// Walk backwards to find the nearest assistant message,
+			// skipping over any preceding tool messages (multi-tool-call case).
+			foundAssistant := false
+			for i := len(sanitized) - 1; i >= 0; i-- {
+				if sanitized[i].Role == "tool" {
+					continue
+				}
+				if sanitized[i].Role == "assistant" && len(sanitized[i].ToolCalls) > 0 {
+					foundAssistant = true
+				}
+				break
+			}
+			if !foundAssistant {
+				// Drop orphaned tool message with no matching assistant tool call.
+				continue
+			}
+			sanitized = append(sanitized, msg)
+
+		case "assistant":
+			if len(msg.ToolCalls) > 0 {
+				if len(sanitized) == 0 {
+					// Drop assistant tool-call turn at history start.
+					continue
+				}
+				prev := sanitized[len(sanitized)-1]
+				if prev.Role != "user" && prev.Role != "tool" {
+					// Drop assistant tool-call turn with invalid predecessor.
+					continue
+				}
+			}
+			sanitized = append(sanitized, msg)
+
+		default:
+			sanitized = append(sanitized, msg)
+		}
+	}
+
+	return sanitized
 }
 
 // Message represents a single message in the conversation.
