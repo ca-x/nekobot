@@ -1,0 +1,115 @@
+/**
+ * Nekobot Design System
+ * Adapted from NextClaw warm minimalist palette
+ * Sakura-pink brand with warm neutral grays
+ */
+
+@layer base {
+  :root {
+    /* Brand Colors (Sakura Pink) */
+    --brand-50: 330 60% 97%;
+    --brand-100: 330 50% 93%;
+    --brand-200: 330 45% 85%;
+    --brand-300: 330 40% 72%;
+    --brand-400: 330 42% 60%;
+    --brand-500: 330 45% 50%;
+    --brand-600: 330 50% 42%;
+    --brand-700: 330 55% 35%;
+    --brand-800: 330 55% 26%;
+    --brand-900: 330 50% 18%;
+
+    /* Neutral Colors (Warm Gray) */
+    --gray-50: 30 20% 97%;
+    --gray-100: 30 12% 94%;
+    --gray-200: 30 10% 88%;
+    --gray-300: 30 8% 80%;
+    --gray-400: 30 6% 60%;
+    --gray-500: 30 5% 46%;
+    --gray-600: 30 4% 35%;
+    --gray-700: 30 5% 25%;
+    --gray-800: 30 5% 18%;
+    --gray-900: 30 5% 10%;
+
+    /* Semantic Colors */
+    --background: var(--gray-50);
+    --foreground: var(--gray-800);
+    --primary: var(--brand-500);
+    --primary-foreground: 0 0% 100%;
+    --secondary: var(--gray-100);
+    --secondary-foreground: var(--gray-800);
+    --accent: var(--brand-50);
+    --accent-foreground: var(--brand-700);
+    --muted: var(--gray-100);
+    --muted-foreground: var(--gray-500);
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    /* UI Elements */
+    --card: 0 0% 100%;
+    --card-foreground: var(--gray-800);
+    --popover: 0 0% 100%;
+    --popover-foreground: var(--gray-800);
+    --border: var(--gray-200);
+    --input: 0 0% 100%;
+    --ring: var(--brand-500);
+
+    /* Radius */
+    --radius: 0.75rem;
+
+    /* Typography */
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans SC", sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    /* Shadows */
+    --shadow-card: 0 1px 3px -1px rgba(30, 20, 10, 0.03), 0 1px 2px -1px rgba(30, 20, 10, 0.02);
+    --shadow-card-hover: 0 8px 20px -4px rgba(30, 20, 10, 0.06), 0 4px 8px -4px rgba(30, 20, 10, 0.03);
+  }
+
+  /* Dark theme */
+  .dark {
+    --brand-50: 330 30% 15%;
+    --brand-100: 330 30% 20%;
+    --brand-200: 330 35% 28%;
+    --brand-300: 330 38% 38%;
+    --brand-400: 330 42% 52%;
+    --brand-500: 330 50% 62%;
+    --brand-600: 330 55% 72%;
+    --brand-700: 330 50% 80%;
+    --brand-800: 330 45% 88%;
+    --brand-900: 330 40% 94%;
+
+    --gray-50: 220 15% 10%;
+    --gray-100: 220 12% 14%;
+    --gray-200: 220 10% 20%;
+    --gray-300: 220 8% 28%;
+    --gray-400: 220 6% 42%;
+    --gray-500: 220 5% 55%;
+    --gray-600: 220 4% 68%;
+    --gray-700: 220 5% 78%;
+    --gray-800: 220 5% 88%;
+    --gray-900: 220 5% 95%;
+
+    --background: var(--gray-50);
+    --foreground: var(--gray-800);
+    --primary: var(--brand-500);
+    --primary-foreground: 0 0% 100%;
+    --secondary: var(--gray-100);
+    --secondary-foreground: var(--gray-800);
+    --accent: var(--brand-50);
+    --accent-foreground: var(--brand-700);
+    --muted: var(--gray-100);
+    --muted-foreground: var(--gray-500);
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --card: var(--gray-100);
+    --card-foreground: var(--gray-800);
+    --popover: var(--gray-100);
+    --popover-foreground: var(--gray-800);
+    --border: var(--gray-200);
+    --input: var(--gray-100);
+    --ring: var(--brand-500);
+
+    --shadow-card: 0 1px 3px -1px rgba(0, 0, 0, 0.2), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+    --shadow-card-hover: 0 8px 20px -4px rgba(0, 0, 0, 0.3), 0 4px 8px -4px rgba(0, 0, 0, 0.15);
+  }
+}

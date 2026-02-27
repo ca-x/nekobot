@@ -1,121 +1,134 @@
-# Task Plan: Nekobot Feature Gap Implementation
+# Task Plan: 从 nextclaw 移植 Web UI 功能到 nekobot
 
 ## Goal
-Implement all missing features from goclaw/picoclaw into nekobot, fix config issues, add WebUI dashboard, and deliver a complete feature-parity bot framework.
+参考 nextclaw 项目的 Web 体验，将前端迁移到 React + TypeScript + Vite 技术栈，移植 Provider/Channel 管理、Runtime 配置、Session 管理、Cron 管理、Marketplace 等功能，同时完整保留现有的 Tool Session 和 Chat Playground 功能。
 
 ## Phases
 
-### Phase 1: Config Fixes (High Priority, Low Complexity) — Claude
-- [x] 1.1 Deduplicate Redis config - create shared `RedisConfig` struct
-- [x] 1.2 Add per-provider proxy settings to `ProviderProfile`
-- [x] 1.3 Update `DefaultConfig()` to reflect new structure
-- [x] 1.4 Update all redis references in state/bus modules
+### Phase 1: 项目脚手架搭建
+- [ ] 1.1 在 `pkg/webui/frontend/` 下初始化 React + Vite + TypeScript 项目
+- [ ] 1.2 安装核心依赖 (React Router, TanStack Query, Zustand, Tailwind, shadcn/ui, Lucide, Sonner, React Hook Form, Zod, xterm.js)
+- [ ] 1.3 配置 Vite (dev proxy 到 nekobot 后端, build 输出到 dist/)
+- [ ] 1.4 设置 Tailwind + 设计系统 CSS 变量 (参考 nextclaw design-system.css)
+- [ ] 1.5 搭建 shadcn/ui 基础组件 (button, card, dialog, input, label, select, switch, tabs, tooltip, scroll-area, skeleton)
+- [ ] 1.6 更新 `embed.go` 适配新的构建产物
+- [ ] 1.7 配置 Makefile/脚本: `npm run build` → Go embed 流程
 
-### Phase 2: Missing Tools (High Priority, Low Complexity) — Claude
-- [x] 2.1 Implement `edit_file` tool (string replacement + line-based editing)
-- [x] 2.2 Implement `append_file` tool
-- [x] 2.3 Register new tools in `pkg/agent/agent.go`
-- [x] 2.4 Update TOOLS.md template (remove "coming soon")
+### Phase 2: 基础框架层
+- [ ] 2.1 API 客户端层 (`src/api/client.ts`) - JWT token 管理, fetch 封装, 错误处理
+- [ ] 2.2 WebSocket 客户端 (`src/api/websocket.ts`)
+- [ ] 2.3 认证 API (`src/api/auth.ts`) - login, init, profile, password
+- [ ] 2.4 i18n 系统 (`src/lib/i18n.ts`) - 支持 en/zh-CN/ja 三语言, 迁移现有 177 键
+- [ ] 2.5 主题系统 (`src/lib/theme.ts`) - light/dark 双主题
+- [ ] 2.6 Zustand 全局状态 (`src/stores/`)
+- [ ] 2.7 路由设置 (`src/App.tsx`) - React Router 懒加载各页面
 
-### Phase 3: Voice Transcription (Medium Priority) — Codex
-- [x] 3.1 Add Groq Whisper integration (`pkg/transcription/`)
-- [x] 3.2 Integrate into Telegram channel (voice messages)
-- [x] 3.3 Integrate into Discord channel
-- [x] 3.4 Integrate into Slack channel
-- [x] 3.5 Add transcription config section
+### Phase 3: 布局与认证
+- [ ] 3.1 AppLayout 组件 - 侧边栏 + 主内容区
+- [ ] 3.2 Sidebar 导航 - Logo, 导航项, 语言/主题切换
+- [ ] 3.3 Header 组件 - 页面标题 + 描述
+- [ ] 3.4 初始化页面 - 首次运行创建管理员账户
+- [ ] 3.5 登录页面 - JWT 认证
+- [ ] 3.6 账户设置对话框 - 密码修改/个人信息
+- [ ] 3.7 通用 UI 组件 - MaskedInput, KeyValueEditor, TagInput, LogoBadge, StatusBadge, ConfirmDialog
 
-### Phase 4: Microsoft Teams Channel (Medium Priority) — Codex
-- [x] 4.1 Create `pkg/channels/teams/` implementation
-- [x] 4.2 Add TeamsConfig to config.go and ChannelsConfig
-- [x] 4.3 Implement Bot Framework message handling
-- [x] 4.4 Register in channel manager
+### Phase 4: Chat Playground (保留重写)
+- [ ] 4.1 Chat 页面组件 - Provider/Model 选择器
+- [ ] 4.2 Chat WebSocket 通信 - 实时对话
+- [ ] 4.3 聊天消息渲染 - Markdown 支持
+- [ ] 4.4 Fallback provider 配置
+- [ ] 4.5 自定义模型输入
 
-### Phase 5: Docker Sandbox (Medium Priority) — Codex
-- [x] 5.1 Add Docker sandbox config to exec tool
-- [x] 5.2 Implement container-based execution in `pkg/tools/exec.go`
-- [x] 5.3 Network isolation, mounts, auto-cleanup
-- [x] 5.4 Fallback to direct execution
+### Phase 5: Tool Sessions (保留重写)
+- [ ] 5.1 Tool Sessions 页面 - 侧边栏会话列表 + 主面板
+- [ ] 5.2 xterm.js 终端组件 - WebSocket PTY 通信
+- [ ] 5.3 创建/编辑工具会话对话框 (10+ 字段)
+- [ ] 5.4 访问控制对话框 (OTP/永久密码)
+- [ ] 5.5 会话状态管理 (running/detached/terminated/archived)
+- [ ] 5.6 终端分屏视图
+- [ ] 5.7 会话重启/终止/清理操作
 
-### Phase 6: Approvals System (Medium Priority) — Claude
-- [x] 6.1 Create `pkg/approval/` with approval manager
-- [x] 6.2 Add approval config (auto/manual/prompt modes, tool allowlist)
-- [x] 6.3 Integrate into tool execution pipeline
-- [x] 6.4 Add CLI commands + WebUI REST endpoints
+### Phase 6: Provider 管理 (参考 nextclaw 升级)
+- [ ] 6.1 Provider API hooks (`src/hooks/useProviders.ts`)
+- [ ] 6.2 ProvidersList 页面 - 卡片网格视图, "已配置/全部" 分页 (参考 nextclaw ProvidersList)
+- [ ] 6.3 ProviderForm 模态框 - API Key (MaskedInput), Endpoint, Proxy, Timeout, ExtraHeaders (KeyValueEditor)
+- [ ] 6.4 模型发现/选择 UI - 自动发现 + 手动添加
+- [ ] 6.5 Provider Logo 映射 + 模板预设
 
-### Phase 7: WebSocket Gateway (Medium Priority) — Claude
-- [x] 7.1 Add gorilla/websocket dependency
-- [x] 7.2 Implement WS handler in gateway
-- [x] 7.3 Connection pool, auth, keepalive
-- [x] 7.4 REST API endpoints
+### Phase 7: Channel 管理 (参考 nextclaw 升级)
+- [ ] 7.1 Channel API hooks (`src/hooks/useChannels.ts`)
+- [ ] 7.2 ChannelsList 页面 - 卡片网格视图, "已启用/全部" 分页 (参考 nextclaw ChannelsList)
+- [ ] 7.3 ChannelForm 动态表单 - 根据 channel 类型生成字段 (参考 nextclaw ChannelForm)
+- [ ] 7.4 Channel 测试功能
+- [ ] 7.5 Channel Logo 映射
 
-### Phase 8: WebUI Dashboard (High Priority, High Complexity) — Claude + Codex
-- [x] 8.1 Add Echo v4 dependency, create `pkg/webui/` module
-- [x] 8.2 Security: JWT auth, first-run password init, session management
-- [x] 8.3 API routes: provider CRUD, channel CRUD, config save/sync
-- [x] 8.4 Chat Playground: WebSocket-based chat with agent integration
-- [x] 8.5 Channel testing: check channel status and reachability
-- [x] 8.6 Frontend: embedded SPA (use /ui-skills for design)
-- [x] 8.7 Auto-start WebUI when gateway runs in daemon mode
-- [x] 8.8 Add WebUI config (port, auth settings) to Config
+### Phase 8: 配置管理 (增强)
+- [ ] 8.1 Model 配置页 (新, 参考 nextclaw ModelConfig) - 默认模型, workspace, max tokens, context tokens, tool iterations
+- [ ] 8.2 Runtime 配置页 (新, 参考 nextclaw RuntimeConfig) - Agent 列表, 绑定路由, DM scope, ping-pong
+- [ ] 8.3 通用配置页 - 表单模式 + JSON 模式切换 (保留现有 section 编辑)
+- [ ] 8.4 配置导入/导出
 
-### Phase 9: Extended Thinking (Low Priority) — Claude
-- [x] 9.1 Add thinking fields to provider config
-- [x] 9.2 Handle thinking blocks in Claude responses
-- [x] 9.3 Thinking budget configuration
+### Phase 9: Session 管理 (新功能, 参考 nextclaw)
+- [ ] 9.1 后端 API - 会话列表/历史/编辑/删除端点
+- [ ] 9.2 SessionsConfig 页面 - 分屏: 列表 + 详情
+- [ ] 9.3 聊天历史浏览器 - 消息渲染 + 分页
+- [ ] 9.4 会话元数据编辑 (标签/首选模型)
+- [ ] 9.5 搜索和筛选功能
 
-### Phase 10: TUI & Infoflow (Medium Priority)
-- [x] 10.1 Simple TUI with bubbletea (minimal, preserve current functionality)
-- [x] 10.2 Infoflow (如流) channel implementation
+### Phase 10: Cron 任务管理 (新功能, 参考 nextclaw)
+- [ ] 10.1 后端 API - 定时任务 CRUD 端点
+- [ ] 10.2 CronConfig 页面 - 任务列表 + 搜索/筛选
+- [ ] 10.3 启用/禁用/立即执行/删除操作
+- [ ] 10.4 调度信息展示 (at/every/cron 三种类型)
 
-## Team Assignment
+### Phase 11: Marketplace 市场 (新功能, 参考 nextclaw)
+- [ ] 11.1 后端 API - 插件/技能 浏览/安装/管理端点
+- [ ] 11.2 MarketplacePage 页面 - 目录浏览/已安装 分页
+- [ ] 11.3 搜索/排序/分页
+- [ ] 11.4 安装/启用/禁用/卸载操作
 
-| Agent | Phases | Focus |
-|-------|--------|-------|
-| **Claude** | ~~1~~, ~~2~~, 6, 7, 8.1-8.3, 8.7-8.8, 9 | Config, tools, approval, WS gateway, WebUI backend |
-| **Codex** | 3, 4, 5, 8.4-8.6, 10 | Voice, Teams, Docker sandbox, WebUI frontend, TUI, Infoflow |
+### Phase 12: 系统状态 & 收尾
+- [ ] 12.1 System 状态页增强
+- [ ] 12.2 Approval 管理页 (保留现有)
+- [ ] 12.3 i18n 全量翻译校对 (en/zh-CN/ja)
+- [ ] 12.4 响应式布局优化 (移动端适配)
+- [ ] 12.5 构建流程集成测试
+- [ ] 12.6 清理旧 vanilla JS 文件
 
 ## Key Decisions
-- Redis config: Single shared `RedisConfig`, State/Bus only specify prefix
-- Provider proxy: `Proxy string` field on `ProviderProfile`
-- edit_file: old_string/new_string replacement (like goclaw) + line_start/line_end editing
-- WebUI: Echo v5 backend, embedded SPA frontend, JWT auth
-- WebUI auto-starts on daemon mode with configurable port (default: gateway port + 1)
+- **前端框架**: 迁移到 React 18 + TypeScript + Vite (与 nextclaw 一致，便于参考和维护)
+- **UI 组件库**: shadcn/ui + Tailwind CSS (参考 nextclaw 设计系统)
+- **状态管理**: Zustand (UI) + TanStack React Query (服务端状态)
+- **后端 API**: 保持 nekobot 现有 API 结构，必要时新增端点
+- **Tool Session**: 完整保留，用 React 组件重写前端 (保留 xterm.js)
+- **Chat Playground**: 完整保留，用 React 组件重写
+- **嵌入方式**: 保持 Go embed, Vite 构建输出到 dist/
+- **i18n**: 保持三语言支持 (en/zh-CN/ja)
+
+## Completed Work
+- [x] Phase 1: React+Vite+TypeScript 脚手架搭建
+- [x] Phase 2-3: 基础框架层+布局+认证
+- [x] Phase 4: Chat Playground (React重写)
+- [x] Phase 5: Tool Sessions (React重写, xterm.js)
+- [x] Phase 6: Provider 管理 (卡片网格+表单)
+- [x] Phase 7: Channel 管理 (动态表单)
+- [x] Phase 8: Config + System 页面
+- [x] Web Interface Guidelines 审查完成
+
+## Pending Work
+- [ ] 修复 Web Interface Guidelines 违规项
+- [ ] Docker: 多阶段构建 + tmux
+- [ ] 后端架构增强 (从 picoclaw/nextclaw 借鉴)
+
+## Agent 架构分析 (2026-02-27)
+详见 notes.md - 从 nextclaw + picoclaw 分析了4个维度:
+1. 架构稳健性: 原子文件写入、Provider Failover增强、上下文压缩、历史清理
+2. Skill增强: Registry Manager远程源、Always Skills、Skill Summary XML
+3. Cron增强: at/every类型、原子持久化、DeleteAfterRun、Web UI
+4. UI易用性: CronConfig页面、Session浏览器、确定性工具排序
+
+## Errors Encountered
+- npx tsc 安装了错误的包 → 改用 ./node_modules/.bin/tsc
 
 ## Status
-**Phase 1-10 COMPLETE** — All planned features implemented; `go build` + `go vet` pass.
-
-### What's Done (Claude)
-- Config: shared RedisConfig, provider proxy, approval config, WebUI config
-- Tools: edit_file + append_file implemented and registered
-- Proxy: all 4 adaptors (openai, claude, gemini, generic) now use proxy from config
-- Approval: full manager with auto/prompt/manual modes, CLI commands, WebUI REST endpoints
-- WebSocket Gateway: gorilla/websocket, JWT auth, connection pool, ping/pong keepalive, REST endpoints
-- WebUI: Echo v5 server with JWT auth, init flow, provider/channel/config CRUD APIs, embedded SPA frontend
-- Extended Thinking: thinking config in AgentDefaults, thinking block handling in Claude converter, budget control
-
-### What's Remaining
-- Phase 8.4-8.6 follow-up polish (UX/visual improvements) as needed
-
-### Notes
-- Telegram approval interaction: In prompt mode, approval requests can be sent as inline keyboard messages in Telegram, and user taps approve/deny button
-- Discord: Can use message components (buttons) for similar approval UX
-- Frontend pages should be embedded into binary via Go embed (already set up)
-- User prefers /ui-skills for frontend design
-
----
-
-## Current Task (2026-02-15): Provider DB Storage + Dashboard UX
-
-### Goal
-- Move provider CRUD persistence from config file to database-backed storage.
-- Fix frontend inability/confusion when adding provider.
-- Improve dashboard provider操作体验 with a more direct save flow.
-
-### Execution Plan
-- [x] 1. Add `providerstore` module (SQLite) with CRUD + config sync.
-- [x] 2. Integrate provider store into gateway/webui runtime and API handlers.
-- [x] 3. Improve provider dialog UX in dashboard (apply-and-save, clearer feedback).
-- [x] 4. Add/adjust tests and run targeted verification.
-- [x] 5. Centralize Ent generated code into single shared location (`pkg/storage/ent`).
-- [x] 6. Move additional runtime config persistence from config.json to shared database and sync docs/examples.
-- [x] 7. Re-plan configuration options and improve dashboard config interaction (section-based editing + outdated config content cleanup).
+**Phase 1-8 前端完成** - 待修复guidelines违规项 + Docker + 后端架构增强

@@ -1,3 +1,14 @@
+# Frontend build stage
+FROM node:22-alpine AS frontend
+
+WORKDIR /build/frontend
+
+COPY pkg/webui/frontend/package.json pkg/webui/frontend/package-lock.json ./
+RUN npm ci
+
+COPY pkg/webui/frontend/ .
+RUN npm run build
+
 # Build stage
 FROM golang:1.26-alpine AS builder
 
@@ -16,6 +27,8 @@ RUN go mod download
 
 COPY . .
 
+COPY --from=frontend /build/frontend/dist ./pkg/webui/frontend/dist
+
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -trimpath \
     -ldflags="-s -w \
@@ -27,7 +40,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 # Runtime stage
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata tmux
 
 RUN addgroup -g 1000 app && adduser -D -u 1000 -G app app
 
