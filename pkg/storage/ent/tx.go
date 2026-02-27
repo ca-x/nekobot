@@ -18,12 +18,18 @@ type Tx struct {
 	ConfigSection *ConfigSectionClient
 	// CronJob is the client for interacting with the CronJob builders.
 	CronJob *CronJobClient
+	// Membership is the client for interacting with the Membership builders.
+	Membership *MembershipClient
 	// Provider is the client for interacting with the Provider builders.
 	Provider *ProviderClient
+	// Tenant is the client for interacting with the Tenant builders.
+	Tenant *TenantClient
 	// ToolEvent is the client for interacting with the ToolEvent builders.
 	ToolEvent *ToolEventClient
 	// ToolSession is the client for interacting with the ToolSession builders.
 	ToolSession *ToolSessionClient
+	// User is the client for interacting with the User builders.
+	User *UserClient
 
 	// lazily loaded.
 	client     *Client
@@ -158,9 +164,12 @@ func (tx *Tx) init() {
 	tx.AttachToken = NewAttachTokenClient(tx.config)
 	tx.ConfigSection = NewConfigSectionClient(tx.config)
 	tx.CronJob = NewCronJobClient(tx.config)
+	tx.Membership = NewMembershipClient(tx.config)
 	tx.Provider = NewProviderClient(tx.config)
+	tx.Tenant = NewTenantClient(tx.config)
 	tx.ToolEvent = NewToolEventClient(tx.config)
 	tx.ToolSession = NewToolSessionClient(tx.config)
+	tx.User = NewUserClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.

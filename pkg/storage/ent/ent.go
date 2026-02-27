@@ -9,9 +9,12 @@ import (
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
+	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/provider"
+	"nekobot/pkg/storage/ent/tenant"
 	"nekobot/pkg/storage/ent/toolevent"
 	"nekobot/pkg/storage/ent/toolsession"
+	"nekobot/pkg/storage/ent/user"
 	"reflect"
 	"sync"
 
@@ -81,9 +84,12 @@ func checkColumn(t, c string) error {
 			attachtoken.Table:   attachtoken.ValidColumn,
 			configsection.Table: configsection.ValidColumn,
 			cronjob.Table:       cronjob.ValidColumn,
+			membership.Table:    membership.ValidColumn,
 			provider.Table:      provider.ValidColumn,
+			tenant.Table:        tenant.ValidColumn,
 			toolevent.Table:     toolevent.ValidColumn,
 			toolsession.Table:   toolsession.ValidColumn,
+			user.Table:          user.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

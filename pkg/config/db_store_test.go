@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestApplyDatabaseOverridesAndSaveSections(t *testing.T) {
 	cfg := DefaultConfig()
@@ -71,5 +74,86 @@ func TestSaveDatabaseSectionsUnknownSection(t *testing.T) {
 
 	if err := SaveDatabaseSections(cfg, "unknown_section"); err == nil {
 		t.Fatalf("expected error for unknown section")
+	}
+}
+
+func TestSaveAdminCredentialMigratesToUserTenantMembership(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	client, err := openRuntimeConfigClient(cfg)
+	if err != nil {
+		t.Fatalf("open runtime client: %v", err)
+	}
+	defer client.Close()
+
+	cred := &AdminCredential{
+		Username:     "admin",
+		Nickname:     "Owner",
+		PasswordHash: "$2a$10$examplehash",
+		JWTSecret:    "jwt-secret",
+	}
+	if err := SaveAdminCredential(client, cred); err != nil {
+		t.Fatalf("SaveAdminCredential failed: %v", err)
+	}
+
+	loaded, err := LoadAdminCredential(client)
+	if err != nil {
+		t.Fatalf("LoadAdminCredential failed: %v", err)
+	}
+	if loaded == nil {
+		t.Fatalf("expected credential")
+	}
+	if loaded.Username != "admin" || loaded.Nickname != "Owner" {
+		t.Fatalf("unexpected loaded credential: %+v", loaded)
+	}
+	if loaded.JWTSecret != "jwt-secret" {
+		t.Fatalf("unexpected jwt secret: %s", loaded.JWTSecret)
+	}
+
+	profile, err := BuildAuthProfileByUsername(t.Context(), client, "admin")
+	if err != nil {
+		t.Fatalf("BuildAuthProfileByUsername failed: %v", err)
+	}
+	if profile.Role != "owner" {
+		t.Fatalf("expected owner role, got %q", profile.Role)
+	}
+	if profile.TenantSlug != "default" {
+		t.Fatalf("expected default tenant slug, got %q", profile.TenantSlug)
+	}
+}
+
+func TestGetJWTSecretWithLegacyPayload(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	client, err := openRuntimeConfigClient(cfg)
+	if err != nil {
+		t.Fatalf("open runtime client: %v", err)
+	}
+	defer client.Close()
+
+	legacy := &AdminCredential{
+		Username:     "legacy",
+		Nickname:     "Legacy",
+		PasswordHash: "hash",
+		JWTSecret:    "legacy-secret",
+	}
+	payload, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatalf("marshal legacy payload: %v", err)
+	}
+	if err := upsertSectionPayload(t.Context(), client, adminCredSection, payload); err != nil {
+		t.Fatalf("upsert legacy payload: %v", err)
+	}
+
+	secret, err := GetJWTSecret(client)
+	if err != nil {
+		t.Fatalf("GetJWTSecret failed: %v", err)
+	}
+	if secret != "legacy-secret" {
+		t.Fatalf("expected legacy-secret, got %q", secret)
 	}
 }

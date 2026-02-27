@@ -15,11 +15,20 @@ type ConfigSection func(*sql.Selector)
 // CronJob is the predicate function for cronjob builders.
 type CronJob func(*sql.Selector)
 
+// Membership is the predicate function for membership builders.
+type Membership func(*sql.Selector)
+
 // Provider is the predicate function for provider builders.
 type Provider func(*sql.Selector)
+
+// Tenant is the predicate function for tenant builders.
+type Tenant func(*sql.Selector)
 
 // ToolEvent is the predicate function for toolevent builders.
 type ToolEvent func(*sql.Selector)
 
 // ToolSession is the predicate function for toolsession builders.
 type ToolSession func(*sql.Selector)
+
+// User is the predicate function for user builders.
+type User func(*sql.Selector)

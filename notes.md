@@ -303,21 +303,106 @@ type CronJobState struct {
 - Session Manager: `/home/czyt/code/go/picoclaw/pkg/session/manager.go`
 - Memory Store: `/home/czyt/code/go/picoclaw/pkg/agent/memory.go`
 
-### nextclaw 关键文件
-- Agent Loop: `nextclaw-core/src/agent/loop.ts`
-- Input Budget: `nextclaw-core/src/agent/input-budget-pruner.ts`
-- Skills: `nextclaw-core/src/agent/skills.ts`
-- Context: `nextclaw-core/src/agent/context.ts`
-- Cron Service: `nextclaw-core/src/cron/service.ts`
-- Provider Manager: `nextclaw-core/src/providers/provider_manager.ts`
-- Memory: `nextclaw-core/src/agent/memory.ts`
 
-### nekobot 需改进的文件
-- Agent Loop: `/home/czyt/code/go/nekobot/pkg/agent/agent.go`
-- Provider Failover: `/home/czyt/code/go/nekobot/pkg/providers/failover.go`
-- Error Classifier: `/home/czyt/code/go/nekobot/pkg/providers/` (需增强)
-- Circuit Breaker: `/home/czyt/code/go/nekobot/pkg/providers/loadbalancer.go`
-- Cron: `/home/czyt/code/go/nekobot/pkg/cron/cron.go`
-- Session: `/home/czyt/code/go/nekobot/pkg/session/manager.go`
-- Skills: `/home/czyt/code/go/nekobot/pkg/skills/`
-- Tools: `/home/czyt/code/go/nekobot/pkg/tools/registry.go`
+---
+
+## Blades 文档与 go doc 能力边界 (2026-02-27)
+
+### Sources consulted
+- 官方文档：
+  - `https://go-kratos.dev/blades/`
+  - `https://go-kratos.dev/blades/get-started/quick-started/`
+  - `https://go-kratos.dev/blades/get-started/run/`
+  - `https://go-kratos.dev/blades/get-started/runstream/`
+  - `https://go-kratos.dev/blades/tutorials/01-session/`
+  - `https://go-kratos.dev/blades/tutorials/02-memory/`
+  - `https://go-kratos.dev/blades/tutorials/03-prompts/`
+  - `https://go-kratos.dev/blades/tutorials/04-middleware/`
+  - `https://go-kratos.dev/blades/tutorials/05-obserability/`
+  - `https://go-kratos.dev/blades/tutorials/06-tools/`
+  - `https://go-kratos.dev/blades/agent-patterns/01-sequential-agents/`
+  - `https://go-kratos.dev/blades/agent-patterns/02-loop-agents/`
+  - `https://go-kratos.dev/blades/agent-patterns/03-parallel-agents/`
+  - `https://go-kratos.dev/blades/agent-patterns/04-handoff-agents/`
+  - `https://go-kratos.dev/blades/graph-workflows/graph-state/`
+  - `https://go-kratos.dev/blades/model-providers/claude/`
+  - `https://go-kratos.dev/blades/model-providers/gemini/`
+  - `https://go-kratos.dev/blades/model-providers/openai/`
+  - `https://go-kratos.dev/blades/evaluate/evaluation/`
+- go doc / 模块证据：
+  - `go list -m -json -versions github.com/go-kratos/blades`
+  - `go list -m -json github.com/go-kratos/blades@v0.3.1`
+  - `env GOMOD=/dev/null go mod download -json github.com/go-kratos/blades@v0.3.1`
+  - `go doc "/Users/czyt/go/pkg/mod/github.com/go-kratos/blades@v0.3.1"`
+  - `go doc -all "/Users/czyt/go/pkg/mod/github.com/go-kratos/blades@v0.3.1/flow"`
+  - `go doc -all "/Users/czyt/go/pkg/mod/github.com/go-kratos/blades@v0.3.1/graph"`
+  - `go doc -all "/Users/czyt/go/pkg/mod/github.com/go-kratos/blades@v0.3.1/memory"`
+
+### Allowed APIs（确认可用）
+- 根包 `blades`:
+  - `NewAgent(name, opts...)`
+  - `WithModel/WithInstruction/WithTools/WithMiddleware/WithMaxIterations/WithToolsResolver/WithDescription/WithOutputKey`
+  - `NewRunner(rootAgent, opts...)`
+  - `WithResumable(...)`
+  - `NewSession(...)` + `WithSession(...)`
+  - `UserMessage/SystemMessage/AssistantMessage`
+- `flow`:
+  - `NewSequentialAgent(SequentialConfig)`
+  - `NewParallelAgent(ParallelConfig)`
+  - `NewLoopAgent(LoopConfig)`
+  - `NewRoutingAgent(RoutingConfig)`
+  - `NewDeepAgent(DeepConfig)`
+- `graph`:
+  - `New(...)` + `AddNode/AddEdge/SetEntryPoint/SetFinishPoint/Compile`
+  - `Executor.Execute/Resume`
+  - `WithEdgeCondition/WithCheckpointer/WithCheckpointID`
+- `memory`:
+  - `NewMemoryTool(store)`
+  - `MemoryStore` 接口
+  - `NewInMemoryStore()`
+
+### 能力边界（本次规划约束）
+1. Blades 已有多 agent 编排抽象（顺序/并行/循环/路由），适合作为 nekobot 的 orchestrator runtime 替代层。
+2. Memory 层是接口抽象 + InMemory 示例实现，不应假设已有“现成持久化后端”。
+3. Graph 能力可做复杂状态机/恢复（checkpoint），但第一阶段优先 flow 即可，避免过度设计。
+4. 官方 Provider 文档能力覆盖 OpenAI/Claude/Gemini；可逐步替换当前自研 adaptor。
+
+### Anti-patterns to avoid
+- 假设存在 `github.com/go-kratos/blades/agent` 公开子包（本次证据未发现）。
+- 直接导入 `internal/*`。
+- 认为 memory 已内置 Redis/向量库后端。
+- 在未依赖 blades 的模块里直接 `go doc github.com/go-kratos/blades` 得出“包不存在”错误结论。
+
+### Copy-ready snippets
+- Run/RunStream：`get-started/run`、`get-started/runstream`
+- 多 agent 编排：`agent-patterns/01..04`
+- Session/Memory/Middleware：`tutorials/01/02/04`
+- Graph checkpoint：`graph-workflows/graph-state`
+
+---
+
+## Feature Batch #1 完成记录 (2026-02-27)
+
+### 范围
+- Phase 1：多用户认证基础落地（User/Tenant/Membership + JWT 统一秘钥治理 + WebUI 认证端点迁移）。
+
+### 代码变更摘要
+- 新增 schema：`pkg/storage/ent/schema/user.go`、`pkg/storage/ent/schema/tenant.go`、`pkg/storage/ent/schema/membership.go`。
+- 新增认证存储层：`pkg/config/auth_store.go`，封装事务、默认租户确保、成员关系确保、legacy 凭据清理、JWT secret 统一读写与兼容解析。
+- 重构认证核心：`pkg/config/admin_credential.go`。
+  - `LoadAdminCredential` 优先 users/memberships，缺失时兼容 legacy section。
+  - `SaveAdminCredential` 迁移为 user+tenant+membership 模型，并写入独立 JWT secret payload。
+  - 新增 `AuthenticateUser`、`BuildAuthProfileByUsername`、`BuildAuthProfileByUserID`、`UpdateUserProfile`、`UpdateUserPassword`、`RecordUserLogin`。
+- 重构 WebUI 服务：`pkg/webui/server.go`。
+  - 移除内存态 `adminCred`/`credMu`。
+  - 新增 `/auth/me`。
+  - 登录/初始化/个人资料/密码更新改为 DB 驱动。
+  - JWT claims 扩展为 `sub/uid/role/tid/ts/iat/exp`。
+- 网关 JWT secret 源切换：`pkg/gateway/server.go` 改为 `config.GetJWTSecret(client)`。
+- 补测试：`pkg/config/db_store_test.go`。
+  - `TestSaveAdminCredentialMigratesToUserTenantMembership`
+  - `TestGetJWTSecretWithLegacyPayload`
+
+### 验证
+- 已执行：`go test ./pkg/config ./pkg/webui ./pkg/gateway`
+- 结果：全部通过。

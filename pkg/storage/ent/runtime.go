@@ -6,10 +6,13 @@ import (
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
+	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/schema"
+	"nekobot/pkg/storage/ent/tenant"
 	"nekobot/pkg/storage/ent/toolevent"
 	"nekobot/pkg/storage/ent/toolsession"
+	"nekobot/pkg/storage/ent/user"
 	"time"
 )
 
@@ -101,6 +104,38 @@ func init() {
 	cronjobDescID := cronjobFields[0].Descriptor()
 	// cronjob.DefaultID holds the default value on creation for the id field.
 	cronjob.DefaultID = cronjobDescID.Default.(func() string)
+	membershipFields := schema.Membership{}.Fields()
+	_ = membershipFields
+	// membershipDescUserID is the schema descriptor for user_id field.
+	membershipDescUserID := membershipFields[1].Descriptor()
+	// membership.UserIDValidator is a validator for the "user_id" field. It is called by the builders before save.
+	membership.UserIDValidator = membershipDescUserID.Validators[0].(func(string) error)
+	// membershipDescTenantID is the schema descriptor for tenant_id field.
+	membershipDescTenantID := membershipFields[2].Descriptor()
+	// membership.TenantIDValidator is a validator for the "tenant_id" field. It is called by the builders before save.
+	membership.TenantIDValidator = membershipDescTenantID.Validators[0].(func(string) error)
+	// membershipDescRole is the schema descriptor for role field.
+	membershipDescRole := membershipFields[3].Descriptor()
+	// membership.DefaultRole holds the default value on creation for the role field.
+	membership.DefaultRole = membershipDescRole.Default.(string)
+	// membershipDescEnabled is the schema descriptor for enabled field.
+	membershipDescEnabled := membershipFields[4].Descriptor()
+	// membership.DefaultEnabled holds the default value on creation for the enabled field.
+	membership.DefaultEnabled = membershipDescEnabled.Default.(bool)
+	// membershipDescCreatedAt is the schema descriptor for created_at field.
+	membershipDescCreatedAt := membershipFields[5].Descriptor()
+	// membership.DefaultCreatedAt holds the default value on creation for the created_at field.
+	membership.DefaultCreatedAt = membershipDescCreatedAt.Default.(func() time.Time)
+	// membershipDescUpdatedAt is the schema descriptor for updated_at field.
+	membershipDescUpdatedAt := membershipFields[6].Descriptor()
+	// membership.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	membership.DefaultUpdatedAt = membershipDescUpdatedAt.Default.(func() time.Time)
+	// membership.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	membership.UpdateDefaultUpdatedAt = membershipDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// membershipDescID is the schema descriptor for id field.
+	membershipDescID := membershipFields[0].Descriptor()
+	// membership.DefaultID holds the default value on creation for the id field.
+	membership.DefaultID = membershipDescID.Default.(func() string)
 	providerFields := schema.Provider{}.Fields()
 	_ = providerFields
 	// providerDescName is the schema descriptor for name field.
@@ -149,6 +184,34 @@ func init() {
 	providerDescID := providerFields[0].Descriptor()
 	// provider.DefaultID holds the default value on creation for the id field.
 	provider.DefaultID = providerDescID.Default.(func() string)
+	tenantFields := schema.Tenant{}.Fields()
+	_ = tenantFields
+	// tenantDescSlug is the schema descriptor for slug field.
+	tenantDescSlug := tenantFields[1].Descriptor()
+	// tenant.SlugValidator is a validator for the "slug" field. It is called by the builders before save.
+	tenant.SlugValidator = tenantDescSlug.Validators[0].(func(string) error)
+	// tenantDescName is the schema descriptor for name field.
+	tenantDescName := tenantFields[2].Descriptor()
+	// tenant.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	tenant.NameValidator = tenantDescName.Validators[0].(func(string) error)
+	// tenantDescEnabled is the schema descriptor for enabled field.
+	tenantDescEnabled := tenantFields[3].Descriptor()
+	// tenant.DefaultEnabled holds the default value on creation for the enabled field.
+	tenant.DefaultEnabled = tenantDescEnabled.Default.(bool)
+	// tenantDescCreatedAt is the schema descriptor for created_at field.
+	tenantDescCreatedAt := tenantFields[4].Descriptor()
+	// tenant.DefaultCreatedAt holds the default value on creation for the created_at field.
+	tenant.DefaultCreatedAt = tenantDescCreatedAt.Default.(func() time.Time)
+	// tenantDescUpdatedAt is the schema descriptor for updated_at field.
+	tenantDescUpdatedAt := tenantFields[5].Descriptor()
+	// tenant.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	tenant.DefaultUpdatedAt = tenantDescUpdatedAt.Default.(func() time.Time)
+	// tenant.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	tenant.UpdateDefaultUpdatedAt = tenantDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// tenantDescID is the schema descriptor for id field.
+	tenantDescID := tenantFields[0].Descriptor()
+	// tenant.DefaultID holds the default value on creation for the id field.
+	tenant.DefaultID = tenantDescID.Default.(func() string)
 	tooleventFields := schema.ToolEvent{}.Fields()
 	_ = tooleventFields
 	// tooleventDescPayloadJSON is the schema descriptor for payload_json field.
@@ -235,4 +298,40 @@ func init() {
 	toolsessionDescID := toolsessionFields[0].Descriptor()
 	// toolsession.DefaultID holds the default value on creation for the id field.
 	toolsession.DefaultID = toolsessionDescID.Default.(func() string)
+	userFields := schema.User{}.Fields()
+	_ = userFields
+	// userDescUsername is the schema descriptor for username field.
+	userDescUsername := userFields[1].Descriptor()
+	// user.UsernameValidator is a validator for the "username" field. It is called by the builders before save.
+	user.UsernameValidator = userDescUsername.Validators[0].(func(string) error)
+	// userDescNickname is the schema descriptor for nickname field.
+	userDescNickname := userFields[2].Descriptor()
+	// user.DefaultNickname holds the default value on creation for the nickname field.
+	user.DefaultNickname = userDescNickname.Default.(string)
+	// userDescPasswordHash is the schema descriptor for password_hash field.
+	userDescPasswordHash := userFields[3].Descriptor()
+	// user.DefaultPasswordHash holds the default value on creation for the password_hash field.
+	user.DefaultPasswordHash = userDescPasswordHash.Default.(string)
+	// userDescRole is the schema descriptor for role field.
+	userDescRole := userFields[4].Descriptor()
+	// user.DefaultRole holds the default value on creation for the role field.
+	user.DefaultRole = userDescRole.Default.(string)
+	// userDescEnabled is the schema descriptor for enabled field.
+	userDescEnabled := userFields[5].Descriptor()
+	// user.DefaultEnabled holds the default value on creation for the enabled field.
+	user.DefaultEnabled = userDescEnabled.Default.(bool)
+	// userDescCreatedAt is the schema descriptor for created_at field.
+	userDescCreatedAt := userFields[7].Descriptor()
+	// user.DefaultCreatedAt holds the default value on creation for the created_at field.
+	user.DefaultCreatedAt = userDescCreatedAt.Default.(func() time.Time)
+	// userDescUpdatedAt is the schema descriptor for updated_at field.
+	userDescUpdatedAt := userFields[8].Descriptor()
+	// user.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	user.DefaultUpdatedAt = userDescUpdatedAt.Default.(func() time.Time)
+	// user.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	user.UpdateDefaultUpdatedAt = userDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// userDescID is the schema descriptor for id field.
+	userDescID := userFields[0].Descriptor()
+	// user.DefaultID holds the default value on creation for the id field.
+	user.DefaultID = userDescID.Default.(func() string)
 }

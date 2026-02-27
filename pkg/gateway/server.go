@@ -418,9 +418,9 @@ func (s *Server) authenticateWS(r *http.Request) (userID, username string, err e
 		return "", "", fmt.Errorf("no token provided")
 	}
 
-	// Validate JWT using admin credential from database
-	cred, err := config.LoadAdminCredential(s.entClient)
-	if err != nil || cred == nil || cred.JWTSecret == "" {
+	// Validate JWT using auth secret from database.
+	secret, secretErr := config.GetJWTSecret(s.entClient)
+	if secretErr != nil {
 		return "", "", fmt.Errorf("server not initialized")
 	}
 
@@ -428,7 +428,7 @@ func (s *Server) authenticateWS(r *http.Request) (userID, username string, err e
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return []byte(cred.JWTSecret), nil
+		return []byte(secret), nil
 	})
 	if err != nil {
 		return "", "", fmt.Errorf("invalid token: %w", err)

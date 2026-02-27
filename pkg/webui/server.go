@@ -64,8 +64,6 @@ type Server struct {
 	processMgr *process.Manager
 	providers  *providerstore.Manager
 	entClient  *ent.Client
-	adminCred  *config.AdminCredential
-	credMu     sync.RWMutex
 	port       int
 	startedAt  time.Time
 }
@@ -91,9 +89,8 @@ func NewServer(
 		port = cfg.Gateway.Port + 1
 	}
 
-	// Load admin credential from DB (nil if not yet initialized).
-	cred, err := config.LoadAdminCredential(entClient)
-	if err != nil {
+	// Validate auth storage connectivity during startup.
+	if _, err := config.LoadAdminCredential(entClient); err != nil {
 		log.Warn("Failed to load admin credential from database", zap.Error(err))
 	}
 
@@ -111,7 +108,6 @@ func NewServer(
 		processMgr: processManager,
 		providers:  providerStore,
 		entClient:  entClient,
-		adminCred:  cred,
 		port:       port,
 		startedAt:  time.Now(),
 	}
@@ -176,6 +172,7 @@ func (s *Server) setup() {
 	// Auth management (change password, profile)
 	api.POST("/auth/change-password", s.handleChangePassword)
 	api.GET("/auth/profile", s.handleGetProfile)
+	api.GET("/auth/me", s.handleGetMe)
 	api.PUT("/auth/profile", s.handleUpdateProfile)
 
 	// Tool session routes
@@ -257,17 +254,22 @@ func (s *Server) Stop(ctx context.Context) error {
 // --- Auth Handlers ---
 
 func (s *Server) handleInitStatus(c *echo.Context) error {
-	s.credMu.RLock()
-	initialized := s.adminCred != nil && s.adminCred.PasswordHash != ""
-	s.credMu.RUnlock()
+	cred, err := config.LoadAdminCredential(s.entClient)
+	if err != nil {
+		s.logger.Warn("Failed to load admin credential", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load auth status"})
+	}
+	initialized := cred != nil && strings.TrimSpace(cred.PasswordHash) != ""
 	return c.JSON(http.StatusOK, map[string]bool{"initialized": initialized})
 }
 
 func (s *Server) handleInitPassword(c *echo.Context) error {
-	s.credMu.RLock()
-	alreadyInit := s.adminCred != nil && s.adminCred.PasswordHash != ""
-	s.credMu.RUnlock()
-	if alreadyInit {
+	cred, err := config.LoadAdminCredential(s.entClient)
+	if err != nil {
+		s.logger.Warn("Failed to load admin credential", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load auth status"})
+	}
+	if cred != nil && strings.TrimSpace(cred.PasswordHash) != "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "already initialized"})
 	}
 
@@ -293,27 +295,35 @@ func (s *Server) handleInitPassword(c *echo.Context) error {
 		username = "admin"
 	}
 
-	cred := &config.AdminCredential{
+	newCred := &config.AdminCredential{
 		Username:     username,
 		PasswordHash: hash,
 		JWTSecret:    config.GenerateJWTSecret(),
 	}
 
-	if err := config.SaveAdminCredential(s.entClient, cred); err != nil {
+	if err := config.SaveAdminCredential(s.entClient, newCred); err != nil {
 		s.logger.Error("Failed to persist admin credential", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save credentials"})
 	}
 
-	s.credMu.Lock()
-	s.adminCred = cred
-	s.credMu.Unlock()
+	profile, err := config.BuildAuthProfileByUsername(c.Request().Context(), s.entClient, username)
+	if err != nil {
+		s.logger.Error("Failed to load auth profile after init", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load profile"})
+	}
+	if err := config.RecordUserLogin(c.Request().Context(), s.entClient, profile.UserID); err != nil {
+		s.logger.Warn("Failed to record init login time", zap.Error(err))
+	}
 
-	token, err := s.generateToken(cred.Username)
+	token, err := s.generateToken(profile)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"token": token})
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"token": token,
+		"user":  s.authProfileResponse(profile),
+	})
 }
 
 func (s *Server) handleLogin(c *echo.Context) error {
@@ -325,24 +335,33 @@ func (s *Server) handleLogin(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	s.credMu.RLock()
-	cred := s.adminCred
-	s.credMu.RUnlock()
-
-	if cred == nil || cred.PasswordHash == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "not initialized"})
+	loginUser, err := config.AuthenticateUser(c.Request().Context(), s.entClient, body.Username, body.Password)
+	if err != nil {
+		if errors.Is(err, config.ErrAdminNotInitialized) {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+		}
+		s.logger.Error("Failed to authenticate login", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "authentication failed"})
 	}
 
-	if body.Username != cred.Username || !config.CheckPassword(cred.PasswordHash, body.Password) {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+	profile, err := config.BuildAuthProfileByUserID(c.Request().Context(), s.entClient, loginUser.ID)
+	if err != nil {
+		s.logger.Error("Failed to load auth profile", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load profile"})
+	}
+	if err := config.RecordUserLogin(c.Request().Context(), s.entClient, profile.UserID); err != nil {
+		s.logger.Warn("Failed to record login timestamp", zap.Error(err))
 	}
 
-	token, err := s.generateToken(body.Username)
+	token, err := s.generateToken(profile)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"token": token})
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"token": token,
+		"user":  s.authProfileResponse(profile),
+	})
 }
 
 func (s *Server) handleChangePassword(c *echo.Context) error {
@@ -358,16 +377,22 @@ func (s *Server) handleChangePassword(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "new_password required"})
 	}
 
-	s.credMu.RLock()
-	cred := s.adminCred
-	s.credMu.RUnlock()
-
-	if cred == nil || cred.PasswordHash == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "not initialized"})
+	profile, err := s.authProfileFromContext(c)
+	if err != nil {
+		if errors.Is(err, config.ErrAdminNotInitialized) {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+		}
+		s.logger.Error("Failed to resolve auth profile", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load profile"})
 	}
 
-	if !config.CheckPassword(cred.PasswordHash, body.OldPassword) {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "old password is incorrect"})
+	loginUser, err := config.AuthenticateUser(c.Request().Context(), s.entClient, profile.Username, body.OldPassword)
+	if err != nil {
+		if errors.Is(err, config.ErrAdminNotInitialized) {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "old password is incorrect"})
+		}
+		s.logger.Error("Failed to verify old password", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "password check failed"})
 	}
 
 	hash, err := config.HashPassword(body.NewPassword)
@@ -375,43 +400,65 @@ func (s *Server) handleChangePassword(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to hash password"})
 	}
 
-	updated := &config.AdminCredential{
-		Username:     cred.Username,
-		Nickname:     cred.Nickname,
-		PasswordHash: hash,
-		JWTSecret:    config.GenerateJWTSecret(), // rotate secret to invalidate old tokens
-	}
-
-	if err := config.SaveAdminCredential(s.entClient, updated); err != nil {
-		s.logger.Error("Failed to persist updated credential", zap.Error(err))
+	if err := config.UpdateUserPassword(c.Request().Context(), s.entClient, loginUser.ID, hash); err != nil {
+		s.logger.Error("Failed to update password", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save credentials"})
 	}
 
-	s.credMu.Lock()
-	s.adminCred = updated
-	s.credMu.Unlock()
+	newSecret := config.GenerateJWTSecret()
+	if err := config.RotateJWTSecret(s.entClient, newSecret); err != nil {
+		s.logger.Error("Failed to rotate jwt secret", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to rotate token secret"})
+	}
 
-	// Issue a new token with the rotated secret.
-	token, err := s.generateToken(updated.Username)
+	freshProfile, err := config.BuildAuthProfileByUserID(c.Request().Context(), s.entClient, loginUser.ID)
+	if err != nil {
+		s.logger.Error("Failed to reload profile", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load profile"})
+	}
+
+	token, err := s.generateToken(freshProfile)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"status": "password changed", "token": token})
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status": "password changed",
+		"token":  token,
+		"user":   s.authProfileResponse(freshProfile),
+	})
 }
 
 func (s *Server) handleGetProfile(c *echo.Context) error {
-	s.credMu.RLock()
-	cred := s.adminCred
-	s.credMu.RUnlock()
-
-	if cred == nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "not initialized"})
+	profile, err := s.authProfileFromContext(c)
+	if err != nil {
+		if errors.Is(err, config.ErrAdminNotInitialized) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "not initialized"})
+		}
+		s.logger.Error("Failed to load profile", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load profile"})
 	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"username":    profile.Username,
+		"nickname":    profile.Nickname,
+		"role":        profile.Role,
+		"tenant_id":   profile.TenantID,
+		"tenant_slug": profile.TenantSlug,
+		"user_id":     profile.UserID,
+	})
+}
 
-	return c.JSON(http.StatusOK, map[string]string{
-		"username": cred.Username,
-		"nickname": cred.Nickname,
+func (s *Server) handleGetMe(c *echo.Context) error {
+	profile, err := s.authProfileFromContext(c)
+	if err != nil {
+		if errors.Is(err, config.ErrAdminNotInitialized) {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+		}
+		s.logger.Error("Failed to load current user", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load current user"})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"user": s.authProfileResponse(profile),
 	})
 }
 
@@ -424,41 +471,42 @@ func (s *Server) handleUpdateProfile(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	s.credMu.Lock()
-	defer s.credMu.Unlock()
-
-	cred := s.adminCred
-	if cred == nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "not initialized"})
-	}
-
-	updated := &config.AdminCredential{
-		Username:     cred.Username,
-		Nickname:     strings.TrimSpace(body.Nickname),
-		PasswordHash: cred.PasswordHash,
-		JWTSecret:    cred.JWTSecret,
+	profile, err := s.authProfileFromContext(c)
+	if err != nil {
+		if errors.Is(err, config.ErrAdminNotInitialized) {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+		}
+		s.logger.Error("Failed to resolve auth profile", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load profile"})
 	}
 
 	newUsername := strings.TrimSpace(body.Username)
-	if newUsername != "" {
-		updated.Username = newUsername
+	if newUsername == "" {
+		newUsername = profile.Username
 	}
-
-	if err := config.SaveAdminCredential(s.entClient, updated); err != nil {
+	updated, err := config.UpdateUserProfile(c.Request().Context(), s.entClient, profile.UserID, newUsername, body.Nickname)
+	if err != nil {
+		if errors.Is(err, config.ErrUsernameAlreadyUsed) {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "username is already used"})
+		}
+		if errors.Is(err, config.ErrAdminNotInitialized) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "not initialized"})
+		}
 		s.logger.Error("Failed to persist updated profile", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save profile"})
 	}
 
-	s.adminCred = updated
-
-	resp := map[string]string{
-		"username": updated.Username,
-		"nickname": updated.Nickname,
+	freshProfile, err := config.BuildAuthProfileByUserID(c.Request().Context(), s.entClient, updated.ID)
+	if err != nil {
+		s.logger.Error("Failed to reload updated profile", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load profile"})
 	}
 
-	// If username changed, issue a new token.
-	if updated.Username != cred.Username {
-		token, err := s.generateToken(updated.Username)
+	resp := map[string]interface{}{
+		"user": s.authProfileResponse(freshProfile),
+	}
+	if freshProfile.Username != profile.Username {
+		token, err := s.generateToken(freshProfile)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
 		}
@@ -1518,7 +1566,7 @@ func (s *Server) handleToolSessionAccessLogin(c *echo.Context) error {
 	if username == "" {
 		username = "tool:" + sess.ID
 	}
-	token, err := s.generateToken(username)
+	token, err := s.generateToken(&config.AuthProfile{Username: username, UserID: sess.Owner, Role: "member"})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
 	}
@@ -1541,6 +1589,53 @@ func (s *Server) ensureSessionOwner(c *echo.Context, sessionID string) error {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "session does not belong to current user"})
 	}
 	return nil
+}
+
+func (s *Server) authProfileFromContext(c *echo.Context) (*config.AuthProfile, error) {
+	userID := s.currentUserID(c)
+	if strings.TrimSpace(userID) != "" {
+		profile, err := config.BuildAuthProfileByUserID(c.Request().Context(), s.entClient, userID)
+		if err == nil {
+			return profile, nil
+		}
+		if !errors.Is(err, config.ErrAdminNotInitialized) {
+			return nil, err
+		}
+	}
+
+	username := s.currentUsername(c)
+	if strings.TrimSpace(username) == "" {
+		return nil, config.ErrAdminNotInitialized
+	}
+	return config.BuildAuthProfileByUsername(c.Request().Context(), s.entClient, username)
+}
+
+func (s *Server) authProfileResponse(profile *config.AuthProfile) map[string]interface{} {
+	if profile == nil {
+		return map[string]interface{}{}
+	}
+	return map[string]interface{}{
+		"id":          profile.UserID,
+		"username":    profile.Username,
+		"nickname":    profile.Nickname,
+		"role":        profile.Role,
+		"tenant_id":   profile.TenantID,
+		"tenant_slug": profile.TenantSlug,
+	}
+}
+
+func (s *Server) currentUserID(c *echo.Context) string {
+	user := c.Get("user")
+	token, ok := user.(*jwt.Token)
+	if !ok || token == nil {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	uid, _ := claims["uid"].(string)
+	return strings.TrimSpace(uid)
 }
 
 func (s *Server) currentUsername(c *echo.Context) string {
@@ -2797,7 +2892,11 @@ func (s *Server) parseJWTSubject(tokenStr string) (string, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		return []byte(s.getJWTSecret()), nil
+		secret, secretErr := config.GetJWTSecret(s.entClient)
+		if secretErr != nil {
+			return nil, secretErr
+		}
+		return []byte(secret), nil
 	})
 	if err != nil || parsed == nil || !parsed.Valid {
 		return "", fmt.Errorf("invalid token")
@@ -2815,21 +2914,28 @@ func (s *Server) parseJWTSubject(tokenStr string) (string, error) {
 }
 
 func (s *Server) getJWTSecret() string {
-	s.credMu.RLock()
-	defer s.credMu.RUnlock()
-	if s.adminCred != nil && s.adminCred.JWTSecret != "" {
-		return s.adminCred.JWTSecret
+	secret, err := config.GetJWTSecret(s.entClient)
+	if err == nil && strings.TrimSpace(secret) != "" {
+		return secret
 	}
 	// No credential stored yet — generate an ephemeral secret.
 	// It will be replaced once the admin initializes their password.
 	return "nekobot-ephemeral-secret"
 }
 
-func (s *Server) generateToken(username string) (string, error) {
+func (s *Server) generateToken(profile *config.AuthProfile) (string, error) {
+	if profile == nil {
+		return "", fmt.Errorf("auth profile is nil")
+	}
+	now := time.Now()
 	claims := jwt.MapClaims{
-		"sub": username,
-		"exp": time.Now().Add(24 * time.Hour).Unix(),
-		"iat": time.Now().Unix(),
+		"sub":  profile.Username,
+		"uid":  profile.UserID,
+		"role": profile.Role,
+		"tid":  profile.TenantID,
+		"ts":   profile.TenantSlug,
+		"exp":  now.Add(24 * time.Hour).Unix(),
+		"iat":  now.Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

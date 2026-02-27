@@ -108,6 +108,53 @@ var (
 			},
 		},
 	}
+	// MembershipsColumns holds the columns for the "memberships" table.
+	MembershipsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "role", Type: field.TypeString, Default: "member"},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "tenant_id", Type: field.TypeString},
+		{Name: "user_id", Type: field.TypeString},
+	}
+	// MembershipsTable holds the schema information for the "memberships" table.
+	MembershipsTable = &schema.Table{
+		Name:       "memberships",
+		Columns:    MembershipsColumns,
+		PrimaryKey: []*schema.Column{MembershipsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "memberships_tenants_memberships",
+				Columns:    []*schema.Column{MembershipsColumns[5]},
+				RefColumns: []*schema.Column{TenantsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "memberships_users_memberships",
+				Columns:    []*schema.Column{MembershipsColumns[6]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "membership_user_id_tenant_id",
+				Unique:  true,
+				Columns: []*schema.Column{MembershipsColumns[6], MembershipsColumns[5]},
+			},
+			{
+				Name:    "membership_tenant_id_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{MembershipsColumns[5], MembershipsColumns[2]},
+			},
+			{
+				Name:    "membership_user_id_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{MembershipsColumns[6], MembershipsColumns[2]},
+			},
+		},
+	}
 	// ProvidersColumns holds the columns for the "providers" table.
 	ProvidersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -137,6 +184,33 @@ var (
 				Name:    "provider_provider_kind",
 				Unique:  false,
 				Columns: []*schema.Column{ProvidersColumns[2]},
+			},
+		},
+	}
+	// TenantsColumns holds the columns for the "tenants" table.
+	TenantsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "slug", Type: field.TypeString},
+		{Name: "name", Type: field.TypeString},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// TenantsTable holds the schema information for the "tenants" table.
+	TenantsTable = &schema.Table{
+		Name:       "tenants",
+		Columns:    TenantsColumns,
+		PrimaryKey: []*schema.Column{TenantsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "tenant_slug",
+				Unique:  true,
+				Columns: []*schema.Column{TenantsColumns[1]},
+			},
+			{
+				Name:    "tenant_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{TenantsColumns[3]},
 			},
 		},
 	}
@@ -228,16 +302,51 @@ var (
 			},
 		},
 	}
+	// UsersColumns holds the columns for the "users" table.
+	UsersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "username", Type: field.TypeString},
+		{Name: "nickname", Type: field.TypeString, Default: ""},
+		{Name: "password_hash", Type: field.TypeString, Default: ""},
+		{Name: "role", Type: field.TypeString, Default: "member"},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "last_login", Type: field.TypeTime, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// UsersTable holds the schema information for the "users" table.
+	UsersTable = &schema.Table{
+		Name:       "users",
+		Columns:    UsersColumns,
+		PrimaryKey: []*schema.Column{UsersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "user_username",
+				Unique:  true,
+				Columns: []*schema.Column{UsersColumns[1]},
+			},
+			{
+				Name:    "user_role_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{UsersColumns[4], UsersColumns[5]},
+			},
+		},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		AttachTokensTable,
 		ConfigSectionsTable,
 		CronJobsTable,
+		MembershipsTable,
 		ProvidersTable,
+		TenantsTable,
 		ToolEventsTable,
 		ToolSessionsTable,
+		UsersTable,
 	}
 )
 
 func init() {
+	MembershipsTable.ForeignKeys[0].RefTable = TenantsTable
+	MembershipsTable.ForeignKeys[1].RefTable = UsersTable
 }

@@ -132,3 +132,39 @@
 
 ## Status
 **Phase 1-8 前端完成** - 待修复guidelines违规项 + Docker + 后端架构增强
+
+---
+
+## Current Task: 参考 nanoclaw 设计迁移到 nekobot (2026-02-27)
+
+### Goal
+系统梳理 `nanoclaw` 的优秀设计，并在 `nekobot` 中落地第一批高价值迁移改动。
+
+### Phases
+- [x] Phase 1: Plan and setup
+- [x] Phase 2: Research/gather information
+- [x] Phase 3: Execute/build
+- [x] Phase 4: Review and deliver
+
+### Key Questions
+1. 先迁移哪一类设计（Provider 路由/容错、技能系统、会话与 Cron、配置体系）？
+2. 目标是“最大化复用现有结构”还是“按 nanoclaw 方式重构相关模块”？
+3. 本轮是否允许引入新的配置字段与 API 端点？
+
+### Decisions Made
+- 采用“先对比评估 + 分批迁移”的方式，避免大范围一次性改动。
+- 本轮功能块聚焦 Phase 1：先完成多用户认证基础（用户/租户/成员关系 + JWT 统一秘钥管理 + WebUI 认证接口迁移）。
+
+### Errors Encountered
+- 自动记忆目录不存在：`/Users/czyt/.claude/projects/-Users-czyt-code-go-nekobot/memory/`。
+
+### Completed Deliverables (Feature Batch #1)
+- 新增 ent schema：`User` / `Tenant` / `Membership`，并完成对应 ent 代码生成。
+- 新增认证存储层：`pkg/config/auth_store.go`，落地用户/租户/成员关系迁移与 JWT secret 统一存储读取。
+- 重构 `pkg/config/admin_credential.go`：认证、用户资料更新、密码更新、登录记录与 auth profile 构建全部走结构化表。
+- 重构 `pkg/webui/server.go`：移除内存态 admin credential，认证接口改为 DB 驱动，新增 `/auth/me`，JWT claims 补齐 `uid/tid/ts`。
+- 更新 `pkg/gateway/server.go`：JWT 校验读取统一走 `config.GetJWTSecret`。
+- 补充测试：`pkg/config/db_store_test.go` 新增迁移与 legacy JWT payload 兼容测试。
+
+### Status
+**Feature Batch #1 Completed** - 已完成并验证 Phase 1 多用户认证基础迁移，下一步进入 Phase 2（Agent Profile + blades orchestrator 接管设计与实现）。

@@ -44,6 +44,18 @@ func (f CronJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, err
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CronJobMutation", m)
 }
 
+// The MembershipFunc type is an adapter to allow the use of ordinary
+// function as Membership mutator.
+type MembershipFunc func(context.Context, *ent.MembershipMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f MembershipFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.MembershipMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MembershipMutation", m)
+}
+
 // The ProviderFunc type is an adapter to allow the use of ordinary
 // function as Provider mutator.
 type ProviderFunc func(context.Context, *ent.ProviderMutation) (ent.Value, error)
@@ -54,6 +66,18 @@ func (f ProviderFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, er
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ProviderMutation", m)
+}
+
+// The TenantFunc type is an adapter to allow the use of ordinary
+// function as Tenant mutator.
+type TenantFunc func(context.Context, *ent.TenantMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TenantFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TenantMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TenantMutation", m)
 }
 
 // The ToolEventFunc type is an adapter to allow the use of ordinary
@@ -78,6 +102,18 @@ func (f ToolSessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ToolSessionMutation", m)
+}
+
+// The UserFunc type is an adapter to allow the use of ordinary
+// function as User mutator.
+type UserFunc func(context.Context, *ent.UserMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserMutation", m)
 }
 
 // Condition is a hook condition function.
