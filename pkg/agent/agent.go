@@ -201,8 +201,32 @@ func (a *Agent) chatWithProviderModel(ctx context.Context, sess SessionInterface
 			}
 		}
 
-		// Call LLM with provider fallback.
-		resp, providerUsed, modelUsed, err := a.callLLMWithFallback(ctx, req, primaryProvider, providerOrder, model, clientCache)
+		// Call LLM with provider fallback, with retry on context errors.
+		var resp *providers.UnifiedResponse
+		var providerUsed, modelUsed string
+		const maxContextRetries = 2
+		for retry := 0; retry <= maxContextRetries; retry++ {
+			resp, providerUsed, modelUsed, err = a.callLLMWithFallback(ctx, req, primaryProvider, providerOrder, model, clientCache)
+			if err == nil {
+				break
+			}
+
+			if isContextLimitError(err) && retry < maxContextRetries {
+				a.logger.Warn("Context window error, compressing and retrying",
+					zap.Error(err),
+					zap.Int("retry", retry+1),
+					zap.Int("messages_before", len(providerMessages)),
+				)
+				providerMessages = forceCompressMessages(providerMessages)
+				req.Messages = providerMessages
+				a.logger.Info("Compressed messages",
+					zap.Int("messages_after", len(providerMessages)),
+					zap.Int("estimated_tokens", estimateTokens(providerMessages)),
+				)
+				continue
+			}
+			break
+		}
 		if err != nil {
 			return "", fmt.Errorf("LLM call failed: %w", err)
 		}
