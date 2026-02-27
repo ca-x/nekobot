@@ -3,56 +3,42 @@ package providers
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
 
-// LoadBalancer manages multiple providers with automatic failover.
-// It uses sensible defaults for circuit breaker, timeouts, and retries.
+// LoadBalancer manages multiple providers with automatic failover
+// using exponential cooldown backoff.
 type LoadBalancer struct {
 	providers map[string]*ProviderState
+	cooldown  *CooldownTracker
 	mu        sync.RWMutex
 }
 
 // ProviderState tracks the state of a provider.
 type ProviderState struct {
-	Name              string
-	Client            *Client
-	RequestCount      int64
-	SuccessCount      int64
-	FailureCount      int64
-	ConsecutiveErrors int
-	CircuitState      CircuitState
-	LastFailure       time.Time
-	LastSuccess       time.Time
-	mu                sync.RWMutex
+	Name         string
+	Client       *Client
+	RequestCount int64
+	SuccessCount int64
+	FailureCount int64
+	LastFailure  time.Time
+	LastSuccess  time.Time
+	mu           sync.RWMutex
 }
-
-// CircuitState represents the circuit breaker state.
-type CircuitState string
-
-const (
-	// CircuitClosed - normal operation
-	CircuitClosed CircuitState = "closed"
-	// CircuitOpen - provider unavailable
-	CircuitOpen CircuitState = "open"
-	// CircuitHalfOpen - testing if provider recovered
-	CircuitHalfOpen CircuitState = "half_open"
-)
 
 // Sensible defaults
 const (
-	DefaultFailureThreshold = 5              // Open circuit after 5 consecutive failures
-	DefaultSuccessThreshold = 2              // Close circuit after 2 consecutive successes
-	DefaultCooldown         = 5 * time.Minute // Wait 5 minutes before retry
-	DefaultTimeout          = 30 * time.Second
-	DefaultLocalTimeout     = 60 * time.Second // Longer timeout for local providers
+	DefaultTimeout      = 30 * time.Second
+	DefaultLocalTimeout = 60 * time.Second // Longer timeout for local providers
 )
 
-// NewLoadBalancer creates a new load balancer.
+// NewLoadBalancer creates a new load balancer with cooldown tracking.
 func NewLoadBalancer() *LoadBalancer {
 	return &LoadBalancer{
 		providers: make(map[string]*ProviderState),
+		cooldown:  NewCooldownTracker(),
 	}
 }
 
@@ -62,9 +48,8 @@ func (lb *LoadBalancer) RegisterProvider(name string, client *Client) error {
 	defer lb.mu.Unlock()
 
 	state := &ProviderState{
-		Name:         name,
-		Client:       client,
-		CircuitState: CircuitClosed,
+		Name:   name,
+		Client: client,
 	}
 
 	lb.providers[name] = state
@@ -72,80 +57,225 @@ func (lb *LoadBalancer) RegisterProvider(name string, client *Client) error {
 }
 
 // Chat performs a chat request with automatic failover.
-// Tries providers in order: primary, then fallback list.
+// Tries providers in order, respecting cooldowns and error classification.
 func (lb *LoadBalancer) Chat(ctx context.Context, req *UnifiedRequest, providerOrder []string) (*UnifiedResponse, error) {
-	var lastErr error
-
-	for _, providerName := range providerOrder {
-		state, err := lb.getProviderState(providerName)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// Check circuit breaker
-		if !lb.canUseProvider(state) {
-			lastErr = fmt.Errorf("provider %s circuit breaker is open", providerName)
-			continue
-		}
-
-		// Try request with timeout
-		reqCtx, cancel := lb.createContextWithTimeout(ctx, providerName)
-		resp, err := lb.executeRequest(reqCtx, state, req)
-		cancel()
-
-		if err != nil {
-			lastErr = err
-			lb.recordFailure(state, err)
-			continue
-		}
-
-		// Success
-		lb.recordSuccess(state)
-		return resp, nil
+	if len(providerOrder) == 0 {
+		return nil, fmt.Errorf("no providers configured")
 	}
 
-	return nil, fmt.Errorf("all providers failed, last error: %w", lastErr)
+	var attempts []FallbackAttempt
+
+	for i, providerName := range providerOrder {
+		// Check context before each attempt.
+		if ctx.Err() == context.Canceled {
+			return nil, context.Canceled
+		}
+
+		// Check cooldown.
+		if !lb.cooldown.IsAvailable(providerName) {
+			remaining := lb.cooldown.CooldownRemaining(providerName)
+			attempts = append(attempts, FallbackAttempt{
+				Provider: providerName,
+				Skipped:  true,
+				Reason:   FailoverReasonRateLimit,
+				Error: fmt.Errorf(
+					"provider %s in cooldown (%s remaining)",
+					providerName,
+					remaining.Round(time.Second),
+				),
+			})
+			continue
+		}
+
+		state, err := lb.getProviderState(providerName)
+		if err != nil {
+			attempts = append(attempts, FallbackAttempt{
+				Provider: providerName,
+				Error:    err,
+			})
+			continue
+		}
+
+		// Execute request with timeout.
+		reqCtx, cancel := lb.createContextWithTimeout(ctx, providerName)
+		start := time.Now()
+		resp, err := lb.executeRequest(reqCtx, state, req)
+		elapsed := time.Since(start)
+		cancel()
+
+		if err == nil {
+			// Success.
+			lb.cooldown.MarkSuccess(providerName)
+			lb.recordSuccess(state)
+			return resp, nil
+		}
+
+		// Context cancellation: abort immediately.
+		if ctx.Err() == context.Canceled {
+			attempts = append(attempts, FallbackAttempt{
+				Provider: providerName,
+				Error:    err,
+				Duration: elapsed,
+			})
+			return nil, context.Canceled
+		}
+
+		// Classify the error.
+		failErr := ClassifyError(err, providerName, req.Model)
+
+		if failErr != nil && !failErr.IsRetriable() {
+			// Non-retriable: abort immediately.
+			lb.recordFailure(state)
+			attempts = append(attempts, FallbackAttempt{
+				Provider: providerName,
+				Error:    failErr,
+				Reason:   failErr.Reason,
+				Duration: elapsed,
+			})
+			return nil, failErr
+		}
+
+		// Retriable error: mark failure and continue.
+		reason := FailoverReasonUnknown
+		if failErr != nil {
+			reason = failErr.Reason
+		}
+		lb.cooldown.MarkFailure(providerName, reason)
+		lb.recordFailure(state)
+		attempts = append(attempts, FallbackAttempt{
+			Provider: providerName,
+			Error:    err,
+			Reason:   reason,
+			Duration: elapsed,
+		})
+
+		// If last candidate, return aggregate error.
+		if i == len(providerOrder)-1 {
+			return nil, &FallbackExhaustedError{Attempts: attempts}
+		}
+	}
+
+	// All candidates were skipped (all in cooldown).
+	return nil, &FallbackExhaustedError{Attempts: attempts}
 }
 
 // ChatStream performs a streaming chat request with automatic failover.
 func (lb *LoadBalancer) ChatStream(ctx context.Context, req *UnifiedRequest, handler StreamHandler, providerOrder []string) error {
-	var lastErr error
-
-	for _, providerName := range providerOrder {
-		state, err := lb.getProviderState(providerName)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-
-		// Check circuit breaker
-		if !lb.canUseProvider(state) {
-			lastErr = fmt.Errorf("provider %s circuit breaker is open", providerName)
-			continue
-		}
-
-		// Try streaming request
-		err = state.Client.ChatStream(ctx, req, handler)
-		if err != nil {
-			lastErr = err
-			lb.recordFailure(state, err)
-			continue
-		}
-
-		// Success
-		lb.recordSuccess(state)
-		return nil
+	if len(providerOrder) == 0 {
+		return fmt.Errorf("no providers configured")
 	}
 
-	return fmt.Errorf("all providers failed, last error: %w", lastErr)
+	var attempts []FallbackAttempt
+
+	for i, providerName := range providerOrder {
+		if ctx.Err() == context.Canceled {
+			return context.Canceled
+		}
+
+		if !lb.cooldown.IsAvailable(providerName) {
+			remaining := lb.cooldown.CooldownRemaining(providerName)
+			attempts = append(attempts, FallbackAttempt{
+				Provider: providerName,
+				Skipped:  true,
+				Reason:   FailoverReasonRateLimit,
+				Error: fmt.Errorf(
+					"provider %s in cooldown (%s remaining)",
+					providerName,
+					remaining.Round(time.Second),
+				),
+			})
+			continue
+		}
+
+		state, err := lb.getProviderState(providerName)
+		if err != nil {
+			attempts = append(attempts, FallbackAttempt{
+				Provider: providerName,
+				Error:    err,
+			})
+			continue
+		}
+
+		start := time.Now()
+		err = state.Client.ChatStream(ctx, req, handler)
+		elapsed := time.Since(start)
+
+		if err == nil {
+			lb.cooldown.MarkSuccess(providerName)
+			lb.recordSuccess(state)
+			return nil
+		}
+
+		if ctx.Err() == context.Canceled {
+			attempts = append(attempts, FallbackAttempt{
+				Provider: providerName,
+				Error:    err,
+				Duration: elapsed,
+			})
+			return context.Canceled
+		}
+
+		failErr := ClassifyError(err, providerName, req.Model)
+
+		if failErr != nil && !failErr.IsRetriable() {
+			lb.recordFailure(state)
+			return failErr
+		}
+
+		reason := FailoverReasonUnknown
+		if failErr != nil {
+			reason = failErr.Reason
+		}
+		lb.cooldown.MarkFailure(providerName, reason)
+		lb.recordFailure(state)
+		attempts = append(attempts, FallbackAttempt{
+			Provider: providerName,
+			Error:    err,
+			Reason:   reason,
+			Duration: elapsed,
+		})
+
+		if i == len(providerOrder)-1 {
+			return &FallbackExhaustedError{Attempts: attempts}
+		}
+	}
+
+	return &FallbackExhaustedError{Attempts: attempts}
+}
+
+// FallbackAttempt records one attempt in the fallback chain.
+type FallbackAttempt struct {
+	Provider string
+	Model    string
+	Error    error
+	Reason   FailoverReason
+	Duration time.Duration
+	Skipped  bool // true if skipped due to cooldown
+}
+
+// FallbackExhaustedError indicates all fallback candidates were tried and failed.
+type FallbackExhaustedError struct {
+	Attempts []FallbackAttempt
+}
+
+func (e *FallbackExhaustedError) Error() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("all %d providers failed:", len(e.Attempts)))
+	for i, a := range e.Attempts {
+		if a.Skipped {
+			sb.WriteString(fmt.Sprintf("\n  [%d] %s: skipped (cooldown)", i+1, a.Provider))
+		} else {
+			sb.WriteString(fmt.Sprintf("\n  [%d] %s: %v (reason=%s, %s)",
+				i+1, a.Provider, a.Error, a.Reason, a.Duration.Round(time.Millisecond)))
+		}
+	}
+	return sb.String()
 }
 
 // createContextWithTimeout creates a context with appropriate timeout.
 func (lb *LoadBalancer) createContextWithTimeout(ctx context.Context, providerName string) (context.Context, context.CancelFunc) {
 	timeout := DefaultTimeout
 
-	// Use longer timeout for local providers
 	if isLocalProvider(providerName) {
 		timeout = DefaultLocalTimeout
 	}
@@ -163,33 +293,6 @@ func isLocalProvider(name string) bool {
 	return localProviders[name]
 }
 
-// canUseProvider checks if a provider can be used based on circuit breaker state.
-func (lb *LoadBalancer) canUseProvider(state *ProviderState) bool {
-	state.mu.RLock()
-	defer state.mu.RUnlock()
-
-	switch state.CircuitState {
-	case CircuitClosed:
-		return true
-	case CircuitOpen:
-		// Check if cooldown period has passed
-		if time.Since(state.LastFailure) > DefaultCooldown {
-			// Transition to half-open
-			state.mu.RUnlock()
-			state.mu.Lock()
-			state.CircuitState = CircuitHalfOpen
-			state.mu.Unlock()
-			state.mu.RLock()
-			return true
-		}
-		return false
-	case CircuitHalfOpen:
-		return true
-	default:
-		return false
-	}
-}
-
 // executeRequest executes a request with the given provider.
 func (lb *LoadBalancer) executeRequest(ctx context.Context, state *ProviderState, req *UnifiedRequest) (*UnifiedResponse, error) {
 	state.mu.Lock()
@@ -205,30 +308,16 @@ func (lb *LoadBalancer) recordSuccess(state *ProviderState) {
 	defer state.mu.Unlock()
 
 	state.SuccessCount++
-	state.ConsecutiveErrors = 0
 	state.LastSuccess = time.Now()
-
-	// Check if we should close the circuit
-	if state.CircuitState == CircuitHalfOpen {
-		if state.SuccessCount >= int64(DefaultSuccessThreshold) {
-			state.CircuitState = CircuitClosed
-		}
-	}
 }
 
 // recordFailure records a failed request.
-func (lb *LoadBalancer) recordFailure(state *ProviderState, err error) {
+func (lb *LoadBalancer) recordFailure(state *ProviderState) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	state.FailureCount++
-	state.ConsecutiveErrors++
 	state.LastFailure = time.Now()
-
-	// Check if we should open the circuit
-	if state.ConsecutiveErrors >= DefaultFailureThreshold {
-		state.CircuitState = CircuitOpen
-	}
 }
 
 // getProviderState retrieves a provider state by name.
@@ -244,6 +333,11 @@ func (lb *LoadBalancer) getProviderState(name string) (*ProviderState, error) {
 	return state, nil
 }
 
+// GetCooldownTracker returns the cooldown tracker for external use.
+func (lb *LoadBalancer) GetCooldownTracker() *CooldownTracker {
+	return lb.cooldown
+}
+
 // GetStats returns statistics for all providers.
 func (lb *LoadBalancer) GetStats() map[string]ProviderStats {
 	lb.mu.RLock()
@@ -257,10 +351,10 @@ func (lb *LoadBalancer) GetStats() map[string]ProviderStats {
 			RequestCount:      state.RequestCount,
 			SuccessCount:      state.SuccessCount,
 			FailureCount:      state.FailureCount,
-			ConsecutiveErrors: state.ConsecutiveErrors,
-			CircuitState:      state.CircuitState,
 			LastFailure:       state.LastFailure,
 			LastSuccess:       state.LastSuccess,
+			CooldownRemaining: lb.cooldown.CooldownRemaining(name),
+			ErrorCount:        lb.cooldown.ErrorCount(name),
 		}
 		state.mu.RUnlock()
 	}
@@ -274,8 +368,8 @@ type ProviderStats struct {
 	RequestCount      int64
 	SuccessCount      int64
 	FailureCount      int64
-	ConsecutiveErrors int
-	CircuitState      CircuitState
 	LastFailure       time.Time
 	LastSuccess       time.Time
+	CooldownRemaining time.Duration
+	ErrorCount        int
 }

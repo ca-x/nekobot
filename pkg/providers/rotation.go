@@ -130,15 +130,15 @@ func (rm *RotationManager) GetNextProfile() (*Profile, error) {
 
 // HandleError processes an error and potentially puts the profile on cooldown.
 func (rm *RotationManager) HandleError(profile *Profile, err error, statusCode int) {
-	classification := ClassifyError(err, statusCode)
+	classification := ClassifyErrorSimple(err, statusCode)
 
 	rm.log.Warn("Profile error",
 		zap.String("profile", profile.Name),
 		zap.String("reason", string(classification.Reason)),
 		zap.String("message", classification.Message),
-		zap.Bool("cooldown", classification.ShouldCooldown))
+		zap.Bool("retriable", classification.Retriable))
 
-	if classification.ShouldCooldown {
+	if classification.Retriable {
 		rm.mu.Lock()
 		profile.SetCooldown(rm.config.CooldownPeriod, classification)
 		rm.mu.Unlock()
