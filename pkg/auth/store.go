@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"nekobot/pkg/fileutil"
 )
 
 const (
@@ -102,7 +104,7 @@ func (s *AuthStore) Save() error {
 		return fmt.Errorf("marshaling credentials: %w", err)
 	}
 
-	if err := os.WriteFile(s.filePath, data, 0600); err != nil {
+	if err := fileutil.WriteFileAtomic(s.filePath, data, 0600); err != nil {
 		return fmt.Errorf("writing credentials file: %w", err)
 	}
 

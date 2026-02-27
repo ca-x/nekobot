@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"nekobot/pkg/fileutil"
 )
 
 // MemoryStore manages persistent memory for the agent.
@@ -45,7 +47,7 @@ func (ms *MemoryStore) ReadLongTerm() string {
 
 // WriteLongTerm writes content to the long-term memory file (MEMORY.md).
 func (ms *MemoryStore) WriteLongTerm(content string) error {
-	return os.WriteFile(ms.memoryFile, []byte(content), 0644)
+	return fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0644)
 }
 
 // AppendLongTerm appends content to the long-term memory file.
@@ -99,7 +101,7 @@ func (ms *MemoryStore) AppendToday(content string) error {
 		newContent = existingContent + "\n\n" + content
 	}
 
-	return os.WriteFile(todayFile, []byte(newContent), 0644)
+	return fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0644)
 }
 
 // GetRecentDailyNotes returns daily notes from the last N days.

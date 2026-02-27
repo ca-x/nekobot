@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"nekobot/pkg/fileutil"
 	"nekobot/pkg/logger"
 )
 
@@ -240,7 +241,7 @@ func (sm *SnapshotManager) save(snapshot *Snapshot) error {
 	}
 
 	path := filepath.Join(sm.snapshotsDir, snapshot.ID+".json")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := fileutil.WriteFileAtomic(path, data, 0644); err != nil {
 		return fmt.Errorf("writing snapshot file: %w", err)
 	}
 

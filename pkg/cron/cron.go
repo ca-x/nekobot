@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/fileutil"
 	"nekobot/pkg/logger"
 )
 
@@ -424,7 +425,7 @@ func (m *Manager) saveJobs() error {
 		return fmt.Errorf("marshaling jobs: %w", err)
 	}
 
-	if err := os.WriteFile(m.jobsFile, data, 0644); err != nil {
+	if err := fileutil.WriteFileAtomic(m.jobsFile, data, 0644); err != nil {
 		return fmt.Errorf("writing jobs file: %w", err)
 	}
 

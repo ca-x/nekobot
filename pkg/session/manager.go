@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/fileutil"
 )
 
 // Session represents a conversation session with history.
@@ -76,7 +77,7 @@ func (m *Manager) Save(session *Session) error {
 	}
 
 	path := m.getSessionPath(session.ID)
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := fileutil.WriteFileAtomic(path, data, 0644); err != nil {
 		return fmt.Errorf("writing session file: %w", err)
 	}
 

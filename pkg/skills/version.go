@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"nekobot/pkg/fileutil"
 	"nekobot/pkg/logger"
 )
 
@@ -240,7 +241,7 @@ func (vm *VersionManager) saveHistory(history *VersionHistory) error {
 	}
 
 	path := filepath.Join(vm.versionsDir, history.SkillID+".json")
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := fileutil.WriteFileAtomic(path, data, 0644); err != nil {
 		return fmt.Errorf("writing history file: %w", err)
 	}
 

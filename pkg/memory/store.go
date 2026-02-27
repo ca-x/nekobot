@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"nekobot/pkg/fileutil"
 )
 
 // FileStore implements an in-memory vector store with file persistence.
@@ -221,32 +221,19 @@ func (s *FileStore) Save() error {
 
 // saveUnsafe saves without locking (caller must hold lock).
 func (s *FileStore) saveUnsafe() error {
-	// Ensure directory exists
-	dir := filepath.Dir(s.filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
-	}
-
 	// Convert to slice for JSON
 	embSlice := make([]*Embedding, 0, len(s.embeddings))
 	for _, emb := range s.embeddings {
 		embSlice = append(embSlice, emb)
 	}
 
-	// Write to temp file first
-	tempPath := s.filePath + ".tmp"
 	data, err := json.MarshalIndent(embSlice, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal embeddings: %w", err)
 	}
 
-	if err := os.WriteFile(tempPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	// Atomic rename
-	if err := os.Rename(tempPath, s.filePath); err != nil {
-		return fmt.Errorf("failed to rename temp file: %w", err)
+	if err := fileutil.WriteFileAtomic(s.filePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write embeddings file: %w", err)
 	}
 
 	return nil

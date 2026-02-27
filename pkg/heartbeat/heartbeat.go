@@ -16,6 +16,7 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
+	"nekobot/pkg/fileutil"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/session"
 )
@@ -317,18 +318,12 @@ func (s *Service) loadState() error {
 func (s *Service) saveState() error {
 	statePath := filepath.Join(s.workspacePath, stateFile)
 
-	// Ensure directory exists
-	dir := filepath.Dir(statePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("creating directory: %w", err)
-	}
-
 	data, err := json.MarshalIndent(s.state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling state: %w", err)
 	}
 
-	if err := os.WriteFile(statePath, data, 0644); err != nil {
+	if err := fileutil.WriteFileAtomic(statePath, data, 0644); err != nil {
 		return fmt.Errorf("writing state file: %w", err)
 	}
 

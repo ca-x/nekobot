@@ -12,6 +12,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"nekobot/pkg/fileutil"
 	"nekobot/pkg/logger"
 )
 
@@ -222,15 +223,9 @@ func (s *FileStore) Save() error {
 		return fmt.Errorf("marshaling state: %w", err)
 	}
 
-	// Write to temp file first for atomic save
-	tempFile := s.filePath + ".tmp"
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("writing temp state file: %w", err)
-	}
-
-	// Atomic rename
-	if err := os.Rename(tempFile, s.filePath); err != nil {
-		return fmt.Errorf("renaming temp state file: %w", err)
+	// Atomic write with fsync
+	if err := fileutil.WriteFileAtomic(s.filePath, data, 0644); err != nil {
+		return fmt.Errorf("writing state file: %w", err)
 	}
 
 	// Clear pending writes flag
