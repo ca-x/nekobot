@@ -65,6 +65,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: pkg/webui/frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: pkg/webui/frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:

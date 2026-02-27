@@ -33,7 +33,9 @@ func (t *ToolSessionTool) Name() string {
 
 func (t *ToolSessionTool) Description() string {
 	return "Create and manage tool sessions (coding assistants like codex, claude, aider, etc.). " +
-		"Use 'spawn' to start a new tool session, 'list' to see active sessions, or 'terminate' to stop one."
+		"Use 'spawn' to start a new tool session, 'list' to see active sessions, or 'terminate' to stop one. " +
+		"Sessions you create are visible in the web dashboard under Tool Sessions with an 'Agent' badge, " +
+		"allowing users to monitor progress, view terminal output, and interact with the session through the UI."
 }
 
 func (t *ToolSessionTool) Parameters() map[string]interface{} {
