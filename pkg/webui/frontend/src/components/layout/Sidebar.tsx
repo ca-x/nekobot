@@ -8,8 +8,11 @@ import {
   Terminal,
   Cpu,
   Radio,
+  Store,
   Settings,
   Activity,
+  Library,
+  Clock3,
   Sun,
   Moon,
   LogOut,
@@ -34,10 +37,13 @@ export default function Sidebar() {
 
   const navItems = [
     { target: '/chat', label: t('tabChat'), icon: MessageSquare },
+    { target: '/sessions', label: t('tabSessions'), icon: Library },
     { target: '/tools', label: t('tabTools'), icon: Terminal },
     { target: '/providers', label: t('tabProviders'), icon: Cpu },
     { target: '/channels', label: t('tabChannels'), icon: Radio },
+    { target: '/marketplace', label: t('tabMarketplace'), icon: Store },
     { target: '/config', label: t('tabConfig'), icon: Settings },
+    { target: '/cron', label: t('tabCron'), icon: Clock3 },
     { target: '/system', label: t('tabStatus'), icon: Activity },
   ];
 

@@ -5,11 +5,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"nekobot/pkg/skills"
 )
+
+const currentTimePlaceholder = "__NEKOBOT_CURRENT_TIME__"
 
 // ContextBuilder builds system prompts and message contexts for the agent.
 // It aggregates information from multiple sources:
@@ -27,13 +31,33 @@ type ContextBuilder struct {
 
 	// Skills manager reference (set after creation)
 	skillsManager *skills.Manager
+
+	cacheMu             sync.RWMutex
+	cachedStaticReady   bool
+	cachedStaticFiles   []trackedFileState
+	cachedToolSignature string
+	cachedStaticBlock   string
+}
+
+type trackedFileState struct {
+	path   string
+	exists bool
+	mtime  int64
 }
 
 // NewContextBuilder creates a new context builder for the given workspace.
 func NewContextBuilder(workspace string) *ContextBuilder {
+	return NewContextBuilderWithMemory(workspace, NewMemoryStore(workspace))
+}
+
+// NewContextBuilderWithMemory creates a new context builder with an explicit memory store.
+func NewContextBuilderWithMemory(workspace string, memoryStore *MemoryStore) *ContextBuilder {
+	if memoryStore == nil {
+		memoryStore = NewMemoryStore(workspace)
+	}
 	return &ContextBuilder{
 		workspace: workspace,
-		memory:    NewMemoryStore(workspace),
+		memory:    memoryStore,
 	}
 }
 
@@ -55,7 +79,7 @@ func (cb *ContextBuilder) GetMemory() *MemoryStore {
 
 // getIdentity returns the core identity section of the system prompt.
 func (cb *ContextBuilder) getIdentity() string {
-	now := time.Now().Format("2006-01-02 15:04 (Monday)")
+	now := currentTimePlaceholder
 	workspacePath, _ := filepath.Abs(cb.workspace)
 	runtimeInfo := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
@@ -96,7 +120,6 @@ Your workspace is at: %s
 	return identity
 }
 
-// buildToolsSection creates the tools section of the system prompt.
 func (cb *ContextBuilder) buildToolsSection() string {
 	if cb.getToolDescriptions == nil {
 		return ""
@@ -106,6 +129,7 @@ func (cb *ContextBuilder) buildToolsSection() string {
 	if len(descriptions) == 0 {
 		return ""
 	}
+	sort.Strings(descriptions)
 
 	var sb strings.Builder
 	sb.WriteString("## Available Tools\n\n")
@@ -118,6 +142,18 @@ func (cb *ContextBuilder) buildToolsSection() string {
 	}
 
 	return sb.String()
+}
+
+func (cb *ContextBuilder) currentToolSignature() string {
+	if cb.getToolDescriptions == nil {
+		return ""
+	}
+	descriptions := cb.getToolDescriptions()
+	if len(descriptions) == 0 {
+		return ""
+	}
+	sort.Strings(descriptions)
+	return strings.Join(descriptions, "\n")
 }
 
 // buildSkillsSection creates the skills section of the system prompt.
@@ -165,31 +201,187 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 // BuildSystemPrompt builds the complete system prompt.
 // This includes identity, bootstrap files, tools, skills, and memory.
 func (cb *ContextBuilder) BuildSystemPrompt() string {
-	var parts []string
+	staticBlock := cb.buildStaticPromptBlock()
+	currentTime := time.Now().Format("2006-01-02 15:04 (Monday)")
+	staticBlock = strings.ReplaceAll(staticBlock, currentTimePlaceholder, currentTime)
 
-	// Core identity section
+	dynamicBlock := cb.buildDynamicPromptBlock()
+	if dynamicBlock == "" {
+		return staticBlock
+	}
+	return staticBlock + "\n\n---\n\n" + dynamicBlock
+}
+
+func (cb *ContextBuilder) buildStaticPromptBlock() string {
+	if cb.staticPromptCacheFresh() {
+		cb.cacheMu.RLock()
+		cached := cb.cachedStaticBlock
+		cb.cacheMu.RUnlock()
+		return cached
+	}
+
+	cb.cacheMu.Lock()
+	defer cb.cacheMu.Unlock()
+
+	if cb.staticPromptCacheFreshLocked() {
+		return cb.cachedStaticBlock
+	}
+
+	var parts []string
 	parts = append(parts, cb.getIdentity())
 
-	// Bootstrap files (if any)
 	bootstrapContent := cb.LoadBootstrapFiles()
 	if bootstrapContent != "" {
 		parts = append(parts, "# Bootstrap Configuration\n\n"+bootstrapContent)
 	}
 
-	// Skills (if any)
+	cached := strings.Join(parts, "\n\n---\n\n")
+	cb.cachedStaticBlock = cached
+	cb.cachedToolSignature = cb.currentToolSignature()
+	cb.cachedStaticFiles = cb.captureStaticFileStates()
+	cb.cachedStaticReady = true
+
+	return cached
+}
+
+func (cb *ContextBuilder) buildDynamicPromptBlock() string {
+	parts := make([]string, 0, 2)
+
 	skillsSection := cb.buildSkillsSection()
 	if skillsSection != "" {
 		parts = append(parts, skillsSection)
 	}
 
-	// Memory context (if any)
 	memoryContext := cb.memory.GetMemoryContext()
 	if memoryContext != "" {
 		parts = append(parts, "# Memory\n\n"+memoryContext)
 	}
 
-	// Join with separator
 	return strings.Join(parts, "\n\n---\n\n")
+}
+
+func (cb *ContextBuilder) staticPromptCacheFresh() bool {
+	cb.cacheMu.RLock()
+	if !cb.cachedStaticReady {
+		cb.cacheMu.RUnlock()
+		return false
+	}
+	cachedTools := cb.cachedToolSignature
+	cachedFiles := append([]trackedFileState(nil), cb.cachedStaticFiles...)
+	cb.cacheMu.RUnlock()
+
+	if cachedTools != cb.currentToolSignature() {
+		return false
+	}
+	current := cb.captureStaticFileStates()
+	if len(current) != len(cachedFiles) {
+		return false
+	}
+	for i := range current {
+		if current[i] != cachedFiles[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (cb *ContextBuilder) staticPromptCacheFreshLocked() bool {
+	if !cb.cachedStaticReady {
+		return false
+	}
+	if cb.cachedToolSignature != cb.currentToolSignature() {
+		return false
+	}
+
+	current := cb.captureStaticFileStates()
+	if len(current) != len(cb.cachedStaticFiles) {
+		return false
+	}
+	for i := range current {
+		if current[i] != cb.cachedStaticFiles[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (cb *ContextBuilder) captureStaticFileStates() []trackedFileState {
+	files := []string{
+		"AGENTS.md",
+		"SOUL.md",
+		"USER.md",
+		"IDENTITY.md",
+	}
+
+	states := make([]trackedFileState, 0, len(files))
+	for _, filename := range files {
+		path := filepath.Join(cb.workspace, filename)
+		state := trackedFileState{path: path}
+		info, err := os.Stat(path)
+		if err == nil {
+			state.exists = true
+			state.mtime = info.ModTime().UnixNano()
+		} else if !os.IsNotExist(err) {
+			state.exists = true
+			state.mtime = -1
+		}
+		states = append(states, state)
+	}
+
+	if cb.skillsManager != nil {
+		for _, skill := range cb.skillsManager.ListEnabled() {
+			if skill == nil {
+				continue
+			}
+			path := strings.TrimSpace(skill.FilePath)
+			if path == "" {
+				continue
+			}
+			state := trackedFileState{path: path}
+			info, err := os.Stat(path)
+			if err == nil {
+				state.exists = true
+				state.mtime = info.ModTime().UnixNano()
+			} else if !os.IsNotExist(err) {
+				state.exists = true
+				state.mtime = -1
+			}
+			states = append(states, state)
+		}
+	}
+
+	sort.Slice(states, func(i, j int) bool {
+		if states[i].path == states[j].path {
+			if states[i].exists == states[j].exists {
+				return states[i].mtime < states[j].mtime
+			}
+			return !states[i].exists && states[j].exists
+		}
+		return states[i].path < states[j].path
+	})
+
+	return states
+}
+
+func trimTrailingCurrentUserMessage(history []Message, currentMessage string) []Message {
+	if len(history) == 0 {
+		return history
+	}
+
+	trimmedCurrent := strings.TrimSpace(currentMessage)
+	if trimmedCurrent == "" {
+		return history
+	}
+
+	last := history[len(history)-1]
+	if last.Role != "user" {
+		return history
+	}
+	if strings.TrimSpace(last.Content) != trimmedCurrent {
+		return history
+	}
+
+	return history[:len(history)-1]
 }
 
 // BuildMessages builds the message array for the provider.
@@ -204,8 +396,9 @@ func (cb *ContextBuilder) BuildMessages(history []Message, currentMessage string
 		Content: systemPrompt,
 	})
 
-	// Sanitized conversation history
-	messages = append(messages, sanitizeHistory(history)...)
+	// Sanitized conversation history.
+	normalizedHistory := trimTrailingCurrentUserMessage(history, currentMessage)
+	messages = append(messages, sanitizeHistory(normalizedHistory)...)
 
 	// Current user message
 	messages = append(messages, Message{

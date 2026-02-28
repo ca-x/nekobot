@@ -370,6 +370,19 @@ func (m *Manager) GetJob(jobID string) (*Job, error) {
 	return &jobCopy, nil
 }
 
+// RunJob executes a job once immediately.
+func (m *Manager) RunJob(jobID string) error {
+	m.mu.RLock()
+	_, exists := m.jobs[jobID]
+	m.mu.RUnlock()
+	if !exists {
+		return fmt.Errorf("job not found: %s", jobID)
+	}
+
+	go m.executeJob(jobID)
+	return nil
+}
+
 // scheduleJob schedules a job based on its kind.
 // Caller must handle locking.
 func (m *Manager) scheduleJob(job *Job) error {

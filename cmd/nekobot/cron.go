@@ -20,6 +20,7 @@ import (
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/state"
 	"nekobot/pkg/tools"
 	"nekobot/pkg/workspace"
 )
@@ -120,6 +121,14 @@ var cronDisableCmd = &cobra.Command{
 	Run:   runCronDisable,
 }
 
+var cronRunCmd = &cobra.Command{
+	Use:   "run <job-id>",
+	Short: "Run a cron job immediately",
+	Long:  `Run a cron job once immediately.`,
+	Args:  cobra.ExactArgs(1),
+	Run:   runCronRun,
+}
+
 func init() {
 	// Add command flags.
 	cronAddCmd.Flags().StringVar(&cronName, "name", "", "Job name (required)")
@@ -151,6 +160,7 @@ func init() {
 	cronCmd.AddCommand(cronRemoveCmd)
 	cronCmd.AddCommand(cronEnableCmd)
 	cronCmd.AddCommand(cronDisableCmd)
+	cronCmd.AddCommand(cronRunCmd)
 
 	// Add to root.
 	rootCmd.AddCommand(cronCmd)
@@ -321,6 +331,19 @@ func runCronDisable(cmd *cobra.Command, args []string) {
 	fmt.Printf("✅ Cron job disabled: %s\n", jobID)
 }
 
+func runCronRun(cmd *cobra.Command, args []string) {
+	jobID := args[0]
+	manager, cleanup := buildCronManagerOrExit()
+	defer cleanup()
+
+	if err := manager.RunJob(jobID); err != nil {
+		fmt.Printf("Error running job: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Cron job started: %s\n", jobID)
+}
+
 func buildCronManagerOrExit() (*cron.Manager, func()) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -337,6 +360,7 @@ func buildCronManagerOrExit() (*cron.Manager, func()) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		state.Module,
 		providerstore.Module,
 		agent.Module,
 		cron.Module,

@@ -14,6 +14,8 @@ import (
 	_ "nekobot/pkg/providers/init" // Register all providers
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/state"
+	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -33,6 +35,8 @@ type provideAgentDeps struct {
 	ToolSessMgr   *toolsessions.Manager `optional:"true"`
 	LC            fx.Lifecycle
 	ProviderStore *providerstore.Manager `optional:"true"`
+	KVStore       state.KV               `optional:"true"`
+	EntClient     *ent.Client            `optional:"true"`
 }
 
 // ProvideAgent provides an agent instance.
@@ -44,7 +48,10 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 	approvalMgr := deps.ApprovalMgr
 	toolSessMgr := deps.ToolSessMgr
 	lc := deps.LC
-	_ = deps.ProviderStore // Ensure provider store initializes first when module is present.
+	providerStore := deps.ProviderStore
+	kvStore := deps.KVStore
+	entClient := deps.EntClient
+	_ = providerStore // Ensure provider store initializes first when module is present.
 
 	// Get provider config
 	providerName := strings.TrimSpace(cfg.Agents.Defaults.Provider)
@@ -89,7 +96,7 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 	}
 
 	// Create agent with process manager
-	agent, err := New(cfg, log, client, processMgr, approvalMgr, toolSessMgr)
+	agent, err := New(cfg, log, client, processMgr, approvalMgr, toolSessMgr, kvStore, entClient)
 	if err != nil {
 		return nil, err
 	}

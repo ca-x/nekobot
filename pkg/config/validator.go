@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // ValidationError represents a configuration validation error.
@@ -108,6 +109,58 @@ func (v *Validator) validateAgents(cfg *AgentsConfig) {
 	} else if orchestrator != "legacy" && orchestrator != "blades" {
 		v.addError("agents.defaults.orchestrator", "orchestrator must be one of: legacy, blades")
 	}
+
+	for i, server := range cfg.Defaults.MCPServers {
+		prefix := fmt.Sprintf("agents.defaults.mcp_servers[%d]", i)
+		v.validateMCPServer(prefix, server)
+	}
+}
+
+func (v *Validator) validateMCPServer(prefix string, cfg MCPServerConfig) {
+	name := strings.TrimSpace(cfg.Name)
+	if name == "" {
+		v.addError(prefix+".name", "name is required")
+	}
+
+	transport := strings.TrimSpace(strings.ToLower(cfg.Transport))
+	if transport == "" {
+		v.addError(prefix+".transport", "transport is required")
+		return
+	}
+
+	switch transport {
+	case "stdio":
+		if strings.TrimSpace(cfg.Command) == "" {
+			v.addError(prefix+".command", "command is required when transport is stdio")
+		}
+	case "http", "websocket", "sse":
+		if strings.TrimSpace(cfg.Endpoint) == "" {
+			v.addError(prefix+".endpoint", "endpoint is required when transport is http, websocket, or sse")
+			break
+		}
+		if _, err := url.Parse(cfg.Endpoint); err != nil {
+			v.addError(prefix+".endpoint", fmt.Sprintf("invalid URL: %v", err))
+		}
+	default:
+		v.addError(prefix+".transport", "transport must be one of: stdio, http, websocket, sse")
+	}
+
+	if timeout := strings.TrimSpace(cfg.Timeout); timeout != "" {
+		if _, err := parseMCPTimeout(timeout); err != nil {
+			v.addError(prefix+".timeout", err.Error())
+		}
+	}
+}
+
+func parseMCPTimeout(raw string) (int64, error) {
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid timeout duration: %w", err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("timeout duration must be greater than 0")
+	}
+	return int64(d), nil
 }
 
 // validateProviders validates provider configuration.
@@ -286,6 +339,14 @@ func (v *Validator) validateHeartbeat(cfg *HeartbeatConfig) {
 func (v *Validator) validateMemory(cfg *MemoryConfig) {
 	if !cfg.Enabled {
 		return
+	}
+
+	backend := strings.TrimSpace(strings.ToLower(cfg.Backend))
+	if backend == "" {
+		backend = "file"
+	}
+	if backend != "file" && backend != "db" && backend != "kv" {
+		v.addError("memory.backend", "backend must be one of: file, db, kv")
 	}
 
 	if cfg.Semantic.Enabled {

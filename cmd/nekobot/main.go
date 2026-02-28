@@ -27,6 +27,7 @@ import (
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/state"
 	"nekobot/pkg/tools"
 	"nekobot/pkg/version"
 	"nekobot/pkg/workspace"
@@ -157,6 +158,7 @@ func runOneShot(ctx context.Context, cancel context.CancelFunc) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		state.Module,
 		process.Module,
 		providerstore.Module,
 		agent.Module,
@@ -216,6 +218,7 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc) {
 		commands.Module,
 		workspace.Module,
 		skills.Module,
+		state.Module,
 		process.Module,
 		providerstore.Module,
 		agent.Module,

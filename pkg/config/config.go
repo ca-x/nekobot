@@ -52,19 +52,33 @@ type AgentsConfig struct {
 
 // AgentDefaults defines default settings for agents.
 type AgentDefaults struct {
-	Workspace           string   `mapstructure:"workspace" json:"workspace"`
-	RestrictToWorkspace bool     `mapstructure:"restrict_to_workspace" json:"restrict_to_workspace"`
-	Provider            string   `mapstructure:"provider" json:"provider"`
-	Fallback            []string `mapstructure:"fallback" json:"fallback"`
-	Orchestrator        string   `mapstructure:"orchestrator" json:"orchestrator"`
-	Model               string   `mapstructure:"model" json:"model"`
-	MaxTokens           int      `mapstructure:"max_tokens" json:"max_tokens"`
-	Temperature         float64  `mapstructure:"temperature" json:"temperature"`
-	MaxToolIterations   int      `mapstructure:"max_tool_iterations" json:"max_tool_iterations"`
-	SkillsDir           string   `mapstructure:"skills_dir" json:"skills_dir"`
-	SkillsAutoReload    bool     `mapstructure:"skills_auto_reload" json:"skills_auto_reload"`
-	ExtendedThinking    bool     `mapstructure:"extended_thinking" json:"extended_thinking"`
-	ThinkingBudget      int      `mapstructure:"thinking_budget" json:"thinking_budget"`
+	Workspace           string            `mapstructure:"workspace" json:"workspace"`
+	RestrictToWorkspace bool              `mapstructure:"restrict_to_workspace" json:"restrict_to_workspace"`
+	Provider            string            `mapstructure:"provider" json:"provider"`
+	Fallback            []string          `mapstructure:"fallback" json:"fallback"`
+	Orchestrator        string            `mapstructure:"orchestrator" json:"orchestrator"`
+	Model               string            `mapstructure:"model" json:"model"`
+	MaxTokens           int               `mapstructure:"max_tokens" json:"max_tokens"`
+	Temperature         float64           `mapstructure:"temperature" json:"temperature"`
+	MaxToolIterations   int               `mapstructure:"max_tool_iterations" json:"max_tool_iterations"`
+	SkillsDir           string            `mapstructure:"skills_dir" json:"skills_dir"`
+	SkillsAutoReload    bool              `mapstructure:"skills_auto_reload" json:"skills_auto_reload"`
+	ExtendedThinking    bool              `mapstructure:"extended_thinking" json:"extended_thinking"`
+	ThinkingBudget      int               `mapstructure:"thinking_budget" json:"thinking_budget"`
+	MCPServers          []MCPServerConfig `mapstructure:"mcp_servers" json:"mcp_servers"`
+}
+
+// MCPServerConfig defines an MCP server entry for blades tools resolver integration.
+type MCPServerConfig struct {
+	Name      string            `mapstructure:"name" json:"name"`
+	Transport string            `mapstructure:"transport" json:"transport"` // "stdio", "http", "websocket", or "sse"
+	Command   string            `mapstructure:"command" json:"command"`
+	Args      []string          `mapstructure:"args" json:"args"`
+	Env       map[string]string `mapstructure:"env" json:"env"`
+	WorkDir   string            `mapstructure:"work_dir" json:"work_dir"`
+	Endpoint  string            `mapstructure:"endpoint" json:"endpoint"`
+	Headers   map[string]string `mapstructure:"headers" json:"headers"`
+	Timeout   string            `mapstructure:"timeout" json:"timeout"`
 }
 
 // ChannelsConfig contains all channel configurations.
@@ -330,6 +344,7 @@ func DefaultConfig() *Config {
 				MaxTokens:           8192,
 				Temperature:         0.7,
 				MaxToolIterations:   20,
+				MCPServers:          []MCPServerConfig{},
 			},
 		},
 		Channels: ChannelsConfig{
@@ -443,7 +458,11 @@ func DefaultConfig() *Config {
 			Prefix: "nekobot:bus:",
 		},
 		Memory: MemoryConfig{
-			Enabled: true,
+			Enabled:  true,
+			Backend:  "file",
+			FilePath: "",
+			DBPrefix: "memory:",
+			KVPrefix: "memory:",
 			Semantic: SemanticMemoryConfig{
 				Enabled:       true,
 				DefaultTopK:   5,
@@ -585,6 +604,10 @@ func expandPath(path string) string {
 // MemoryConfig for long-term memory integration and retrieval behavior.
 type MemoryConfig struct {
 	Enabled   bool                  `mapstructure:"enabled" json:"enabled"`
+	Backend   string                `mapstructure:"backend" json:"backend"`     // "file", "db", or "kv"
+	FilePath  string                `mapstructure:"file_path" json:"file_path"` // Base path for file backend (defaults to workspace/memory)
+	DBPrefix  string                `mapstructure:"db_prefix" json:"db_prefix"` // Section prefix for DB backend
+	KVPrefix  string                `mapstructure:"kv_prefix" json:"kv_prefix"` // Key prefix for KV backend
 	Semantic  SemanticMemoryConfig  `mapstructure:"semantic" json:"semantic"`
 	Episodic  EpisodicMemoryConfig  `mapstructure:"episodic" json:"episodic"`
 	ShortTerm ShortTermMemoryConfig `mapstructure:"short_term" json:"short_term"`

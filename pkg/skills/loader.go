@@ -316,8 +316,29 @@ func parseSkillContent(content, path string) (*Skill, error) {
 
 	skill.Instructions = instructions
 	skill.FilePath = path
+	if !skill.Always {
+		skill.Always = parseAlwaysFromMetadata(skill.Metadata)
+	}
 
 	return skill, nil
+}
+
+func parseAlwaysFromMetadata(metadata map[string]interface{}) bool {
+	if len(metadata) == 0 {
+		return false
+	}
+
+	openclaw, ok := metadata["openclaw"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+
+	always, ok := openclaw["always"].(bool)
+	if !ok {
+		return false
+	}
+
+	return always
 }
 
 // CheckEligibility checks if a skill is eligible to run on current system.

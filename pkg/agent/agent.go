@@ -3,7 +3,9 @@ package agent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -13,6 +15,8 @@ import (
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/state"
+	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tools"
 	"nekobot/pkg/toolsessions"
 )
@@ -37,7 +41,25 @@ type Agent struct {
 	context  *ContextBuilder
 	approval *approval.Manager
 
+	acpMu       sync.RWMutex
+	acpSessions map[string]*acpSessionState
+
+	failoverMu       sync.Mutex
+	failoverCooldown *providers.CooldownTracker
+
 	maxIterations int
+}
+
+// acpSessionState stores ACP session-scoped routing and cancellation state.
+type acpSessionState struct {
+	session     SessionInterface
+	provider    string
+	model       string
+	fallback    []string
+	modeID      string
+	cancel      context.CancelFunc
+	mcpServers  []config.MCPServerConfig
+	customTools bool
 }
 
 // Config holds agent configuration.
@@ -51,7 +73,16 @@ type Config struct {
 }
 
 // New creates a new agent with the given configuration.
-func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Client, processMgr *process.Manager, approvalMgr *approval.Manager, toolSessionMgr *toolsessions.Manager) (*Agent, error) {
+func New(
+	cfg *config.Config,
+	log *logger.Logger,
+	providerClient *providers.Client,
+	processMgr *process.Manager,
+	approvalMgr *approval.Manager,
+	toolSessionMgr *toolsessions.Manager,
+	kvStore state.KV,
+	runtimeEntClient *ent.Client,
+) (*Agent, error) {
 	workspace := cfg.WorkspacePath()
 
 	// Create tool registry
@@ -107,20 +138,23 @@ func New(cfg *config.Config, log *logger.Logger, providerClient *providers.Clien
 	// Message tool (will be configured later by gateway)
 	toolRegistry.MustRegister(tools.NewMessageTool(nil))
 
-	// Create context builder
-	contextBuilder := NewContextBuilder(workspace)
+	// Create context builder.
+	memoryStore := newMemoryStoreFromConfig(cfg, workspace, kvStore, runtimeEntClient)
+	contextBuilder := NewContextBuilderWithMemory(workspace, memoryStore)
 
 	// Set tool descriptions function
 	contextBuilder.SetToolDescriptionsFunc(toolRegistry.GetDescriptions)
 
 	agent := &Agent{
-		config:        cfg,
-		logger:        log,
-		client:        providerClient,
-		tools:         toolRegistry,
-		context:       contextBuilder,
-		approval:      approvalMgr,
-		maxIterations: cfg.Agents.Defaults.MaxToolIterations,
+		config:           cfg,
+		logger:           log,
+		client:           providerClient,
+		tools:            toolRegistry,
+		context:          contextBuilder,
+		approval:         approvalMgr,
+		acpSessions:      make(map[string]*acpSessionState),
+		failoverCooldown: providers.NewCooldownTracker(),
+		maxIterations:    cfg.Agents.Defaults.MaxToolIterations,
 	}
 
 	return agent, nil
@@ -172,6 +206,44 @@ func (a *Agent) chatWithProviderModel(ctx context.Context, sess SessionInterface
 	default:
 		return "", fmt.Errorf("unsupported orchestrator: %s", orchestrator)
 	}
+}
+
+func newMemoryStoreFromConfig(cfg *config.Config, workspace string, kvStore state.KV, runtimeEntClient *ent.Client) *MemoryStore {
+	if cfg == nil || !cfg.Memory.Enabled {
+		return NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{})
+	}
+
+	backendKind := strings.TrimSpace(strings.ToLower(cfg.Memory.Backend))
+	if backendKind == "" {
+		backendKind = "file"
+	}
+
+	switch backendKind {
+	case "db":
+		if runtimeEntClient != nil {
+			backend, err := newMemoryDBBackend(runtimeEntClient, cfg.Memory.DBPrefix)
+			if err == nil {
+				return NewMemoryStoreWithBackend(workspace, backend)
+			}
+		}
+	case "kv":
+		if kvStore != nil {
+			backend, err := newMemoryKVBackend(kvStore, cfg.Memory.KVPrefix)
+			if err == nil {
+				return NewMemoryStoreWithBackend(workspace, backend)
+			}
+		}
+	}
+
+	memoryPath := strings.TrimSpace(cfg.Memory.FilePath)
+	if memoryPath == "" {
+		memoryPath = filepath.Join(workspace, "memory")
+	}
+	backend, err := newMemoryFileBackend(memoryPath)
+	if err != nil {
+		return NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{})
+	}
+	return NewMemoryStoreWithBackend(workspace, backend)
 }
 
 func (a *Agent) resolveOrchestrator() (string, error) {
@@ -402,14 +474,30 @@ func (a *Agent) callLLMWithFallback(
 	requestedModel string,
 	clientCache map[string]*providers.Client,
 ) (*providers.UnifiedResponse, string, string, error) {
+	tracker := a.getFailoverCooldown()
 	var lastErr error
 
 	for _, providerName := range providerOrder {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, "", "", ctxErr
+		}
+
+		if !tracker.IsAvailable(providerName) {
+			remaining := tracker.CooldownRemaining(providerName)
+			lastErr = fmt.Errorf("provider %s in cooldown (%s remaining)", providerName, remaining.Round(time.Second))
+			a.logger.Warn("Provider skipped due to cooldown",
+				zap.String("provider", providerName),
+				zap.Duration("remaining", remaining),
+			)
+			continue
+		}
+
 		model := a.resolveModelForProvider(providerName, primaryProvider, requestedModel)
 
 		client, err := a.getProviderClient(providerName, model, clientCache)
 		if err != nil {
 			lastErr = err
+			tracker.MarkFailure(providerName, providers.FailoverReasonUnknown)
 			a.logger.Warn("Provider unavailable", zap.String("provider", providerName), zap.Error(err))
 			continue
 		}
@@ -419,11 +507,38 @@ func (a *Agent) callLLMWithFallback(
 
 		resp, err := client.Chat(ctx, &reqCopy)
 		if err != nil {
-			lastErr = err
-			a.logger.Warn("Provider request failed", zap.String("provider", providerName), zap.String("model", model), zap.Error(err))
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, "", "", ctxErr
+			}
+
+			failoverErr := providers.ClassifyError(err, providerName, model)
+			reason := providers.FailoverReasonUnknown
+			retriable := true
+			loggedErr := err
+			if failoverErr != nil {
+				reason = failoverErr.Reason
+				retriable = failoverErr.IsRetriable()
+				loggedErr = failoverErr
+			}
+			lastErr = loggedErr
+
+			a.logger.Warn("Provider request failed",
+				zap.String("provider", providerName),
+				zap.String("model", model),
+				zap.String("reason", string(reason)),
+				zap.Bool("retriable", retriable),
+				zap.Error(loggedErr),
+			)
+
+			if !retriable {
+				return nil, "", "", loggedErr
+			}
+
+			tracker.MarkFailure(providerName, reason)
 			continue
 		}
 
+		tracker.MarkSuccess(providerName)
 		return resp, providerName, model, nil
 	}
 
@@ -431,6 +546,17 @@ func (a *Agent) callLLMWithFallback(
 		lastErr = fmt.Errorf("no provider attempt made")
 	}
 	return nil, "", "", lastErr
+}
+
+func (a *Agent) getFailoverCooldown() *providers.CooldownTracker {
+	a.failoverMu.Lock()
+	defer a.failoverMu.Unlock()
+
+	if a.failoverCooldown == nil {
+		a.failoverCooldown = providers.NewCooldownTracker()
+	}
+
+	return a.failoverCooldown
 }
 
 func (a *Agent) getProviderClient(providerName, model string, cache map[string]*providers.Client) (*providers.Client, error) {

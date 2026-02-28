@@ -4,7 +4,10 @@ package skills
 import (
 	"context"
 	"fmt"
+	"html"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -23,6 +26,7 @@ type Skill struct {
 	Author      string                 `yaml:"author" json:"author"`
 	Tags        []string               `yaml:"tags" json:"tags"`
 	Enabled     bool                   `yaml:"enabled" json:"enabled"`
+	Always      bool                   `yaml:"always" json:"always"`
 	Metadata    map[string]interface{} `yaml:"metadata" json:"metadata"`
 
 	// Skill content
@@ -278,26 +282,125 @@ func (m *Manager) Disable(id string) error {
 	return nil
 }
 
+// ListAlwaysEligible returns always-on skills that meet system requirements.
+func (m *Manager) ListAlwaysEligible() []*Skill {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	skills := make([]*Skill, 0)
+	for _, skill := range m.skills {
+		if !skill.Always || !skill.Enabled {
+			continue
+		}
+
+		eligible, reasons := m.eligibilityCheck.Check(skill)
+		if !eligible {
+			m.log.Debug("Always skill not eligible",
+				zap.String("skill", skill.ID),
+				zap.Strings("reasons", reasons))
+			continue
+		}
+
+		skills = append(skills, skill)
+	}
+
+	return skills
+}
+
 // GetInstructions returns the combined instructions for all enabled and eligible skills.
 func (m *Manager) GetInstructions() string {
-	skills := m.ListEligibleEnabled()
-	if len(skills) == 0 {
+	eligibleEnabled := m.ListEligibleEnabled()
+	regularSkills := make([]*Skill, 0, len(eligibleEnabled))
+	for _, skill := range eligibleEnabled {
+		if !skill.Always {
+			regularSkills = append(regularSkills, skill)
+		}
+	}
+
+	alwaysSkills := m.ListAlwaysEligible()
+	if len(regularSkills) == 0 && len(alwaysSkills) == 0 {
 		return ""
 	}
 
-	var sb strings.Builder
-	sb.WriteString("# Available Skills\n\n")
+	sortSkillsByName(regularSkills)
+	sortSkillsByName(alwaysSkills)
 
-	for _, skill := range skills {
-		sb.WriteString(fmt.Sprintf("## %s\n\n", skill.Name))
-		if skill.Description != "" {
-			sb.WriteString(fmt.Sprintf("%s\n\n", skill.Description))
+	var sb strings.Builder
+
+	if len(alwaysSkills) > 0 {
+		sb.WriteString("# Always Skills\n\n")
+		for i, skill := range alwaysSkills {
+			if i > 0 {
+				sb.WriteString("\n\n")
+			}
+			sb.WriteString(formatSkillXML(skill))
 		}
-		sb.WriteString(skill.Instructions)
-		sb.WriteString("\n\n---\n\n")
+		sb.WriteString("\n\n")
 	}
 
+	if len(regularSkills) > 0 {
+		if sb.Len() > 0 {
+			sb.WriteString("---\n\n")
+		}
+		sb.WriteString("# Available Skills\n\n")
+		sb.WriteString(formatSkillSummaryXML(regularSkills))
+		sb.WriteString("\n\n")
+		sb.WriteString("Use the skill tool with action \"invoke\" and the skill_id to load detailed instructions when needed.")
+		sb.WriteString("\n\n")
+	}
+
+	return strings.TrimSpace(sb.String())
+}
+
+func sortSkillsByName(skills []*Skill) {
+	sort.Slice(skills, func(i, j int) bool {
+		left := strings.ToLower(strings.TrimSpace(skills[i].Name))
+		right := strings.ToLower(strings.TrimSpace(skills[j].Name))
+		if left == right {
+			return skills[i].ID < skills[j].ID
+		}
+		return left < right
+	})
+}
+
+func formatSkillSummaryXML(skills []*Skill) string {
+	var sb strings.Builder
+	sb.WriteString("<skills>\n")
+	for _, skill := range skills {
+		sb.WriteString(fmt.Sprintf(
+			"  <skill id=\"%s\" name=\"%s\" instructions_length=\"%s\">\n",
+			xmlEscape(skill.ID),
+			xmlEscape(skill.Name),
+			strconv.Itoa(len([]rune(skill.Instructions))),
+		))
+		if skill.Description != "" {
+			sb.WriteString(fmt.Sprintf("    <description>%s</description>\n", xmlEscape(skill.Description)))
+		}
+		sb.WriteString("  </skill>\n")
+	}
+	sb.WriteString("</skills>")
 	return sb.String()
+}
+
+func formatSkillXML(skill *Skill) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf(
+		"<skill id=\"%s\" name=\"%s\" always=\"true\">\n",
+		xmlEscape(skill.ID),
+		xmlEscape(skill.Name),
+	))
+	if skill.Description != "" {
+		sb.WriteString(fmt.Sprintf("  <description>%s</description>\n", xmlEscape(skill.Description)))
+	}
+	sb.WriteString("  <instructions>\n")
+	sb.WriteString(xmlEscape(skill.Instructions))
+	sb.WriteString("\n  </instructions>\n")
+	sb.WriteString("</skill>")
+	return sb.String()
+}
+
+func xmlEscape(value string) string {
+	return html.EscapeString(value)
 }
 
 // Reload reloads all skills from disk.

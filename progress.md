@@ -21,3 +21,92 @@
 - Removed outdated provider-in-config snippets from README/docs and aligned examples to bootstrap-only config.
 - Added WebUI config section into `/api/config` read/write path and persisted via DB section storage.
 - Validation run: `go test ./...` passed.
+
+## 2026-02-28
+
+- Completed memory storage abstraction hardening with `MemoryBackend` implementations for file/db/kv/noop.
+- Fixed file backend I/O in `pkg/agent/memory_backend.go` to use `os.MkdirAll` + `os.ReadFile` + `os.IsNotExist` while keeping atomic writes.
+- Fixed `NewMemoryStore` fallback typing in `pkg/agent/memory.go` to safely degrade to noop backend when file backend init fails.
+- Added `pkg/agent/memory_backend_test.go` to verify KV backend selection, DB backend selection, and KV-unavailable fallback to file backend.
+- Verification run: `go test ./pkg/agent ./pkg/config ./cmd/nekobot` passed.
+- Added ACP stdio entrypoint command `nekobot acp` with FX wiring and lifecycle management in `cmd/nekobot/acp.go`.
+- Extended ACP session state and adapter mapping so `session/new` `mcpServers` are converted into `config.MCPServerConfig` and stored per ACP session.
+- Updated blades orchestrator tool resolver path to honor ACP session-level MCP overrides, while keeping existing provider fallback and tool execution flow unchanged.
+- Added MCP transport compatibility for ACP `sse` by mapping to blades HTTP transport and expanded config validation to accept `sse` transport values.
+- Added ACP adapter tests for session creation/mode/cancel/prompt validation and MCP mapping coverage in `pkg/agent/acp_adapter_test.go`.
+- Added ACP `session/update` bridge in adapter `Prompt` flow to emit agent text chunks via ACP connection while preserving existing provider fallback and tool execution semantics.
+- Wired ACP adapter to `AgentSideConnection` in CLI startup so session update notifications are available in real ACP runtime.
+- Expanded ACP adapter tests to cover session update emission, session update failure/cancel handling, and connection-detach behavior.
+- Verification run: `go test ./pkg/agent ./pkg/config ./cmd/nekobot` passed.
+- Added ACP `session/load` support in adapter with absolute CWD validation, in-memory session bootstrap, and per-session MCP override mapping.
+- Updated ACP initialize capability to advertise `loadSession=true` so ACP clients can restore existing session IDs.
+- Added ACP adapter tests for `Initialize` loadSession capability plus `LoadSession` success and validation failure paths.
+- Added ACP session model state exposure in `session/new` and `session/load` responses to reflect the session’s active model.
+- Implemented ACP experimental `session/set_model` handling with per-session model override updates and validation.
+- Expanded ACP adapter tests to cover loaded/new session model state plus `session/set_model` success and invalid-param cases.
+- Verification run: `go test -count=1 ./pkg/agent ./pkg/config ./cmd/nekobot` passed.
+- Added ACP `current_mode_update` session notifications in `session/set_mode` so clients receive mode-change updates immediately.
+- Added ACP adapter tests for `session/set_mode` notification emission plus update failure/cancel handling.
+- Verification run: `go test -count=1 ./pkg/agent ./pkg/config ./cmd/nekobot` passed.
+- Added trailing user-message dedup normalization in `pkg/agent/context.go` (`BuildMessages`) to avoid double-injecting the current prompt when callers pre-append user turns.
+- Applied the same trailing user-message normalization in `pkg/agent/blades_runtime.go` before hydrating blades session history, keeping blades runtime behavior aligned with legacy prompt construction semantics.
+- Added regression tests in `pkg/agent/agent_test.go` for trailing-current-user dedup and non-matching history preservation.
+- Verification run: `go test -count=1 ./pkg/agent ./pkg/gateway ./pkg/webui ./cmd/nekobot ./pkg/config` passed.
+- Note: full `go test -count=1 ./...` still fails in `pkg/cron` with known upstream `fatal error: concurrent map writes` in Ent atlas migration path (unchanged by this batch).
+- Fixed runtime Ent schema migration race by serializing `EnsureRuntimeEntSchema` calls with a package-level mutex in `pkg/config/runtime_client.go`.
+- Added regression test `TestEnsureRuntimeEntSchemaConcurrentCalls` in `pkg/config/db_store_test.go` to verify concurrent schema init no longer fails.
+- Verification run: `go test -count=1 ./pkg/config ./pkg/cron` passed.
+- Verification run: `go test -count=1 ./...` passed.
+- Added deterministic tool description ordering in `pkg/agent/context.go` by sorting tool descriptions before assembling the tools section, improving prompt cache stability.
+- Added regression test `TestBuildToolsSection_SortsToolDescriptionsDeterministically` in `pkg/agent/agent_test.go`.
+- Verification run: `go test -count=1 ./pkg/agent` passed.
+- Verification run: `go test -count=1 ./...` passed.
+- Wired `Agent.callLLMWithFallback` to provider failover semantics (`providers.ClassifyError` + shared `CooldownTracker`) so retriable failures continue fallback and non-retriable format errors fail fast.
+- Added provider cooldown skip behavior in agent fallback path, including contextual logging for skip reason and remaining cooldown window.
+- Added agent failover regression tests for retriable fallback continuation, non-retriable short-circuit behavior, and cooldown-based skip on subsequent attempts (`pkg/agent/agent_test.go`).
+- Added provider failover/cooldown regression tests covering cooldown skipping, non-retriable stop, reason tracking, all-cooldown exhaustion, and 24h failure-window reset (`pkg/providers/loadbalancer_test.go`).
+- Added `always` frontmatter support in skills metadata (`pkg/skills/manager.go`) with eligibility-aware always-skill selection.
+- Updated skill prompt assembly to emit a dedicated `Always Skills` XML section and keep regular skills in deterministic name order.
+- Added compatibility parsing for `metadata.openclaw.always` in `pkg/skills/loader.go`.
+- Extended validation with `ValidateAlways` to warn when always-on skills are disabled.
+- Added regression tests for always-skill loading, prompt rendering, and validation (`pkg/skills/manager_test.go`, `pkg/skills/loader_test.go`).
+- Updated docs with `always` field and Always Skills behavior (`docs/CONFIG.md`).
+- Verification run: `go test -count=1 ./pkg/skills ./pkg/agent` passed.
+- Continued Skills follow-up: switched `# Available Skills` from full markdown bodies to compact XML summary (`<skills><skill ... /></skills>`) in `pkg/skills/manager.go`, keeping Always Skills full XML instructions unchanged.
+- Added `instructions_length` summary field using rune count for deterministic lightweight metadata and better token budgeting hints.
+- Added/updated regression tests for compact summary output and non-ASCII length handling in `pkg/skills/manager_test.go`.
+- Verification run: `go test -count=1 ./pkg/skills ./pkg/agent` passed.
+- Verification run: `go test -count=1 ./...` passed.
+- Added WebUI Cron API routes and handlers in `pkg/webui/server.go` for list/create/delete/enable/disable/run-now operations.
+- Added structured error logging for Cron mutation failures in WebUI handlers (delete/enable/disable/run).
+- Added WebUI Cron handler tests in `pkg/webui/server_cron_test.go` covering unavailable manager, CRUD flow, invalid RFC3339 `at_time`, not-found run-now, and disabled-job run-now behavior.
+- Added frontend Cron integration with new hooks and page (`pkg/webui/frontend/src/hooks/useCron.ts`, `pkg/webui/frontend/src/pages/CronPage.tsx`), plus routing/sidebar wiring in `pkg/webui/frontend/src/App.tsx` and `pkg/webui/frontend/src/components/layout/Sidebar.tsx`.
+- Added Cron i18n strings in `pkg/webui/frontend/public/i18n/en.json`, `pkg/webui/frontend/public/i18n/zh-CN.json`, and `pkg/webui/frontend/public/i18n/ja.json`.
+- Verification run: `go test ./pkg/webui ./pkg/cron ./pkg/agent ./pkg/config ./cmd/nekobot` passed.
+- Verification run: `go test ./...` passed.
+- Verification run: `npm --prefix pkg/webui/frontend run build` passed (after installing frontend deps with `npm --prefix pkg/webui/frontend ci`).
+- Added CLI command `nekobot cron run <job-id>` to trigger immediate execution for existing jobs.
+- Aligned blades runtime tool error semantics with legacy orchestrator: tool execution failures now return `Error: ...` tool results instead of aborting the whole run.
+- Added blades runtime regression tests for tool-error result fallback and role/parts mapping (`pkg/agent/agent_test.go`).
+- Updated architecture docs for Cron capabilities to reflect DB-backed persistence and run-now support.
+- Verification run: `go test ./pkg/agent ./pkg/cron ./cmd/nekobot` passed.
+- Verification run: `go test ./...` passed.
+- Added CLI regression tests for `nekobot cron run` command wiring and arg validation in `cmd/nekobot/cron_test.go`.
+- Verification run: `go test ./cmd/nekobot` passed.
+- Verification run: `go test ./...` passed.
+- Fixed blades tool-result history conversion in `pkg/agent/blades_runtime.go`: when hydrating prior `RoleTool` messages, each `blades.ToolPart` now maps to its own `providers.UnifiedMessage` so multiple tool results in one blades message are preserved for provider context reconstruction.
+- Added regression tests for blades tool history conversion in `pkg/agent/agent_test.go`:
+  - `TestBladesModelProvider_ConvertMessagesPreservesMultipleToolResults`
+  - `TestBladesModelProvider_ConvertMessagesToolFallbackToRequest`
+- Verification run: `go test ./pkg/agent` passed.
+- Verification run: `go test ./...` passed.
+- Feature Batch #2 收口：`chatWithBladesOrchestrator` 会话历史注入现在保留 assistant 的 tool-calls turns（即使 text 为空），避免在重建 blades history 时丢失工具调用上下文，保证与 legacy 的 tool 执行链路语义一致。
+- Added `hasBladesHistoryContent` + enhanced `toBladesMessage` in `pkg/agent/blades_runtime.go` to preserve assistant tool call metadata when hydrating history into blades session.
+- Added regression tests in `pkg/agent/agent_test.go`:
+  - `TestToBladesMessage_AssistantToolCallsPreserved`
+  - `TestHasBladesHistoryContent`
+- Verification run: `go test -count=1 ./pkg/agent` passed.
+- Implemented static prompt caching in `pkg/agent/context.go` with file-state/tool-signature invalidation and dynamic current-time substitution to reduce repeated full prompt rebuilds while keeping fresh time output.
+- Added context prompt regression tests in `pkg/agent/agent_test.go` for current-time placeholder replacement plus cache invalidation on bootstrap file and tool-description changes.
+- Verification run: `go test -count=1 ./pkg/agent` passed.
+- Verification run: `go test -count=1 ./...` passed.

@@ -36,10 +36,13 @@ import (
 	"nekobot/pkg/channels"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
+	"nekobot/pkg/cron"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
+	"nekobot/pkg/session"
+	"nekobot/pkg/skills"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/userprefs"
@@ -61,8 +64,11 @@ type Server struct {
 	commands   *commands.Registry
 	prefs      *userprefs.Manager
 	toolSess   *toolsessions.Manager
+	sessionMgr *session.Manager
 	processMgr *process.Manager
 	providers  *providerstore.Manager
+	cronMgr    *cron.Manager
+	skillsMgr  *skills.Manager
 	entClient  *ent.Client
 	port       int
 	startedAt  time.Time
@@ -80,8 +86,11 @@ func NewServer(
 	cmdRegistry *commands.Registry,
 	prefsMgr *userprefs.Manager,
 	toolSessionMgr *toolsessions.Manager,
+	sessionMgr *session.Manager,
 	processManager *process.Manager,
 	providerStore *providerstore.Manager,
+	cronManager *cron.Manager,
+	skillsManager *skills.Manager,
 	entClient *ent.Client,
 ) *Server {
 	port := cfg.WebUI.Port
@@ -105,8 +114,11 @@ func NewServer(
 		commands:   cmdRegistry,
 		prefs:      prefsMgr,
 		toolSess:   toolSessionMgr,
+		sessionMgr: sessionMgr,
 		processMgr: processManager,
 		providers:  providerStore,
+		cronMgr:    cronManager,
+		skillsMgr:  skillsManager,
 		entClient:  entClient,
 		port:       port,
 		startedAt:  time.Now(),
@@ -168,6 +180,25 @@ func (s *Server) setup() {
 
 	// Status
 	api.GET("/status", s.handleStatus)
+
+	// Cron routes
+	api.GET("/cron/jobs", s.handleListCronJobs)
+	api.POST("/cron/jobs", s.handleCreateCronJob)
+	api.DELETE("/cron/jobs/:id", s.handleDeleteCronJob)
+	api.POST("/cron/jobs/:id/enable", s.handleEnableCronJob)
+	api.POST("/cron/jobs/:id/disable", s.handleDisableCronJob)
+	api.POST("/cron/jobs/:id/run", s.handleRunCronJob)
+
+	// Session routes
+	api.GET("/sessions", s.handleListSessions)
+	api.GET("/sessions/:id", s.handleGetSession)
+	api.PUT("/sessions/:id/summary", s.handleUpdateSessionSummary)
+	api.DELETE("/sessions/:id", s.handleDeleteSession)
+
+	// Marketplace routes
+	api.GET("/marketplace/skills", s.handleListMarketplaceSkills)
+	api.POST("/marketplace/skills/:id/enable", s.handleEnableMarketplaceSkill)
+	api.POST("/marketplace/skills/:id/disable", s.handleDisableMarketplaceSkill)
 
 	// Auth management (change password, profile)
 	api.POST("/auth/change-password", s.handleChangePassword)
@@ -672,6 +703,163 @@ func (s *Server) handleDiscoverProviderModels(c *echo.Context) error {
 		"provider_kind": kind,
 		"models":        models,
 	})
+}
+
+// --- Cron Handlers ---
+
+type createCronJobRequest struct {
+	Name           string `json:"name"`
+	ScheduleKind   string `json:"schedule_kind"`
+	Schedule       string `json:"schedule"`
+	AtTime         string `json:"at_time"`
+	EveryDuration  string `json:"every_duration"`
+	Prompt         string `json:"prompt"`
+	DeleteAfterRun bool   `json:"delete_after_run"`
+}
+
+func (s *Server) handleListCronJobs(c *echo.Context) error {
+	if s.cronMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cron manager unavailable"})
+	}
+	return c.JSON(http.StatusOK, s.cronMgr.ListJobs())
+}
+
+func (s *Server) handleCreateCronJob(c *echo.Context) error {
+	if s.cronMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cron manager unavailable"})
+	}
+
+	var body createCronJobRequest
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	name := strings.TrimSpace(body.Name)
+	prompt := strings.TrimSpace(body.Prompt)
+	if name == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
+	}
+	if prompt == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "prompt is required"})
+	}
+
+	kind := cron.ScheduleKind(strings.ToLower(strings.TrimSpace(body.ScheduleKind)))
+	if kind == "" {
+		kind = cron.ScheduleCron
+	}
+
+	var (
+		job *cron.Job
+		err error
+	)
+
+	switch kind {
+	case cron.ScheduleCron:
+		schedule := strings.TrimSpace(body.Schedule)
+		if schedule == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "schedule is required for cron jobs"})
+		}
+		job, err = s.cronMgr.AddCronJob(name, schedule, prompt)
+	case cron.ScheduleAt:
+		atRaw := strings.TrimSpace(body.AtTime)
+		if atRaw == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "at_time is required for at jobs"})
+		}
+		at, parseErr := time.Parse(time.RFC3339, atRaw)
+		if parseErr != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid at_time, must be RFC3339"})
+		}
+		job, err = s.cronMgr.AddAtJob(name, at, prompt, body.DeleteAfterRun)
+	case cron.ScheduleEvery:
+		every := strings.TrimSpace(body.EveryDuration)
+		if every == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "every_duration is required for every jobs"})
+		}
+		job, err = s.cronMgr.AddEveryJob(name, every, prompt)
+	default:
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid schedule_kind"})
+	}
+
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"status": "created",
+		"job":    job,
+	})
+}
+
+func (s *Server) handleDeleteCronJob(c *echo.Context) error {
+	if s.cronMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cron manager unavailable"})
+	}
+	jobID := strings.TrimSpace(c.Param("id"))
+	if jobID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
+	}
+	if err := s.cronMgr.RemoveJob(jobID); err != nil {
+		if strings.Contains(err.Error(), "job not found") {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		s.logger.Error("Failed to delete cron job", zap.String("job_id", jobID), zap.Error(err))
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleEnableCronJob(c *echo.Context) error {
+	if s.cronMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cron manager unavailable"})
+	}
+	jobID := strings.TrimSpace(c.Param("id"))
+	if jobID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
+	}
+	if err := s.cronMgr.EnableJob(jobID); err != nil {
+		if strings.Contains(err.Error(), "job not found") {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		s.logger.Error("Failed to enable cron job", zap.String("job_id", jobID), zap.Error(err))
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "enabled"})
+}
+
+func (s *Server) handleDisableCronJob(c *echo.Context) error {
+	if s.cronMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cron manager unavailable"})
+	}
+	jobID := strings.TrimSpace(c.Param("id"))
+	if jobID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
+	}
+	if err := s.cronMgr.DisableJob(jobID); err != nil {
+		if strings.Contains(err.Error(), "job not found") {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		s.logger.Error("Failed to disable cron job", zap.String("job_id", jobID), zap.Error(err))
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "disabled"})
+}
+
+func (s *Server) handleRunCronJob(c *echo.Context) error {
+	if s.cronMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cron manager unavailable"})
+	}
+	jobID := strings.TrimSpace(c.Param("id"))
+	if jobID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
+	}
+	if err := s.cronMgr.RunJob(jobID); err != nil {
+		if strings.Contains(err.Error(), "job not found") {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		s.logger.Error("Failed to run cron job", zap.String("job_id", jobID), zap.Error(err))
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "started"})
 }
 
 func (s *Server) discoverModels(kind string, profile *config.ProviderProfile) ([]string, error) {
@@ -1978,6 +2166,89 @@ func requestScheme(c *echo.Context) string {
 	return scheme
 }
 
+func (s *Server) resolveMarketplaceSkill(id string) (*skills.Skill, bool) {
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return nil, false
+	}
+
+	for _, skill := range s.skillsMgr.List() {
+		if strings.TrimSpace(skill.ID) == trimmedID {
+			return skill, true
+		}
+	}
+
+	return nil, false
+}
+
+// --- Marketplace Handlers ---
+
+func (s *Server) handleListMarketplaceSkills(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	skillsList := s.skillsMgr.List()
+	sort.Slice(skillsList, func(i, j int) bool {
+		left := strings.TrimSpace(skillsList[i].ID)
+		right := strings.TrimSpace(skillsList[j].ID)
+		if left == right {
+			return strings.TrimSpace(skillsList[i].Name) < strings.TrimSpace(skillsList[j].Name)
+		}
+		return left < right
+	})
+
+	items := make([]map[string]interface{}, 0, len(skillsList))
+	for _, skill := range skillsList {
+		entry := map[string]interface{}{
+			"id":          strings.TrimSpace(skill.ID),
+			"name":        strings.TrimSpace(skill.Name),
+			"description": strings.TrimSpace(skill.Description),
+			"version":     strings.TrimSpace(skill.Version),
+			"author":      strings.TrimSpace(skill.Author),
+			"enabled":     skill.Enabled,
+			"always":      false,
+			"file_path":   strings.TrimSpace(skill.FilePath),
+			"tags":        skill.Tags,
+		}
+		items = append(items, entry)
+	}
+
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleEnableMarketplaceSkill(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	skillID := strings.TrimSpace(c.Param("id"))
+	if _, ok := s.resolveMarketplaceSkill(skillID); !ok {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
+	}
+	if err := s.skillsMgr.Enable(skillID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to enable skill"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "enabled"})
+}
+
+func (s *Server) handleDisableMarketplaceSkill(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	skillID := strings.TrimSpace(c.Param("id"))
+	if _, ok := s.resolveMarketplaceSkill(skillID); !ok {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
+	}
+	if err := s.skillsMgr.Disable(skillID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to disable skill"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "disabled"})
+}
+
 // --- Channel Handlers ---
 
 func (s *Server) handleGetChannels(c *echo.Context) error {
@@ -2367,6 +2638,162 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		"sections_saved":     len(sections),
 		"providers_imported": importedProviders,
 	})
+}
+
+// --- Session Handlers ---
+
+type sessionSummaryResponse struct {
+	ID           string    `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Summary      string    `json:"summary"`
+	MessageCount int       `json:"message_count"`
+}
+
+type sessionMessageResponse struct {
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	ToolCallID string `json:"tool_call_id"`
+}
+
+type sessionDetailResponse struct {
+	ID           string                   `json:"id"`
+	CreatedAt    time.Time                `json:"created_at"`
+	UpdatedAt    time.Time                `json:"updated_at"`
+	Summary      string                   `json:"summary"`
+	MessageCount int                      `json:"message_count"`
+	Messages     []sessionMessageResponse `json:"messages"`
+}
+
+func (s *Server) handleListSessions(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+
+	ids, err := s.sessionMgr.List()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to list sessions: %v", err)})
+	}
+
+	summaries := make([]sessionSummaryResponse, 0, len(ids))
+	for _, id := range ids {
+		sess, err := s.sessionMgr.GetExisting(id)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load session %q: %v", id, err)})
+		}
+		messages := sess.GetMessages()
+		summaries = append(summaries, sessionSummaryResponse{
+			ID:           sess.GetID(),
+			CreatedAt:    sess.GetCreatedAt(),
+			UpdatedAt:    sess.GetUpdatedAt(),
+			Summary:      sess.GetSummary(),
+			MessageCount: len(messages),
+		})
+	}
+
+	sort.SliceStable(summaries, func(i, j int) bool {
+		return summaries[i].UpdatedAt.After(summaries[j].UpdatedAt)
+	})
+
+	return c.JSON(http.StatusOK, summaries)
+}
+
+func (s *Server) handleGetSession(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+
+	sess, err := s.sessionMgr.GetExisting(id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load session: %v", err)})
+	}
+
+	messages := sess.GetMessages()
+	respMessages := make([]sessionMessageResponse, len(messages))
+	for i, msg := range messages {
+		respMessages[i] = sessionMessageResponse{
+			Role:       msg.Role,
+			Content:    msg.Content,
+			ToolCallID: msg.ToolCallID,
+		}
+	}
+
+	resp := sessionDetailResponse{
+		ID:           sess.GetID(),
+		CreatedAt:    sess.GetCreatedAt(),
+		UpdatedAt:    sess.GetUpdatedAt(),
+		Summary:      sess.GetSummary(),
+		MessageCount: len(messages),
+		Messages:     respMessages,
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleUpdateSessionSummary(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+
+	var body struct {
+		Summary string `json:"summary"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	sess, err := s.sessionMgr.GetExisting(id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load session: %v", err)})
+	}
+
+	sess.SetSummary(body.Summary)
+	if err := s.sessionMgr.Save(sess); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to save session summary: %v", err)})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
+}
+
+func (s *Server) handleDeleteSession(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+
+	if _, err := s.sessionMgr.GetExisting(id); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load session: %v", err)})
+	}
+	if err := s.sessionMgr.Delete(id); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to delete session: %v", err)})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // --- Status Handler ---

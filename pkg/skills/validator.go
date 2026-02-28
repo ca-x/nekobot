@@ -42,6 +42,9 @@ func (v *Validator) Validate(skill *Skill) []Diagnostic {
 		diagnostics = append(diagnostics, v.ValidateRequirements(skill.Requirements)...)
 	}
 
+	// Validate always flag with enabled setting.
+	diagnostics = append(diagnostics, v.ValidateAlways(skill)...)
+
 	return diagnostics
 }
 
@@ -192,6 +195,26 @@ func (v *Validator) ValidateRequirements(req *SkillRequirements) []Diagnostic {
 				Fixable:  true,
 			})
 		}
+	}
+
+	return diagnostics
+}
+
+// ValidateAlways validates always-on skill constraints.
+func (v *Validator) ValidateAlways(skill *Skill) []Diagnostic {
+	var diagnostics []Diagnostic
+
+	if !skill.Always {
+		return diagnostics
+	}
+
+	if !skill.Enabled {
+		diagnostics = append(diagnostics, Diagnostic{
+			Severity: DiagnosticWarning,
+			Message:  "Always-on skill should also be enabled",
+			Field:    "always",
+			Fixable:  true,
+		})
 	}
 
 	return diagnostics

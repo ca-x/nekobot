@@ -5,11 +5,14 @@ import AppLayout from './components/layout/AppLayout';
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const InitPage = lazy(() => import('./pages/InitPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
+const SessionsPage = lazy(() => import('./pages/SessionsPage'));
 const ToolSessionsPage = lazy(() => import('./pages/ToolSessionsPage'));
 const ProvidersPage = lazy(() => import('./pages/ProvidersPage'));
 const ChannelsPage = lazy(() => import('./pages/ChannelsPage'));
+const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
 const ConfigPage = lazy(() => import('./pages/ConfigPage'));
 const SystemPage = lazy(() => import('./pages/SystemPage'));
+const CronPage = lazy(() => import('./pages/CronPage'));
 
 function Loading() {
   return (
@@ -27,10 +30,13 @@ export default function App() {
         <Route path="/init" element={<InitPage />} />
         <Route element={<AppLayout />}>
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/tools" element={<ToolSessionsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
+          <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/config" element={<ConfigPage />} />
+          <Route path="/cron" element={<CronPage />} />
           <Route path="/system" element={<SystemPage />} />
           <Route path="/" element={<Navigate to="/chat" replace />} />
         </Route>

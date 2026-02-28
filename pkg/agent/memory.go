@@ -2,12 +2,11 @@
 package agent
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"path/filepath"
+	"strings"
 	"time"
-
-	"nekobot/pkg/fileutil"
 )
 
 // MemoryStore manages persistent memory for the agent.
@@ -15,154 +14,143 @@ import (
 // - Long-term memory: memory/MEMORY.md (persistent facts, instructions)
 // - Daily notes: memory/YYYYMM/YYYYMMDD.md (daily activities, logs)
 type MemoryStore struct {
-	workspace  string
-	memoryDir  string
-	memoryFile string
+	workspace string
+	backend   MemoryBackend
 }
 
-// NewMemoryStore creates a new MemoryStore with the given workspace path.
-// It ensures the memory directory exists.
+// NewMemoryStore creates a file-backed memory store for the workspace.
 func NewMemoryStore(workspace string) *MemoryStore {
-	memoryDir := filepath.Join(workspace, "memory")
-	memoryFile := filepath.Join(memoryDir, "MEMORY.md")
+	backend, err := newMemoryFileBackend(filepath.Join(workspace, "memory"))
+	if err != nil {
+		return NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{})
+	}
+	return NewMemoryStoreWithBackend(workspace, backend)
+}
 
-	// Ensure memory directory exists
-	os.MkdirAll(memoryDir, 0755)
-
+// NewMemoryStoreWithBackend creates a memory store with an explicit backend.
+func NewMemoryStoreWithBackend(workspace string, backend MemoryBackend) *MemoryStore {
+	if backend == nil {
+		backend = &memoryNoopBackend{}
+	}
 	return &MemoryStore{
-		workspace:  workspace,
-		memoryDir:  memoryDir,
-		memoryFile: memoryFile,
+		workspace: workspace,
+		backend:   backend,
 	}
 }
 
-// ReadLongTerm reads the long-term memory (MEMORY.md).
-// Returns empty string if the file doesn't exist.
+// ReadLongTerm reads the long-term memory content.
+// Returns empty string if read fails.
 func (ms *MemoryStore) ReadLongTerm() string {
-	if data, err := os.ReadFile(ms.memoryFile); err == nil {
-		return string(data)
+	content, err := ms.backend.ReadLongTerm(context.Background())
+	if err != nil {
+		return ""
 	}
-	return ""
+	return content
 }
 
-// WriteLongTerm writes content to the long-term memory file (MEMORY.md).
+// WriteLongTerm writes content to long-term memory.
 func (ms *MemoryStore) WriteLongTerm(content string) error {
-	return fileutil.WriteFileAtomic(ms.memoryFile, []byte(content), 0644)
+	if err := ms.backend.WriteLongTerm(context.Background(), content); err != nil {
+		return fmt.Errorf("write long-term memory: %w", err)
+	}
+	return nil
 }
 
-// AppendLongTerm appends content to the long-term memory file.
+// AppendLongTerm appends content to long-term memory.
 func (ms *MemoryStore) AppendLongTerm(content string) error {
 	existing := ms.ReadLongTerm()
 	if existing != "" {
 		existing += "\n\n"
 	}
-	return ms.WriteLongTerm(existing + content)
+	if err := ms.WriteLongTerm(existing + content); err != nil {
+		return fmt.Errorf("append long-term memory: %w", err)
+	}
+	return nil
 }
 
-// getTodayFile returns the path to today's daily note file (memory/YYYYMM/YYYYMMDD.md).
-func (ms *MemoryStore) getTodayFile() string {
-	today := time.Now().Format("20060102") // YYYYMMDD
-	monthDir := today[:6]                  // YYYYMM
-	filePath := filepath.Join(ms.memoryDir, monthDir, today+".md")
-	return filePath
+// getToday returns today's date in local timezone.
+func (ms *MemoryStore) getToday() time.Time {
+	return time.Now()
 }
 
 // ReadToday reads today's daily note.
-// Returns empty string if the file doesn't exist.
+// Returns empty string if read fails.
 func (ms *MemoryStore) ReadToday() string {
-	todayFile := ms.getTodayFile()
-	if data, err := os.ReadFile(todayFile); err == nil {
-		return string(data)
+	content, err := ms.backend.ReadDaily(context.Background(), ms.getToday())
+	if err != nil {
+		return ""
 	}
-	return ""
+	return content
 }
 
 // AppendToday appends content to today's daily note.
-// If the file doesn't exist, it creates a new file with a date header.
+// If today's note does not exist, it creates one with a date header.
 func (ms *MemoryStore) AppendToday(content string) error {
-	todayFile := ms.getTodayFile()
-
-	// Ensure month directory exists
-	monthDir := filepath.Dir(todayFile)
-	os.MkdirAll(monthDir, 0755)
-
-	var existingContent string
-	if data, err := os.ReadFile(todayFile); err == nil {
-		existingContent = string(data)
+	today := ms.getToday()
+	existing, err := ms.backend.ReadDaily(context.Background(), today)
+	if err != nil {
+		return fmt.Errorf("read daily memory before append: %w", err)
 	}
 
-	var newContent string
-	if existingContent == "" {
-		// Add header for new day
-		header := fmt.Sprintf("# %s\n\n", time.Now().Format("2006-01-02 Monday"))
-		newContent = header + content
+	updated := content
+	if strings.TrimSpace(existing) == "" {
+		header := fmt.Sprintf("# %s\n\n", today.Format("2006-01-02 Monday"))
+		updated = header + content
 	} else {
-		// Append to existing content
-		newContent = existingContent + "\n\n" + content
+		updated = existing + "\n\n" + content
 	}
 
-	return fileutil.WriteFileAtomic(todayFile, []byte(newContent), 0644)
+	if err := ms.backend.WriteDaily(context.Background(), today, updated); err != nil {
+		return fmt.Errorf("append daily memory: %w", err)
+	}
+	return nil
 }
 
 // GetRecentDailyNotes returns daily notes from the last N days.
 // Contents are joined with "---" separator.
 func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
-	var notes []string
+	if days <= 0 {
+		return ""
+	}
 
+	notes := make([]string, 0, days)
+	now := ms.getToday()
 	for i := 0; i < days; i++ {
-		date := time.Now().AddDate(0, 0, -i)
-		dateStr := date.Format("20060102") // YYYYMMDD
-		monthDir := dateStr[:6]            // YYYYMM
-		filePath := filepath.Join(ms.memoryDir, monthDir, dateStr+".md")
-
-		if data, err := os.ReadFile(filePath); err == nil {
-			notes = append(notes, string(data))
+		day := now.AddDate(0, 0, -i)
+		note, err := ms.backend.ReadDaily(context.Background(), day)
+		if err != nil {
+			continue
 		}
+		if strings.TrimSpace(note) == "" {
+			continue
+		}
+		notes = append(notes, note)
 	}
 
 	if len(notes) == 0 {
 		return ""
 	}
 
-	// Join with separator
-	var result string
-	for i, note := range notes {
-		if i > 0 {
-			result += "\n\n---\n\n"
-		}
-		result += note
-	}
-	return result
+	return strings.Join(notes, "\n\n---\n\n")
 }
 
 // GetMemoryContext returns formatted memory context for the agent prompt.
 // Includes long-term memory and recent daily notes.
 func (ms *MemoryStore) GetMemoryContext() string {
-	var parts []string
+	parts := make([]string, 0, 2)
 
-	// Long-term memory
 	longTerm := ms.ReadLongTerm()
-	if longTerm != "" {
+	if strings.TrimSpace(longTerm) != "" {
 		parts = append(parts, "## Long-term Memory\n\n"+longTerm)
 	}
 
-	// Recent daily notes (last 3 days)
 	recentNotes := ms.GetRecentDailyNotes(3)
-	if recentNotes != "" {
+	if strings.TrimSpace(recentNotes) != "" {
 		parts = append(parts, "## Recent Daily Notes (Last 3 Days)\n\n"+recentNotes)
 	}
 
 	if len(parts) == 0 {
 		return ""
 	}
-
-	// Join parts
-	var result string
-	for i, part := range parts {
-		if i > 0 {
-			result += "\n\n---\n\n"
-		}
-		result += part
-	}
-	return result
+	return strings.Join(parts, "\n\n---\n\n")
 }

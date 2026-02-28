@@ -163,9 +163,11 @@
 
 **Features**:
 - Cron expression support (robfig/cron)
-- Job persistence in jobs.json
+- One-time (`at`) and fixed-interval (`every`) schedules
+- Runtime database persistence (`cron_jobs` table)
 - Individual job enable/disable
 - Job history tracking
+- Run-now trigger support via CLI/WebUI
 
 ### 11. Session Management (pkg/session/)
 **Purpose**: Conversation history persistence

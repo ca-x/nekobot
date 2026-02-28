@@ -135,6 +135,7 @@ version: 1.0.0
 author: Your Name
 tags: [weather, api, web]
 enabled: true
+always: false
 requirements:
   binaries:
     - curl
@@ -145,6 +146,8 @@ metadata:
     emoji: "🌤️"
     requires:
       anyBins: ["curl", "wget"]
+  openclaw:
+    always: false
 ---
 
 # Weather Skill
@@ -193,6 +196,21 @@ requirements:
 ```
 
 如果不满足要求，技能会被自动跳过，不会注入到 agent prompt 中。
+
+### Always Skills
+
+可通过 `always: true` 将技能标记为“始终注入”技能：
+
+- 同时满足 `enabled: true` 且通过 eligibility 检查时，技能会进入 `Always Skills` 区块。
+- `Always Skills` 以 XML 结构注入，适合放置长期安全规则、关键流程约束。
+- 若未设置顶层 `always`，也兼容 `metadata.openclaw.always: true` 写法。
+
+示例：
+
+```yaml
+always: true
+enabled: true
+```
 
 ---
 

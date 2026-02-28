@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-kratos/blades"
+	bladesmcp "github.com/go-kratos/blades/contrib/mcp"
 	bladesmiddleware "github.com/go-kratos/blades/middleware"
 	bladestools "github.com/go-kratos/blades/tools"
 	"github.com/google/jsonschema-go/jsonschema"
 	"go.uber.org/zap"
+	"nekobot/pkg/config"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/tools"
 )
@@ -144,6 +147,25 @@ func (p *bladesModelProvider) convertMessages(messages []*blades.Message) ([]pro
 			continue
 		}
 
+		if msg.Role == blades.RoleTool {
+			for _, rawPart := range msg.Parts {
+				part, ok := rawPart.(blades.ToolPart)
+				if !ok {
+					continue
+				}
+				content := part.Response
+				if strings.TrimSpace(content) == "" {
+					content = part.Request
+				}
+				unified = append(unified, providers.UnifiedMessage{
+					Role:       string(blades.RoleTool),
+					ToolCallID: part.ID,
+					Content:    content,
+				})
+			}
+			continue
+		}
+
 		item := providers.UnifiedMessage{Role: string(msg.Role)}
 		for _, rawPart := range msg.Parts {
 			switch part := rawPart.(type) {
@@ -157,29 +179,20 @@ func (p *bladesModelProvider) convertMessages(messages []*blades.Message) ([]pro
 					item.Content += "\n" + part.Text
 				}
 			case blades.ToolPart:
-				if item.Role == string(blades.RoleAssistant) {
-					args := map[string]interface{}{}
-					if strings.TrimSpace(part.Request) != "" {
-						if err := json.Unmarshal([]byte(part.Request), &args); err != nil {
-							return nil, fmt.Errorf("decode tool request for %s: %w", part.Name, err)
-						}
-					}
-					item.ToolCalls = append(item.ToolCalls, providers.UnifiedToolCall{
-						ID:        part.ID,
-						Name:      part.Name,
-						Arguments: args,
-					})
+				if item.Role != string(blades.RoleAssistant) {
 					continue
 				}
-				if item.Role == string(blades.RoleTool) {
-					item.ToolCallID = part.ID
-					if strings.TrimSpace(part.Response) != "" {
-						item.Content = part.Response
-					} else {
-						item.Content = part.Request
+				args := map[string]interface{}{}
+				if strings.TrimSpace(part.Request) != "" {
+					if err := json.Unmarshal([]byte(part.Request), &args); err != nil {
+						return nil, fmt.Errorf("decode tool request for %s: %w", part.Name, err)
 					}
-					continue
 				}
+				item.ToolCalls = append(item.ToolCalls, providers.UnifiedToolCall{
+					ID:        part.ID,
+					Name:      part.Name,
+					Arguments: args,
+				})
 			}
 		}
 
@@ -219,7 +232,7 @@ func (p *bladesModelProvider) toModelResponse(resp *providers.UnifiedResponse) *
 		message.Parts = append(message.Parts, blades.TextPart{Text: resp.Content})
 	}
 	if len(resp.ToolCalls) > 0 {
-		message.Role = blades.RoleTool
+		message.Parts = make([]blades.Part, 0, len(resp.ToolCalls))
 		for _, tc := range resp.ToolCalls {
 			argJSON := "{}"
 			if len(tc.Arguments) > 0 {
@@ -233,6 +246,7 @@ func (p *bladesModelProvider) toModelResponse(resp *providers.UnifiedResponse) *
 				Request: argJSON,
 			})
 		}
+		message.Role = blades.RoleTool
 	}
 	return &blades.ModelResponse{Message: message}
 }
@@ -240,6 +254,22 @@ func (p *bladesModelProvider) toModelResponse(resp *providers.UnifiedResponse) *
 type bladesToolResolver struct {
 	registry *tools.Registry
 	agent    *Agent
+}
+
+type multiToolResolver struct {
+	resolvers []bladestools.Resolver
+}
+
+func (r *multiToolResolver) Resolve(ctx context.Context) ([]bladestools.Tool, error) {
+	resolved := make([]bladestools.Tool, 0)
+	for _, resolver := range r.resolvers {
+		toolsFromResolver, err := resolver.Resolve(ctx)
+		if err != nil {
+			return nil, err
+		}
+		resolved = append(resolved, toolsFromResolver...)
+	}
+	return resolved, nil
 }
 
 func newBladesToolResolver(agentInstance *Agent, registry *tools.Registry) *bladesToolResolver {
@@ -275,7 +305,11 @@ func (r *bladesToolResolver) Resolve(ctx context.Context) ([]bladestools.Tool, e
 				Arguments: args,
 			})
 			if err != nil {
-				return "", err
+				r.agent.logger.Error("Tool execution failed",
+					zap.String("tool", capturedName),
+					zap.Error(err),
+				)
+				return fmt.Sprintf("Error: %v", err), nil
 			}
 			return result, nil
 		})
@@ -309,6 +343,116 @@ func mapToSchema(m map[string]interface{}) *jsonschema.Schema {
 	return &s
 }
 
+func newBladesToolsResolver() *multiToolResolver {
+	return &multiToolResolver{resolvers: make([]bladestools.Resolver, 0, 2)}
+}
+
+func (r *multiToolResolver) appendResolver(resolver bladestools.Resolver) {
+	if resolver == nil {
+		return
+	}
+	r.resolvers = append(r.resolvers, resolver)
+}
+
+func parseMCPTransport(raw string) (bladesmcp.TransportType, error) {
+	transport := strings.TrimSpace(strings.ToLower(raw))
+	if transport == "" {
+		transport = string(bladesmcp.TransportStdio)
+	}
+	if transport == "sse" {
+		transport = string(bladesmcp.TransportHTTP)
+	}
+
+	switch bladesmcp.TransportType(transport) {
+	case bladesmcp.TransportStdio, bladesmcp.TransportHTTP, bladesmcp.TransportWebSocket:
+		return bladesmcp.TransportType(transport), nil
+	default:
+		return "", fmt.Errorf("unsupported transport: %s", raw)
+	}
+}
+
+func parseMCPTimeout(raw string) (time.Duration, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return 0, nil
+	}
+
+	d, err := time.ParseDuration(trimmed)
+	if err != nil {
+		return 0, fmt.Errorf("parse timeout duration: %w", err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("timeout duration must be greater than 0")
+	}
+	return d, nil
+}
+
+func mcpServerName(cfg config.MCPServerConfig, idx int) string {
+	name := strings.TrimSpace(cfg.Name)
+	if name != "" {
+		return name
+	}
+	return fmt.Sprintf("index-%d", idx)
+}
+
+func toMCPClientConfigs(serverConfigs []config.MCPServerConfig) ([]bladesmcp.ClientConfig, error) {
+	if len(serverConfigs) == 0 {
+		return nil, nil
+	}
+
+	res := make([]bladesmcp.ClientConfig, 0, len(serverConfigs))
+	for i, server := range serverConfigs {
+		transport, err := parseMCPTransport(server.Transport)
+		if err != nil {
+			return nil, fmt.Errorf("mcp server %s transport: %w", mcpServerName(server, i), err)
+		}
+
+		timeout, err := parseMCPTimeout(server.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("mcp server %s timeout: %w", mcpServerName(server, i), err)
+		}
+
+		res = append(res, bladesmcp.ClientConfig{
+			Name:      strings.TrimSpace(server.Name),
+			Transport: transport,
+			Command:   strings.TrimSpace(server.Command),
+			Args:      server.Args,
+			Env:       server.Env,
+			WorkDir:   strings.TrimSpace(server.WorkDir),
+			Endpoint:  strings.TrimSpace(server.Endpoint),
+			Headers:   server.Headers,
+			Timeout:   timeout,
+		})
+	}
+
+	return res, nil
+}
+
+func (a *Agent) buildBladesToolsResolverWithMCP(serverConfigs []config.MCPServerConfig) (bladestools.Resolver, *bladesmcp.ToolsResolver, error) {
+	resolver := newBladesToolsResolver()
+	resolver.appendResolver(newBladesToolResolver(a, a.tools))
+
+	mcpConfigs, err := toMCPClientConfigs(serverConfigs)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(mcpConfigs) == 0 {
+		return resolver, nil, nil
+	}
+
+	mcpResolver, err := bladesmcp.NewToolsResolver(mcpConfigs...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create mcp tools resolver: %w", err)
+	}
+
+	resolver.appendResolver(mcpResolver)
+	return resolver, mcpResolver, nil
+}
+
+func (a *Agent) buildBladesToolsResolver() (bladestools.Resolver, *bladesmcp.ToolsResolver, error) {
+	return a.buildBladesToolsResolverWithMCP(a.config.Agents.Defaults.MCPServers)
+}
+
 func schemaToMap(s *jsonschema.Schema) map[string]interface{} {
 	if s == nil {
 		return nil
@@ -340,7 +484,20 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 	primaryProvider := providerOrder[0]
 
 	modelProvider := newBladesModelProvider(a, primaryProvider, providerOrder, model)
-	toolResolver := newBladesToolResolver(a, a.tools)
+	toolResolver, mcpResolver, err := a.buildBladesToolsResolver()
+	if state, ok := a.lookupACPSessionState(sess); ok && len(state.mcpServers) > 0 {
+		toolResolver, mcpResolver, err = a.buildBladesToolsResolverWithMCP(state.mcpServers)
+	}
+	if err != nil {
+		return "", fmt.Errorf("build blades tools resolver: %w", err)
+	}
+	if mcpResolver != nil {
+		defer func() {
+			if closeErr := mcpResolver.Close(); closeErr != nil {
+				a.logger.Warn("Close MCP resolver failed", zap.Error(closeErr))
+			}
+		}()
+	}
 
 	instruction := a.context.BuildSystemPrompt()
 	agentInstance, err := blades.NewAgent(
@@ -355,13 +512,14 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 		return "", fmt.Errorf("create blades agent: %w", err)
 	}
 
-	history := sanitizeHistory(sess.GetMessages())
+	normalizedHistory := trimTrailingCurrentUserMessage(sess.GetMessages(), userMessage)
+	history := sanitizeHistory(normalizedHistory)
 	bladesSession := blades.NewSession()
 	for _, msg := range history {
-		if strings.TrimSpace(msg.Content) == "" {
+		if msg.Role == "system" {
 			continue
 		}
-		if msg.Role == "system" {
+		if !hasBladesHistoryContent(msg) {
 			continue
 		}
 		if err := bladesSession.Append(ctx, toBladesMessage(msg)); err != nil {
@@ -378,10 +536,53 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 	return output.Text(), nil
 }
 
+func (a *Agent) lookupACPSessionState(sess SessionInterface) (*acpSessionState, bool) {
+	a.acpMu.RLock()
+	defer a.acpMu.RUnlock()
+
+	for _, state := range a.acpSessions {
+		if state == nil || state.session == nil {
+			continue
+		}
+		if state.session == sess {
+			return state, true
+		}
+	}
+
+	return nil, false
+}
+
+func hasBladesHistoryContent(msg Message) bool {
+	switch msg.Role {
+	case "assistant":
+		return strings.TrimSpace(msg.Content) != "" || len(msg.ToolCalls) > 0
+	case "tool":
+		return strings.TrimSpace(msg.Content) != "" || strings.TrimSpace(msg.ToolCallID) != ""
+	default:
+		return strings.TrimSpace(msg.Content) != ""
+	}
+}
+
 func toBladesMessage(msg Message) *blades.Message {
 	switch msg.Role {
 	case "assistant":
-		return blades.AssistantMessage(msg.Content)
+		if len(msg.ToolCalls) == 0 {
+			return blades.AssistantMessage(msg.Content)
+		}
+		parts := make([]any, 0, len(msg.ToolCalls)+1)
+		if strings.TrimSpace(msg.Content) != "" {
+			parts = append(parts, blades.TextPart{Text: msg.Content})
+		}
+		for _, tc := range msg.ToolCalls {
+			request := "{}"
+			if len(tc.Arguments) > 0 {
+				if b, err := json.Marshal(tc.Arguments); err == nil {
+					request = string(b)
+				}
+			}
+			parts = append(parts, blades.ToolPart{ID: tc.ID, Name: tc.Name, Request: request})
+		}
+		return blades.AssistantMessage(parts...)
 	case "tool":
 		parts := []any{blades.ToolPart{ID: msg.ToolCallID, Response: msg.Content}}
 		return &blades.Message{

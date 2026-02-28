@@ -2,13 +2,26 @@ package config
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
+
+	"nekobot/pkg/storage/ent"
 )
 
 func TestApplyDatabaseOverridesAndSaveSections(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
 	cfg.Agents.Defaults.Model = "file-model"
+	cfg.Agents.Defaults.MCPServers = []MCPServerConfig{
+		{
+			Name:      "stdio-a",
+			Transport: "stdio",
+			Command:   "npx",
+			Args:      []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
+			Timeout:   "20s",
+		},
+	}
 	cfg.Channels.Telegram.Enabled = true
 	cfg.Channels.Telegram.Token = "token-a"
 	cfg.Memory.Enabled = true
@@ -24,6 +37,7 @@ func TestApplyDatabaseOverridesAndSaveSections(t *testing.T) {
 	}
 
 	cfg.Agents.Defaults.Model = "changed-in-memory"
+	cfg.Agents.Defaults.MCPServers = nil
 	cfg.Channels.Telegram.Enabled = false
 	cfg.Channels.Telegram.Token = "token-b"
 	cfg.Memory.Semantic.SearchPolicy = "hybrid"
@@ -34,6 +48,9 @@ func TestApplyDatabaseOverridesAndSaveSections(t *testing.T) {
 	if cfg.Agents.Defaults.Model != "file-model" {
 		t.Fatalf("expected model loaded from DB, got %q", cfg.Agents.Defaults.Model)
 	}
+	if len(cfg.Agents.Defaults.MCPServers) != 1 || cfg.Agents.Defaults.MCPServers[0].Name != "stdio-a" {
+		t.Fatalf("expected MCP servers loaded from DB, got %+v", cfg.Agents.Defaults.MCPServers)
+	}
 	if !cfg.Channels.Telegram.Enabled || cfg.Channels.Telegram.Token != "token-a" {
 		t.Fatalf("expected channels loaded from DB, got %+v", cfg.Channels.Telegram)
 	}
@@ -42,15 +59,27 @@ func TestApplyDatabaseOverridesAndSaveSections(t *testing.T) {
 	}
 
 	cfg.Agents.Defaults.Model = "db-model"
+	cfg.Agents.Defaults.MCPServers = []MCPServerConfig{
+		{
+			Name:      "http-b",
+			Transport: "http",
+			Endpoint:  "https://example.com/mcp",
+			Timeout:   "10s",
+		},
+	}
 	if err := SaveDatabaseSections(cfg, "agents"); err != nil {
 		t.Fatalf("SaveDatabaseSections failed: %v", err)
 	}
 	cfg.Agents.Defaults.Model = "stale"
+	cfg.Agents.Defaults.MCPServers = nil
 	if err := ApplyDatabaseOverrides(cfg); err != nil {
 		t.Fatalf("ApplyDatabaseOverrides second reload failed: %v", err)
 	}
 	if cfg.Agents.Defaults.Model != "db-model" {
 		t.Fatalf("expected updated model from DB, got %q", cfg.Agents.Defaults.Model)
+	}
+	if len(cfg.Agents.Defaults.MCPServers) != 1 || cfg.Agents.Defaults.MCPServers[0].Name != "http-b" {
+		t.Fatalf("expected updated MCP servers from DB, got %+v", cfg.Agents.Defaults.MCPServers)
 	}
 
 	cfg.Memory.Semantic.SearchPolicy = "hybrid"
@@ -121,6 +150,44 @@ func TestSaveAdminCredentialMigratesToUserTenantMembership(t *testing.T) {
 	}
 	if profile.TenantSlug != "default" {
 		t.Fatalf("expected default tenant slug, got %q", profile.TenantSlug)
+	}
+}
+
+func TestEnsureRuntimeEntSchemaConcurrentCalls(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+
+	const workerCount = 8
+	clients := make([]*ent.Client, 0, workerCount)
+	for i := 0; i < workerCount; i++ {
+		client, err := OpenRuntimeEntClient(cfg)
+		if err != nil {
+			t.Fatalf("open runtime client %d: %v", i, err)
+		}
+		clients = append(clients, client)
+	}
+	defer func() {
+		for _, client := range clients {
+			_ = client.Close()
+		}
+	}()
+
+	errCh := make(chan error, workerCount)
+	var wg sync.WaitGroup
+	for _, client := range clients {
+		wg.Add(1)
+		go func(c *ent.Client) {
+			defer wg.Done()
+			errCh <- EnsureRuntimeEntSchema(c)
+		}(client)
+	}
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("EnsureRuntimeEntSchema concurrent call failed: %v", err)
+		}
 	}
 }
 

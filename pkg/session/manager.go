@@ -15,11 +15,11 @@ import (
 
 // Session represents a conversation session with history.
 type Session struct {
-	ID        string           `json:"id"`
-	CreatedAt time.Time        `json:"created_at"`
-	UpdatedAt time.Time        `json:"updated_at"`
-	Messages  []agent.Message  `json:"messages"`
-	Summary   string           `json:"summary,omitempty"`
+	ID        string          `json:"id"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+	Messages  []agent.Message `json:"messages"`
+	Summary   string          `json:"summary,omitempty"`
 	mu        sync.RWMutex
 }
 
@@ -59,6 +59,27 @@ func (m *Manager) Get(sessionID string) (*Session, error) {
 			UpdatedAt: time.Now(),
 			Messages:  []agent.Message{},
 		}
+	}
+
+	m.sessions[sessionID] = session
+	return session, nil
+}
+
+// GetExisting retrieves an existing session by ID without creating a new one.
+func (m *Manager) GetExisting(sessionID string) (*Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if session, exists := m.sessions[sessionID]; exists {
+		return session, nil
+	}
+
+	session, err := m.load(sessionID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, os.ErrNotExist
+		}
+		return nil, fmt.Errorf("loading session %q: %w", sessionID, err)
 	}
 
 	m.sessions[sessionID] = session
@@ -176,4 +197,28 @@ func (s *Session) GetSummary() string {
 	defer s.mu.RUnlock()
 
 	return s.Summary
+}
+
+// GetID returns the session ID.
+func (s *Session) GetID() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.ID
+}
+
+// GetCreatedAt returns the session creation time.
+func (s *Session) GetCreatedAt() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.CreatedAt
+}
+
+// GetUpdatedAt returns the session last update time.
+func (s *Session) GetUpdatedAt() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.UpdatedAt
 }

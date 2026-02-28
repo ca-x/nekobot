@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	_ "github.com/lib-x/entsqlite"
 
@@ -10,6 +11,8 @@ import (
 )
 
 const runtimeSQLiteDSN = "file:%s?cache=shared&_pragma=foreign_keys(1)&_pragma=journal_mode(DELETE)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(10000)"
+
+var ensureRuntimeEntSchemaMu sync.Mutex
 
 // OpenRuntimeEntClient opens an Ent client for the unified runtime database.
 func OpenRuntimeEntClient(cfg *Config) (*ent.Client, error) {
@@ -30,6 +33,10 @@ func EnsureRuntimeEntSchema(client *ent.Client) error {
 	if client == nil {
 		return fmt.Errorf("ent client is nil")
 	}
+
+	ensureRuntimeEntSchemaMu.Lock()
+	defer ensureRuntimeEntSchemaMu.Unlock()
+
 	if err := client.Schema.Create(context.Background()); err != nil {
 		return fmt.Errorf("ensure runtime schema: %w", err)
 	}
