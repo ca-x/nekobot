@@ -188,12 +188,6 @@ func (a *Agent) resolveOrchestrator() (string, error) {
 	}
 }
 
-func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
-	// Keep the blades path as the default entrypoint while preserving legacy execution internals.
-	// This keeps behavior stable while we complete the dedicated blades runtime integration.
-	return a.chatWithLegacyOrchestrator(ctx, sess, userMessage, provider, model, fallback)
-}
-
 func (a *Agent) chatWithLegacyOrchestrator(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
 	a.logger.Info("Processing chat message",
 		zap.String("message", truncate(userMessage, 100)),

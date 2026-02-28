@@ -163,7 +163,7 @@ func TestChatRoutesThroughBladesOrchestratorPath(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected chat error")
 	}
-	if !strings.Contains(err.Error(), "LLM call failed: provider not found: missing") {
+	if !strings.Contains(err.Error(), "blades runner run: llm call with fallback: provider not found: missing") {
 		t.Fatalf("expected blades path provider error, got %v", err)
 	}
 }

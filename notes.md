@@ -406,3 +406,25 @@ type CronJobState struct {
 ### 验证
 - 已执行：`go test ./pkg/config ./pkg/webui ./pkg/gateway`
 - 结果：全部通过。
+
+---
+
+## Feature Batch #2 完成记录 (2026-02-28)
+
+### 范围
+- Phase 2：将 `chatWithBladesOrchestrator` 从 stub 切换为真实 blades runtime 接管，并保持 provider fallback 与工具执行语义一致。
+
+### 代码变更摘要
+- 新增 `pkg/agent/blades_runtime.go`。
+  - 实现 `bladesModelProvider`，将 blades `ModelRequest` 转换为 `providers.UnifiedRequest`，并复用 `callLLMWithFallback`。
+  - 保留上下文超限重试压缩：`isContextLimitError` 触发 `forceCompressMessages` 后重试。
+  - 实现 `bladesToolResolver`，将 blades tool 调用桥接到现有 `Agent.executeToolCall`。
+  - 实现 `chatWithBladesOrchestrator`：构建 blades agent/runner，注入系统提示、工具解析器、会话历史与 middleware。
+- 更新 `pkg/agent/agent.go`：移除旧的 blades stub 转发实现，改由 `blades_runtime.go` 提供真实实现。
+- 更新 `pkg/agent/agent_test.go`：调整 blades 路径错误断言为 `blades runner run: llm call with fallback: ...`。
+- 更新 `pkg/subagent/manager.go`：`subagent.Agent` 接口改为 `Chat(ctx, sess, message)`，并增加 `taskSession` 适配。
+- 更新依赖：`go.mod` / `go.sum` 增加 `github.com/go-kratos/blades` 及相关依赖。
+
+### 验证
+- 已执行：`go test ./pkg/agent ./pkg/subagent ./pkg/tools ./pkg/config ./pkg/webui ./pkg/gateway`
+- 结果：全部通过。

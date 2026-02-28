@@ -14,7 +14,19 @@ import (
 // Agent interface defines minimal agent capabilities needed by SubagentManager.
 // This avoids circular imports (agent -> tools -> agent).
 type Agent interface {
-	Chat(ctx context.Context, message string) (string, error)
+	Chat(ctx context.Context, sess Session, message string) (string, error)
+}
+
+// Session defines the minimal conversation state required by subagent tasks.
+type Session interface {
+	GetMessages() []Message
+	AddMessage(Message)
+}
+
+// Message represents a role/content chat turn used by subagent sessions.
+type Message struct {
+	Role    string
+	Content string
 }
 
 // SubagentTask represents a task being executed by a subagent.
@@ -173,12 +185,12 @@ func (sm *SubagentManager) executeTask(task *SubagentTask) {
 		zap.String("task_id", task.ID),
 		zap.String("label", task.Label))
 
-	// Create isolated context with timeout
+	// Create isolated context with timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Execute task using the agent
-	result, err := sm.agent.Chat(ctx, task.Task)
+	sess := &taskSession{messages: make([]Message, 0, 2)}
+	result, err := sm.agent.Chat(ctx, sess, task.Task)
 
 	sm.mu.Lock()
 	task.CompletedAt = time.Now()
@@ -226,4 +238,16 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+type taskSession struct {
+	messages []Message
+}
+
+func (s *taskSession) GetMessages() []Message {
+	return s.messages
+}
+
+func (s *taskSession) AddMessage(msg Message) {
+	s.messages = append(s.messages, msg)
 }

@@ -168,3 +168,19 @@
 
 ### Status
 **Feature Batch #1 Completed** - 已完成并验证 Phase 1 多用户认证基础迁移，下一步进入 Phase 2（Agent Profile + blades orchestrator 接管设计与实现）。
+
+### Completed Deliverables (Feature Batch #2)
+- 新增 `pkg/agent/blades_runtime.go`，将 `chatWithBladesOrchestrator` 从 stub 改为真实 blades runtime 执行链路。
+- 新增 `bladesModelProvider` 适配层，复用现有 `buildProviderOrder` + `callLLMWithFallback` 语义，保留 provider fallback 行为。
+- 在 blades 模型调用中保留上下文超限压缩重试（`isContextLimitError` + `forceCompressMessages`），与 legacy 路径行为对齐。
+- 新增 `bladesToolResolver`，将 blades tool handler 桥接到现有 `executeToolCall`，继续复用审批与工具执行逻辑。
+- 会话历史接入 blades session：复用 `sanitizeHistory`，并完成 `agent.Message` 到 `blades.Message` 转换。
+- `pkg/agent/agent.go` 移除旧的 blades stub；`pkg/agent/agent_test.go` 更新 blades 路径断言；`pkg/subagent/manager.go` 接口调整为 `Chat(ctx, sess, message)` 并补充 `taskSession`。
+- `go.mod` / `go.sum` 引入 blades 运行时依赖。
+
+### 验证 (Feature Batch #2)
+- 已执行：`go test ./pkg/agent ./pkg/subagent ./pkg/tools ./pkg/config ./pkg/webui ./pkg/gateway`
+- 结果：全部通过。
+
+### Status
+**Feature Batch #2 Completed** - blades orchestrator 已由真实 runtime 接管，legacy orchestrator 仍保留并可通过配置切换。
