@@ -281,6 +281,11 @@ func (r *bladesToolResolver) Resolve(ctx context.Context) ([]bladestools.Tool, e
 	resolved := make([]bladestools.Tool, 0, len(names))
 
 	for _, toolName := range names {
+		// Skip nekobot's skill tool when blade's skill meta-tools handle discovery.
+		if r.agent.skillsManager != nil && toolName == "skill" {
+			continue
+		}
+
 		toolImpl, ok := r.registry.Get(toolName)
 		if !ok {
 			continue
@@ -500,13 +505,25 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 	}
 
 	instruction := a.context.BuildSystemPrompt()
-	agentInstance, err := blades.NewAgent(
-		"nekobot-orchestrator",
+	agentOpts := []blades.AgentOption{
 		blades.WithModel(modelProvider),
 		blades.WithInstruction(instruction),
 		blades.WithToolsResolver(toolResolver),
-		blades.WithMiddleware(bladesmiddleware.ConversationBuffered(a.maxIterations*4)),
+		blades.WithMiddleware(bladesmiddleware.ConversationBuffered(a.maxIterations * 4)),
 		blades.WithMaxIterations(a.maxIterations),
+	}
+
+	// Wire blade-native skills if skills manager is available.
+	if a.skillsManager != nil {
+		bladeSkills := a.skillsManager.ToBladesSkills()
+		if len(bladeSkills) > 0 {
+			agentOpts = append(agentOpts, blades.WithSkills(bladeSkills...))
+		}
+	}
+
+	agentInstance, err := blades.NewAgent(
+		"nekobot-orchestrator",
+		agentOpts...,
 	)
 	if err != nil {
 		return "", fmt.Errorf("create blades agent: %w", err)

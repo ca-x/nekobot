@@ -32,6 +32,9 @@ type ContextBuilder struct {
 	// Skills manager reference (set after creation)
 	skillsManager *skills.Manager
 
+	// Orchestrator mode affects how skills are rendered.
+	orchestratorMode string
+
 	cacheMu             sync.RWMutex
 	cachedStaticReady   bool
 	cachedStaticFiles   []trackedFileState
@@ -70,6 +73,12 @@ func (cb *ContextBuilder) SetToolDescriptionsFunc(fn func() []string) {
 // SetSkillsManager sets the skills manager for context building.
 func (cb *ContextBuilder) SetSkillsManager(sm *skills.Manager) {
 	cb.skillsManager = sm
+}
+
+// SetOrchestratorMode sets the orchestrator mode for context building.
+// This affects how skills are rendered in the system prompt.
+func (cb *ContextBuilder) SetOrchestratorMode(mode string) {
+	cb.orchestratorMode = mode
 }
 
 // GetMemory returns the memory store.
@@ -162,6 +171,17 @@ func (cb *ContextBuilder) buildSkillsSection() string {
 		return ""
 	}
 
+	// For blades orchestrator: only inject always-on skills inline.
+	// Regular skills are discovered through blade's list_skills meta-tool.
+	if cb.orchestratorMode == orchestratorBlades {
+		alwaysInstructions := cb.skillsManager.GetAlwaysInstructions()
+		if alwaysInstructions == "" {
+			return ""
+		}
+		return alwaysInstructions + "\n\nAdditional skills are available via the `list_skills` tool."
+	}
+
+	// Legacy orchestrator: full skills section.
 	skillsInstructions := cb.skillsManager.GetInstructions()
 	if skillsInstructions == "" {
 		return ""

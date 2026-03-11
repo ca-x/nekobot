@@ -103,8 +103,8 @@ github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMo
 github.com/fsnotify/fsnotify v1.4.9/go.mod h1:znqG4EE+3YCdAaPaxE2ZRY/06pZUdp0tY4IgpuI1SZQ=
 github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
-github.com/go-kratos/blades v0.3.1 h1:y7yZgiFa8FW1tlKtYXCk4fQGxVKMh7EvOvM6XnrfQXA=
-github.com/go-kratos/blades v0.3.1/go.mod h1:Wd/q3Z/eAbUFyTxJdVEpNObA+4yK8G7+1+hscS8Dtf4=
+github.com/go-kratos/blades v0.4.0 h1:Lp5DYgzQnqK1+ZjNdDj8YU2ur5AdKflZjm57NwgqB/M=
+github.com/go-kratos/blades v0.4.0/go.mod h1:ZCPoQ0qJ+YoRviQx3kWZQdltil10D6jVONgrptZA8a4=
 github.com/go-kratos/blades/contrib/mcp v0.3.0 h1:BqEeSa+yJ0puxnzEqdm6hkxw1CzJ1yeFpwA8aJgU3ak=
 github.com/go-kratos/blades/contrib/mcp v0.3.0/go.mod h1:j4HHseQm0VOEOLJ3yO1XLuwu+aGFLfmxlid1dW9/WzA=
 github.com/go-kratos/kit v0.0.0-20251121083925-65298ad2aa44 h1:T2JdBeiSLO+WUmMW4WF32SmS7TtUYGshDlL0+iFoUJg=

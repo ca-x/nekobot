@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	bladeskills "github.com/go-kratos/blades/skills"
 	"go.uber.org/zap"
 
 	"nekobot/pkg/logger"
@@ -305,6 +306,37 @@ func (m *Manager) ListAlwaysEligible() []*Skill {
 	}
 
 	return skills
+}
+
+// ToBladesSkills wraps all eligible enabled skills as blade-compatible Skill implementations.
+func (m *Manager) ToBladesSkills() []bladeskills.Skill {
+	eligible := m.ListEligibleEnabled()
+	result := make([]bladeskills.Skill, 0, len(eligible))
+	for _, skill := range eligible {
+		result = append(result, NewBladesSkillAdapter(skill))
+	}
+	return result
+}
+
+// GetAlwaysInstructions returns combined instructions for always-on eligible skills only.
+func (m *Manager) GetAlwaysInstructions() string {
+	alwaysSkills := m.ListAlwaysEligible()
+	if len(alwaysSkills) == 0 {
+		return ""
+	}
+
+	sortSkillsByName(alwaysSkills)
+
+	var sb strings.Builder
+	sb.WriteString("# Always Skills\n\n")
+	for i, skill := range alwaysSkills {
+		if i > 0 {
+			sb.WriteString("\n\n")
+		}
+		sb.WriteString(formatSkillXML(skill))
+	}
+
+	return strings.TrimSpace(sb.String())
 }
 
 // GetInstructions returns the combined instructions for all enabled and eligible skills.

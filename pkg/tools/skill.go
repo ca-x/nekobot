@@ -31,15 +31,7 @@ func (t *SkillTool) Name() string {
 
 // Description returns the tool description.
 func (t *SkillTool) Description() string {
-	return `Access and execute specialized skills for specific tasks. Use this for:
-- Domain-specific operations (git, docker, kubernetes, etc.)
-- Complex workflows requiring specialized knowledge
-- Tasks that benefit from pre-defined expert instructions
-
-Available actions:
-- list: List all available skills
-- get: Get detailed information about a specific skill
-- invoke: Execute a skill (returns additional instructions for the agent)`
+	return `Query and invoke specialized skills. Actions: "list" returns all skills with IDs, names, and descriptions. "get" returns metadata, eligibility, and instructions preview for a skill_id. "invoke" returns full instructions to follow for a skill_id.`
 }
 
 // Parameters returns the tool parameters schema.

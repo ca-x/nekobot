@@ -41,6 +41,8 @@ type Agent struct {
 	context  *ContextBuilder
 	approval *approval.Manager
 
+	skillsManager *skills.Manager
+
 	acpMu       sync.RWMutex
 	acpSessions map[string]*acpSessionState
 
@@ -157,12 +159,18 @@ func New(
 		maxIterations:    cfg.Agents.Defaults.MaxToolIterations,
 	}
 
+	// Set orchestrator mode on context builder so skills section adapts.
+	if mode, err := agent.resolveOrchestrator(); err == nil {
+		contextBuilder.SetOrchestratorMode(mode)
+	}
+
 	return agent, nil
 }
 
 // RegisterSkillTool registers the skill tool with the agent.
 // This should be called after agent creation when skills manager is available.
 func (a *Agent) RegisterSkillTool(skillsManager *skills.Manager) {
+	a.skillsManager = skillsManager
 	a.tools.MustRegister(tools.NewSkillTool(a.logger, skillsManager))
 	a.logger.Info("Skill tool registered")
 }
