@@ -44,6 +44,10 @@ type SubagentTask struct {
 	ChatID      string // Origin chat ID
 }
 
+// NotifyFunc is called when a task completes or fails. It receives the task
+// so the caller can route the notification to the origin channel.
+type NotifyFunc func(task *SubagentTask)
+
 // SubagentManager manages subagent task execution.
 type SubagentManager struct {
 	log       *logger.Logger
@@ -52,6 +56,7 @@ type SubagentManager struct {
 	mu        sync.RWMutex
 	maxTasks  int
 	taskQueue chan *SubagentTask
+	onComplete NotifyFunc
 }
 
 // NewSubagentManager creates a new subagent manager.
@@ -208,7 +213,15 @@ func (sm *SubagentManager) executeTask(task *SubagentTask) {
 	}
 	sm.mu.Unlock()
 
-	// TODO: Send notification to origin channel if configured
+	// Notify origin channel if callback is configured
+	if sm.onComplete != nil {
+		sm.onComplete(task)
+	}
+}
+
+// SetNotifyFunc sets the callback invoked when a task completes or fails.
+func (sm *SubagentManager) SetNotifyFunc(fn NotifyFunc) {
+	sm.onComplete = fn
 }
 
 // PruneTasks removes completed tasks older than the specified duration.

@@ -23,13 +23,20 @@ type Channel interface {
 	ID() string
 }
 
+// GatewayController provides service lifecycle operations from the command layer.
+type GatewayController interface {
+	Restart() error
+	ReloadConfig() error
+}
+
 // Dependencies holds dependencies needed for advanced commands.
 type Dependencies struct {
-	Config         *config.Config
-	Agent          *agent.Agent
-	SkillsManager  *skills.Manager
-	ChannelManager ChannelManager
-	UserPrefs      *userprefs.Manager
+	Config            *config.Config
+	Agent             *agent.Agent
+	SkillsManager     *skills.Manager
+	ChannelManager    ChannelManager
+	UserPrefs         *userprefs.Manager
+	GatewayController GatewayController
 }
 
 // RegisterAdvancedCommands registers advanced commands that require dependencies.
@@ -45,7 +52,7 @@ func RegisterAdvancedCommands(registry *Registry, deps Dependencies) error {
 			Name:        "gateway",
 			Description: "Gateway management (restart, status)",
 			Usage:       "/gateway <action>",
-			Handler:     gatewayHandler(deps.ChannelManager),
+			Handler:     gatewayHandler(deps.ChannelManager, deps.GatewayController),
 			AdminOnly:   true,
 		},
 		{
@@ -165,7 +172,7 @@ func modelHandler(cfg *config.Config) CommandHandler {
 }
 
 // gatewayHandler handles the /gateway command.
-func gatewayHandler(channelMgr ChannelManager) CommandHandler {
+func gatewayHandler(channelMgr ChannelManager, ctrl GatewayController) CommandHandler {
 	return func(ctx context.Context, req CommandRequest) (CommandResponse, error) {
 		if channelMgr == nil {
 			return CommandResponse{
@@ -196,15 +203,38 @@ func gatewayHandler(channelMgr ChannelManager) CommandHandler {
 
 		switch args {
 		case "restart":
-			// Note: Actual restart would require service control
+			if ctrl == nil {
+				return CommandResponse{
+					Content:     "⚠️ Gateway restart is not available in the current runtime mode.",
+					ReplyInline: true,
+				}, nil
+			}
+			if err := ctrl.Restart(); err != nil {
+				return CommandResponse{
+					Content:     fmt.Sprintf("❌ Gateway restart failed: %v", err),
+					ReplyInline: true,
+				}, nil
+			}
 			return CommandResponse{
-				Content:     "⚠️ Gateway restart is not yet implemented.\n\nThis requires integration with system service control.",
+				Content:     "✅ Gateway restart initiated. The service will restart momentarily.",
 				ReplyInline: true,
 			}, nil
 
 		case "reload":
+			if ctrl == nil {
+				return CommandResponse{
+					Content:     "⚠️ Configuration reload is not available in the current runtime mode.",
+					ReplyInline: true,
+				}, nil
+			}
+			if err := ctrl.ReloadConfig(); err != nil {
+				return CommandResponse{
+					Content:     fmt.Sprintf("❌ Configuration reload failed: %v", err),
+					ReplyInline: true,
+				}, nil
+			}
 			return CommandResponse{
-				Content:     "⚠️ Configuration reload is not yet implemented.\n\nThis requires hot-reload support.",
+				Content:     "✅ Configuration reloaded successfully.",
 				ReplyInline: true,
 			}, nil
 

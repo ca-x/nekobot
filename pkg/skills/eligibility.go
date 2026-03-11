@@ -3,7 +3,9 @@ package skills
 import (
 	"os"
 	"os/exec"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -149,13 +151,14 @@ func (c *EligibilityChecker) CheckTools(tools []string) []string {
 			continue
 		}
 
-		// TODO: Check version if specified
-		// if len(parts) > 1 {
-		//     version := parts[1]
-		//     if !c.checkToolVersion(toolName, version) {
-		//         missing = append(missing, tool)
-		//     }
-		// }
+		// Check version if specified
+		if len(parts) > 1 {
+			requiredVersion := parts[1]
+			installedVersion := c.getToolVersion(toolName)
+			if installedVersion == "" || !c.versionSatisfies(installedVersion, requiredVersion) {
+				missing = append(missing, tool)
+			}
+		}
 	}
 
 	return missing
@@ -172,10 +175,10 @@ func (c *EligibilityChecker) CheckLanguages(languages map[string]string) map[str
 			continue
 		}
 
-		// TODO: Compare versions
-		// if !c.compareVersion(installed, version) {
-		//     missing[lang] = version
-		// }
+		// Compare versions
+		if !c.versionSatisfies(installed, version) {
+			missing[lang] = version
+		}
 	}
 
 	return missing
@@ -212,4 +215,55 @@ func (c *EligibilityChecker) getLanguageVersion(lang string) string {
 func (c *EligibilityChecker) DetectBinary(bin string) (string, bool) {
 	path, err := exec.LookPath(bin)
 	return path, err == nil
+}
+
+// versionRegex matches version-like strings (e.g. "1.21.0", "v18.0.0", "3.11").
+var versionRegex = regexp.MustCompile(`(\d+)(?:\.(\d+))?(?:\.(\d+))?`)
+
+// getToolVersion returns the version string of an installed tool.
+func (c *EligibilityChecker) getToolVersion(tool string) string {
+	// Try common version flags
+	for _, flag := range []string{"--version", "-version", "version"} {
+		cmd := exec.Command(tool, flag)
+		output, err := cmd.Output()
+		if err == nil {
+			return strings.TrimSpace(string(output))
+		}
+	}
+	return ""
+}
+
+// versionSatisfies checks whether installedRaw contains a version >= required.
+func (c *EligibilityChecker) versionSatisfies(installedRaw, required string) bool {
+	instMajor, instMinor, instPatch, ok := parseVersion(installedRaw)
+	if !ok {
+		return false
+	}
+	reqMajor, reqMinor, reqPatch, ok := parseVersion(required)
+	if !ok {
+		return false
+	}
+	if instMajor != reqMajor {
+		return instMajor > reqMajor
+	}
+	if instMinor != reqMinor {
+		return instMinor > reqMinor
+	}
+	return instPatch >= reqPatch
+}
+
+// parseVersion extracts major.minor.patch from a version string.
+func parseVersion(raw string) (major, minor, patch int, ok bool) {
+	matches := versionRegex.FindStringSubmatch(raw)
+	if len(matches) < 2 {
+		return 0, 0, 0, false
+	}
+	major, _ = strconv.Atoi(matches[1])
+	if len(matches) > 2 && matches[2] != "" {
+		minor, _ = strconv.Atoi(matches[2])
+	}
+	if len(matches) > 3 && matches[3] != "" {
+		patch, _ = strconv.Atoi(matches[3])
+	}
+	return major, minor, patch, true
 }

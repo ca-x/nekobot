@@ -682,3 +682,20 @@ type WebUIConfig struct {
 	PublicBaseURL            string `mapstructure:"public_base_url" json:"public_base_url"`                           // Preferred external base URL for share links
 	ToolSessionOTPTTLSeconds int    `mapstructure:"tool_session_otp_ttl_seconds" json:"tool_session_otp_ttl_seconds"` // One-time password TTL for tool sessions (seconds)
 }
+
+// ApplyFrom copies runtime-reloadable fields from another Config into this one.
+func (c *Config) ApplyFrom(other *Config) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	other.mu.RLock()
+	defer other.mu.RUnlock()
+
+	c.Agents = other.Agents
+	c.Channels = other.Channels
+	c.Providers = other.Providers
+	c.Transcription = other.Transcription
+	c.Tools = other.Tools
+	c.Heartbeat = other.Heartbeat
+	c.Memory = other.Memory
+	c.Approval = other.Approval
+}

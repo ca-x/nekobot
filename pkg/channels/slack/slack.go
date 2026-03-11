@@ -367,7 +367,65 @@ func (c *Channel) handleInteractive(evt socketmode.Event) {
 	c.log.Debug("Received interactive callback",
 		zap.String("type", string(callback.Type)))
 
-	// TODO: Handle interactive components
+	switch callback.Type {
+	case slack.InteractionTypeBlockActions:
+		c.handleBlockActions(callback)
+	case slack.InteractionTypeShortcut:
+		c.log.Debug("Shortcut interaction received (not handled)")
+	case slack.InteractionTypeViewSubmission:
+		c.log.Debug("View submission received (not handled)")
+	default:
+		c.log.Debug("Unhandled interaction type", zap.String("type", string(callback.Type)))
+	}
+}
+
+// handleBlockActions processes button clicks and other block actions.
+func (c *Channel) handleBlockActions(callback slack.InteractionCallback) {
+	for _, action := range callback.ActionCallback.BlockActions {
+		c.log.Debug("Block action received",
+			zap.String("action_id", action.ActionID),
+			zap.String("value", action.Value))
+
+		switch {
+		case strings.HasPrefix(action.ActionID, "skill_install_confirm:"):
+			repo := strings.TrimPrefix(action.ActionID, "skill_install_confirm:")
+			c.handleSkillInstallConfirm(callback, repo)
+		case action.ActionID == "skill_install_cancel":
+			c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
+				slack.MsgOptionText("Installation cancelled.", false))
+		default:
+			c.log.Debug("Unknown action", zap.String("action_id", action.ActionID))
+		}
+	}
+}
+
+// handleSkillInstallConfirm handles skill install confirmation button clicks.
+func (c *Channel) handleSkillInstallConfirm(callback slack.InteractionCallback, repo string) {
+	if repo == "" {
+		return
+	}
+
+	// Re-invoke the find-skills command with the confirmed repo
+	content := fmt.Sprintf("/find-skills __confirm_install__%s", repo)
+
+	sessionID := fmt.Sprintf("slack:%s", callback.Channel.ID)
+
+	msg := &bus.Message{
+		ID:        fmt.Sprintf("slack:interaction:%s", callback.TriggerID),
+		ChannelID: "slack",
+		SessionID: sessionID,
+		UserID:    callback.User.ID,
+		Username:  callback.User.Name,
+		Type:      bus.MessageTypeText,
+		Content:   content,
+		Timestamp: time.Now(),
+	}
+
+	if err := c.bus.SendInbound(msg); err != nil {
+		c.log.Error("Failed to send skill install confirmation", zap.Error(err))
+		c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
+			slack.MsgOptionText("Failed to process confirmation.", false))
+	}
 }
 
 // handleOutbound handles outbound messages from the bus.

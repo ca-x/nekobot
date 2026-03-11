@@ -289,7 +289,7 @@ func (c *Channel) handleTextMessage(msg MaixCamMessage, conn net.Conn) {
 
 	// Check for slash commands
 	if c.commands.IsCommand(content) {
-		c.handleCommand(msg, deviceID, content)
+		c.handleCommand(msg, conn, deviceID, content)
 		return
 	}
 
@@ -312,7 +312,7 @@ func (c *Channel) handleTextMessage(msg MaixCamMessage, conn net.Conn) {
 }
 
 // handleCommand processes a command message.
-func (c *Channel) handleCommand(msg MaixCamMessage, deviceID, content string) {
+func (c *Channel) handleCommand(msg MaixCamMessage, conn net.Conn, deviceID, content string) {
 	cmdName, args := c.commands.Parse(content)
 
 	cmd, exists := c.commands.Get(cmdName)
@@ -347,8 +347,23 @@ func (c *Channel) handleCommand(msg MaixCamMessage, deviceID, content string) {
 		return
 	}
 
-	// Send response back to device (not implemented in this version)
-	c.log.Debug("Command response", zap.String("content", resp.Content))
+	// Send response back to device
+	if resp.Content != "" {
+		response := map[string]interface{}{
+			"type":    "command_response",
+			"command": cmdName,
+			"content": resp.Content,
+			"time":    time.Now().Unix(),
+		}
+		data, err := json.Marshal(response)
+		if err != nil {
+			c.log.Error("Failed to marshal command response", zap.Error(err))
+			return
+		}
+		if _, err := conn.Write(append(data, '\n')); err != nil {
+			c.log.Error("Failed to send command response to device", zap.Error(err))
+		}
+	}
 }
 
 // handleOutbound handles outbound messages from the bus.

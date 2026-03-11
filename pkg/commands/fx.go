@@ -34,21 +34,23 @@ func registerAdvanced(
 	p struct {
 		fx.In
 
-		Registry   *Registry
-		Log        *logger.Logger
-		Config     *config.Config
-		Agent      *agent.Agent
-		Skills     *skills.Manager    `optional:"true"`
-		ChannelMgr ChannelManager     `optional:"true"`
-		UserPrefs  *userprefs.Manager `optional:"true"`
+		Registry      *Registry
+		Log           *logger.Logger
+		Config        *config.Config
+		Agent         *agent.Agent
+		Skills        *skills.Manager    `optional:"true"`
+		ChannelMgr    ChannelManager     `optional:"true"`
+		UserPrefs     *userprefs.Manager `optional:"true"`
+		GatewayCtrl   GatewayController  `optional:"true"`
 	},
 ) error {
 	deps := Dependencies{
-		Config:         p.Config,
-		Agent:          p.Agent,
-		SkillsManager:  p.Skills,
-		ChannelManager: p.ChannelMgr,
-		UserPrefs:      p.UserPrefs,
+		Config:            p.Config,
+		Agent:             p.Agent,
+		SkillsManager:     p.Skills,
+		ChannelManager:    p.ChannelMgr,
+		UserPrefs:         p.UserPrefs,
+		GatewayController: p.GatewayCtrl,
 	}
 
 	if err := RegisterAdvancedCommands(p.Registry, deps); err != nil {

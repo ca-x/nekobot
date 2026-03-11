@@ -75,32 +75,35 @@ Manage agent selection:
 
 Manage the gateway service:
 - `/gateway` or `/gateway status` - Show gateway status and active channels
-- `/gateway restart` - Restart gateway (not yet implemented)
-- `/gateway reload` - Reload configuration (not yet implemented)
+- `/gateway restart` - Restart gateway service (spawns a new process and gracefully shuts down the current one)
+- `/gateway reload` - Reload configuration from file and database without restarting
 
 **Examples:**
 ```
 /gateway            # Show status
 /gateway status     # Show detailed status
 /gateway restart    # Restart gateway
+/gateway reload     # Hot-reload configuration
 ```
 
 ### /skill
 **Description:** Execute or show skill information
 **Usage:** `/<skillname> [args]`
 
-Skills are dynamically registered as commands. Each loaded skill becomes a command:
+Skills are dynamically registered as commands. Each loaded skill becomes an executable command:
 - `/actionbook` - Execute actionbook skill
 - `/github` - Execute github skill
 - `/obsidian` - Execute obsidian skill
+- `/find-skills <query>` - Search and install skills (supports npx-preferred mode)
 - etc.
 
-Currently shows skill information. Direct execution is not yet implemented.
+Skills are executed via the agent with context-aware prompts. The `/find-skills` skill supports an interactive install confirmation flow.
 
 **Examples:**
 ```
-/github             # Show github skill info
-/obsidian projects  # Execute obsidian skill with args
+/github list repos   # Execute github skill with arguments
+/obsidian projects   # Execute obsidian skill with args
+/find-skills weather # Search for a weather skill
 ```
 
 ## Channel Support

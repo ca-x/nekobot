@@ -7,6 +7,7 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
+	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 )
@@ -14,8 +15,13 @@ import (
 // Module provides the gateway server for fx dependency injection.
 var Module = fx.Module("gateway",
 	fx.Provide(NewServer),
+	fx.Provide(provideGatewayController),
 	fx.Invoke(registerLifecycle),
 )
+
+func provideGatewayController(cfg *config.Config, loader *config.Loader, log *logger.Logger) commands.GatewayController {
+	return NewController(cfg, loader, log)
+}
 
 func registerLifecycle(lc fx.Lifecycle, s *Server, cfg *config.Config, log *logger.Logger) {
 	if cfg.Gateway.Port == 0 {

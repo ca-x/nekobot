@@ -106,10 +106,10 @@ func (s *FileStore) Search(query []float32, opts SearchOptions) ([]*SearchResult
 
 		// Calculate similarity
 		var score float64
-		if opts.Hybrid {
+		if opts.Hybrid && opts.QueryText != "" {
 			// Hybrid search: combine vector and text similarity
 			vectorSim := cosineSimilarity(query, emb.Vector)
-			textSim := 0.0 // TODO: implement keyword matching
+			textSim := textSimilarity(opts.QueryText, emb.Text)
 
 			score = opts.VectorWeight*vectorSim + opts.TextWeight*textSim
 		} else {

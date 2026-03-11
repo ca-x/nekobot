@@ -83,6 +83,8 @@ type SearchOptions struct {
 	VectorWeight float64 `json:"vector_weight"`
 	// TextWeight is the weight for keyword match in hybrid search (0-1)
 	TextWeight float64 `json:"text_weight"`
+	// QueryText is the original text query used for keyword matching in hybrid search
+	QueryText string `json:"query_text,omitempty"`
 }
 
 // DefaultSearchOptions returns sensible default search options.

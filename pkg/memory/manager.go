@@ -82,6 +82,9 @@ func (m *Manager) Search(ctx context.Context, query string, opts SearchOptions) 
 		return nil, fmt.Errorf("failed to generate query embedding: %w", err)
 	}
 
+	// Set query text for hybrid keyword matching
+	opts.QueryText = query
+
 	// Search store
 	results, err := m.store.Search(queryVector, opts)
 	if err != nil {
