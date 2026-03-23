@@ -230,6 +230,11 @@ func (v *Validator) validateChannels(cfg *ChannelsConfig) {
 		v.addError("channels.whatsapp.bridge_url", "bridge_url is required when WhatsApp is enabled")
 	}
 
+	// Validate WeChat
+	if cfg.WeChat.Enabled && cfg.WeChat.PollIntervalSeconds < 1 {
+		v.addError("channels.wechat.poll_interval_seconds", "poll_interval_seconds must be at least 1 when WeChat is enabled")
+	}
+
 	// Validate MaixCam
 	if cfg.MaixCam.Enabled {
 		if cfg.MaixCam.Port < 1 || cfg.MaixCam.Port > 65535 {

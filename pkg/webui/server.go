@@ -6,6 +6,7 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ import (
 	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channels"
+	channelwechat "nekobot/pkg/channels/wechat"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
@@ -48,6 +50,7 @@ import (
 	"nekobot/pkg/userprefs"
 	"nekobot/pkg/version"
 	"nekobot/pkg/webui/frontend"
+	rscqr "rsc.io/qr"
 )
 
 // Server is the WebUI HTTP server.
@@ -171,6 +174,10 @@ func (s *Server) setup() {
 	api.GET("/channels", s.handleGetChannels)
 	api.PUT("/channels/:name", s.handleUpdateChannel)
 	api.POST("/channels/:name/test", s.handleTestChannel)
+	api.GET("/channels/wechat/binding", s.handleGetWechatBindingStatus)
+	api.POST("/channels/wechat/binding/start", s.handleStartWechatBinding)
+	api.POST("/channels/wechat/binding/poll", s.handlePollWechatBinding)
+	api.DELETE("/channels/wechat/binding", s.handleDeleteWechatBinding)
 
 	// Config routes
 	api.GET("/config", s.handleGetConfig)
@@ -2258,6 +2265,7 @@ func (s *Server) handleGetChannels(c *echo.Context) error {
 		"discord":    s.config.Channels.Discord,
 		"slack":      s.config.Channels.Slack,
 		"whatsapp":   s.config.Channels.WhatsApp,
+		"wechat":     s.config.Channels.WeChat,
 		"feishu":     s.config.Channels.Feishu,
 		"dingtalk":   s.config.Channels.DingTalk,
 		"qq":         s.config.Channels.QQ,
@@ -2300,6 +2308,10 @@ func (s *Server) handleUpdateChannel(c *echo.Context) error {
 		}
 	case "whatsapp":
 		if err := json.Unmarshal(data, &s.config.Channels.WhatsApp); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	case "wechat":
+		if err := json.Unmarshal(data, &s.config.Channels.WeChat); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
 	case "feishu":
@@ -2403,6 +2415,197 @@ func (s *Server) handleTestChannel(c *echo.Context) error {
 	result["reachable"] = true
 	result["status"] = "ok"
 	return c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) wechatStore() (*channelwechat.CredentialStore, error) {
+	store, err := channelwechat.NewCredentialStore(s.config)
+	if err != nil {
+		return nil, fmt.Errorf("create wechat store: %w", err)
+	}
+	return store, nil
+}
+
+func (s *Server) handleGetWechatBindingStatus(c *echo.Context) error {
+	store, err := s.wechatStore()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	payload, err := s.buildWechatBindingPayload(store)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, payload)
+}
+
+func (s *Server) handleStartWechatBinding(c *echo.Context) error {
+	store, err := s.wechatStore()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	qrResp, err := channelwechat.FetchQRCode(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
+	}
+
+	state := channelwechat.BindState{
+		QRCode:        qrResp.QRCode,
+		QRCodeContent: qrResp.QRCodeImgContent,
+		Status:        channelwechat.BindStatusPending,
+	}
+	if err := store.SaveBindState(state); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	payload, err := s.buildWechatBindingPayload(store)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, payload)
+}
+
+func (s *Server) handlePollWechatBinding(c *echo.Context) error {
+	store, err := s.wechatStore()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	state, err := store.LoadBindState()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if state == nil || strings.TrimSpace(state.QRCode) == "" {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "no active wechat binding"})
+	}
+
+	statusResp, err := channelwechat.CheckQRStatus(c.Request().Context(), state.QRCode)
+	if err != nil {
+		state.Status = channelwechat.BindStatusFailed
+		state.Error = err.Error()
+		_ = store.SaveBindState(*state)
+		return c.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
+	}
+
+	switch statusResp.Status {
+	case "confirmed":
+		state.Status = channelwechat.BindStatusConfirmed
+		state.BotID = statusResp.ILinkBotID
+		state.UserID = statusResp.ILinkUserID
+		state.Error = ""
+		if err := store.ReplaceCredentials(&channelwechat.Credentials{
+			BotToken:    statusResp.BotToken,
+			ILinkBotID:  statusResp.ILinkBotID,
+			BaseURL:     statusResp.BaseURL,
+			ILinkUserID: statusResp.ILinkUserID,
+		}); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		if err := store.SaveBindState(*state); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		if s.config.Channels.WeChat.Enabled {
+			if err := s.reloadChannel("wechat"); err != nil {
+				s.logger.Error("Failed to reload WeChat after binding", zap.Error(err))
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+		}
+	case "scaned":
+		state.Status = channelwechat.BindStatusScanned
+		state.Error = ""
+		if err := store.SaveBindState(*state); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	case "expired":
+		state.Status = channelwechat.BindStatusExpired
+		state.Error = ""
+		if err := store.SaveBindState(*state); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	default:
+		state.Status = channelwechat.BindStatusPending
+		state.Error = ""
+		if err := store.SaveBindState(*state); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	payload, err := s.buildWechatBindingPayload(store)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, payload)
+}
+
+func (s *Server) handleDeleteWechatBinding(c *echo.Context) error {
+	store, err := s.wechatStore()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	if err := store.ClearBindState(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if err := store.ClearCredentials(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	if s.config.Channels.WeChat.Enabled {
+		if err := s.reloadChannel("wechat"); err != nil {
+			s.logger.Error("Failed to reload WeChat after unbind", zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) buildWechatBindingPayload(store *channelwechat.CredentialStore) (map[string]interface{}, error) {
+	creds, err := store.LoadCredentials()
+	if err != nil {
+		return nil, fmt.Errorf("load wechat credentials: %w", err)
+	}
+	state, err := store.LoadBindState()
+	if err != nil {
+		return nil, fmt.Errorf("load wechat bind state: %w", err)
+	}
+
+	payload := map[string]interface{}{
+		"bound": creds != nil,
+	}
+	if creds != nil {
+		payload["account"] = map[string]interface{}{
+			"bot_id":  creds.ILinkBotID,
+			"user_id": creds.ILinkUserID,
+		}
+	}
+	if state != nil {
+		bind := map[string]interface{}{
+			"status":         state.Status,
+			"qrcode_content": state.QRCodeContent,
+			"updated_at":     state.UpdatedAt,
+			"bot_id":         state.BotID,
+			"user_id":        state.UserID,
+			"error":          state.Error,
+		}
+		if strings.TrimSpace(state.QRCodeContent) != "" {
+			if dataURL, err := encodeQRCodeDataURL(state.QRCodeContent); err == nil {
+				bind["qr_png_data_url"] = dataURL
+			}
+		}
+		payload["binding"] = bind
+	}
+
+	return payload, nil
+}
+
+func encodeQRCodeDataURL(content string) (string, error) {
+	code, err := rscqr.Encode(content, rscqr.M)
+	if err != nil {
+		return "", fmt.Errorf("encode QR code: %w", err)
+	}
+	code.Scale = 8
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(code.PNG()), nil
 }
 
 // --- Config Handlers ---

@@ -85,6 +85,7 @@ type MCPServerConfig struct {
 type ChannelsConfig struct {
 	TimeoutSeconds int              `mapstructure:"timeout_seconds" json:"timeout_seconds"`
 	WhatsApp       WhatsAppConfig   `mapstructure:"whatsapp" json:"whatsapp"`
+	WeChat         WeChatConfig     `mapstructure:"wechat" json:"wechat"`
 	Telegram       TelegramConfig   `mapstructure:"telegram" json:"telegram"`
 	Feishu         FeishuConfig     `mapstructure:"feishu" json:"feishu"`
 	Discord        DiscordConfig    `mapstructure:"discord" json:"discord"`
@@ -104,6 +105,13 @@ type WhatsAppConfig struct {
 	Enabled   bool     `mapstructure:"enabled" json:"enabled"`
 	BridgeURL string   `mapstructure:"bridge_url" json:"bridge_url"`
 	AllowFrom []string `mapstructure:"allow_from" json:"allow_from"`
+}
+
+// WeChatConfig for WeChat iLink channel.
+type WeChatConfig struct {
+	Enabled             bool     `mapstructure:"enabled" json:"enabled"`
+	PollIntervalSeconds int      `mapstructure:"poll_interval_seconds" json:"poll_interval_seconds"`
+	AllowFrom           []string `mapstructure:"allow_from" json:"allow_from"`
 }
 
 // TelegramConfig for Telegram channel.
@@ -353,6 +361,11 @@ func DefaultConfig() *Config {
 				Enabled:   false,
 				BridgeURL: "ws://localhost:3001",
 				AllowFrom: []string{},
+			},
+			WeChat: WeChatConfig{
+				Enabled:             false,
+				PollIntervalSeconds: 3,
+				AllowFrom:           []string{},
 			},
 			Telegram: TelegramConfig{
 				Enabled:        false,

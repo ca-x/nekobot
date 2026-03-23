@@ -17,6 +17,7 @@ import (
 	"nekobot/pkg/channels/slack"
 	"nekobot/pkg/channels/teams"
 	"nekobot/pkg/channels/telegram"
+	"nekobot/pkg/channels/wechat"
 	"nekobot/pkg/channels/wework"
 	"nekobot/pkg/channels/whatsapp"
 	"nekobot/pkg/commands"
@@ -50,6 +51,12 @@ func BuildChannel(
 		return slack.NewChannel(log, cfg.Channels.Slack, messageBus, cmdRegistry, transcriber)
 	case "whatsapp":
 		return whatsapp.NewChannel(log, cfg.Channels.WhatsApp, messageBus, cmdRegistry)
+	case "wechat":
+		store, err := wechat.NewCredentialStore(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return wechat.NewChannel(log, cfg.Channels.WeChat, messageBus, ag, cmdRegistry, store)
 	case "feishu":
 		return feishu.NewChannel(log, cfg.Channels.Feishu, messageBus, cmdRegistry)
 	case "dingtalk":
@@ -84,6 +91,8 @@ func IsChannelEnabled(name string, cfg *config.Config) (bool, error) {
 		return cfg.Channels.Slack.Enabled, nil
 	case "whatsapp":
 		return cfg.Channels.WhatsApp.Enabled, nil
+	case "wechat":
+		return cfg.Channels.WeChat.Enabled, nil
 	case "feishu":
 		return cfg.Channels.Feishu.Enabled, nil
 	case "dingtalk":

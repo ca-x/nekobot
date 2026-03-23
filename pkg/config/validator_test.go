@@ -154,3 +154,18 @@ func TestValidateConfigRejectsInvalidMCPEndpointURL(t *testing.T) {
 		t.Fatalf("expected endpoint validation error, got %v", err)
 	}
 }
+
+func TestValidateConfigRejectsInvalidWechatPollInterval(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Channels.WeChat.Enabled = true
+	cfg.Channels.WeChat.PollIntervalSeconds = 0
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for wechat poll interval")
+	}
+	if !strings.Contains(err.Error(), "channels.wechat.poll_interval_seconds") {
+		t.Fatalf("expected wechat poll interval validation error, got %v", err)
+	}
+}

@@ -19,6 +19,7 @@ import (
 	"nekobot/pkg/channels/slack"
 	"nekobot/pkg/channels/teams"
 	"nekobot/pkg/channels/telegram"
+	"nekobot/pkg/channels/wechat"
 	"nekobot/pkg/channels/wework"
 	"nekobot/pkg/channels/whatsapp"
 	"nekobot/pkg/commands"
@@ -120,6 +121,23 @@ func RegisterChannels(
 		} else {
 			if err := manager.Register(whatsappChannel); err != nil {
 				return err
+			}
+		}
+	}
+
+	// Register WeChat channel
+	if cfg.Channels.WeChat.Enabled {
+		store, err := wechat.NewCredentialStore(cfg)
+		if err != nil {
+			log.Warn("Failed to create WeChat credential store, skipping", zap.Error(err))
+		} else {
+			wechatChannel, err := wechat.NewChannel(log, cfg.Channels.WeChat, messageBus, ag, cmdRegistry, store)
+			if err != nil {
+				log.Warn("Failed to create WeChat channel, skipping", zap.Error(err))
+			} else {
+				if err := manager.Register(wechatChannel); err != nil {
+					return err
+				}
 			}
 		}
 	}

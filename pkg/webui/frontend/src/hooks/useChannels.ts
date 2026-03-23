@@ -9,6 +9,23 @@ export type ChannelConfig = Record<string, unknown> & { enabled?: boolean };
 /** GET /api/channels returns { channelName: ChannelConfig, ... } */
 export type ChannelsMap = Record<string, ChannelConfig>;
 
+export interface WechatBindingStatus {
+  bound: boolean;
+  account?: {
+    bot_id?: string;
+    user_id?: string;
+  };
+  binding?: {
+    status?: string;
+    qrcode_content?: string;
+    qr_png_data_url?: string;
+    updated_at?: string;
+    bot_id?: string;
+    user_id?: string;
+    error?: string;
+  };
+}
+
 export interface TestChannelResult {
   channel: string;
   id: string;
@@ -49,6 +66,50 @@ export function useTestChannel() {
       } else {
         toast.warning(t('channelTestFail', result?.status ?? 'unknown'));
       }
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useWechatBindingStatus() {
+  return useQuery<WechatBindingStatus>({
+    queryKey: ['channels', 'wechat', 'binding'],
+    queryFn: () => api.get('/api/channels/wechat/binding'),
+    staleTime: 5_000,
+  });
+}
+
+export function useStartWechatBinding() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<WechatBindingStatus>('/api/channels/wechat/binding/start'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function usePollWechatBinding() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<WechatBindingStatus>('/api/channels/wechat/binding/poll'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
+      qc.invalidateQueries({ queryKey: ['channels'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useDeleteWechatBinding() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete('/api/channels/wechat/binding'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
+      qc.invalidateQueries({ queryKey: ['channels'] });
+      toast.success(t('wechatBindingDeleted'));
     },
     onError: (err: Error) => toast.error(err.message),
   });

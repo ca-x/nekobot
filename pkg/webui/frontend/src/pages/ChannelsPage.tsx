@@ -1,10 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Header from '@/components/layout/Header';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useChannels, useTestChannel } from '@/hooks/useChannels';
+import {
+  useChannels,
+  useDeleteWechatBinding,
+  usePollWechatBinding,
+  useStartWechatBinding,
+  useTestChannel,
+  useWechatBindingStatus,
+} from '@/hooks/useChannels';
 import { ChannelForm } from '@/components/config/ChannelForm';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -24,6 +31,7 @@ const channelEmoji: Record<string, string> = {
   maixcam: 'MX',
   teams: 'TM',
   infoflow: 'IF',
+  wechat: 'WC',
   email: 'EM',
 };
 
@@ -42,15 +50,35 @@ const channelColors: Record<string, string> = {
   maixcam: 'bg-orange-500',
   teams: 'bg-violet-600',
   infoflow: 'bg-rose-500',
+  wechat: 'bg-emerald-700',
   email: 'bg-gray-500',
 };
 
 export default function ChannelsPage() {
   const { data: channels, isLoading } = useChannels();
   const testChannel = useTestChannel();
+  const wechatBinding = useWechatBindingStatus();
+  const startWechatBinding = useStartWechatBinding();
+  const pollWechatBinding = usePollWechatBinding();
+  const deleteWechatBinding = useDeleteWechatBinding();
 
   const [activeTab, setActiveTab] = useState<string>('all');
   const [editingChannel, setEditingChannel] = useState<string | null>(null);
+
+  useEffect(() => {
+    const status = wechatBinding.data?.binding?.status;
+    if (!status || status === 'confirmed' || status === 'expired' || status === 'failed') {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (!pollWechatBinding.isPending) {
+        pollWechatBinding.mutate();
+      }
+    }, 2500);
+
+    return () => window.clearTimeout(timer);
+  }, [wechatBinding.data, pollWechatBinding]);
 
   // Derive channel list from the map.
   const allChannels = channels
@@ -96,8 +124,25 @@ export default function ChannelsPage() {
 
       {/* Channel card grid */}
       {!isLoading && filteredChannels.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="space-y-4">
+          {channels?.wechat && (
+            <WechatBindingCard
+              enabled={Boolean(channels.wechat.enabled)}
+              binding={wechatBinding.data}
+              starting={startWechatBinding.isPending}
+              polling={pollWechatBinding.isPending}
+              deleting={deleteWechatBinding.isPending}
+              onStart={() => startWechatBinding.mutate()}
+              onPoll={() => pollWechatBinding.mutate()}
+              onDelete={() => deleteWechatBinding.mutate()}
+              onEdit={() => setEditingChannel('wechat')}
+            />
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredChannels.map(([name, config]) => {
+            if (name === 'wechat') return null;
+
             const enabled = config.enabled ?? false;
             const badge = channelEmoji[name] ?? name.slice(0, 2).toUpperCase();
             const badgeColor = channelColors[name] ?? 'bg-gray-400';
@@ -176,6 +221,7 @@ export default function ChannelsPage() {
               </Card>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -202,5 +248,127 @@ export default function ChannelsPage() {
         onClose={() => setEditingChannel(null)}
       />
     </div>
+  );
+}
+
+interface WechatBindingCardProps {
+  enabled: boolean;
+  binding?: {
+    bound: boolean;
+    account?: {
+      bot_id?: string;
+      user_id?: string;
+    };
+    binding?: {
+      status?: string;
+      qrcode_content?: string;
+      qr_png_data_url?: string;
+      updated_at?: string;
+      bot_id?: string;
+      user_id?: string;
+      error?: string;
+    };
+  };
+  starting: boolean;
+  polling: boolean;
+  deleting: boolean;
+  onStart: () => void;
+  onPoll: () => void;
+  onDelete: () => void;
+  onEdit: () => void;
+}
+
+function WechatBindingCard({
+  enabled,
+  binding,
+  starting,
+  polling,
+  deleting,
+  onStart,
+  onPoll,
+  onDelete,
+  onEdit,
+}: WechatBindingCardProps) {
+  const status = binding?.binding?.status ?? 'idle';
+  const qrImage = binding?.binding?.qr_png_data_url;
+  const canPoll = status === 'pending' || status === 'scanned';
+
+  return (
+    <Card className="border-emerald-500/20 bg-gradient-to-br from-emerald-50/80 via-background to-background dark:from-emerald-950/20">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">{t('wechatBindingTitle')}</CardTitle>
+            <CardDescription>{t('wechatBindingDescription')}</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                enabled
+                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                  : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+              )}
+            >
+              <span
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  enabled ? 'bg-emerald-500' : 'bg-gray-400',
+                )}
+              />
+              {enabled ? t('on') : t('off')}
+            </span>
+            <Button size="sm" variant="outline" onClick={onEdit}>
+              {t('edit')}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 lg:grid-cols-[220px_1fr]">
+        <div className="rounded-xl border bg-card p-4 flex items-center justify-center min-h-[220px]">
+          {qrImage ? (
+            <img src={qrImage} alt={t('wechatQrAlt')} className="w-full max-w-[180px] rounded-lg" />
+          ) : (
+            <div className="text-center text-sm text-muted-foreground">{t('wechatNoQr')}</div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid gap-2 text-sm">
+            <div>
+              <span className="text-muted-foreground">{t('wechatBindStatusLabel')}</span>{' '}
+              <span className="font-medium">{t(`wechatBindStatus_${status}`)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">{t('wechatBoundAccountLabel')}</span>{' '}
+              <span className="font-medium">{binding?.account?.bot_id ?? t('wechatNoBoundAccount')}</span>
+            </div>
+            {binding?.account?.user_id && (
+              <div>
+                <span className="text-muted-foreground">{t('wechatBoundUserLabel')}</span>{' '}
+                <span className="font-medium">{binding.account.user_id}</span>
+              </div>
+            )}
+            {binding?.binding?.error && (
+              <div className="text-sm text-destructive">{binding.binding.error}</div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={onStart} disabled={starting}>
+              {starting ? t('wechatStartingBind') : t('wechatStartBind')}
+            </Button>
+            <Button variant="outline" onClick={onPoll} disabled={!canPoll || polling}>
+              {polling ? t('wechatPollingBind') : t('wechatRefreshBind')}
+            </Button>
+            <Button variant="ghost" onClick={onDelete} disabled={deleting}>
+              {deleting ? t('wechatDeletingBind') : t('wechatDeleteBind')}
+            </Button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">{t('wechatSingleAccountHint')}</p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
