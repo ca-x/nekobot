@@ -44,9 +44,21 @@ go build -o nekobot ./cmd/nekobot
 ./nekobot agent -m "Hello! List files in the current directory."
 ```
 
+### Web-First Startup
+
+```bash
+# Start gateway + web dashboard
+./nekobot gateway
+```
+
+On first start, nekobot will auto-create bootstrap config at `~/.nekobot/config.json`,
+initialize `~/.nekobot/nekobot.db`, and expose the WebUI on `http://127.0.0.1:18791`
+by default. Providers / agents / channels / tools are intended to be configured in WebUI.
+
 ### Configuration
 
-Create a config file at `~/.nekobot/config.json`:
+Bootstrap config lives in `~/.nekobot/config.json` and mainly keeps startup settings
+such as logger, gateway, storage, and WebUI. A minimal file looks like this:
 
 ```json
 {
@@ -66,7 +78,8 @@ Create a config file at `~/.nekobot/config.json`:
 }
 ```
 
-Providers / agents / tools / channels 等运行时配置建议通过 WebUI 修改（持久化到运行时数据库 `nekobot.db`）。
+Most runtime settings, including providers / agents / tools / channels, should be
+edited in WebUI and are persisted in the runtime database `nekobot.db`.
 
 Or use environment variables:
 
@@ -75,7 +88,21 @@ export NEKOBOT_GATEWAY_PORT="18790"
 export NEKOBOT_LOGGER_LEVEL="debug"
 ```
 
-See `pkg/config/config.example.json` for a full configuration example.
+See [docs/CONFIG.md](docs/CONFIG.md) for the current configuration model.
+
+### Docker
+
+```bash
+docker compose up -d
+```
+
+This persists all runtime state in `./data`:
+
+- `./data/config/config.json`: bootstrap config, auto-created on first boot
+- `./data/db/nekobot.db`: runtime database for WebUI-managed settings
+- `./data/workspace`: workspace and local runtime files
+
+After startup, open `http://127.0.0.1:18791` and finish configuration in WebUI.
 
 ## Usage
 

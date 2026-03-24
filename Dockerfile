@@ -48,11 +48,13 @@ WORKDIR /app
 
 COPY --from=builder /out/nekobot /app/nekobot
 
-RUN mkdir -p /app/config /app/workspace && chown -R app:app /app
+RUN mkdir -p /app/data/config /app/data/db /app/data/workspace && chown -R app:app /app
 
 USER app
 
-ENV NEKOBOT_CONFIG_FILE=/app/config/config.json
+ENV NEKOBOT_CONFIG_FILE=/app/data/config/config.json
+ENV NEKOBOT_DB_DIR=/app/data/db
+ENV NEKOBOT_WORKSPACE_DIR=/app/data/workspace
 
 EXPOSE 18790 18791
 

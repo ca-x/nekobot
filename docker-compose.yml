@@ -7,8 +7,6 @@ services:
       - "18790:18790" # gateway
       - "18791:18791" # webui (default)
     environment:
-      - NEKOBOT_CONFIG_FILE=/app/config/config.json
       - TZ=Asia/Shanghai
     volumes:
-      - ./config/config.json:/app/config/config.json:ro
-      - ./workspace:/app/workspace
+      - ./data:/app/data
