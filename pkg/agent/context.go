@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	promptmemory "nekobot/pkg/memory/prompt"
 	"nekobot/pkg/skills"
 )
 
@@ -24,8 +25,8 @@ const currentTimePlaceholder = "__NEKOBOT_CURRENT_TIME__"
 // - Skills
 type ContextBuilder struct {
 	workspace string
-	memory    *MemoryStore
-	composer  *MemoryContextComposer
+	memory    *promptmemory.Store
+	composer  *promptmemory.ContextComposer
 
 	// Tool registry reference (set after creation)
 	getToolDescriptions func() []string
@@ -51,18 +52,18 @@ type trackedFileState struct {
 
 // NewContextBuilder creates a new context builder for the given workspace.
 func NewContextBuilder(workspace string) *ContextBuilder {
-	return NewContextBuilderWithMemory(workspace, NewMemoryStore(workspace))
+	return NewContextBuilderWithMemory(workspace, promptmemory.NewStore(workspace))
 }
 
 // NewContextBuilderWithMemory creates a new context builder with an explicit memory store.
-func NewContextBuilderWithMemory(workspace string, memoryStore *MemoryStore) *ContextBuilder {
+func NewContextBuilderWithMemory(workspace string, memoryStore *promptmemory.Store) *ContextBuilder {
 	if memoryStore == nil {
-		memoryStore = NewMemoryStore(workspace)
+		memoryStore = promptmemory.NewStore(workspace)
 	}
 	return &ContextBuilder{
 		workspace: workspace,
 		memory:    memoryStore,
-		composer:  NewMemoryContextComposer(memoryStore, DefaultMemoryContextOptions()),
+		composer:  promptmemory.NewContextComposer(memoryStore, promptmemory.DefaultContextOptions()),
 	}
 }
 
@@ -84,13 +85,13 @@ func (cb *ContextBuilder) SetOrchestratorMode(mode string) {
 }
 
 // GetMemory returns the memory store.
-func (cb *ContextBuilder) GetMemory() *MemoryStore {
+func (cb *ContextBuilder) GetMemory() *promptmemory.Store {
 	return cb.memory
 }
 
 // SetMemoryContextOptions updates how persistent memory is composed into the system prompt.
-func (cb *ContextBuilder) SetMemoryContextOptions(opts MemoryContextOptions) {
-	cb.composer = NewMemoryContextComposer(cb.memory, opts)
+func (cb *ContextBuilder) SetMemoryContextOptions(opts promptmemory.ContextOptions) {
+	cb.composer = promptmemory.NewContextComposer(cb.memory, opts)
 }
 
 // getIdentity returns the core identity section of the system prompt.

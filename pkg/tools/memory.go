@@ -21,12 +21,12 @@ type MemoryToolOptions struct {
 // MemoryTool provides memory search and storage capabilities.
 type MemoryTool struct {
 	log     *logger.Logger
-	manager *memory.Manager
+	manager memory.SearchManager
 	options MemoryToolOptions
 }
 
 // NewMemoryTool creates a new memory tool.
-func NewMemoryTool(log *logger.Logger, manager *memory.Manager, opts MemoryToolOptions) *MemoryTool {
+func NewMemoryTool(log *logger.Logger, manager memory.SearchManager, opts MemoryToolOptions) *MemoryTool {
 	if opts.DefaultTopK <= 0 {
 		opts.DefaultTopK = 5
 	}
@@ -202,7 +202,12 @@ func (t *MemoryTool) add(ctx context.Context, params map[string]interface{}) (st
 // status returns the memory system status.
 func (t *MemoryTool) status(ctx context.Context) (string, error) {
 	if t.manager.IsEnabled() {
-		return "Memory system is enabled and operational", nil
+		status := t.manager.Status()
+		backend, _ := status["backend"].(string)
+		if backend == "" {
+			backend = "builtin"
+		}
+		return fmt.Sprintf("Memory system is enabled and operational (backend: %s)", backend), nil
 	}
 	return "Memory system is disabled", nil
 }

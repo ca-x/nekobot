@@ -18,6 +18,21 @@ type Manager struct {
 	enabled  bool
 }
 
+// Status returns a lightweight runtime status snapshot.
+func (m *Manager) Status() map[string]interface{} {
+	status := map[string]interface{}{
+		"backend": "builtin",
+		"enabled": m != nil && m.enabled,
+	}
+	if m == nil {
+		return status
+	}
+	if store, ok := m.store.(*FileStore); ok {
+		status["file_path"] = store.filePath
+	}
+	return status
+}
+
 // NewManager creates a new memory manager.
 func NewManager(storePath string, provider EmbeddingProvider) (*Manager, error) {
 	if provider == nil {

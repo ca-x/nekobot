@@ -16,6 +16,8 @@ import (
 	bladestools "github.com/go-kratos/blades/tools"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/memory"
+	promptmemory "nekobot/pkg/memory/prompt"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/tools"
 )
@@ -153,7 +155,7 @@ func TestResolveOrchestratorRejectsUnknownValue(t *testing.T) {
 
 func TestBuildToolsSection_SortsToolDescriptionsDeterministically(t *testing.T) {
 	workspace := t.TempDir()
-	cb := NewContextBuilderWithMemory(workspace, NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{}))
+	cb := NewContextBuilderWithMemory(workspace, promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend()))
 	cb.SetToolDescriptionsFunc(func() []string {
 		return []string{"zeta tool", "alpha tool", "middle tool"}
 	})
@@ -174,7 +176,14 @@ func TestBuildToolsSection_SortsToolDescriptionsDeterministically(t *testing.T) 
 func TestNewSemanticMemoryManagerFromConfig(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Memory.Enabled = true
-	mgr, err := newSemanticMemoryManagerFromConfig(cfg)
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	mgr, err := newSemanticMemoryManagerFromConfig(log, cfg)
 	if err != nil {
 		t.Fatalf("newSemanticMemoryManagerFromConfig failed: %v", err)
 	}
@@ -219,7 +228,7 @@ func TestAgentRegistersMemoryToolWhenSemanticMemoryEnabled(t *testing.T) {
 
 func TestBuildSystemPrompt_UsesCurrentTimePlaceholderReplacement(t *testing.T) {
 	workspace := t.TempDir()
-	cb := NewContextBuilderWithMemory(workspace, NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{}))
+	cb := NewContextBuilderWithMemory(workspace, promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend()))
 	cb.SetToolDescriptionsFunc(func() []string { return nil })
 
 	prompt := cb.BuildSystemPrompt()
@@ -233,7 +242,7 @@ func TestBuildSystemPrompt_UsesCurrentTimePlaceholderReplacement(t *testing.T) {
 
 func TestBuildSystemPrompt_CacheRefreshesOnBootstrapFileChange(t *testing.T) {
 	workspace := t.TempDir()
-	cb := NewContextBuilderWithMemory(workspace, NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{}))
+	cb := NewContextBuilderWithMemory(workspace, promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend()))
 	cb.SetToolDescriptionsFunc(func() []string { return nil })
 
 	first := cb.BuildSystemPrompt()
@@ -252,7 +261,7 @@ func TestBuildSystemPrompt_CacheRefreshesOnBootstrapFileChange(t *testing.T) {
 
 func TestBuildSystemPrompt_CacheRefreshesOnToolDescriptionChange(t *testing.T) {
 	workspace := t.TempDir()
-	cb := NewContextBuilderWithMemory(workspace, NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{}))
+	cb := NewContextBuilderWithMemory(workspace, promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend()))
 	descriptions := []string{"alpha tool"}
 	cb.SetToolDescriptionsFunc(func() []string { return append([]string(nil), descriptions...) })
 
@@ -270,7 +279,7 @@ func TestBuildSystemPrompt_CacheRefreshesOnToolDescriptionChange(t *testing.T) {
 
 func TestBuildSystemPrompt_IncludesLayeredMemoryContext(t *testing.T) {
 	workspace := t.TempDir()
-	store := NewMemoryStore(workspace)
+	store := promptmemory.NewStore(workspace)
 	if err := os.WriteFile(filepath.Join(workspace, "MEMORY.md"), []byte("workspace memory"), 0644); err != nil {
 		t.Fatalf("write workspace memory: %v", err)
 	}
@@ -301,7 +310,7 @@ func TestBuildSystemPrompt_IncludesLayeredMemoryContext(t *testing.T) {
 
 func TestBuildSystemPrompt_RespectsMemoryContextOptions(t *testing.T) {
 	workspace := t.TempDir()
-	store := NewMemoryStore(workspace)
+	store := promptmemory.NewStore(workspace)
 	if err := os.WriteFile(filepath.Join(workspace, "MEMORY.md"), []byte("workspace memory"), 0644); err != nil {
 		t.Fatalf("write workspace memory: %v", err)
 	}
@@ -316,7 +325,7 @@ func TestBuildSystemPrompt_RespectsMemoryContextOptions(t *testing.T) {
 
 	cb := NewContextBuilderWithMemory(workspace, store)
 	cb.SetToolDescriptionsFunc(func() []string { return nil })
-	cb.SetMemoryContextOptions(MemoryContextOptions{
+	cb.SetMemoryContextOptions(promptmemory.ContextOptions{
 		IncludeWorkspaceMemory: false,
 		IncludeLongTerm:        true,
 		RecentDailyNoteDays:    0,
@@ -340,7 +349,7 @@ func TestBuildSystemPrompt_RespectsMemoryContextOptions(t *testing.T) {
 
 func TestBuildMessages_DeduplicatesTrailingCurrentUserMessage(t *testing.T) {
 	workspace := t.TempDir()
-	cb := NewContextBuilderWithMemory(workspace, NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{}))
+	cb := NewContextBuilderWithMemory(workspace, promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend()))
 	cb.SetToolDescriptionsFunc(func() []string { return nil })
 
 	history := []Message{{Role: "user", Content: "hello"}}
@@ -356,7 +365,7 @@ func TestBuildMessages_DeduplicatesTrailingCurrentUserMessage(t *testing.T) {
 
 func TestBuildMessages_KeepsNonMatchingTrailingUserHistory(t *testing.T) {
 	workspace := t.TempDir()
-	cb := NewContextBuilderWithMemory(workspace, NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{}))
+	cb := NewContextBuilderWithMemory(workspace, promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend()))
 	cb.SetToolDescriptionsFunc(func() []string { return nil })
 
 	history := []Message{{Role: "user", Content: "hello"}}
@@ -751,6 +760,38 @@ func TestBuildBladesToolsResolver_ToolErrorReturnsResultInsteadOfAbort(t *testin
 	}
 }
 
+func TestBuildBladesToolsResolver_UsesBladesMemoryToolAndSkipsLegacyMemoryTool(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.config.Memory.Enabled = true
+	ag.config.Memory.Semantic.Enabled = true
+	ag.config.Memory.Semantic.DefaultTopK = 3
+	ag.semanticMemory = &stubSearchManager{enabled: true}
+	ag.tools.MustRegister(&toolExecutionResultStubTool{
+		name:        "memory",
+		description: "legacy memory tool",
+	})
+
+	resolver, _, err := ag.buildBladesToolsResolver()
+	if err != nil {
+		t.Fatalf("buildBladesToolsResolver failed: %v", err)
+	}
+
+	resolvedTools, err := resolver.Resolve(context.Background())
+	if err != nil {
+		t.Fatalf("resolve tools failed: %v", err)
+	}
+
+	count := 0
+	for _, tool := range resolvedTools {
+		if tool.Name() == "memory" || tool.Name() == "Memory" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one blades memory tool, got %d", count)
+	}
+}
+
 func TestBladesModelProvider_ToolCallResponseDropsAssistantText(t *testing.T) {
 	toolCall := providers.UnifiedToolCall{
 		ID:   "call-1",
@@ -1133,6 +1174,38 @@ func (t *toolExecutionResultStubTool) callCount() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.executeHits
+}
+
+type stubSearchManager struct {
+	enabled bool
+}
+
+func (s *stubSearchManager) Search(ctx context.Context, query string, opts memory.SearchOptions) ([]*memory.SearchResult, error) {
+	_ = ctx
+	_ = query
+	_ = opts
+	return nil, nil
+}
+
+func (s *stubSearchManager) Add(ctx context.Context, text string, source memory.Source, typ memory.Type, metadata memory.Metadata) error {
+	_ = ctx
+	_ = text
+	_ = source
+	_ = typ
+	_ = metadata
+	return nil
+}
+
+func (s *stubSearchManager) Status() map[string]interface{} {
+	return map[string]interface{}{"backend": "stub"}
+}
+
+func (s *stubSearchManager) Close() error {
+	return nil
+}
+
+func (s *stubSearchManager) IsEnabled() bool {
+	return s.enabled
 }
 
 type testSession struct {

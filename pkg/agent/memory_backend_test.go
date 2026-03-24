@@ -9,6 +9,7 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	promptmemory "nekobot/pkg/memory/prompt"
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/storage/ent/configsection"
@@ -26,8 +27,8 @@ func TestNewMemoryStoreFromConfig_UsesKVBackend(t *testing.T) {
 	kvStore := newTestKVStore(t)
 	store := newMemoryStoreFromConfig(cfg, workspace, kvStore, nil)
 
-	if _, ok := store.backend.(*memoryKVBackend); !ok {
-		t.Fatalf("expected memoryKVBackend, got %T", store.backend)
+	if store.BackendName() != "kv" {
+		t.Fatalf("expected kv backend, got %q", store.BackendName())
 	}
 
 	if err := store.WriteLongTerm("hello-kv"); err != nil {
@@ -59,11 +60,6 @@ func TestNewMemoryStoreFromConfig_UsesDBBackend(t *testing.T) {
 	dbClient := newTestEntClient(t)
 	store := newMemoryStoreFromConfig(cfg, workspace, nil, dbClient)
 
-	dbBackend, ok := store.backend.(*memoryDBBackend)
-	if !ok {
-		t.Fatalf("expected memoryDBBackend, got %T", store.backend)
-	}
-
 	if err := store.WriteLongTerm("hello-db"); err != nil {
 		t.Fatalf("write long-term memory to db backend: %v", err)
 	}
@@ -79,6 +75,10 @@ func TestNewMemoryStoreFromConfig_UsesDBBackend(t *testing.T) {
 	}
 
 	day := time.Date(2026, time.February, 28, 10, 0, 0, 0, time.UTC)
+	dbBackend, err := promptmemory.NewDBBackend(dbClient, cfg.Memory.DBPrefix)
+	if err != nil {
+		t.Fatalf("create db backend: %v", err)
+	}
 	if err := dbBackend.WriteDaily(context.Background(), day, "db-daily-note"); err != nil {
 		t.Fatalf("write daily memory to db backend: %v", err)
 	}
@@ -104,8 +104,8 @@ func TestNewMemoryStoreFromConfig_FallsBackToFileWhenKVUnavailable(t *testing.T)
 	cfg.Memory.FilePath = filepath.Join(workspace, "fallback-memory")
 
 	store := newMemoryStoreFromConfig(cfg, workspace, nil, nil)
-	if _, ok := store.backend.(*memoryFileBackend); !ok {
-		t.Fatalf("expected fallback memoryFileBackend, got %T", store.backend)
+	if store.BackendName() != "file" {
+		t.Fatalf("expected fallback file backend, got %q", store.BackendName())
 	}
 
 	if err := store.WriteLongTerm("fallback-content"); err != nil {

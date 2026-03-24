@@ -9,11 +9,13 @@ import (
 
 	"github.com/go-kratos/blades"
 	bladesmcp "github.com/go-kratos/blades/contrib/mcp"
+	bladesmemory "github.com/go-kratos/blades/memory"
 	bladesmiddleware "github.com/go-kratos/blades/middleware"
 	bladestools "github.com/go-kratos/blades/tools"
 	"github.com/google/jsonschema-go/jsonschema"
 	"go.uber.org/zap"
 	"nekobot/pkg/config"
+	"nekobot/pkg/memory"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/tools"
 )
@@ -285,6 +287,10 @@ func (r *bladesToolResolver) Resolve(ctx context.Context) ([]bladestools.Tool, e
 		if r.agent.skillsManager != nil && toolName == "skill" {
 			continue
 		}
+		// Skip nekobot's memory tool when a blades-native memory tool is provided.
+		if r.agent.semanticMemory != nil && toolName == "memory" {
+			continue
+		}
 
 		toolImpl, ok := r.registry.Get(toolName)
 		if !ok {
@@ -350,6 +356,15 @@ func mapToSchema(m map[string]interface{}) *jsonschema.Schema {
 
 func newBladesToolsResolver() *multiToolResolver {
 	return &multiToolResolver{resolvers: make([]bladestools.Resolver, 0, 2)}
+}
+
+type staticToolResolver struct {
+	tools []bladestools.Tool
+}
+
+func (r *staticToolResolver) Resolve(ctx context.Context) ([]bladestools.Tool, error) {
+	_ = ctx
+	return r.tools, nil
 }
 
 func (r *multiToolResolver) appendResolver(resolver bladestools.Resolver) {
@@ -435,6 +450,20 @@ func toMCPClientConfigs(serverConfigs []config.MCPServerConfig) ([]bladesmcp.Cli
 
 func (a *Agent) buildBladesToolsResolverWithMCP(serverConfigs []config.MCPServerConfig) (bladestools.Resolver, *bladesmcp.ToolsResolver, error) {
 	resolver := newBladesToolsResolver()
+	if a.semanticMemory != nil && a.semanticMemory.IsEnabled() {
+		memoryTool, err := bladesmemory.NewMemoryTool(memory.NewBladesMemoryStoreAdapter(
+			a.semanticMemory,
+			memory.SearchOptions{
+				Limit:    a.config.Memory.Semantic.DefaultTopK,
+				MinScore: 0,
+				Hybrid:   strings.TrimSpace(strings.ToLower(a.config.Memory.Semantic.SearchPolicy)) != "vector",
+			},
+		))
+		if err != nil {
+			return nil, nil, fmt.Errorf("create blades memory tool: %w", err)
+		}
+		resolver.appendResolver(&staticToolResolver{tools: []bladestools.Tool{memoryTool}})
+	}
 	resolver.appendResolver(newBladesToolResolver(a, a.tools))
 
 	mcpConfigs, err := toMCPClientConfigs(serverConfigs)

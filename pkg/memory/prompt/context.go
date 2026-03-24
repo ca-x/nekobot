@@ -1,33 +1,33 @@
-package agent
+package prompt
 
 import (
 	"fmt"
 	"strings"
 )
 
-// MemoryContextSource provides the read-side data needed to compose prompt memory context.
-type MemoryContextSource interface {
+// ContextSource provides the read-side data needed to compose prompt memory context.
+type ContextSource interface {
 	ReadWorkspaceMemory() string
 	ReadLongTerm() string
 	GetRecentDailyNotes(days int) string
 }
 
-// MemoryContextComposer assembles prompt-facing memory context from a read-only memory source.
-type MemoryContextComposer struct {
-	source  MemoryContextSource
-	options MemoryContextOptions
+// ContextComposer assembles prompt-facing memory context from a read-only memory source.
+type ContextComposer struct {
+	source  ContextSource
+	options ContextOptions
 }
 
-// NewMemoryContextComposer creates a prompt memory composer for a source and options.
-func NewMemoryContextComposer(source MemoryContextSource, options MemoryContextOptions) *MemoryContextComposer {
-	return &MemoryContextComposer{
+// NewContextComposer creates a prompt memory composer for a source and options.
+func NewContextComposer(source ContextSource, options ContextOptions) *ContextComposer {
+	return &ContextComposer{
 		source:  source,
 		options: options,
 	}
 }
 
 // Build renders the memory sections for prompt injection.
-func (c *MemoryContextComposer) Build() string {
+func (c *ContextComposer) Build() string {
 	if c == nil || c.source == nil {
 		return ""
 	}

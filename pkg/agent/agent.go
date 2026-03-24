@@ -13,6 +13,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/memory"
+	promptmemory "nekobot/pkg/memory/prompt"
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/skills"
@@ -42,7 +43,8 @@ type Agent struct {
 	context  *ContextBuilder
 	approval *approval.Manager
 
-	skillsManager *skills.Manager
+	skillsManager  *skills.Manager
+	semanticMemory memory.SearchManager
 
 	acpMu       sync.RWMutex
 	acpSessions map[string]*acpSessionState
@@ -141,11 +143,13 @@ func New(
 	// Message tool (will be configured later by gateway)
 	toolRegistry.MustRegister(tools.NewMessageTool(nil))
 
+	var semanticMemory memory.SearchManager
 	if cfg.Memory.Enabled && cfg.Memory.Semantic.Enabled {
-		memoryMgr, err := newSemanticMemoryManagerFromConfig(cfg)
+		memoryMgr, err := newSemanticMemoryManagerFromConfig(log, cfg)
 		if err != nil {
 			log.Warn("Failed to initialize semantic memory tool", zap.Error(err))
 		} else {
+			semanticMemory = memoryMgr
 			toolRegistry.MustRegister(tools.NewMemoryTool(log, memoryMgr, tools.MemoryToolOptions{
 				DefaultTopK:   cfg.Memory.Semantic.DefaultTopK,
 				MaxTopK:       cfg.Memory.Semantic.MaxTopK,
@@ -162,7 +166,7 @@ func New(
 	// Create context builder.
 	memoryStore := newMemoryStoreFromConfig(cfg, workspace, kvStore, runtimeEntClient)
 	contextBuilder := NewContextBuilderWithMemory(workspace, memoryStore)
-	contextBuilder.SetMemoryContextOptions(MemoryContextOptions{
+	contextBuilder.SetMemoryContextOptions(promptmemory.ContextOptions{
 		IncludeWorkspaceMemory: cfg.Memory.Context.Enabled && cfg.Memory.Context.IncludeWorkspaceMemory,
 		IncludeLongTerm:        cfg.Memory.Context.Enabled && cfg.Memory.Context.IncludeLongTerm,
 		RecentDailyNoteDays:    cfg.Memory.Context.RecentDailyNoteDays,
@@ -179,6 +183,7 @@ func New(
 		tools:            toolRegistry,
 		context:          contextBuilder,
 		approval:         approvalMgr,
+		semanticMemory:   semanticMemory,
 		acpSessions:      make(map[string]*acpSessionState),
 		failoverCooldown: providers.NewCooldownTracker(),
 		maxIterations:    cfg.Agents.Defaults.MaxToolIterations,
@@ -241,9 +246,9 @@ func (a *Agent) chatWithProviderModel(ctx context.Context, sess SessionInterface
 	}
 }
 
-func newMemoryStoreFromConfig(cfg *config.Config, workspace string, kvStore state.KV, runtimeEntClient *ent.Client) *MemoryStore {
+func newMemoryStoreFromConfig(cfg *config.Config, workspace string, kvStore state.KV, runtimeEntClient *ent.Client) *promptmemory.Store {
 	if cfg == nil || !cfg.Memory.Enabled {
-		return NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{})
+		return promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend())
 	}
 
 	backendKind := strings.TrimSpace(strings.ToLower(cfg.Memory.Backend))
@@ -254,16 +259,16 @@ func newMemoryStoreFromConfig(cfg *config.Config, workspace string, kvStore stat
 	switch backendKind {
 	case "db":
 		if runtimeEntClient != nil {
-			backend, err := newMemoryDBBackend(runtimeEntClient, cfg.Memory.DBPrefix)
+			backend, err := promptmemory.NewDBBackend(runtimeEntClient, cfg.Memory.DBPrefix)
 			if err == nil {
-				return NewMemoryStoreWithBackend(workspace, backend)
+				return promptmemory.NewStoreWithBackend(workspace, backend)
 			}
 		}
 	case "kv":
 		if kvStore != nil {
-			backend, err := newMemoryKVBackend(kvStore, cfg.Memory.KVPrefix)
+			backend, err := promptmemory.NewKVBackend(kvStore, cfg.Memory.KVPrefix)
 			if err == nil {
-				return NewMemoryStoreWithBackend(workspace, backend)
+				return promptmemory.NewStoreWithBackend(workspace, backend)
 			}
 		}
 	}
@@ -272,18 +277,18 @@ func newMemoryStoreFromConfig(cfg *config.Config, workspace string, kvStore stat
 	if memoryPath == "" {
 		memoryPath = filepath.Join(workspace, "memory")
 	}
-	backend, err := newMemoryFileBackend(memoryPath)
+	backend, err := promptmemory.NewFileBackend(memoryPath)
 	if err != nil {
-		return NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{})
+		return promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend())
 	}
-	return NewMemoryStoreWithBackend(workspace, backend)
+	return promptmemory.NewStoreWithBackend(workspace, backend)
 }
 
-func newSemanticMemoryManagerFromConfig(cfg *config.Config) (*memory.Manager, error) {
+func newSemanticMemoryManagerFromConfig(log *logger.Logger, cfg *config.Config) (memory.SearchManager, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is nil")
 	}
-	return memory.NewManagerFromConfig(cfg)
+	return memory.NewSearchManagerFromConfig(log, cfg)
 }
 
 func (a *Agent) resolveOrchestrator() (string, error) {
