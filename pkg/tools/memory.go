@@ -3,23 +3,46 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"go.uber.org/zap"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/memory"
 )
 
+// MemoryToolOptions configures memory tool behavior.
+type MemoryToolOptions struct {
+	DefaultTopK   int
+	MaxTopK       int
+	SearchPolicy  string
+	IncludeScores bool
+}
+
 // MemoryTool provides memory search and storage capabilities.
 type MemoryTool struct {
 	log     *logger.Logger
 	manager *memory.Manager
+	options MemoryToolOptions
 }
 
 // NewMemoryTool creates a new memory tool.
-func NewMemoryTool(log *logger.Logger, manager *memory.Manager) *MemoryTool {
+func NewMemoryTool(log *logger.Logger, manager *memory.Manager, opts MemoryToolOptions) *MemoryTool {
+	if opts.DefaultTopK <= 0 {
+		opts.DefaultTopK = 5
+	}
+	if opts.MaxTopK <= 0 || opts.MaxTopK < opts.DefaultTopK {
+		opts.MaxTopK = opts.DefaultTopK
+	}
+	policy := strings.TrimSpace(strings.ToLower(opts.SearchPolicy))
+	if policy == "" {
+		policy = "hybrid"
+	}
+	opts.SearchPolicy = policy
+
 	return &MemoryTool{
 		log:     log,
 		manager: manager,
+		options: opts,
 	}
 }
 
@@ -60,6 +83,10 @@ func (t *MemoryTool) Parameters() map[string]interface{} {
 			"max_results": map[string]interface{}{
 				"type":        "integer",
 				"description": "Maximum number of search results (default: 5)",
+			},
+			"min_score": map[string]interface{}{
+				"type":        "number",
+				"description": "Minimum similarity score between 0 and 1.",
 			},
 		},
 		"required": []string{"action"},
@@ -104,21 +131,35 @@ func (t *MemoryTool) search(ctx context.Context, params map[string]interface{}) 
 	if mr, ok := params["max_results"].(float64); ok {
 		maxResults = int(mr)
 	}
+	if maxResults <= 0 {
+		maxResults = t.options.DefaultTopK
+	}
+	if maxResults > t.options.MaxTopK {
+		maxResults = t.options.MaxTopK
+	}
+
+	searchOpts := memory.DefaultSearchOptions()
+	searchOpts.Limit = maxResults
+	searchOpts.Hybrid = t.options.SearchPolicy != "vector"
+	if minScore, ok := params["min_score"].(float64); ok && minScore >= 0 && minScore <= 1 {
+		searchOpts.MinScore = minScore
+	}
 
 	t.log.Info("Searching memory",
 		zap.String("query", query),
-		zap.Int("max_results", maxResults))
+		zap.Int("max_results", maxResults),
+		zap.String("search_policy", t.options.SearchPolicy))
 
-	context, err := t.manager.GetRelevantContext(ctx, query, maxResults)
+	results, err := t.manager.Search(ctx, query, searchOpts)
 	if err != nil {
 		return "", fmt.Errorf("failed to search memory: %w", err)
 	}
 
-	if context == "" {
+	if len(results) == 0 {
 		return "No relevant memories found for the query", nil
 	}
 
-	return context, nil
+	return formatMemorySearchResults(results, t.options.IncludeScores), nil
 }
 
 // add adds new content to memory.
@@ -164,4 +205,25 @@ func (t *MemoryTool) status(ctx context.Context) (string, error) {
 		return "Memory system is enabled and operational", nil
 	}
 	return "Memory system is disabled", nil
+}
+
+func formatMemorySearchResults(results []*memory.SearchResult, includeScores bool) string {
+	var sb strings.Builder
+	sb.WriteString("# Relevant Memory\n\n")
+
+	for i, result := range results {
+		if includeScores {
+			sb.WriteString(fmt.Sprintf("## Memory %d (score: %.2f)\n\n", i+1, result.Score))
+		} else {
+			sb.WriteString(fmt.Sprintf("## Memory %d\n\n", i+1))
+		}
+		sb.WriteString(result.Text)
+		sb.WriteString("\n\n")
+		if result.Metadata.FilePath != "" {
+			sb.WriteString(fmt.Sprintf("*Source: %s*\n\n", result.Metadata.FilePath))
+		}
+		sb.WriteString("---\n\n")
+	}
+
+	return sb.String()
 }

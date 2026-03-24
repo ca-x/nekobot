@@ -12,6 +12,7 @@ import (
 	"nekobot/pkg/approval"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/memory"
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/skills"
@@ -140,6 +141,24 @@ func New(
 	// Message tool (will be configured later by gateway)
 	toolRegistry.MustRegister(tools.NewMessageTool(nil))
 
+	if cfg.Memory.Enabled && cfg.Memory.Semantic.Enabled {
+		memoryMgr, err := newSemanticMemoryManagerFromConfig(cfg)
+		if err != nil {
+			log.Warn("Failed to initialize semantic memory tool", zap.Error(err))
+		} else {
+			toolRegistry.MustRegister(tools.NewMemoryTool(log, memoryMgr, tools.MemoryToolOptions{
+				DefaultTopK:   cfg.Memory.Semantic.DefaultTopK,
+				MaxTopK:       cfg.Memory.Semantic.MaxTopK,
+				SearchPolicy:  cfg.Memory.Semantic.SearchPolicy,
+				IncludeScores: cfg.Memory.Semantic.IncludeScores,
+			}))
+			log.Info("Memory tool enabled",
+				zap.String("search_policy", cfg.Memory.Semantic.SearchPolicy),
+				zap.Int("default_top_k", cfg.Memory.Semantic.DefaultTopK),
+			)
+		}
+	}
+
 	// Create context builder.
 	memoryStore := newMemoryStoreFromConfig(cfg, workspace, kvStore, runtimeEntClient)
 	contextBuilder := NewContextBuilderWithMemory(workspace, memoryStore)
@@ -258,6 +277,13 @@ func newMemoryStoreFromConfig(cfg *config.Config, workspace string, kvStore stat
 		return NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{})
 	}
 	return NewMemoryStoreWithBackend(workspace, backend)
+}
+
+func newSemanticMemoryManagerFromConfig(cfg *config.Config) (*memory.Manager, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+	return memory.NewManagerFromConfig(cfg)
 }
 
 func (a *Agent) resolveOrchestrator() (string, error) {

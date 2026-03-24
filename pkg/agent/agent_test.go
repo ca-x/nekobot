@@ -171,6 +171,52 @@ func TestBuildToolsSection_SortsToolDescriptionsDeterministically(t *testing.T) 
 	}
 }
 
+func TestNewSemanticMemoryManagerFromConfig(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Memory.Enabled = true
+	mgr, err := newSemanticMemoryManagerFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("newSemanticMemoryManagerFromConfig failed: %v", err)
+	}
+	if mgr == nil {
+		t.Fatal("expected memory manager")
+	}
+}
+
+func TestAgentRegistersMemoryToolWhenSemanticMemoryEnabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Memory.Enabled = true
+	cfg.Memory.Semantic.Enabled = true
+	cfg.Memory.Semantic.DefaultTopK = 4
+	cfg.Memory.Semantic.MaxTopK = 9
+	cfg.Memory.Semantic.SearchPolicy = "vector"
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	tool, ok := ag.tools.Get("memory")
+	if !ok {
+		t.Fatal("expected memory tool to be registered")
+	}
+	memTool, ok := tool.(*tools.MemoryTool)
+	if !ok {
+		t.Fatalf("expected *tools.MemoryTool, got %T", tool)
+	}
+	if memTool == nil {
+		t.Fatal("expected memory tool instance")
+	}
+}
+
 func TestBuildSystemPrompt_UsesCurrentTimePlaceholderReplacement(t *testing.T) {
 	workspace := t.TempDir()
 	cb := NewContextBuilderWithMemory(workspace, NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{}))
