@@ -78,7 +78,6 @@ func (c *Channel) IsEnabled() bool { return c.config.Enabled }
 // Start starts webhook listener.
 func (c *Channel) Start(ctx context.Context) error {
 	c.ctx, c.cancel = context.WithCancel(ctx)
-	c.bus.RegisterHandler(c.ID(), c.handleOutbound)
 
 	listenAddr := defaultInfoflowListen
 	listenPath := defaultInfoflowPath
@@ -121,7 +120,6 @@ func (c *Channel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-	c.bus.UnregisterHandlers(c.ID())
 
 	if c.httpServer != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

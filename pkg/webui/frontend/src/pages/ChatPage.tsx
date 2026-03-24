@@ -1,12 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2 } from 'lucide-react';
+
 import { api } from '@/api/client';
-import { t } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
 import Header from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
@@ -15,10 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Send, Trash2, RefreshCw } from 'lucide-react';
 import { useChat, type ChatMessage } from '@/hooks/useChat';
-
-/* ---------- Types ---------- */
+import { t } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 
 interface ProviderInfo {
   name: string;
@@ -41,29 +40,22 @@ interface ModelEntry {
   model: string;
 }
 
-/* ---------- Helpers ---------- */
-
-/** The radix Select uses "" as the value for the "no selection" placeholder,
- *  but it does not allow empty-string items. We use a sentinel instead. */
 const EMPTY_VALUE = '__default__';
 
-function toSelectValue(v: string): string {
-  return v || EMPTY_VALUE;
-}
-function fromSelectValue(v: string): string {
-  return v === EMPTY_VALUE ? '' : v;
+function toSelectValue(value: string): string {
+  return value.trim() === '' ? EMPTY_VALUE : value;
 }
 
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  return d.toLocaleTimeString(undefined, {
+function fromSelectValue(value: string): string {
+  return value === EMPTY_VALUE ? '' : value;
+}
+
+function formatTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
   });
 }
-
-/* ---------- Data hooks ---------- */
 
 function useProviders() {
   return useQuery<ProviderInfo[]>({
@@ -84,48 +76,50 @@ function useAppConfig() {
 function buildModelList(
   providers: ProviderInfo[],
   config: ConfigData | undefined,
-): { models: ModelEntry[]; defaultProvider: string; defaultFallback: string[] } {
+): { models: ModelEntry[]; defaultProvider: string; defaultModel: string; defaultFallback: string[] } {
   const models: ModelEntry[] = [];
   const seen = new Set<string>();
   const defaults = config?.agents?.defaults;
-  const defaultProvider = defaults?.provider || '';
+  const defaultProvider = defaults?.provider?.trim() || '';
+  const defaultModel = defaults?.model?.trim() || '';
   const defaultFallback = defaults?.fallback || [];
 
   const add = (provider: string, model: string) => {
-    const m = model.trim();
-    if (!m) return;
-    const p = (provider || 'default').trim() || 'default';
-    const key = `${p}::${m}`;
-    if (seen.has(key)) return;
+    const normalizedProvider = provider.trim() || 'default';
+    const normalizedModel = model.trim();
+    if (!normalizedModel) {
+      return;
+    }
+    const key = `${normalizedProvider}::${normalizedModel}`;
+    if (seen.has(key)) {
+      return;
+    }
     seen.add(key);
-    models.push({ provider: p, model: m });
+    models.push({ provider: normalizedProvider, model: normalizedModel });
   };
 
-  // Add the config default model first
-  add(defaultProvider, defaults?.model || '');
-
-  // Then add models from each provider
-  for (const p of providers) {
-    if (p.default_model) add(p.name, p.default_model);
-    if (Array.isArray(p.models)) {
-      for (const m of p.models) add(p.name, m);
+  add(defaultProvider, defaultModel);
+  for (const provider of providers) {
+    if (provider.default_model) {
+      add(provider.name, provider.default_model);
+    }
+    for (const model of provider.models || []) {
+      add(provider.name, model);
     }
   }
 
-  return { models, defaultProvider, defaultFallback };
+  return { models, defaultProvider, defaultModel, defaultFallback };
 }
-
-/* ---------- Message bubble component ---------- */
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end mb-3">
-        <div className="max-w-[75%]">
-          <div className="rounded-2xl rounded-br-md bg-primary text-primary-foreground px-4 py-2.5 text-sm whitespace-pre-wrap break-words">
+      <div className="flex justify-end">
+        <div className="max-w-[82%] space-y-2">
+          <div className="rounded-[1.4rem] rounded-br-md bg-[hsl(var(--gray-900))] px-4 py-3 text-sm leading-6 text-white shadow-[0_16px_40px_-24px_rgba(20,15,10,0.75)]">
             {message.content}
           </div>
-          <div className="text-[10px] text-muted-foreground mt-1 text-right">
+          <div className="text-right text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">
             {formatTime(message.timestamp)}
           </div>
         </div>
@@ -135,12 +129,12 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   if (message.role === 'assistant') {
     return (
-      <div className="flex justify-start mb-3">
-        <div className="max-w-[75%]">
-          <Card className="px-4 py-2.5 text-sm whitespace-pre-wrap break-words">
+      <div className="flex justify-start">
+        <div className="max-w-[88%] space-y-2">
+          <div className="rounded-[1.4rem] rounded-bl-md border border-[hsl(var(--brand-200))] bg-white/90 px-4 py-3 text-sm leading-6 text-foreground shadow-[0_18px_42px_-30px_rgba(120,55,75,0.35)] backdrop-blur">
             {message.content}
-          </Card>
-          <div className="text-[10px] text-muted-foreground mt-1">
+          </div>
+          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">
             {formatTime(message.timestamp)}
           </div>
         </div>
@@ -148,297 +142,384 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     );
   }
 
-  // system or error
   return (
-    <div className="flex justify-center mb-3">
+    <div className="flex justify-center">
       <div
         className={cn(
-          'max-w-[85%] rounded-lg px-3 py-1.5 text-xs text-center',
+          'max-w-[90%] rounded-full px-3 py-1.5 text-xs',
           message.role === 'error'
             ? 'bg-destructive/10 text-destructive'
-            : 'bg-muted text-muted-foreground',
+            : 'bg-[hsl(var(--gray-100))] text-muted-foreground',
         )}
       >
         {message.content}
-        <span className="ml-2 opacity-60">{formatTime(message.timestamp)}</span>
       </div>
     </div>
   );
 }
 
-/* ---------- Connection status indicator ---------- */
-
-function StatusDot({ status }: { status: string }) {
-  const dotClass = cn(
-    'h-2.5 w-2.5 rounded-full inline-block',
-    status === 'connected' && 'bg-green-500',
-    status === 'connecting' && 'bg-yellow-500 animate-pulse',
-    status === 'disconnected' && 'bg-red-500',
-  );
+function StatusPill({
+  status,
+  isAwaitingReply,
+}: {
+  status: string;
+  isAwaitingReply: boolean;
+}) {
+  const colorClass =
+    status === 'connected'
+      ? 'bg-emerald-500'
+      : status === 'connecting'
+        ? 'bg-amber-500 animate-pulse'
+        : 'bg-rose-500';
 
   const label =
     status === 'connected'
       ? t('wsConnected')
       : status === 'connecting'
-        ? 'Connecting...'
+        ? t('chatConnecting')
         : t('wsDisconnected');
 
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-      <span className={dotClass} />
-      {label}
-    </span>
+    <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur">
+      <span className={cn('h-2.5 w-2.5 rounded-full', colorClass)} />
+      <span>{label}</span>
+      {isAwaitingReply && <span className="text-[hsl(var(--brand-700))]">{t('chatWaitingReply')}</span>}
+    </div>
   );
 }
-
-/* ---------- ChatPage ---------- */
 
 export default function ChatPage() {
   const { data: providers = [] } = useProviders();
   const { data: config } = useAppConfig();
-  const { messages, sendMessage, clearMessages, connectionStatus, reconnect } = useChat();
+  const {
+    messages,
+    sendMessage,
+    clearMessages,
+    connectionStatus,
+    reconnect,
+    routeSettings,
+    isAwaitingReply,
+  } = useChat();
 
-  const { models, defaultProvider, defaultFallback } = buildModelList(providers, config);
-
-  // Chat settings state
-  const [selectedProvider, setSelectedProvider] = useState<string>('');
-  const [selectedModel, setSelectedModel] = useState<string>('');
-  const [customModel, setCustomModel] = useState<string>('');
-  const [fallbackInput, setFallbackInput] = useState<string>('');
+  const { models, defaultProvider, defaultModel, defaultFallback } = buildModelList(providers, config);
+  const [selectedProvider, setSelectedProvider] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [customModel, setCustomModel] = useState('');
+  const [fallbackInput, setFallbackInput] = useState('');
   const [chatInput, setChatInput] = useState('');
-
-  // Scroll ref
   const scrollEndRef = useRef<HTMLDivElement>(null);
+  const hydratedRef = useRef(false);
 
-  // Apply defaults from config once loaded
-  const defaultsApplied = useRef(false);
-  useEffect(() => {
-    if (defaultsApplied.current) return;
-    if (!config) return;
-    defaultsApplied.current = true;
-    if (defaultProvider) setSelectedProvider(defaultProvider);
-    if (defaultFallback.length > 0) setFallbackInput(defaultFallback.join(', '));
-    const defaultModel = config?.agents?.defaults?.model || '';
-    if (defaultModel) {
-      setSelectedModel(defaultModel);
-      setCustomModel(defaultModel);
+  const filteredModels = useMemo(() => {
+    if (!selectedProvider) {
+      return models;
     }
-  }, [config, defaultProvider, defaultFallback]);
+    return models.filter((entry) => entry.provider === selectedProvider);
+  }, [models, selectedProvider]);
 
-  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    if (hydratedRef.current) {
+      return;
+    }
+    hydratedRef.current = true;
+    setSelectedProvider(defaultProvider);
+    setSelectedModel(defaultModel);
+    setCustomModel(defaultModel);
+    setFallbackInput(defaultFallback.join(', '));
+  }, [defaultFallback, defaultModel, defaultProvider]);
+
+  useEffect(() => {
+    if (!routeSettings.provider && !routeSettings.model && routeSettings.fallback.length === 0) {
+      return;
+    }
+    setSelectedProvider(routeSettings.provider);
+    setSelectedModel(routeSettings.model);
+    setCustomModel(routeSettings.model);
+    setFallbackInput(routeSettings.fallback.join(', '));
+  }, [routeSettings]);
+
   useEffect(() => {
     scrollEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isAwaitingReply]);
 
-  // Filtered models based on selected provider
-  const filteredModels = selectedProvider
-    ? models.filter((m) => m.provider === selectedProvider)
-    : models;
+  const messageCount = messages.filter((message) => message.role === 'user' || message.role === 'assistant').length;
+  const activeModel = customModel.trim() || selectedModel.trim() || routeSettings.model || defaultModel;
+  const activeProvider = selectedProvider.trim() || routeSettings.provider || defaultProvider;
+  const activeFallback = fallbackInput
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 
-  const handleProviderChange = useCallback(
-    (value: string) => {
-      const provider = fromSelectValue(value);
-      setSelectedProvider(provider);
-      // Re-filter models; if current selection not in new list, reset
-      const available = provider
-        ? models.filter((m) => m.provider === provider)
-        : models;
-      if (selectedModel && !available.some((m) => m.model === selectedModel)) {
-        const first = available.length > 0 ? available[0].model : '';
-        setSelectedModel(first);
-        setCustomModel(first);
+  function handleProviderChange(value: string) {
+    const provider = fromSelectValue(value);
+    setSelectedProvider(provider);
+    if (!provider) {
+      return;
+    }
+    const candidate = models.find((entry) => entry.provider === provider && entry.model === selectedModel)
+      ? selectedModel
+      : models.find((entry) => entry.provider === provider)?.model || '';
+    setSelectedModel(candidate);
+    if (!customModel.trim()) {
+      setCustomModel(candidate);
+    }
+  }
+
+  function handleModelChange(value: string) {
+    const model = fromSelectValue(value);
+    setSelectedModel(model);
+    setCustomModel(model);
+    if (!selectedProvider) {
+      const owner = models.find((entry) => entry.model === model);
+      if (owner) {
+        setSelectedProvider(owner.provider === 'default' ? '' : owner.provider);
       }
-    },
-    [models, selectedModel],
-  );
+    }
+  }
 
-  const handleModelChange = useCallback(
-    (value: string) => {
-      const model = fromSelectValue(value);
-      setSelectedModel(model);
-      setCustomModel(model);
-      // Auto-set provider from model entry if not manually chosen
-      if (model) {
-        const entry = models.find((m) => m.model === model);
-        if (entry && entry.provider !== 'default' && !selectedProvider) {
-          setSelectedProvider(entry.provider);
-        }
-      }
-    },
-    [models, selectedProvider],
-  );
+  function handleSend() {
+    const content = chatInput.trim();
+    if (!content || connectionStatus !== 'connected') {
+      return;
+    }
 
-  const handleSend = useCallback(() => {
-    const text = chatInput.trim();
-    if (!text) return;
-    if (connectionStatus !== 'connected') return;
-
-    const model = customModel.trim() || selectedModel;
-    const provider = selectedProvider;
-    const fallback = fallbackInput
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    sendMessage(text, { provider, model, fallbackProviders: fallback });
+    sendMessage(content, {
+      provider: activeProvider,
+      model: activeModel,
+      fallbackProviders: activeFallback,
+    });
     setChatInput('');
-  }, [chatInput, connectionStatus, customModel, selectedModel, selectedProvider, fallbackInput, sendMessage]);
+  }
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
-      }
-    },
-    [handleSend],
-  );
+  function handleInputKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSend();
+    }
+  }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="flex h-[calc(100vh-4rem)] flex-col overflow-hidden">
       <Header title={t('tabChat')} />
 
-      {/* Top bar: provider, model, fallback, status */}
-      <div className="flex flex-wrap items-end gap-3 mb-3">
-        {/* Provider selector */}
-        <div className="flex flex-col gap-1 min-w-[160px]">
-          <label className="text-xs font-medium text-muted-foreground">
-            {t('defaultProvider')}
-          </label>
-          <Select
-            value={toSelectValue(selectedProvider)}
-            onValueChange={handleProviderChange}
-          >
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue placeholder={t('defaultProvider')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={EMPTY_VALUE}>{t('defaultProvider')}</SelectItem>
-              {providers.map((p) => (
-                <SelectItem key={p.name} value={p.name}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="relative flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="absolute inset-x-0 top-0 -z-10 h-48 rounded-[2rem] bg-[radial-gradient(circle_at_top_left,rgba(198,104,140,0.22),transparent_48%),radial-gradient(circle_at_top_right,rgba(229,183,107,0.22),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,247,243,0.55))]" />
 
-        {/* Model selector */}
-        <div className="flex flex-col gap-1 min-w-[200px]">
-          <label className="text-xs font-medium text-muted-foreground">
-            {t('defaultModel')}
-          </label>
-          <Select
-            value={toSelectValue(selectedModel)}
-            onValueChange={handleModelChange}
-          >
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue placeholder={t('defaultModel')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={EMPTY_VALUE}>{t('defaultModel')}</SelectItem>
-              {filteredModels.map((m) => (
-                <SelectItem
-                  key={`${m.provider}::${m.model}`}
-                  value={m.model}
-                >
-                  {selectedProvider ? m.model : `${m.model} (${m.provider})`}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Card className="overflow-hidden border-white/70 bg-white/72 shadow-[0_20px_60px_-36px_rgba(120,55,75,0.45)] backdrop-blur xl:sticky xl:top-0 xl:h-fit">
+          <CardHeader className="space-y-4 border-b border-[hsl(var(--gray-200))]/80 bg-[linear-gradient(135deg,rgba(255,248,246,0.96),rgba(252,239,244,0.9))]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-[hsl(var(--brand-700))]">
+                  <Wand2 className="h-3.5 w-3.5" />
+                  {t('chatRouteCardTitle')}
+                </div>
+                <CardTitle className="text-xl font-semibold text-[hsl(var(--gray-900))]">
+                  {t('chatRouteHeadline')}
+                </CardTitle>
+              </div>
+              <StatusPill status={connectionStatus} isAwaitingReply={isAwaitingReply} />
+            </div>
 
-        {/* Custom model override */}
-        <div className="flex flex-col gap-1 min-w-[180px]">
-          <label className="text-xs font-medium text-muted-foreground">
-            {t('customModel')}
-          </label>
-          <Input
-            className="h-9 text-sm"
-            placeholder={t('customModel')}
-            value={customModel}
-            onChange={(e) => setCustomModel(e.target.value)}
-          />
-        </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-white/80 bg-white/75 p-3">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  {t('chatMetricMessages')}
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-[hsl(var(--gray-900))]">
+                  {messageCount}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-white/80 bg-white/75 p-3">
+                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  {t('chatMetricModel')}
+                </div>
+                <div className="mt-2 truncate text-sm font-semibold text-[hsl(var(--gray-900))]">
+                  {activeModel || 'auto'}
+                </div>
+              </div>
+            </div>
+          </CardHeader>
 
-        {/* Fallback providers */}
-        <div className="flex flex-col gap-1 min-w-[200px] flex-1">
-          <label className="text-xs font-medium text-muted-foreground">
-            {t('fallbackProviders')}
-          </label>
-          <Input
-            className="h-9 text-sm"
-            placeholder={t('fallbackProviders')}
-            value={fallbackInput}
-            onChange={(e) => setFallbackInput(e.target.value)}
-          />
-        </div>
+          <CardContent className="space-y-4 p-4">
+            <div className="rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(255,255,255,0.85),rgba(249,244,241,0.96))] p-4">
+              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5" />
+                {t('chatActiveRoute')}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white">
+                  {activeProvider || t('chatRouteAuto')}
+                </span>
+                <span className="rounded-full bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]">
+                  {activeModel || t('chatModelUnset')}
+                </span>
+                <span className="rounded-full border border-[hsl(var(--gray-200))] bg-white px-3 py-1.5 text-xs text-muted-foreground">
+                  {activeFallback.length > 0
+                    ? `${t('fallbackProviders')}: ${activeFallback.join(' -> ')}`
+                    : t('chatNoFallback')}
+                </span>
+              </div>
+            </div>
 
-        {/* Status + action buttons */}
-        <div className="flex items-center gap-2 pb-0.5">
-          <StatusDot status={connectionStatus} />
-          {connectionStatus === 'disconnected' && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 gap-1.5"
-              onClick={reconnect}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              {t('reconnect')}
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5"
-            onClick={clearMessages}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t('clearSession')}
-          </Button>
-        </div>
+            <div className="space-y-3">
+              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {t('defaultProvider')}
+              </label>
+              <Select value={toSelectValue(selectedProvider)} onValueChange={handleProviderChange}>
+                <SelectTrigger className="h-11 rounded-2xl border-white bg-white/80">
+                  <SelectValue placeholder={t('defaultProvider')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={EMPTY_VALUE}>{t('chatRouteAuto')}</SelectItem>
+                  {providers.map((provider) => (
+                    <SelectItem key={provider.name} value={provider.name}>
+                      {provider.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {t('defaultModel')}
+              </label>
+              <Select value={toSelectValue(selectedModel)} onValueChange={handleModelChange}>
+                <SelectTrigger className="h-11 rounded-2xl border-white bg-white/80">
+                  <SelectValue placeholder={t('defaultModel')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={EMPTY_VALUE}>{t('chatModelUnset')}</SelectItem>
+                  {filteredModels.map((entry) => (
+                    <SelectItem key={`${entry.provider}::${entry.model}`} value={entry.model}>
+                      {selectedProvider ? entry.model : `${entry.model} (${entry.provider})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {t('customModel')}
+              </label>
+              <Input
+                className="h-11 rounded-2xl border-white bg-white/80"
+                placeholder={t('chatCustomModelHint')}
+                value={customModel}
+                onChange={(event) => setCustomModel(event.target.value)}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {t('fallbackProviders')}
+              </label>
+              <Input
+                className="h-11 rounded-2xl border-white bg-white/80"
+                placeholder={t('chatFallbackHint')}
+                value={fallbackInput}
+                onChange={(event) => setFallbackInput(event.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-2">
+              {connectionStatus !== 'connected' && (
+                <Button variant="outline" className="rounded-full" onClick={reconnect}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {t('reconnect')}
+                </Button>
+              )}
+              <Button variant="outline" className="rounded-full" onClick={clearMessages}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                {t('clearSession')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="flex min-h-0 flex-col overflow-hidden border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(255,250,248,0.96))] shadow-[0_24px_80px_-40px_rgba(80,40,45,0.45)] backdrop-blur">
+          <CardHeader className="border-b border-[hsl(var(--gray-200))]/80 pb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                  {t('chatTranscriptTitle')}
+                </div>
+                <div className="mt-2 text-lg font-semibold text-[hsl(var(--gray-900))]">
+                  {t('chatTranscriptSubtitle')}
+                </div>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--gray-100))] px-3 py-1.5 text-xs text-muted-foreground">
+                <Radio className="h-3.5 w-3.5" />
+                {activeProvider || t('chatRouteAuto')}
+                <span className="text-[hsl(var(--gray-300))]">/</span>
+                {activeModel || t('chatModelUnset')}
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+            <ScrollArea className="min-h-0 flex-1 px-4 py-5 sm:px-6">
+              {messages.length === 0 ? (
+                <div className="flex h-full min-h-[320px] items-center justify-center">
+                  <div className="max-w-md rounded-[2rem] border border-dashed border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,251,250,0.95),rgba(252,241,245,0.78))] p-8 text-center shadow-[0_20px_60px_-40px_rgba(198,104,140,0.45)]">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-700))]">
+                      <Sparkles className="h-6 w-6" />
+                    </div>
+                    <div className="mt-4 text-lg font-semibold text-[hsl(var(--gray-900))]">
+                      {t('chatEmptyHint')}
+                    </div>
+                    <div className="mt-2 text-sm leading-6 text-muted-foreground">
+                      {t('chatEmptyDescription')}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4 pb-2">
+                  {messages.map((message, index) => (
+                    <MessageBubble key={`${message.timestamp}-${index}`} message={message} />
+                  ))}
+                  {isAwaitingReply && (
+                    <div className="flex justify-start">
+                      <div className="rounded-full border border-[hsl(var(--brand-200))] bg-white/90 px-4 py-2 text-sm text-muted-foreground shadow-sm">
+                        {t('chatWaitingReply')}
+                      </div>
+                    </div>
+                  )}
+                  <div ref={scrollEndRef} />
+                </div>
+              )}
+            </ScrollArea>
+
+            <div className="border-t border-[hsl(var(--gray-200))]/80 bg-white/85 p-4 sm:p-5">
+              <div className="rounded-[1.6rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(249,244,241,0.98))] p-3 shadow-[0_18px_44px_-36px_rgba(50,32,20,0.45)]">
+                <textarea
+                  rows={1}
+                  className="min-h-[84px] w-full resize-none border-0 bg-transparent px-2 py-1 text-sm leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none"
+                  placeholder={t('chatPlaceholder')}
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  onKeyDown={handleInputKeyDown}
+                  disabled={connectionStatus !== 'connected'}
+                />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-[hsl(var(--gray-200))]/80 px-2 pt-3">
+                  <div className="text-xs text-muted-foreground">
+                    {t('chatComposerHint')}
+                  </div>
+                  <Button
+                    className="rounded-full px-5"
+                    onClick={handleSend}
+                    disabled={connectionStatus !== 'connected' || !chatInput.trim()}
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    {t('send')}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-
-      {/* Chat log */}
-      <Card className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <ScrollArea className="flex-1 p-4">
-          {messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full min-h-[200px] text-sm text-muted-foreground">
-              {t('chatEmptyHint')}
-            </div>
-          ) : (
-            <div className="flex flex-col">
-              {messages.map((msg, idx) => (
-                <MessageBubble key={idx} message={msg} />
-              ))}
-              <div ref={scrollEndRef} />
-            </div>
-          )}
-        </ScrollArea>
-
-        {/* Input area */}
-        <div className="border-t p-3 flex gap-2 items-end">
-          <textarea
-            className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[40px] max-h-[160px]"
-            rows={1}
-            placeholder={t('chatPlaceholder')}
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={connectionStatus !== 'connected'}
-          />
-          <Button
-            size="icon"
-            className="h-10 w-10 shrink-0"
-            onClick={handleSend}
-            disabled={connectionStatus !== 'connected' || !chatInput.trim()}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
-      </Card>
     </div>
   );
 }

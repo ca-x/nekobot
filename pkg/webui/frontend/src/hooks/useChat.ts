@@ -9,6 +9,12 @@ export interface ChatMessage {
 
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
 
+export interface ChatRouteSettings {
+  provider: string;
+  model: string;
+  fallback: string[];
+}
+
 interface SendOptions {
   provider: string;
   model: string;
@@ -21,11 +27,19 @@ interface UseChatReturn {
   clearMessages: () => void;
   connectionStatus: ConnectionStatus;
   reconnect: () => void;
+  routeSettings: ChatRouteSettings;
+  isAwaitingReply: boolean;
 }
 
 export function useChat(): UseChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
+  const [routeSettings, setRouteSettings] = useState<ChatRouteSettings>({
+    provider: '',
+    model: '',
+    fallback: [],
+  });
+  const [isAwaitingReply, setIsAwaitingReply] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,11 +86,13 @@ export function useChat(): UseChatReturn {
 
     ws.onclose = () => {
       setConnectionStatus('disconnected');
+      setIsAwaitingReply(false);
       wsRef.current = null;
     };
 
     ws.onerror = () => {
       setConnectionStatus('disconnected');
+      setIsAwaitingReply(false);
     };
 
     ws.onmessage = (ev: MessageEvent) => {
@@ -89,12 +105,30 @@ export function useChat(): UseChatReturn {
 
       const now = Date.now();
 
+      if (msg.type === 'routing') {
+        try {
+          const parsed = JSON.parse(msg.content || '{}') as Partial<ChatRouteSettings>;
+          setRouteSettings({
+            provider: parsed.provider?.trim() || '',
+            model: parsed.model?.trim() || '',
+            fallback: Array.isArray(parsed.fallback)
+              ? parsed.fallback.map((item) => String(item).trim()).filter(Boolean)
+              : [],
+          });
+        } catch {
+          // ignore malformed routing snapshots
+        }
+        return;
+      }
+
       if (msg.type === 'message') {
+        setIsAwaitingReply(false);
         setMessages((prev) => [
           ...prev,
           { role: 'assistant', content: msg.content || '', timestamp: now },
         ]);
       } else if (msg.type === 'error') {
+        setIsAwaitingReply(false);
         setMessages((prev) => [
           ...prev,
           { role: 'error', content: msg.content || 'Unknown error', timestamp: now },
@@ -130,6 +164,12 @@ export function useChat(): UseChatReturn {
         fallback: options.fallbackProviders,
       }),
     );
+    setRouteSettings({
+      provider: options.provider,
+      model: options.model,
+      fallback: options.fallbackProviders,
+    });
+    setIsAwaitingReply(true);
 
     setMessages((prev) => [
       ...prev,
@@ -142,6 +182,7 @@ export function useChat(): UseChatReturn {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'clear' }));
     }
+    setIsAwaitingReply(false);
     setMessages([]);
   }, []);
 
@@ -157,5 +198,7 @@ export function useChat(): UseChatReturn {
     clearMessages,
     connectionStatus,
     reconnect,
+    routeSettings,
+    isAwaitingReply,
   };
 }

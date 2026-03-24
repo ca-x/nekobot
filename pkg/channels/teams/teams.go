@@ -120,8 +120,6 @@ func (c *Channel) Start(ctx context.Context) error {
 	c.log.Info("Starting Teams channel")
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	c.bus.RegisterHandler(c.ID(), c.handleOutbound)
-
 	mux := http.NewServeMux()
 	mux.HandleFunc(webhookPath, c.handleWebhook)
 	c.httpServer = &http.Server{
@@ -151,7 +149,6 @@ func (c *Channel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-	c.bus.UnregisterHandlers(c.ID())
 
 	if c.httpServer != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

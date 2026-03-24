@@ -96,9 +96,6 @@ func (c *Channel) Start(ctx context.Context) error {
 	c.session.AddHandler(c.handleMessage)
 	c.session.AddHandler(c.handleInteraction)
 
-	// Register outbound message handler
-	c.bus.RegisterHandler("discord", c.handleOutbound)
-
 	// Set intents
 	c.session.Identify.Intents = discordgo.IntentsGuildMessages |
 		discordgo.IntentsDirectMessages |
@@ -128,9 +125,6 @@ func (c *Channel) Start(ctx context.Context) error {
 func (c *Channel) Stop(ctx context.Context) error {
 	c.log.Info("Stopping Discord channel")
 	c.running = false
-
-	// Unregister handler
-	c.bus.UnregisterHandlers("discord")
 
 	if c.session != nil {
 		if err := c.session.Close(); err != nil {

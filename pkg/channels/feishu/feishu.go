@@ -77,9 +77,6 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	// Register outbound message handler
-	c.bus.RegisterHandler("feishu", c.handleOutbound)
-
 	// Create event dispatcher
 	dispatcher := larkdispatcher.NewEventDispatcher(
 		c.config.VerificationToken,
@@ -119,9 +116,6 @@ func (c *Channel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-
-	// Unregister handler
-	c.bus.UnregisterHandlers("feishu")
 
 	c.mu.Lock()
 	c.wsClient = nil

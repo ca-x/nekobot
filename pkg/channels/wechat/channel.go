@@ -17,6 +17,8 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/process"
+	"nekobot/pkg/toolsessions"
 )
 
 var reMarkdownImage = regexp.MustCompile(`!\[[^\]]*\]\(([^)]+)\)`)
@@ -29,6 +31,7 @@ type Channel struct {
 	agent    *agent.Agent
 	commands *commands.Registry
 	store    *CredentialStore
+	runtime  *ControlService
 
 	mu      sync.RWMutex
 	client  *Client
@@ -36,6 +39,7 @@ type Channel struct {
 	running bool
 	ctx     context.Context
 	cancel  context.CancelFunc
+	cursors map[string]int
 }
 
 // NewChannel creates a new WeChat channel.
@@ -46,6 +50,9 @@ func NewChannel(
 	ag *agent.Agent,
 	cmdRegistry *commands.Registry,
 	store *CredentialStore,
+	toolSessionMgr *toolsessions.Manager,
+	processMgr *process.Manager,
+	rootCfg *config.Config,
 ) (*Channel, error) {
 	if store == nil {
 		return nil, fmt.Errorf("credential store is required")
@@ -59,6 +66,12 @@ func NewChannel(
 		client = NewClient(creds)
 	}
 
+	var runtimeControl *ControlService
+	if toolSessionMgr != nil && processMgr != nil {
+		bindingSvc := NewRuntimeBindingService(toolSessionMgr, rootCfg)
+		runtimeControl = NewControlService(rootCfg, toolSessionMgr, processMgr, bindingSvc)
+	}
+
 	return &Channel{
 		log:      log,
 		config:   cfg,
@@ -66,8 +79,10 @@ func NewChannel(
 		agent:    ag,
 		commands: cmdRegistry,
 		store:    store,
+		runtime:  runtimeControl,
 		client:   client,
 		creds:    creds,
+		cursors:  map[string]int{},
 	}, nil
 }
 
@@ -218,9 +233,33 @@ func (c *Channel) handleInbound(msg WeixinMessage) {
 		zap.String("user_id", msg.FromUserID),
 		zap.Int("length", len(content)))
 
+	if c.runtime != nil && strings.HasPrefix(strings.TrimSpace(content), "/") {
+		handled, err := c.handleControlCommand(msg, content)
+		if err != nil {
+			sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_ = c.sendText(sendCtx, msg.FromUserID, "❌ "+err.Error(), msg.ContextToken)
+			return
+		}
+		if handled {
+			return
+		}
+	}
+
 	if c.commands != nil && c.commands.IsCommand(content) {
 		c.handleCommand(msg, content)
 		return
+	}
+
+	if c.runtime != nil {
+		if handled, err := c.handleRuntimeChat(msg, content); err != nil {
+			sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_ = c.sendText(sendCtx, msg.FromUserID, "❌ "+err.Error(), msg.ContextToken)
+			return
+		} else if handled {
+			return
+		}
 	}
 
 	if c.agent == nil {
@@ -279,6 +318,199 @@ func (c *Channel) handleCommand(msg WeixinMessage, content string) {
 		return
 	}
 	_ = c.sendText(ctx, msg.FromUserID, resp.Content, msg.ContextToken)
+}
+
+func (c *Channel) handleControlCommand(msg WeixinMessage, content string) (bool, error) {
+	if c.runtime == nil {
+		return false, nil
+	}
+
+	cmd, err := parseControlCommand(content)
+	if err != nil {
+		return false, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var reply string
+	switch cmd.Kind {
+	case controlCommandList:
+		items, err := c.runtime.ListRuntimes(ctx)
+		if err != nil {
+			return true, err
+		}
+		if len(items) == 0 {
+			reply = "No WeChat runtimes."
+			break
+		}
+		lines := make([]string, 0, len(items))
+		for _, item := range items {
+			if item == nil {
+				continue
+			}
+			name := strings.TrimSpace(item.Title)
+			if name == "" {
+				name = strings.TrimSpace(item.Tool)
+			}
+			lines = append(lines, fmt.Sprintf("%s [%s]", name, item.State))
+		}
+		reply = strings.Join(lines, "\n")
+	case controlCommandBindings:
+		text, err := c.runtime.DescribeBindings(ctx)
+		if err != nil {
+			return true, err
+		}
+		reply = text
+	case controlCommandUse:
+		if err := c.runtime.BindRuntime(ctx, msg.FromUserID, cmd.RuntimeName); err != nil {
+			return true, err
+		}
+		reply = fmt.Sprintf("Bound current chat to %s.", cmd.RuntimeName)
+	case controlCommandNew:
+		created, err := c.runtime.CreateRuntime(ctx, msg.FromUserID, RuntimeCreateRequest{
+			Name:    cmd.RuntimeName,
+			Driver:  cmd.Spec.Driver,
+			Tool:    cmd.Spec.Tool,
+			Command: cmd.Spec.Command,
+			Workdir: cmd.Spec.Workdir,
+		})
+		if err != nil {
+			return true, err
+		}
+		reply = fmt.Sprintf("Created runtime %s (%s).", strings.TrimSpace(created.Title), created.Tool)
+	case controlCommandStatus:
+		runtimeName := strings.TrimSpace(cmd.RuntimeName)
+		if runtimeName == "" {
+			bound, err := c.runtime.GetConversationRuntime(ctx, msg.FromUserID)
+			if err != nil {
+				return true, err
+			}
+			if bound == nil || bound.Session == nil {
+				reply = "No runtime bound for current chat."
+				break
+			}
+			runtimeName = strings.TrimSpace(bound.Session.Title)
+			if runtimeName == "" {
+				runtimeName = strings.TrimSpace(bound.Session.Tool)
+			}
+		}
+		status, err := c.runtime.GetRuntimeStatus(ctx, runtimeName)
+		if err != nil {
+			return true, err
+		}
+		reply = formatRuntimeStatus(status)
+	case controlCommandStop:
+		if err := c.runtime.StopRuntime(ctx, cmd.RuntimeName); err != nil {
+			return true, err
+		}
+		reply = fmt.Sprintf("Stopped runtime %s.", cmd.RuntimeName)
+	default:
+		return false, nil
+	}
+
+	if strings.TrimSpace(reply) == "" {
+		reply = "OK"
+	}
+	if err := c.sendText(ctx, msg.FromUserID, reply, msg.ContextToken); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func formatRuntimeStatus(status *runtimeStatusDetails) string {
+	if status == nil {
+		return "Runtime not found."
+	}
+
+	runningText := "stopped"
+	if status.Running {
+		runningText = "running"
+	}
+
+	parts := []string{
+		fmt.Sprintf("%s [%s]", status.Name, runningText),
+		fmt.Sprintf("driver: %s", status.Driver),
+		fmt.Sprintf("tool: %s", status.Tool),
+	}
+	if status.Command != "" {
+		parts = append(parts, fmt.Sprintf("command: %s", status.Command))
+	}
+	if status.Workdir != "" {
+		parts = append(parts, fmt.Sprintf("cwd: %s", status.Workdir))
+	}
+	if status.Driver != "acp" {
+		parts = append(parts, fmt.Sprintf("exit_code: %d", status.ExitCode))
+	}
+	return strings.Join(parts, "\n")
+}
+
+func (c *Channel) handleRuntimeChat(msg WeixinMessage, content string) (bool, error) {
+	if c.runtime == nil {
+		return false, nil
+	}
+	bound, err := c.runtime.GetConversationRuntime(context.Background(), msg.FromUserID)
+	if err != nil {
+		return false, err
+	}
+	if bound == nil {
+		return false, nil
+	}
+	reply, err := c.runtime.SendToRuntime(context.Background(), msg.FromUserID, "", content)
+	if err != nil {
+		return true, err
+	}
+	if strings.TrimSpace(reply) != "" {
+		if err := c.sendText(context.Background(), msg.FromUserID, reply, msg.ContextToken); err != nil {
+			return true, err
+		}
+		return true, nil
+	}
+
+	cursor := bound.NextRead
+	if stored, ok := c.loadCursor(bound.Session.ID); ok {
+		cursor = stored
+	}
+
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		output, next, err := c.runtime.ReadRuntimeOutput(context.Background(), bound.Session.ID, cursor)
+		if err != nil {
+			return true, err
+		}
+		cursor = next
+		c.storeCursor(bound.Session.ID, cursor)
+		if strings.TrimSpace(output) == "" {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		if err := c.sendText(context.Background(), msg.FromUserID, output, msg.ContextToken); err != nil {
+			return true, err
+		}
+		return true, nil
+	}
+
+	name := strings.TrimSpace(bound.Session.Title)
+	if name == "" {
+		name = strings.TrimSpace(bound.Session.Tool)
+	}
+	if err := c.sendText(context.Background(), msg.FromUserID, fmt.Sprintf("已发送到 %s，等待输出中。", name), msg.ContextToken); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func (c *Channel) loadCursor(sessionID string) (int, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	offset, ok := c.cursors[strings.TrimSpace(sessionID)]
+	return offset, ok
+}
+
+func (c *Channel) storeCursor(sessionID string, offset int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cursors[strings.TrimSpace(sessionID)] = offset
 }
 
 // SendMessage sends a message through WeChat.

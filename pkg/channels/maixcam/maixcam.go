@@ -88,9 +88,6 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	// Register outbound message handler
-	c.bus.RegisterHandler("maixcam", c.handleOutbound)
-
 	// Start TCP listener
 	addr := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
 	listener, err := net.Listen("tcp", addr)
@@ -119,9 +116,6 @@ func (c *Channel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-
-	// Unregister handler
-	c.bus.UnregisterHandlers("maixcam")
 
 	// Close listener
 	if c.listener != nil {

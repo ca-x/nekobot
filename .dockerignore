@@ -8,6 +8,9 @@ CODEX_TASKS.md
 1ms-helper
 nekobot
 ~
+workspace
+tmp
+*.tmp
 
 # Local configs with secrets
 config.json
@@ -20,6 +23,10 @@ dist
 *.log
 *.out
 coverage.out
+pkg/webui/frontend/node_modules
+pkg/webui/frontend/dist
+pkg/webui/frontend/.vite
+pkg/webui/frontend/.cache
 
 # Docs and misc not needed for image build
 docs

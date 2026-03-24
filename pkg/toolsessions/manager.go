@@ -207,6 +207,122 @@ func (m *Manager) ListSessions(ctx context.Context, input ListSessionsInput) ([]
 	return out, nil
 }
 
+// FindSessionByConversation returns the most recent session bound to a conversation.
+func (m *Manager) FindSessionByConversation(
+	ctx context.Context,
+	source, channel, conversationKey string,
+) (*Session, error) {
+	conversationKey = strings.TrimSpace(conversationKey)
+	if conversationKey == "" {
+		return nil, nil
+	}
+
+	q := m.client.ToolSession.Query().
+		Where(
+			toolsession.SourceEQ(normalizeSource(source)),
+			toolsession.ConversationKeyEQ(conversationKey),
+		).
+		Order(ent.Desc(toolsession.FieldUpdatedAt)).
+		Limit(1)
+	if channel = strings.TrimSpace(channel); channel != "" {
+		q = q.Where(toolsession.ChannelEQ(channel))
+	}
+
+	rec, err := q.Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find session by conversation: %w", err)
+	}
+	return toSession(rec), nil
+}
+
+// BindSessionConversation assigns a conversation binding to a session and clears conflicting bindings.
+func (m *Manager) BindSessionConversation(
+	ctx context.Context,
+	sessionID, source, channel, conversationKey string,
+) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return errors.New("session id is required")
+	}
+	conversationKey = strings.TrimSpace(conversationKey)
+	if conversationKey == "" {
+		return errors.New("conversation key is required")
+	}
+
+	source = normalizeSource(source)
+	channel = strings.TrimSpace(channel)
+
+	if _, err := m.client.ToolSession.Get(ctx, sessionID); err != nil {
+		if ent.IsNotFound(err) {
+			return os.ErrNotExist
+		}
+		return fmt.Errorf("load session for bind: %w", err)
+	}
+
+	if _, err := m.client.ToolSession.Update().
+		Where(
+			toolsession.IDNEQ(sessionID),
+			toolsession.SourceEQ(source),
+			toolsession.ConversationKeyEQ(conversationKey),
+		).
+		SetChannel("").
+		SetConversationKey("").
+		Save(ctx); err != nil {
+		return fmt.Errorf("clear existing conversation binding: %w", err)
+	}
+
+	if err := m.client.ToolSession.UpdateOneID(sessionID).
+		SetSource(source).
+		SetChannel(channel).
+		SetConversationKey(conversationKey).
+		SetLastActiveAt(time.Now()).
+		Exec(ctx); err != nil {
+		if ent.IsNotFound(err) {
+			return os.ErrNotExist
+		}
+		return fmt.Errorf("bind session conversation: %w", err)
+	}
+
+	if err := m.appendEvent(ctx, sessionID, "conversation_bound", map[string]interface{}{
+		"source":           source,
+		"channel":          channel,
+		"conversation_key": conversationKey,
+	}); err != nil {
+		m.log.Warn("Failed to record tool session event", zap.String("session_id", sessionID), zap.Error(err))
+	}
+	return nil
+}
+
+// ClearConversationBinding removes a binding from all sessions matching the conversation key.
+func (m *Manager) ClearConversationBinding(
+	ctx context.Context,
+	source, channel, conversationKey string,
+) error {
+	conversationKey = strings.TrimSpace(conversationKey)
+	if conversationKey == "" {
+		return errors.New("conversation key is required")
+	}
+
+	q := m.client.ToolSession.Update().
+		Where(
+			toolsession.SourceEQ(normalizeSource(source)),
+			toolsession.ConversationKeyEQ(conversationKey),
+		).
+		SetChannel("").
+		SetConversationKey("")
+	if channel = strings.TrimSpace(channel); channel != "" {
+		q = q.Where(toolsession.ChannelEQ(channel))
+	}
+
+	if _, err := q.Save(ctx); err != nil {
+		return fmt.Errorf("clear conversation binding: %w", err)
+	}
+	return nil
+}
+
 // TouchSession updates activity timestamp and optionally sets a state.
 func (m *Manager) TouchSession(ctx context.Context, id, state string) error {
 	id = strings.TrimSpace(id)

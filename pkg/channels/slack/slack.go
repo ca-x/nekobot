@@ -93,9 +93,6 @@ func (c *Channel) Start(ctx context.Context) error {
 		zap.String("bot_user_id", c.botUserID),
 		zap.String("team", authResp.Team))
 
-	// Register outbound message handler
-	c.bus.RegisterHandler("slack", c.handleOutbound)
-
 	// Start event loop
 	go c.eventLoop()
 
@@ -121,9 +118,6 @@ func (c *Channel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-
-	// Unregister handler
-	c.bus.UnregisterHandlers("slack")
 
 	c.running = false
 	c.log.Info("Slack channel stopped")

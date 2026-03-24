@@ -82,9 +82,6 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	// Register outbound message handler
-	c.bus.RegisterHandler("googlechat", c.handleOutbound)
-
 	// Initialize Google Chat service if credentials are provided
 	if c.config.CredentialsFile != "" {
 		if err := c.initService(); err != nil {
@@ -107,9 +104,6 @@ func (c *Channel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-
-	// Unregister handler
-	c.bus.UnregisterHandlers("googlechat")
 
 	c.mu.Lock()
 	c.service = nil

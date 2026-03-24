@@ -1,0 +1,382 @@
+package wechat
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"nekobot/pkg/config"
+	"nekobot/pkg/process"
+	"nekobot/pkg/toolsessions"
+)
+
+func TestParseControlCommandParsesUseAndNew(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    controlCommandKind
+		wantArg string
+	}{
+		{name: "use", input: "/use code1", want: controlCommandUse, wantArg: "code1"},
+		{name: "bindings", input: "/bindings", want: controlCommandBindings},
+		{name: "list", input: "/list", want: controlCommandList},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, err := parseControlCommand(tt.input)
+			if err != nil {
+				t.Fatalf("parseControlCommand failed: %v", err)
+			}
+			if cmd.Kind != tt.want {
+				t.Fatalf("expected kind %q, got %q", tt.want, cmd.Kind)
+			}
+			if tt.wantArg != "" && cmd.RuntimeName != tt.wantArg {
+				t.Fatalf("expected runtime %q, got %q", tt.wantArg, cmd.RuntimeName)
+			}
+		})
+	}
+
+	cmd, err := parseControlCommand("/new code1 --driver acp -- codex-acp")
+	if err != nil {
+		t.Fatalf("parseControlCommand(new) failed: %v", err)
+	}
+	if cmd.Kind != controlCommandNew {
+		t.Fatalf("expected new kind, got %q", cmd.Kind)
+	}
+	if cmd.RuntimeName != "code1" {
+		t.Fatalf("expected runtime name code1, got %q", cmd.RuntimeName)
+	}
+	if cmd.Spec.Driver != "acp" {
+		t.Fatalf("expected driver acp, got %q", cmd.Spec.Driver)
+	}
+	if cmd.Spec.Command != "codex-acp" {
+		t.Fatalf("expected command codex-acp, got %q", cmd.Spec.Command)
+	}
+}
+
+func TestControlServiceCreateBindAndList(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "code1",
+		Driver: "process",
+		Tool:   "cat",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+	if created.Tool != "cat" {
+		t.Fatalf("expected created tool cat, got %q", created.Tool)
+	}
+	if created.ConversationKey != "wx:chat-1" {
+		t.Fatalf("expected conversation key wx:chat-1, got %q", created.ConversationKey)
+	}
+
+	status, err := processMgr.GetStatus(created.ID)
+	if err != nil {
+		t.Fatalf("GetStatus failed: %v", err)
+	}
+	if !strings.Contains(status.Command, "cat") {
+		t.Fatalf("expected process command to contain cat, got %q", status.Command)
+	}
+
+	listOutput, err := controlSvc.ListRuntimes(ctx)
+	if err != nil {
+		t.Fatalf("ListRuntimes failed: %v", err)
+	}
+	if len(listOutput) != 1 {
+		t.Fatalf("expected 1 runtime, got %d", len(listOutput))
+	}
+	if listOutput[0].Title != "code1" {
+		t.Fatalf("expected runtime title code1, got %q", listOutput[0].Title)
+	}
+
+	bindingText, err := controlSvc.DescribeBindings(ctx)
+	if err != nil {
+		t.Fatalf("DescribeBindings failed: %v", err)
+	}
+	if !strings.Contains(bindingText, "chat-1") || !strings.Contains(bindingText, "code1") {
+		t.Fatalf("expected bindings output to mention chat and runtime, got %q", bindingText)
+	}
+
+	second, err := controlSvc.CreateRuntime(ctx, "chat-2", RuntimeCreateRequest{
+		Name:   "code2",
+		Driver: "process",
+		Tool:   "cat",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime(second) failed: %v", err)
+	}
+
+	if err := controlSvc.BindRuntime(ctx, "chat-1", "code2"); err != nil {
+		t.Fatalf("BindRuntime failed: %v", err)
+	}
+	resolved, err := bindingSvc.ResolveConversation(ctx, "chat-1")
+	if err != nil {
+		t.Fatalf("ResolveConversation failed: %v", err)
+	}
+	if resolved == nil || resolved.ID != second.ID {
+		t.Fatalf("expected resolved runtime %q, got %+v", second.ID, resolved)
+	}
+}
+
+func TestControlServiceCreateACPRuntimeDoesNotStartPTYAndCanStop(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
+		return &fakeACPClient{reply: "ready"}, nil
+	}
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "claude1",
+		Driver: "acp",
+		Tool:   "claude",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+
+	if _, err := processMgr.GetStatus(created.ID); err == nil {
+		t.Fatalf("expected no PTY process for ACP runtime")
+	}
+
+	status, err := controlSvc.GetRuntimeStatus(ctx, "claude1")
+	if err != nil {
+		t.Fatalf("GetRuntimeStatus failed: %v", err)
+	}
+	if !status.Running {
+		t.Fatalf("expected ACP runtime to be reported running")
+	}
+
+	if err := controlSvc.StopRuntime(ctx, "claude1"); err != nil {
+		t.Fatalf("StopRuntime failed: %v", err)
+	}
+
+	resolved, err := bindingSvc.ResolveConversation(ctx, "chat-1")
+	if err != nil {
+		t.Fatalf("ResolveConversation failed: %v", err)
+	}
+	if resolved != nil {
+		t.Fatalf("expected binding to be cleared after stop, got %+v", resolved)
+	}
+}
+
+func TestControlServiceRouteMessageToBoundRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "echo1",
+		Driver: "process",
+		Tool:   "cat",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+
+	reply, err := controlSvc.SendToRuntime(ctx, "chat-1", "", "hello runtime")
+	if err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+	if reply != "" {
+		t.Fatalf("expected no direct reply for process runtime, got %q", reply)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		chunks, _, err := processMgr.GetOutput(created.ID, 0, 100)
+		if err != nil {
+			t.Fatalf("GetOutput failed: %v", err)
+		}
+		if strings.Contains(strings.Join(chunks, ""), "hello runtime") {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatal("expected runtime output to contain routed message")
+}
+
+func TestControlServiceReadRuntimeOutputReturnsOnlyNewChunks(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "echo2",
+		Driver: "process",
+		Tool:   "cat",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+
+	reply, err := controlSvc.SendToRuntime(ctx, "chat-1", "", "first line")
+	if err != nil {
+		t.Fatalf("SendToRuntime(first) failed: %v", err)
+	}
+	if reply != "" {
+		t.Fatalf("expected no direct reply for process runtime, got %q", reply)
+	}
+
+	var firstText string
+	var cursor int
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		firstText, cursor, err = controlSvc.ReadRuntimeOutput(ctx, created.ID, 0)
+		if err != nil {
+			t.Fatalf("ReadRuntimeOutput(first) failed: %v", err)
+		}
+		if strings.Contains(firstText, "first line") {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !strings.Contains(firstText, "first line") {
+		t.Fatalf("expected first output, got %q", firstText)
+	}
+
+	reply, err = controlSvc.SendToRuntime(ctx, "chat-1", "", "second line")
+	if err != nil {
+		t.Fatalf("SendToRuntime(second) failed: %v", err)
+	}
+	if reply != "" {
+		t.Fatalf("expected no direct reply for process runtime, got %q", reply)
+	}
+
+	var secondText string
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		secondText, cursor, err = controlSvc.ReadRuntimeOutput(ctx, created.ID, cursor)
+		if err != nil {
+			t.Fatalf("ReadRuntimeOutput(second) failed: %v", err)
+		}
+		if strings.Contains(secondText, "second line") {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if strings.Contains(secondText, "first line") {
+		t.Fatalf("expected incremental output without first line, got %q", secondText)
+	}
+	if !strings.Contains(secondText, "second line") {
+		t.Fatalf("expected second output, got %q", secondText)
+	}
+}
+
+type fakeACPClient struct {
+	reply string
+}
+
+func (f *fakeACPClient) Chat(ctx context.Context, conversationID, message string) (string, error) {
+	return f.reply, nil
+}
+
+func (f *fakeACPClient) Close() error {
+	return nil
+}
+
+func TestControlServiceSendToACPRuntimeReturnsDirectReply(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
+		return &fakeACPClient{reply: "acp reply"}, nil
+	}
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "claude1",
+		Driver: "acp",
+		Tool:   "claude",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+	if created == nil {
+		t.Fatal("expected created runtime")
+	}
+
+	reply, err := controlSvc.SendToRuntime(ctx, "chat-1", "", "hello acp")
+	if err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+	if reply != "acp reply" {
+		t.Fatalf("expected direct ACP reply, got %q", reply)
+	}
+}

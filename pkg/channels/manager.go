@@ -17,6 +17,7 @@ type Manager struct {
 	log      *logger.Logger
 	bus      bus.Bus // Use interface directly, not pointer to interface
 	channels map[string]Channel
+	started  bool
 	mu       sync.RWMutex
 
 	// Lifecycle
@@ -74,6 +75,9 @@ func (m *Manager) Unregister(channelID string) error {
 // Start starts all enabled channels.
 func (m *Manager) Start() error {
 	m.log.Info("Starting channel manager")
+	m.mu.Lock()
+	m.started = true
+	m.mu.Unlock()
 
 	m.mu.RLock()
 	channels := make([]Channel, 0, len(m.channels))
@@ -122,6 +126,9 @@ func (m *Manager) Start() error {
 // Stop stops all channels gracefully.
 func (m *Manager) Stop() error {
 	m.log.Info("Stopping channel manager")
+	m.mu.Lock()
+	m.started = false
+	m.mu.Unlock()
 
 	// Cancel context to signal all channels to stop
 	m.cancel()
@@ -197,6 +204,7 @@ func (m *Manager) ReloadChannel(channel Channel) error {
 
 	m.mu.Lock()
 	m.channels[id] = channel
+	started := m.started
 	m.mu.Unlock()
 
 	m.log.Info("Reloaded channel",
@@ -204,7 +212,7 @@ func (m *Manager) ReloadChannel(channel Channel) error {
 		zap.String("name", channel.Name()),
 		zap.Bool("enabled", channel.IsEnabled()))
 
-	if !channel.IsEnabled() {
+	if !started || !channel.IsEnabled() {
 		return nil
 	}
 

@@ -2259,24 +2259,7 @@ func (s *Server) handleDisableMarketplaceSkill(c *echo.Context) error {
 // --- Channel Handlers ---
 
 func (s *Server) handleGetChannels(c *echo.Context) error {
-	// Return editable channel configs for dashboard.
-	channels := map[string]interface{}{
-		"telegram":   s.config.Channels.Telegram,
-		"discord":    s.config.Channels.Discord,
-		"slack":      s.config.Channels.Slack,
-		"whatsapp":   s.config.Channels.WhatsApp,
-		"wechat":     s.config.Channels.WeChat,
-		"feishu":     s.config.Channels.Feishu,
-		"dingtalk":   s.config.Channels.DingTalk,
-		"qq":         s.config.Channels.QQ,
-		"wework":     s.config.Channels.WeWork,
-		"serverchan": s.config.Channels.ServerChan,
-		"googlechat": s.config.Channels.GoogleChat,
-		"maixcam":    s.config.Channels.MaixCam,
-		"teams":      s.config.Channels.Teams,
-		"infoflow":   s.config.Channels.Infoflow,
-	}
-	return c.JSON(http.StatusOK, channels)
+	return c.JSON(http.StatusOK, channels.ListChannelConfigs(s.config))
 }
 
 func (s *Server) handleUpdateChannel(c *echo.Context) error {
@@ -2287,71 +2270,14 @@ func (s *Server) handleUpdateChannel(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	// Marshal the body to JSON, then unmarshal into the appropriate channel config
+	// Marshal the body to JSON, then unmarshal into the appropriate channel config.
 	data, err := json.Marshal(body)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 
-	switch name {
-	case "telegram":
-		if err := json.Unmarshal(data, &s.config.Channels.Telegram); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "discord":
-		if err := json.Unmarshal(data, &s.config.Channels.Discord); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "slack":
-		if err := json.Unmarshal(data, &s.config.Channels.Slack); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "whatsapp":
-		if err := json.Unmarshal(data, &s.config.Channels.WhatsApp); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "wechat":
-		if err := json.Unmarshal(data, &s.config.Channels.WeChat); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "feishu":
-		if err := json.Unmarshal(data, &s.config.Channels.Feishu); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "dingtalk":
-		if err := json.Unmarshal(data, &s.config.Channels.DingTalk); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "qq":
-		if err := json.Unmarshal(data, &s.config.Channels.QQ); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "wework":
-		if err := json.Unmarshal(data, &s.config.Channels.WeWork); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "serverchan":
-		if err := json.Unmarshal(data, &s.config.Channels.ServerChan); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "googlechat":
-		if err := json.Unmarshal(data, &s.config.Channels.GoogleChat); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "maixcam":
-		if err := json.Unmarshal(data, &s.config.Channels.MaixCam); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "teams":
-		if err := json.Unmarshal(data, &s.config.Channels.Teams); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	case "infoflow":
-		if err := json.Unmarshal(data, &s.config.Channels.Infoflow); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-	default:
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "unknown channel: " + name})
+	if err := channels.ApplyChannelConfig(s.config, name, data); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	// Persist runtime channel config to database.
@@ -2380,7 +2306,7 @@ func (s *Server) reloadChannel(name string) error {
 		return s.channels.StopChannel(name)
 	}
 
-	ch, err := channels.BuildChannel(name, s.logger, s.bus, s.agent, s.commands, s.prefs, s.config)
+	ch, err := channels.BuildChannel(name, s.logger, s.bus, s.agent, s.commands, s.prefs, s.toolSess, s.processMgr, s.config)
 	if err != nil {
 		return err
 	}
@@ -3070,6 +2996,12 @@ type chatWSResponse struct {
 	Timestamp int64  `json:"timestamp,omitempty"` // Unix timestamp
 }
 
+type chatRouteSettings struct {
+	Provider string   `json:"provider"`
+	Model    string   `json:"model"`
+	Fallback []string `json:"fallback"`
+}
+
 type toolWSMessage struct {
 	Type string `json:"type"` // "input", "ping", "kill", "resize"
 	Data string `json:"data,omitempty"`
@@ -3115,6 +3047,18 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		Timestamp: time.Now().Unix(),
 	}
 	if data, err := json.Marshal(welcome); err == nil {
+		conn.WriteMessage(websocket.TextMessage, data)
+	}
+	routing := chatRouteSettings{
+		Provider: strings.TrimSpace(s.config.Agents.Defaults.Provider),
+		Model:    strings.TrimSpace(s.config.Agents.Defaults.Model),
+		Fallback: append([]string(nil), s.config.Agents.Defaults.Fallback...),
+	}
+	if data, err := json.Marshal(chatWSResponse{
+		Type:      "routing",
+		Content:   mustMarshalChatRouting(routing),
+		Timestamp: time.Now().Unix(),
+	}); err == nil {
 		conn.WriteMessage(websocket.TextMessage, data)
 	}
 
@@ -3184,7 +3128,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			fallback := normalizeProviderNames(msg.Fallback)
 
 			// Keep provider/fallback choices in sync with the saved config so restarts preserve them.
-			if err := s.persistChatRouting(provider, fallback); err != nil {
+			if err := s.persistChatRouting(provider, model, fallback); err != nil {
 				sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err))
 				continue
 			}
@@ -3453,7 +3397,7 @@ func (s *Server) hasProvider(name string) bool {
 	return false
 }
 
-func (s *Server) persistChatRouting(provider string, fallback []string) error {
+func (s *Server) persistChatRouting(provider, model string, fallback []string) error {
 	changed := false
 
 	if provider != "" {
@@ -3464,6 +3408,10 @@ func (s *Server) persistChatRouting(provider string, fallback []string) error {
 			s.config.Agents.Defaults.Provider = provider
 			changed = true
 		}
+	}
+	if trimmedModel := strings.TrimSpace(model); trimmedModel != "" && s.config.Agents.Defaults.Model != trimmedModel {
+		s.config.Agents.Defaults.Model = trimmedModel
+		changed = true
 	}
 
 	for _, name := range fallback {
@@ -3485,6 +3433,14 @@ func (s *Server) persistChatRouting(provider string, fallback []string) error {
 	}
 
 	return config.SaveDatabaseSections(s.config, "agents")
+}
+
+func mustMarshalChatRouting(routing chatRouteSettings) string {
+	data, err := json.Marshal(routing)
+	if err != nil {
+		return `{"provider":"","model":"","fallback":[]}`
+	}
+	return string(data)
 }
 
 // --- Approval Handlers ---

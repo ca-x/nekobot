@@ -144,9 +144,6 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	// Register outbound message handler
-	c.bus.RegisterHandler("serverchan", c.handleOutbound)
-
 	// Verify bot
 	if err := c.verifyBot(); err != nil {
 		return fmt.Errorf("verifying bot: %w", err)
@@ -174,9 +171,6 @@ func (c *Channel) Stop(ctx context.Context) error {
 	if c.cancel != nil {
 		c.cancel()
 	}
-
-	// Unregister handler
-	c.bus.UnregisterHandlers("serverchan")
 
 	c.log.Info("ServerChan channel stopped")
 	return nil
