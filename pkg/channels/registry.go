@@ -10,6 +10,7 @@ import (
 	"nekobot/pkg/channels/discord"
 	"nekobot/pkg/channels/feishu"
 	"nekobot/pkg/channels/googlechat"
+	"nekobot/pkg/channels/gotify"
 	"nekobot/pkg/channels/infoflow"
 	"nekobot/pkg/channels/maixcam"
 	"nekobot/pkg/channels/qq"
@@ -61,6 +62,17 @@ var channelDescriptors = []channelDescriptor{
 			}
 			transcriber := transcription.NewFromConfig(log, cfg)
 			return telegram.New(log, messageBus, ag, cmdRegistry, &telegramCfg, transcriber, prefsMgr)
+		},
+	},
+	{
+		name: "gotify",
+		get:  func(cfg *config.Config) interface{} { return cfg.Channels.Gotify },
+		set: func(cfg *config.Config, data json.RawMessage) error {
+			return json.Unmarshal(data, &cfg.Channels.Gotify)
+		},
+		enabled: func(cfg *config.Config) bool { return cfg.Channels.Gotify.Enabled },
+		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			return gotify.NewChannel(log, cfg.Channels.Gotify)
 		},
 	},
 	{

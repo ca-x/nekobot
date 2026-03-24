@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/config"
 	"nekobot/pkg/session"
 )
 
@@ -98,12 +99,12 @@ func TestSessionHandlers_Return503WhenManagerUnavailable(t *testing.T) {
 }
 
 func TestSessionHandlers_EndToEndFlow(t *testing.T) {
-	sm := session.NewManager(t.TempDir())
+	sm := session.NewManager(t.TempDir(), config.DefaultConfig().Sessions)
 	s := &Server{sessionMgr: sm}
 	e := echo.New()
 
 	const sessionID = "webui-e2e"
-	sess, err := sm.Get(sessionID)
+	sess, err := sm.GetWithSource(sessionID, session.SourceWebUI)
 	if err != nil {
 		t.Fatalf("create session failed: %v", err)
 	}
@@ -204,7 +205,7 @@ func TestSessionHandlers_EndToEndFlow(t *testing.T) {
 }
 
 func TestSessionHandlers_NotFoundBehavior(t *testing.T) {
-	sm := session.NewManager(t.TempDir())
+	sm := session.NewManager(t.TempDir(), config.DefaultConfig().Sessions)
 	s := &Server{sessionMgr: sm}
 	e := echo.New()
 

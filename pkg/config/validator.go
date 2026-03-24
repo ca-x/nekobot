@@ -78,6 +78,9 @@ func (v *Validator) Validate(cfg *Config) error {
 	// Validate memory configuration
 	v.validateMemory(&cfg.Memory)
 
+	// Validate session persistence configuration
+	v.validateSessions(&cfg.Sessions)
+
 	if len(v.errors) > 0 {
 		return v.errors
 	}
@@ -208,6 +211,21 @@ func (v *Validator) validateChannels(cfg *ChannelsConfig) {
 	// Validate Telegram
 	if cfg.Telegram.Enabled && cfg.Telegram.Token == "" {
 		v.addError("channels.telegram.token", "token is required when Telegram is enabled")
+	}
+
+	// Validate Gotify
+	if cfg.Gotify.Enabled {
+		if strings.TrimSpace(cfg.Gotify.ServerURL) == "" {
+			v.addError("channels.gotify.server_url", "server_url is required when Gotify is enabled")
+		} else if _, err := url.Parse(cfg.Gotify.ServerURL); err != nil {
+			v.addError("channels.gotify.server_url", fmt.Sprintf("invalid URL: %v", err))
+		}
+		if strings.TrimSpace(cfg.Gotify.AppToken) == "" {
+			v.addError("channels.gotify.app_token", "app_token is required when Gotify is enabled")
+		}
+		if cfg.Gotify.Priority < 1 || cfg.Gotify.Priority > 10 {
+			v.addError("channels.gotify.priority", "priority must be between 1 and 10 when Gotify is enabled")
+		}
 	}
 
 	// Validate Feishu
@@ -354,6 +372,15 @@ func (v *Validator) validateMemory(cfg *MemoryConfig) {
 		v.addError("memory.backend", "backend must be one of: file, db, kv")
 	}
 
+	if cfg.Context.Enabled {
+		if cfg.Context.RecentDailyNoteDays < 0 {
+			v.addError("memory.context.recent_daily_note_days", "recent_daily_note_days must be at least 0")
+		}
+		if cfg.Context.MaxChars < 1 {
+			v.addError("memory.context.max_chars", "max_chars must be at least 1")
+		}
+	}
+
 	if cfg.Semantic.Enabled {
 		if cfg.Semantic.DefaultTopK < 1 {
 			v.addError("memory.semantic.default_top_k", "default_top_k must be at least 1")
@@ -383,6 +410,40 @@ func (v *Validator) validateMemory(cfg *MemoryConfig) {
 
 	if cfg.ShortTerm.Enabled && cfg.ShortTerm.RawHistoryLimit < 1 {
 		v.addError("memory.short_term.raw_history_limit", "raw_history_limit must be at least 1")
+	}
+}
+
+// validateSessions validates session persistence configuration.
+func (v *Validator) validateSessions(cfg *SessionsConfig) {
+	if !cfg.Enabled {
+		return
+	}
+
+	if !cfg.Sources.CLI &&
+		!cfg.Sources.TUI &&
+		!cfg.Sources.WebUI &&
+		!cfg.Sources.Heartbeat &&
+		!cfg.Sources.Cron &&
+		!cfg.Sources.Channels &&
+		!cfg.Sources.Gateway {
+		v.addError("sessions.sources", "at least one session source must be enabled when session persistence is enabled")
+	}
+
+	if !cfg.Content.UserMessages &&
+		!cfg.Content.AssistantMessages &&
+		!cfg.Content.SystemMessages &&
+		!cfg.Content.ToolCalls &&
+		!cfg.Content.ToolResults {
+		v.addError("sessions.content", "at least one session content category must be enabled when session persistence is enabled")
+	}
+
+	if cfg.Cleanup.Enabled {
+		if cfg.Cleanup.IntervalMinutes < 1 {
+			v.addError("sessions.cleanup.interval_minutes", "interval_minutes must be at least 1 when cleanup is enabled")
+		}
+		if cfg.Cleanup.MaxAgeDays < 1 {
+			v.addError("sessions.cleanup.max_age_days", "max_age_days must be at least 1 when cleanup is enabled")
+		}
 	}
 }
 

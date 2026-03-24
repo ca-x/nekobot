@@ -180,7 +180,7 @@ func (s *Service) executeHeartbeat(ctx context.Context) {
 	}
 
 	// Get or create heartbeat session
-	sess, err := s.sess.Get(sessionKey)
+	sess, err := s.sess.GetWithSource(sessionKey, session.SourceHeartbeat)
 	if err != nil {
 		s.log.Error("Failed to get heartbeat session", zap.Error(err))
 		s.updateState(start, err)

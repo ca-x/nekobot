@@ -284,6 +284,97 @@ func TestPersistChatRoutingUpdatesRouteFields(t *testing.T) {
 	}
 }
 
+func TestHandleGetProvidersReturnsProjectedView(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.Provider = "primary"
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	defer client.Close()
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	defer providers.Close()
+
+	if _, err := providers.Create(context.Background(), config.ProviderProfile{
+		Name:         "primary",
+		ProviderKind: "openai",
+		APIKey:       "secret-key",
+		APIBase:      "https://api.openai.com/v1",
+		Models:       []string{"gpt-4.1", "gpt-4o-mini"},
+		DefaultModel: "gpt-4.1",
+		Timeout:      45,
+	}); err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		providers: providers,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/providers", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleGetProviders(c); err != nil {
+		t.Fatalf("handleGetProviders failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload []map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal providers payload failed: %v", err)
+	}
+	if len(payload) != 1 {
+		t.Fatalf("expected 1 provider, got %d", len(payload))
+	}
+
+	item := payload[0]
+	requiredKeys := []string{
+		"name",
+		"provider_kind",
+		"api_key_set",
+		"api_base",
+		"proxy",
+		"models",
+		"model_count",
+		"default_model",
+		"has_default_model",
+		"is_routing_default",
+		"supports_discovery",
+		"summary",
+		"timeout",
+	}
+	for _, key := range requiredKeys {
+		if _, ok := item[key]; !ok {
+			t.Fatalf("expected key %q in provider payload: %+v", key, item)
+		}
+	}
+	if got, _ := item["api_key_set"].(bool); !got {
+		t.Fatalf("expected api_key_set true, got %+v", item["api_key_set"])
+	}
+	if got, _ := item["is_routing_default"].(bool); !got {
+		t.Fatalf("expected is_routing_default true, got %+v", item["is_routing_default"])
+	}
+	if got, _ := item["has_default_model"].(bool); !got {
+		t.Fatalf("expected has_default_model true, got %+v", item["has_default_model"])
+	}
+	if got, _ := item["model_count"].(float64); got != 2 {
+		t.Fatalf("expected model_count 2, got %+v", item["model_count"])
+	}
+	if secret, ok := item["api_key"].(string); ok && secret != "" {
+		t.Fatalf("expected projected provider to omit raw api_key, got %q", secret)
+	}
+}
+
 func newTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()

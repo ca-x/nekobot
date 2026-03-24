@@ -31,6 +31,26 @@ func TestMarketplaceHandlers_Return503WithoutSkillsManager(t *testing.T) {
 			handler: s.handleListMarketplaceSkills,
 		},
 		{
+			name:    "list installed skills",
+			method:  http.MethodGet,
+			path:    "/api/marketplace/skills/installed",
+			handler: s.handleListInstalledMarketplaceSkills,
+		},
+		{
+			name:    "get skill item",
+			method:  http.MethodGet,
+			path:    "/api/marketplace/skills/items/missing",
+			handler: s.handleGetMarketplaceSkillItem,
+			paramID: "missing",
+		},
+		{
+			name:    "get skill content",
+			method:  http.MethodGet,
+			path:    "/api/marketplace/skills/items/missing/content",
+			handler: s.handleGetMarketplaceSkillContent,
+			paramID: "missing",
+		},
+		{
 			name:    "enable skill",
 			method:  http.MethodPost,
 			path:    "/api/marketplace/skills/missing/enable",
@@ -199,6 +219,113 @@ Use this skill for tests.
 	}
 }
 
+func TestMarketplaceHandlers_InstalledItemAndContentFlow(t *testing.T) {
+	const skillID = "marketplace-test-skill"
+	tmpDir := t.TempDir()
+	skillsDir := filepath.Join(tmpDir, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills dir: %v", err)
+	}
+
+	skillPath := filepath.Join(skillsDir, "marketplace-test-skill.md")
+	skillContent := `---
+id: marketplace-test-skill
+name: Marketplace Test Skill
+description: Skill fixture for marketplace detail handlers
+version: 0.2.0
+author: test-suite
+tags:
+  - marketplace
+  - detail
+enabled: true
+always: true
+---
+# Marketplace Test Skill
+
+Use this skill for detail and content route tests.
+`
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("write test skill: %v", err)
+	}
+
+	log := newTestLogger(t)
+	mgr := skills.NewManager(log, skillsDir, false)
+	if err := mgr.Discover(); err != nil {
+		t.Fatalf("discover skills: %v", err)
+	}
+
+	s := &Server{skillsMgr: mgr}
+	e := echo.New()
+
+	installedReq := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/installed", nil)
+	installedRec := httptest.NewRecorder()
+	installedCtx := e.NewContext(installedReq, installedRec)
+	if err := s.handleListInstalledMarketplaceSkills(installedCtx); err != nil {
+		t.Fatalf("installed handler failed: %v", err)
+	}
+	if installedRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, installedRec.Code)
+	}
+
+	var installedPayload map[string]interface{}
+	if err := json.Unmarshal(installedRec.Body.Bytes(), &installedPayload); err != nil {
+		t.Fatalf("unmarshal installed payload: %v", err)
+	}
+	if got, _ := installedPayload["total"].(float64); got != 1 {
+		t.Fatalf("expected installed total 1, got %+v", installedPayload["total"])
+	}
+	records, ok := installedPayload["records"].([]interface{})
+	if !ok || len(records) != 1 {
+		t.Fatalf("expected one installed record, got %+v", installedPayload["records"])
+	}
+
+	itemReq := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/items/"+skillID, nil)
+	itemRec := httptest.NewRecorder()
+	itemCtx := e.NewContext(itemReq, itemRec)
+	itemCtx.SetPath("/api/marketplace/skills/items/:id")
+	itemCtx.SetPathValues(echo.PathValues{{Name: "id", Value: skillID}})
+	if err := s.handleGetMarketplaceSkillItem(itemCtx); err != nil {
+		t.Fatalf("item handler failed: %v", err)
+	}
+	if itemRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, itemRec.Code)
+	}
+
+	var itemPayload map[string]interface{}
+	if err := json.Unmarshal(itemRec.Body.Bytes(), &itemPayload); err != nil {
+		t.Fatalf("unmarshal item payload: %v", err)
+	}
+	requiredItemKeys := []string{"id", "name", "description", "version", "author", "enabled", "always", "tags", "file_path"}
+	for _, key := range requiredItemKeys {
+		if _, ok := itemPayload[key]; !ok {
+			t.Fatalf("expected key %q in item payload: %+v", key, itemPayload)
+		}
+	}
+
+	contentReq := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/items/"+skillID+"/content", nil)
+	contentRec := httptest.NewRecorder()
+	contentCtx := e.NewContext(contentReq, contentRec)
+	contentCtx.SetPath("/api/marketplace/skills/items/:id/content")
+	contentCtx.SetPathValues(echo.PathValues{{Name: "id", Value: skillID}})
+	if err := s.handleGetMarketplaceSkillContent(contentCtx); err != nil {
+		t.Fatalf("content handler failed: %v", err)
+	}
+	if contentRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, contentRec.Code)
+	}
+
+	var contentPayload map[string]interface{}
+	if err := json.Unmarshal(contentRec.Body.Bytes(), &contentPayload); err != nil {
+		t.Fatalf("unmarshal content payload: %v", err)
+	}
+	if contentPayload["raw"] == "" {
+		t.Fatalf("expected raw content, got %+v", contentPayload)
+	}
+	if body, _ := contentPayload["body_raw"].(string); body == "" || body == contentPayload["raw"] {
+		t.Fatalf("expected extracted body_raw, got %+v", contentPayload["body_raw"])
+	}
+}
+
 func TestMarketplaceHandlers_Return404ForUnknownSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillsDir := filepath.Join(tmpDir, "skills")
@@ -217,27 +344,47 @@ func TestMarketplaceHandlers_Return404ForUnknownSkill(t *testing.T) {
 
 	tests := []struct {
 		name    string
+		method  string
 		path    string
+		route   string
 		handler func(*echo.Context) error
 	}{
 		{
 			name:    "enable unknown",
+			method:  http.MethodPost,
 			path:    "/api/marketplace/skills/unknown/enable",
+			route:   "/api/marketplace/skills/:id/enable",
 			handler: s.handleEnableMarketplaceSkill,
 		},
 		{
 			name:    "disable unknown",
+			method:  http.MethodPost,
 			path:    "/api/marketplace/skills/unknown/disable",
+			route:   "/api/marketplace/skills/:id/disable",
 			handler: s.handleDisableMarketplaceSkill,
+		},
+		{
+			name:    "item unknown",
+			method:  http.MethodGet,
+			path:    "/api/marketplace/skills/items/unknown",
+			route:   "/api/marketplace/skills/items/:id",
+			handler: s.handleGetMarketplaceSkillItem,
+		},
+		{
+			name:    "content unknown",
+			method:  http.MethodGet,
+			path:    "/api/marketplace/skills/items/unknown/content",
+			route:   "/api/marketplace/skills/items/:id/content",
+			handler: s.handleGetMarketplaceSkillContent,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, tc.path, nil)
+			req := httptest.NewRequest(tc.method, tc.path, nil)
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
-			c.SetPath("/api/marketplace/skills/:id")
+			c.SetPath(tc.route)
 			c.SetPathValues(echo.PathValues{{Name: "id", Value: "unknown"}})
 
 			if err := tc.handler(c); err != nil {

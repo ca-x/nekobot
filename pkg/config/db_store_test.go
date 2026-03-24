@@ -25,12 +25,25 @@ func TestApplyDatabaseOverridesAndSaveSections(t *testing.T) {
 	cfg.Channels.Telegram.Enabled = true
 	cfg.Channels.Telegram.Token = "token-a"
 	cfg.Memory.Enabled = true
+	cfg.Memory.Context.Enabled = true
+	cfg.Memory.Context.IncludeWorkspaceMemory = true
+	cfg.Memory.Context.IncludeLongTerm = true
+	cfg.Memory.Context.RecentDailyNoteDays = 2
+	cfg.Memory.Context.MaxChars = 6000
 	cfg.Memory.Semantic.Enabled = true
 	cfg.Memory.Semantic.SearchPolicy = "vector"
 	cfg.Memory.Semantic.DefaultTopK = 6
 	cfg.Memory.Semantic.MaxTopK = 12
 	cfg.Memory.ShortTerm.Enabled = true
 	cfg.Memory.ShortTerm.RawHistoryLimit = 111
+	cfg.Sessions.Enabled = true
+	cfg.Sessions.Sources.CLI = true
+	cfg.Sessions.Sources.WebUI = false
+	cfg.Sessions.Content.ToolCalls = true
+	cfg.Sessions.Content.ToolResults = false
+	cfg.Sessions.Cleanup.Enabled = true
+	cfg.Sessions.Cleanup.IntervalMinutes = 45
+	cfg.Sessions.Cleanup.MaxAgeDays = 14
 
 	if err := ApplyDatabaseOverrides(cfg); err != nil {
 		t.Fatalf("ApplyDatabaseOverrides initial failed: %v", err)
@@ -42,6 +55,14 @@ func TestApplyDatabaseOverridesAndSaveSections(t *testing.T) {
 	cfg.Channels.Telegram.Token = "token-b"
 	cfg.Memory.Semantic.SearchPolicy = "hybrid"
 	cfg.Memory.ShortTerm.RawHistoryLimit = 5
+	cfg.Memory.Context.RecentDailyNoteDays = 0
+	cfg.Memory.Context.MaxChars = 100
+	cfg.Sessions.Sources.CLI = false
+	cfg.Sessions.Sources.WebUI = true
+	cfg.Sessions.Content.ToolCalls = false
+	cfg.Sessions.Content.ToolResults = true
+	cfg.Sessions.Cleanup.IntervalMinutes = 1
+	cfg.Sessions.Cleanup.MaxAgeDays = 1
 	if err := ApplyDatabaseOverrides(cfg); err != nil {
 		t.Fatalf("ApplyDatabaseOverrides reload failed: %v", err)
 	}
@@ -56,6 +77,18 @@ func TestApplyDatabaseOverridesAndSaveSections(t *testing.T) {
 	}
 	if cfg.Memory.Semantic.SearchPolicy != "vector" || cfg.Memory.ShortTerm.RawHistoryLimit != 111 {
 		t.Fatalf("expected memory loaded from DB, got %+v", cfg.Memory)
+	}
+	if cfg.Memory.Context.RecentDailyNoteDays != 2 || cfg.Memory.Context.MaxChars != 6000 {
+		t.Fatalf("expected memory context loaded from DB, got %+v", cfg.Memory.Context)
+	}
+	if !cfg.Sessions.Sources.CLI || cfg.Sessions.Sources.WebUI {
+		t.Fatalf("expected sessions sources loaded from DB, got %+v", cfg.Sessions.Sources)
+	}
+	if !cfg.Sessions.Content.ToolCalls || cfg.Sessions.Content.ToolResults {
+		t.Fatalf("expected session content loaded from DB, got %+v", cfg.Sessions.Content)
+	}
+	if cfg.Sessions.Cleanup.IntervalMinutes != 45 || cfg.Sessions.Cleanup.MaxAgeDays != 14 {
+		t.Fatalf("expected session cleanup loaded from DB, got %+v", cfg.Sessions.Cleanup)
 	}
 
 	cfg.Agents.Defaults.Model = "db-model"
@@ -84,16 +117,44 @@ func TestApplyDatabaseOverridesAndSaveSections(t *testing.T) {
 
 	cfg.Memory.Semantic.SearchPolicy = "hybrid"
 	cfg.Memory.ShortTerm.RawHistoryLimit = 222
+	cfg.Memory.Context.RecentDailyNoteDays = 5
+	cfg.Memory.Context.MaxChars = 4096
 	if err := SaveDatabaseSections(cfg, "memory"); err != nil {
 		t.Fatalf("SaveDatabaseSections memory failed: %v", err)
 	}
 	cfg.Memory.Semantic.SearchPolicy = "stale"
 	cfg.Memory.ShortTerm.RawHistoryLimit = 1
+	cfg.Memory.Context.RecentDailyNoteDays = 0
+	cfg.Memory.Context.MaxChars = 1
 	if err := ApplyDatabaseOverrides(cfg); err != nil {
 		t.Fatalf("ApplyDatabaseOverrides memory reload failed: %v", err)
 	}
 	if cfg.Memory.Semantic.SearchPolicy != "hybrid" || cfg.Memory.ShortTerm.RawHistoryLimit != 222 {
 		t.Fatalf("expected updated memory from DB, got %+v", cfg.Memory)
+	}
+	if cfg.Memory.Context.RecentDailyNoteDays != 5 || cfg.Memory.Context.MaxChars != 4096 {
+		t.Fatalf("expected updated memory context from DB, got %+v", cfg.Memory.Context)
+	}
+
+	cfg.Sessions.Sources.WebUI = true
+	cfg.Sessions.Content.ToolResults = true
+	cfg.Sessions.Cleanup.IntervalMinutes = 90
+	cfg.Sessions.Cleanup.MaxAgeDays = 60
+	if err := SaveDatabaseSections(cfg, "sessions"); err != nil {
+		t.Fatalf("SaveDatabaseSections sessions failed: %v", err)
+	}
+	cfg.Sessions.Sources.WebUI = false
+	cfg.Sessions.Content.ToolResults = false
+	cfg.Sessions.Cleanup.IntervalMinutes = 1
+	cfg.Sessions.Cleanup.MaxAgeDays = 1
+	if err := ApplyDatabaseOverrides(cfg); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides sessions reload failed: %v", err)
+	}
+	if !cfg.Sessions.Sources.WebUI || !cfg.Sessions.Content.ToolResults {
+		t.Fatalf("expected updated sessions config from DB, got %+v %+v", cfg.Sessions.Sources, cfg.Sessions.Content)
+	}
+	if cfg.Sessions.Cleanup.IntervalMinutes != 90 || cfg.Sessions.Cleanup.MaxAgeDays != 60 {
+		t.Fatalf("expected updated session cleanup from DB, got %+v", cfg.Sessions.Cleanup)
 	}
 }
 

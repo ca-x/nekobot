@@ -6,10 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/session"
 	"nekobot/pkg/version"
 )
 
@@ -28,10 +28,11 @@ func newTestServer(t *testing.T) *Server {
 
 	// Create server without agent (will panic if chat is used, but we only test REST)
 	s := &Server{
-		config:  cfg,
-		logger:  log,
-		bus:     localBus,
-		clients: make(map[string]*Client),
+		config:     cfg,
+		logger:     log,
+		bus:        localBus,
+		sessionMgr: session.NewManager(t.TempDir(), cfg.Sessions),
+		clients:    make(map[string]*Client),
 	}
 	s.setupRoutes()
 	return s
@@ -147,21 +148,19 @@ func TestRemoveClientIdempotent(t *testing.T) {
 	}
 }
 
-func TestSimpleSession(t *testing.T) {
-	sess := &simpleSession{}
+func TestGetOrCreateSessionUsesGatewaySource(t *testing.T) {
+	s := newTestServer(t)
 
-	if len(sess.GetMessages()) != 0 {
-		t.Fatal("expected empty session")
+	sess, err := s.getOrCreateSession("gateway-test")
+	if err != nil {
+		t.Fatalf("getOrCreateSession failed: %v", err)
 	}
 
-	sess.AddMessage(agent.Message{Role: "user", Content: "hello"})
-	sess.AddMessage(agent.Message{Role: "assistant", Content: "hi"})
-
-	msgs := sess.GetMessages()
-	if len(msgs) != 2 {
-		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	managed, ok := sess.(*session.Session)
+	if !ok {
+		t.Fatalf("expected *session.Session, got %T", sess)
 	}
-	if msgs[0].Role != "user" || msgs[1].Role != "assistant" {
-		t.Fatal("unexpected message roles")
+	if managed.Source != session.SourceGateway {
+		t.Fatalf("expected source %q, got %q", session.SourceGateway, managed.Source)
 	}
 }

@@ -4,6 +4,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,6 +17,14 @@ import (
 type MemoryStore struct {
 	workspace string
 	backend   MemoryBackend
+}
+
+// MemoryContextOptions controls how persistent memory is rendered into prompt context.
+type MemoryContextOptions struct {
+	IncludeWorkspaceMemory bool
+	IncludeLongTerm        bool
+	RecentDailyNoteDays    int
+	MaxChars               int
 }
 
 // NewMemoryStore creates a file-backed memory store for the workspace.
@@ -38,6 +47,16 @@ func NewMemoryStoreWithBackend(workspace string, backend MemoryBackend) *MemoryS
 	}
 }
 
+// DefaultMemoryContextOptions returns the default prompt memory composition.
+func DefaultMemoryContextOptions() MemoryContextOptions {
+	return MemoryContextOptions{
+		IncludeWorkspaceMemory: true,
+		IncludeLongTerm:        true,
+		RecentDailyNoteDays:    1,
+		MaxChars:               8000,
+	}
+}
+
 // ReadLongTerm reads the long-term memory content.
 // Returns empty string if read fails.
 func (ms *MemoryStore) ReadLongTerm() string {
@@ -46,6 +65,20 @@ func (ms *MemoryStore) ReadLongTerm() string {
 		return ""
 	}
 	return content
+}
+
+// ReadWorkspaceMemory reads workspace-scoped memory from workspace/MEMORY.md.
+func (ms *MemoryStore) ReadWorkspaceMemory() string {
+	if strings.TrimSpace(ms.workspace) == "" {
+		return ""
+	}
+
+	path := filepath.Join(ms.workspace, "MEMORY.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }
 
 // WriteLongTerm writes content to long-term memory.
@@ -135,22 +168,7 @@ func (ms *MemoryStore) GetRecentDailyNotes(days int) string {
 }
 
 // GetMemoryContext returns formatted memory context for the agent prompt.
-// Includes long-term memory and recent daily notes.
+// Deprecated: prompt composition should use MemoryContextComposer.
 func (ms *MemoryStore) GetMemoryContext() string {
-	parts := make([]string, 0, 2)
-
-	longTerm := ms.ReadLongTerm()
-	if strings.TrimSpace(longTerm) != "" {
-		parts = append(parts, "## Long-term Memory\n\n"+longTerm)
-	}
-
-	recentNotes := ms.GetRecentDailyNotes(3)
-	if strings.TrimSpace(recentNotes) != "" {
-		parts = append(parts, "## Recent Daily Notes (Last 3 Days)\n\n"+recentNotes)
-	}
-
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.Join(parts, "\n\n---\n\n")
+	return NewMemoryContextComposer(ms, DefaultMemoryContextOptions()).Build()
 }

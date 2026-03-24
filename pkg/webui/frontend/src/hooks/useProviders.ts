@@ -8,11 +8,16 @@ import { t } from '@/lib/i18n';
 export interface Provider {
   name: string;
   provider_kind: string;
-  api_key: string;
+  api_key_set: boolean;
   api_base: string;
   proxy: string;
   models: string[] | null;
+  model_count: number;
   default_model: string;
+  has_default_model: boolean;
+  is_routing_default: boolean;
+  supports_discovery: boolean;
+  summary: string;
   timeout: number;
 }
 

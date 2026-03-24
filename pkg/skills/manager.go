@@ -186,6 +186,11 @@ func (m *Manager) GetSkillSources() []SkillSource {
 	return m.loader.GetSources()
 }
 
+// SkillsDir returns the primary writable skills directory.
+func (m *Manager) SkillsDir() string {
+	return m.skillsDir
+}
+
 // Get retrieves a skill by ID.
 func (m *Manager) Get(id string) (*Skill, error) {
 	m.mu.RLock()

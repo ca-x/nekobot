@@ -170,7 +170,7 @@ func runOneShot(ctx context.Context, cancel context.CancelFunc) {
 						defer cancel()
 
 						// Get or create session
-						sess, err := sm.Get(sessionID)
+						sess, err := sm.GetWithSource(sessionID, session.SourceCLI)
 						if err != nil {
 							log.Error("Failed to get session", zap.Error(err))
 							os.Exit(1)
@@ -230,7 +230,7 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc) {
 						defer cancel()
 
 						// Get or create session
-						sess, err := sm.Get(sessionID)
+						sess, err := sm.GetWithSource(sessionID, session.SourceCLI)
 						if err != nil {
 							log.Error("Failed to get session", zap.Error(err))
 							os.Exit(1)

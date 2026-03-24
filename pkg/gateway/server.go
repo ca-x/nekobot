@@ -21,6 +21,7 @@ import (
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/session"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/version"
 )
@@ -45,51 +46,35 @@ type Client struct {
 	id       string
 	conn     *websocket.Conn
 	send     chan []byte
-	session  *simpleSession
+	session  agent.SessionInterface
 	userID   string
 	username string
 }
 
-// simpleSession implements agent.SessionInterface for WS clients.
-type simpleSession struct {
-	messages []agent.Message
-	mu       sync.RWMutex
-}
-
-func (s *simpleSession) GetMessages() []agent.Message {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.messages
-}
-
-func (s *simpleSession) AddMessage(msg agent.Message) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.messages = append(s.messages, msg)
-}
-
 // Server is the WebSocket/REST gateway server.
 type Server struct {
-	config    *config.Config
-	logger    *logger.Logger
-	agent     *agent.Agent
-	bus       bus.Bus
-	entClient *ent.Client
-	mux       *http.ServeMux
-	server    *http.Server
-	clients   map[string]*Client
-	mu        sync.RWMutex
+	config     *config.Config
+	logger     *logger.Logger
+	agent      *agent.Agent
+	bus        bus.Bus
+	sessionMgr *session.Manager
+	entClient  *ent.Client
+	mux        *http.ServeMux
+	server     *http.Server
+	clients    map[string]*Client
+	mu         sync.RWMutex
 }
 
 // NewServer creates a new gateway server.
-func NewServer(cfg *config.Config, log *logger.Logger, ag *agent.Agent, messageBus bus.Bus, entClient *ent.Client) *Server {
+func NewServer(cfg *config.Config, log *logger.Logger, ag *agent.Agent, messageBus bus.Bus, sessionMgr *session.Manager, entClient *ent.Client) *Server {
 	s := &Server{
-		config:    cfg,
-		logger:    log,
-		agent:     ag,
-		bus:       messageBus,
-		entClient: entClient,
-		clients:   make(map[string]*Client),
+		config:     cfg,
+		logger:     log,
+		agent:      ag,
+		bus:        messageBus,
+		sessionMgr: sessionMgr,
+		entClient:  entClient,
+		clients:    make(map[string]*Client),
 	}
 
 	s.setupRoutes()
@@ -173,11 +158,17 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientID := uuid.New().String()
+	sess, err := s.getOrCreateSession(clientID)
+	if err != nil {
+		s.logger.Error("Create gateway session failed", zap.Error(err))
+		http.Error(w, `{"error":"session unavailable"}`, http.StatusInternalServerError)
+		return
+	}
 	client := &Client{
 		id:       clientID,
 		conn:     conn,
 		send:     make(chan []byte, 256),
-		session:  &simpleSession{},
+		session:  sess,
 		userID:   userID,
 		username: username,
 	}
@@ -205,6 +196,13 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 	// Start reader and writer goroutines
 	go s.readPump(client)
 	go s.writePump(client)
+}
+
+func (s *Server) getOrCreateSession(sessionID string) (agent.SessionInterface, error) {
+	if s.sessionMgr == nil {
+		return nil, fmt.Errorf("session manager not available")
+	}
+	return s.sessionMgr.GetWithSource(sessionID, session.SourceGateway)
 }
 
 func (s *Server) readPump(client *Client) {

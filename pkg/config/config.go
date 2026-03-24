@@ -28,6 +28,7 @@ type Config struct {
 	State         StateConfig         `mapstructure:"state" json:"state"`
 	Bus           BusConfig           `mapstructure:"bus" json:"bus"`
 	Memory        MemoryConfig        `mapstructure:"memory" json:"memory"`
+	Sessions      SessionsConfig      `mapstructure:"sessions" json:"sessions"`
 	Approval      ApprovalConfig      `mapstructure:"approval" json:"approval"`
 	WebUI         WebUIConfig         `mapstructure:"webui" json:"webui"`
 	mu            sync.RWMutex
@@ -87,6 +88,7 @@ type ChannelsConfig struct {
 	WhatsApp       WhatsAppConfig   `mapstructure:"whatsapp" json:"whatsapp"`
 	WeChat         WeChatConfig     `mapstructure:"wechat" json:"wechat"`
 	Telegram       TelegramConfig   `mapstructure:"telegram" json:"telegram"`
+	Gotify         GotifyConfig     `mapstructure:"gotify" json:"gotify"`
 	Feishu         FeishuConfig     `mapstructure:"feishu" json:"feishu"`
 	Discord        DiscordConfig    `mapstructure:"discord" json:"discord"`
 	MaixCam        MaixCamConfig    `mapstructure:"maixcam" json:"maixcam"`
@@ -98,6 +100,14 @@ type ChannelsConfig struct {
 	GoogleChat     GoogleChatConfig `mapstructure:"googlechat" json:"googlechat"`
 	Teams          TeamsConfig      `mapstructure:"teams" json:"teams"`
 	Infoflow       InfoflowConfig   `mapstructure:"infoflow" json:"infoflow"`
+}
+
+// GotifyConfig for Gotify push channel.
+type GotifyConfig struct {
+	Enabled   bool   `mapstructure:"enabled" json:"enabled"`
+	ServerURL string `mapstructure:"server_url" json:"server_url"`
+	AppToken  string `mapstructure:"app_token" json:"app_token"`
+	Priority  int    `mapstructure:"priority" json:"priority"`
 }
 
 // WhatsAppConfig for WhatsApp channel.
@@ -372,6 +382,11 @@ func DefaultConfig() *Config {
 				TimeoutSeconds: 60,
 				AllowFrom:      []string{},
 			},
+			Gotify: GotifyConfig{
+				Enabled:   false,
+				Priority:  5,
+				ServerURL: "http://localhost:8080",
+			},
 			Feishu: FeishuConfig{
 				Enabled:   false,
 				AllowFrom: []string{},
@@ -476,6 +491,13 @@ func DefaultConfig() *Config {
 			FilePath: "",
 			DBPrefix: "memory:",
 			KVPrefix: "memory:",
+			Context: MemoryContextConfig{
+				Enabled:                true,
+				IncludeWorkspaceMemory: true,
+				IncludeLongTerm:        true,
+				RecentDailyNoteDays:    1,
+				MaxChars:               8000,
+			},
 			Semantic: SemanticMemoryConfig{
 				Enabled:       true,
 				DefaultTopK:   5,
@@ -500,6 +522,30 @@ func DefaultConfig() *Config {
 					CommandTimeout: "30s",
 					UpdateTimeout:  "5m",
 				},
+			},
+		},
+		Sessions: SessionsConfig{
+			Enabled: true,
+			Sources: SessionSourcesConfig{
+				CLI:       true,
+				TUI:       true,
+				WebUI:     true,
+				Heartbeat: false,
+				Cron:      false,
+				Channels:  true,
+				Gateway:   false,
+			},
+			Content: SessionContentConfig{
+				UserMessages:      true,
+				AssistantMessages: true,
+				SystemMessages:    false,
+				ToolCalls:         true,
+				ToolResults:       true,
+			},
+			Cleanup: SessionCleanupConfig{
+				Enabled:         true,
+				IntervalMinutes: 60,
+				MaxAgeDays:      30,
 			},
 		},
 		Approval: ApprovalConfig{
@@ -621,10 +667,20 @@ type MemoryConfig struct {
 	FilePath  string                `mapstructure:"file_path" json:"file_path"` // Base path for file backend (defaults to workspace/memory)
 	DBPrefix  string                `mapstructure:"db_prefix" json:"db_prefix"` // Section prefix for DB backend
 	KVPrefix  string                `mapstructure:"kv_prefix" json:"kv_prefix"` // Key prefix for KV backend
+	Context   MemoryContextConfig   `mapstructure:"context" json:"context"`
 	Semantic  SemanticMemoryConfig  `mapstructure:"semantic" json:"semantic"`
 	Episodic  EpisodicMemoryConfig  `mapstructure:"episodic" json:"episodic"`
 	ShortTerm ShortTermMemoryConfig `mapstructure:"short_term" json:"short_term"`
 	QMD       QMDConfig             `mapstructure:"qmd" json:"qmd"`
+}
+
+// MemoryContextConfig controls how persistent memory is injected into prompts.
+type MemoryContextConfig struct {
+	Enabled                bool `mapstructure:"enabled" json:"enabled"`
+	IncludeWorkspaceMemory bool `mapstructure:"include_workspace_memory" json:"include_workspace_memory"`
+	IncludeLongTerm        bool `mapstructure:"include_long_term" json:"include_long_term"`
+	RecentDailyNoteDays    int  `mapstructure:"recent_daily_note_days" json:"recent_daily_note_days"`
+	MaxChars               int  `mapstructure:"max_chars" json:"max_chars"`
 }
 
 // SemanticMemoryConfig controls semantic memory retrieval behavior.
@@ -681,6 +737,41 @@ type QMDUpdateConfig struct {
 	UpdateTimeout  string `mapstructure:"update_timeout" json:"update_timeout"`
 }
 
+// SessionsConfig controls which chat/task sessions are persisted to disk.
+type SessionsConfig struct {
+	Enabled bool                 `mapstructure:"enabled" json:"enabled"`
+	Sources SessionSourcesConfig `mapstructure:"sources" json:"sources"`
+	Content SessionContentConfig `mapstructure:"content" json:"content"`
+	Cleanup SessionCleanupConfig `mapstructure:"cleanup" json:"cleanup"`
+}
+
+// SessionSourcesConfig controls which session sources are persisted.
+type SessionSourcesConfig struct {
+	CLI       bool `mapstructure:"cli" json:"cli"`
+	TUI       bool `mapstructure:"tui" json:"tui"`
+	WebUI     bool `mapstructure:"webui" json:"webui"`
+	Heartbeat bool `mapstructure:"heartbeat" json:"heartbeat"`
+	Cron      bool `mapstructure:"cron" json:"cron"`
+	Channels  bool `mapstructure:"channels" json:"channels"`
+	Gateway   bool `mapstructure:"gateway" json:"gateway"`
+}
+
+// SessionContentConfig controls which message classes are persisted.
+type SessionContentConfig struct {
+	UserMessages      bool `mapstructure:"user_messages" json:"user_messages"`
+	AssistantMessages bool `mapstructure:"assistant_messages" json:"assistant_messages"`
+	SystemMessages    bool `mapstructure:"system_messages" json:"system_messages"`
+	ToolCalls         bool `mapstructure:"tool_calls" json:"tool_calls"`
+	ToolResults       bool `mapstructure:"tool_results" json:"tool_results"`
+}
+
+// SessionCleanupConfig controls automatic cleanup of persisted sessions.
+type SessionCleanupConfig struct {
+	Enabled         bool `mapstructure:"enabled" json:"enabled"`
+	IntervalMinutes int  `mapstructure:"interval_minutes" json:"interval_minutes"`
+	MaxAgeDays      int  `mapstructure:"max_age_days" json:"max_age_days"`
+}
+
 // ApprovalConfig for tool execution approval system.
 type ApprovalConfig struct {
 	Mode      string   `mapstructure:"mode" json:"mode"`           // "auto", "prompt", or "manual"
@@ -710,5 +801,6 @@ func (c *Config) ApplyFrom(other *Config) {
 	c.Tools = other.Tools
 	c.Heartbeat = other.Heartbeat
 	c.Memory = other.Memory
+	c.Sessions = other.Sessions
 	c.Approval = other.Approval
 }

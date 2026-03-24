@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"sort"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	echojwt "github.com/labstack/echo-jwt/v5"
 	"github.com/labstack/echo/v5"
@@ -204,6 +206,9 @@ func (s *Server) setup() {
 
 	// Marketplace routes
 	api.GET("/marketplace/skills", s.handleListMarketplaceSkills)
+	api.GET("/marketplace/skills/installed", s.handleListInstalledMarketplaceSkills)
+	api.GET("/marketplace/skills/items/:id", s.handleGetMarketplaceSkillItem)
+	api.GET("/marketplace/skills/items/:id/content", s.handleGetMarketplaceSkillContent)
 	api.POST("/marketplace/skills/:id/enable", s.handleEnableMarketplaceSkill)
 	api.POST("/marketplace/skills/:id/disable", s.handleDisableMarketplaceSkill)
 
@@ -565,7 +570,7 @@ func (s *Server) handleGetProviders(c *echo.Context) error {
 
 	providers := make([]map[string]interface{}, len(loaded))
 	for i, p := range loaded {
-		providers[i] = providerProfileToMap(p)
+		providers[i] = s.providerProfileToView(p)
 	}
 	return c.JSON(http.StatusOK, providers)
 }
@@ -585,7 +590,7 @@ func (s *Server) handleCreateProvider(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"status":   "created",
-		"provider": providerProfileToMap(*created),
+		"provider": s.providerProfileToView(*created),
 	})
 }
 
@@ -605,7 +610,7 @@ func (s *Server) handleUpdateProvider(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":   "updated",
-		"provider": providerProfileToMap(*updated),
+		"provider": s.providerProfileToView(*updated),
 	})
 }
 
@@ -632,6 +637,53 @@ func providerProfileToMap(p config.ProviderProfile) map[string]interface{} {
 		"default_model": p.DefaultModel,
 		"timeout":       p.Timeout,
 	}
+}
+
+func (s *Server) providerProfileToView(p config.ProviderProfile) map[string]interface{} {
+	models := append([]string(nil), p.Models...)
+	apiKeySet := strings.TrimSpace(p.APIKey) != ""
+	defaultModel := strings.TrimSpace(p.DefaultModel)
+
+	return map[string]interface{}{
+		"name":               strings.TrimSpace(p.Name),
+		"provider_kind":      strings.TrimSpace(p.ProviderKind),
+		"api_key_set":        apiKeySet,
+		"api_base":           strings.TrimSpace(p.APIBase),
+		"proxy":              strings.TrimSpace(p.Proxy),
+		"models":             models,
+		"model_count":        len(models),
+		"default_model":      defaultModel,
+		"has_default_model":  defaultModel != "",
+		"is_routing_default": strings.TrimSpace(s.config.Agents.Defaults.Provider) == strings.TrimSpace(p.Name),
+		"supports_discovery": providerKindSupportsDiscovery(p.ProviderKind),
+		"summary":            summarizeProviderProfile(p),
+		"timeout":            p.Timeout,
+	}
+}
+
+func providerKindSupportsDiscovery(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "openai", "anthropic", "gemini", "ollama", "groq", "lmstudio", "vllm", "deepseek", "moonshot", "zhipu", "openrouter", "nvidia", "generic":
+		return true
+	default:
+		return false
+	}
+}
+
+func summarizeProviderProfile(p config.ProviderProfile) string {
+	modelCount := len(p.Models)
+	defaultModel := strings.TrimSpace(p.DefaultModel)
+	parts := make([]string, 0, 2)
+	if modelCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d models", modelCount))
+	}
+	if defaultModel != "" {
+		parts = append(parts, fmt.Sprintf("default %s", defaultModel))
+	}
+	if len(parts) == 0 {
+		return "No models configured"
+	}
+	return strings.Join(parts, " · ")
 }
 
 func (s *Server) handleProviderStoreError(c *echo.Context, err error) error {
@@ -2207,21 +2259,142 @@ func (s *Server) handleListMarketplaceSkills(c *echo.Context) error {
 
 	items := make([]map[string]interface{}, 0, len(skillsList))
 	for _, skill := range skillsList {
-		entry := map[string]interface{}{
-			"id":          strings.TrimSpace(skill.ID),
-			"name":        strings.TrimSpace(skill.Name),
-			"description": strings.TrimSpace(skill.Description),
-			"version":     strings.TrimSpace(skill.Version),
-			"author":      strings.TrimSpace(skill.Author),
-			"enabled":     skill.Enabled,
-			"always":      false,
-			"file_path":   strings.TrimSpace(skill.FilePath),
-			"tags":        skill.Tags,
-		}
-		items = append(items, entry)
+		items = append(items, marketplaceSkillItem(skill))
 	}
 
 	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleListInstalledMarketplaceSkills(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	skillsList := s.skillsMgr.ListEnabled()
+	sort.Slice(skillsList, func(i, j int) bool {
+		left := strings.TrimSpace(skillsList[i].ID)
+		right := strings.TrimSpace(skillsList[j].ID)
+		if left == right {
+			return strings.TrimSpace(skillsList[i].Name) < strings.TrimSpace(skillsList[j].Name)
+		}
+		return left < right
+	})
+
+	records := make([]map[string]interface{}, 0, len(skillsList))
+	for _, skill := range skillsList {
+		if !s.marketplaceSkillIsInstalled(skill) {
+			continue
+		}
+		records = append(records, marketplaceSkillItem(skill))
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"total":   len(records),
+		"records": records,
+	})
+}
+
+func (s *Server) marketplaceSkillIsInstalled(skill *skills.Skill) bool {
+	if skill == nil {
+		return false
+	}
+
+	filePath := strings.TrimSpace(skill.FilePath)
+	if filePath == "" || strings.HasPrefix(filePath, "builtin://") {
+		return false
+	}
+	if s.skillsMgr == nil {
+		return true
+	}
+
+	skillsDir := strings.TrimSpace(s.skillsMgr.SkillsDir())
+	if skillsDir == "" {
+		return true
+	}
+
+	relPath, err := filepath.Rel(filepath.Clean(skillsDir), filepath.Clean(filePath))
+	if err != nil {
+		return false
+	}
+	if relPath == "." {
+		return true
+	}
+	return relPath != ".." && !strings.HasPrefix(relPath, ".."+string(os.PathSeparator))
+}
+
+func (s *Server) handleGetMarketplaceSkillItem(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	skillID := strings.TrimSpace(c.Param("id"))
+	skill, ok := s.resolveMarketplaceSkill(skillID)
+	if !ok {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
+	}
+
+	return c.JSON(http.StatusOK, marketplaceSkillItem(skill))
+}
+
+func (s *Server) handleGetMarketplaceSkillContent(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	skillID := strings.TrimSpace(c.Param("id"))
+	skill, ok := s.resolveMarketplaceSkill(skillID)
+	if !ok {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
+	}
+
+	raw, bodyRaw, err := readMarketplaceSkillContent(skill)
+	if err != nil {
+		s.logger.Error("Failed to read marketplace skill content",
+			zap.String("skill_id", skillID),
+			zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read skill content"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"id":        strings.TrimSpace(skill.ID),
+		"name":      strings.TrimSpace(skill.Name),
+		"file_path": strings.TrimSpace(skill.FilePath),
+		"raw":       raw,
+		"body_raw":  bodyRaw,
+	})
+}
+
+func marketplaceSkillItem(skill *skills.Skill) map[string]interface{} {
+	tags := append([]string(nil), skill.Tags...)
+	return map[string]interface{}{
+		"id":          strings.TrimSpace(skill.ID),
+		"name":        strings.TrimSpace(skill.Name),
+		"description": strings.TrimSpace(skill.Description),
+		"version":     strings.TrimSpace(skill.Version),
+		"author":      strings.TrimSpace(skill.Author),
+		"enabled":     skill.Enabled,
+		"always":      skill.Always,
+		"file_path":   strings.TrimSpace(skill.FilePath),
+		"tags":        tags,
+	}
+}
+
+func readMarketplaceSkillContent(skill *skills.Skill) (string, string, error) {
+	rawBytes, err := os.ReadFile(skill.FilePath)
+	if err != nil {
+		return "", "", fmt.Errorf("read skill file %s: %w", skill.FilePath, err)
+	}
+
+	raw := string(rawBytes)
+	bodyRaw := strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "---\n") {
+		parts := strings.SplitN(raw[4:], "\n---\n", 2)
+		if len(parts) == 2 {
+			bodyRaw = strings.TrimSpace(parts[1])
+		}
+	}
+
+	return raw, bodyRaw, nil
 }
 
 func (s *Server) handleEnableMarketplaceSkill(c *echo.Context) error {
@@ -2546,6 +2719,7 @@ func (s *Server) handleGetConfig(c *echo.Context) error {
 		"approval":      s.config.Approval,
 		"logger":        s.config.Logger,
 		"memory":        s.config.Memory,
+		"sessions":      s.config.Sessions,
 		"webui":         s.config.WebUI,
 		"transcription": s.config.Transcription,
 	})
@@ -2560,6 +2734,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		Approval      *config.ApprovalConfig      `json:"approval"`
 		Logger        *config.LoggerConfig        `json:"logger"`
 		Memory        *config.MemoryConfig        `json:"memory"`
+		Sessions      *config.SessionsConfig      `json:"sessions"`
 		WebUI         *config.WebUIConfig         `json:"webui"`
 		Transcription *config.TranscriptionConfig `json:"transcription"`
 	}
@@ -2589,6 +2764,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	if body.Memory != nil {
 		s.config.Memory = *body.Memory
 	}
+	if body.Sessions != nil {
+		s.config.Sessions = *body.Sessions
+	}
 	if body.WebUI != nil {
 		s.config.WebUI = *body.WebUI
 	}
@@ -2601,7 +2779,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	sections := make([]string, 0, 9)
+	sections := make([]string, 0, 10)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -2622,6 +2800,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.Memory != nil {
 		sections = append(sections, "memory")
+	}
+	if body.Sessions != nil {
+		sections = append(sections, "sessions")
 	}
 	if body.WebUI != nil {
 		sections = append(sections, "webui")
@@ -2661,6 +2842,7 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 		"approval":      s.config.Approval,
 		"logger":        s.config.Logger,
 		"memory":        s.config.Memory,
+		"sessions":      s.config.Sessions,
 		"webui":         s.config.WebUI,
 		"transcription": s.config.Transcription,
 		"providers":     providerList,
@@ -2679,6 +2861,7 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		Approval      *config.ApprovalConfig      `json:"approval"`
 		Logger        *config.LoggerConfig        `json:"logger"`
 		Memory        *config.MemoryConfig        `json:"memory"`
+		Sessions      *config.SessionsConfig      `json:"sessions"`
 		WebUI         *config.WebUIConfig         `json:"webui"`
 		Transcription *config.TranscriptionConfig `json:"transcription"`
 		Providers     []config.ProviderProfile    `json:"providers"`
@@ -2709,6 +2892,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	if body.Memory != nil {
 		s.config.Memory = *body.Memory
 	}
+	if body.Sessions != nil {
+		s.config.Sessions = *body.Sessions
+	}
 	if body.WebUI != nil {
 		s.config.WebUI = *body.WebUI
 	}
@@ -2722,7 +2908,7 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 
 	// Persist runtime sections to database
-	sections := make([]string, 0, 9)
+	sections := make([]string, 0, 10)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -2743,6 +2929,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 	if body.Memory != nil {
 		sections = append(sections, "memory")
+	}
+	if body.Sessions != nil {
+		sections = append(sections, "sessions")
 	}
 	if body.WebUI != nil {
 		sections = append(sections, "webui")
@@ -2979,24 +3168,6 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-// chatSession implements agent.SessionInterface for WebUI chat playground.
-type chatSession struct {
-	messages []agent.Message
-	mu       sync.RWMutex
-}
-
-func (cs *chatSession) GetMessages() []agent.Message {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return cs.messages
-}
-
-func (cs *chatSession) AddMessage(msg agent.Message) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	cs.messages = append(cs.messages, msg)
-}
-
 type chatWSMessage struct {
 	Type     string   `json:"type"`               // "message", "ping", "clear"
 	Content  string   `json:"content"`            // User message text
@@ -3054,7 +3225,12 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 	}
 	defer conn.Close()
 
-	sess := &chatSession{}
+	sessionID := "webui-chat:" + uuid.NewString()
+	sess, err := s.getOrCreateChatSession(sessionID)
+	if err != nil {
+		sendWSError(conn, fmt.Sprintf("session error: %v", err))
+		return nil
+	}
 
 	// Send welcome
 	welcome := chatWSResponse{
@@ -3128,7 +3304,11 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 
 		case "clear":
-			sess = &chatSession{}
+			sess, err = s.getOrCreateChatSession("webui-chat:" + uuid.NewString())
+			if err != nil {
+				sendWSError(conn, fmt.Sprintf("session error: %v", err))
+				continue
+			}
 			resp := chatWSResponse{Type: "system", Content: "Session cleared", Timestamp: time.Now().Unix()}
 			if data, err := json.Marshal(resp); err == nil {
 				conn.WriteMessage(websocket.TextMessage, data)
@@ -3179,6 +3359,13 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 		}
 	}
+}
+
+func (s *Server) getOrCreateChatSession(sessionID string) (agent.SessionInterface, error) {
+	if s.sessionMgr == nil {
+		return nil, fmt.Errorf("session manager not available")
+	}
+	return s.sessionMgr.GetWithSource(sessionID, session.SourceWebUI)
 }
 
 func (s *Server) handleToolSessionWS(c *echo.Context) error {

@@ -25,6 +25,7 @@ const currentTimePlaceholder = "__NEKOBOT_CURRENT_TIME__"
 type ContextBuilder struct {
 	workspace string
 	memory    *MemoryStore
+	composer  *MemoryContextComposer
 
 	// Tool registry reference (set after creation)
 	getToolDescriptions func() []string
@@ -61,6 +62,7 @@ func NewContextBuilderWithMemory(workspace string, memoryStore *MemoryStore) *Co
 	return &ContextBuilder{
 		workspace: workspace,
 		memory:    memoryStore,
+		composer:  NewMemoryContextComposer(memoryStore, DefaultMemoryContextOptions()),
 	}
 }
 
@@ -84,6 +86,11 @@ func (cb *ContextBuilder) SetOrchestratorMode(mode string) {
 // GetMemory returns the memory store.
 func (cb *ContextBuilder) GetMemory() *MemoryStore {
 	return cb.memory
+}
+
+// SetMemoryContextOptions updates how persistent memory is composed into the system prompt.
+func (cb *ContextBuilder) SetMemoryContextOptions(opts MemoryContextOptions) {
+	cb.composer = NewMemoryContextComposer(cb.memory, opts)
 }
 
 // getIdentity returns the core identity section of the system prompt.
@@ -272,7 +279,10 @@ func (cb *ContextBuilder) buildDynamicPromptBlock() string {
 		parts = append(parts, skillsSection)
 	}
 
-	memoryContext := cb.memory.GetMemoryContext()
+	memoryContext := ""
+	if cb.composer != nil {
+		memoryContext = cb.composer.Build()
+	}
 	if memoryContext != "" {
 		parts = append(parts, "# Memory\n\n"+memoryContext)
 	}

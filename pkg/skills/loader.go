@@ -171,6 +171,23 @@ func (l *MultiPathLoader) loadFromSource(source SkillSource) (map[string]*Skill,
 
 	for _, entry := range entries {
 		if entry.IsDir() {
+			// Support OpenClaw-style layout: <source>/<skill-name>/SKILL.md.
+			skillPath := filepath.Join(source.Path, entry.Name(), "SKILL.md")
+			if _, err := os.Stat(skillPath); err != nil {
+				continue
+			}
+			skill, err := loadSkillFile(skillPath)
+			if err != nil {
+				l.log.Warn("Failed to load skill",
+					zap.String("file", skillPath),
+					zap.Error(err))
+				continue
+			}
+
+			skills[skill.ID] = skill
+			l.log.Debug("Loaded skill",
+				zap.String("id", skill.ID),
+				zap.String("path", skillPath))
 			continue
 		}
 
@@ -178,6 +195,7 @@ func (l *MultiPathLoader) loadFromSource(source SkillSource) (map[string]*Skill,
 			continue
 		}
 
+		// Keep backward compatibility for flat markdown skill files.
 		skillPath := filepath.Join(source.Path, entry.Name())
 		skill, err := loadSkillFile(skillPath)
 		if err != nil {

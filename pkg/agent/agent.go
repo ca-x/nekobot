@@ -143,6 +143,12 @@ func New(
 	// Create context builder.
 	memoryStore := newMemoryStoreFromConfig(cfg, workspace, kvStore, runtimeEntClient)
 	contextBuilder := NewContextBuilderWithMemory(workspace, memoryStore)
+	contextBuilder.SetMemoryContextOptions(MemoryContextOptions{
+		IncludeWorkspaceMemory: cfg.Memory.Context.Enabled && cfg.Memory.Context.IncludeWorkspaceMemory,
+		IncludeLongTerm:        cfg.Memory.Context.Enabled && cfg.Memory.Context.IncludeLongTerm,
+		RecentDailyNoteDays:    cfg.Memory.Context.RecentDailyNoteDays,
+		MaxChars:               cfg.Memory.Context.MaxChars,
+	})
 
 	// Set tool descriptions function
 	contextBuilder.SetToolDescriptionsFunc(toolRegistry.GetDescriptions)

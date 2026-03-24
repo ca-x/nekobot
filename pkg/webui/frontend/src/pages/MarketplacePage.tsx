@@ -1,21 +1,66 @@
+import { useEffect, useMemo, useState } from 'react';
 import Header from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   useDisableMarketplaceSkill,
   useEnableMarketplaceSkill,
+  useInstalledMarketplaceSkills,
+  useMarketplaceSkillContent,
+  useMarketplaceSkillItem,
   useMarketplaceSkills,
+  type MarketplaceSkill,
 } from '@/hooks/useMarketplace';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import {
+  BadgeCheck,
+  FileCode2,
+  FileText,
+  Pin,
+  Search,
+  Sparkles,
+  ToggleLeft,
+} from 'lucide-react';
 
 export default function MarketplacePage() {
   const { data: skills, isLoading } = useMarketplaceSkills();
+  const { data: installed } = useInstalledMarketplaceSkills();
   const enableSkill = useEnableMarketplaceSkill();
   const disableSkill = useDisableMarketplaceSkill();
 
+  const [query, setQuery] = useState('');
+  const [selectedSkillID, setSelectedSkillID] = useState<string | null>(null);
+
   const marketplaceSkills = skills ?? [];
+  const filteredSkills = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) {
+      return marketplaceSkills;
+    }
+    return marketplaceSkills.filter((skill) =>
+      [skill.id, skill.name, skill.description, skill.author, ...(skill.tags ?? [])]
+        .join(' ')
+        .toLowerCase()
+        .includes(keyword),
+    );
+  }, [marketplaceSkills, query]);
+
+  useEffect(() => {
+    if (filteredSkills.length === 0) {
+      setSelectedSkillID(null);
+      return;
+    }
+    if (!selectedSkillID || !filteredSkills.some((skill) => skill.id === selectedSkillID)) {
+      setSelectedSkillID(filteredSkills[0]?.id ?? null);
+    }
+  }, [filteredSkills, selectedSkillID]);
+
+  const { data: selectedSkill, isLoading: isLoadingItem } = useMarketplaceSkillItem(selectedSkillID);
+  const { data: selectedContent, isLoading: isLoadingContent } = useMarketplaceSkillContent(selectedSkillID);
 
   const handleEnable = (id: string) => {
     enableSkill.mutate(id);
@@ -25,122 +70,373 @@ export default function MarketplacePage() {
     disableSkill.mutate(id);
   };
 
+  const installedCount = installed?.total ?? marketplaceSkills.filter((skill) => skill.enabled).length;
+  const alwaysOnCount = marketplaceSkills.filter((skill) => skill.always).length;
+
   return (
-    <div>
+    <div className="space-y-6">
       <Header
         title={t('tabMarketplace')}
-        description={t('marketplacePageDescription')}
+        description="Review installed skills, inspect raw content, and toggle capabilities without leaving the dashboard."
       />
 
+      <section className="relative overflow-hidden rounded-[28px] border border-emerald-200/70 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.14),_transparent_40%),linear-gradient(135deg,_rgba(255,255,255,0.98),_rgba(236,253,245,0.72))] p-5 shadow-sm sm:p-6">
+        <div className="absolute bottom-0 right-0 h-40 w-40 rounded-full bg-emerald-100/60 blur-3xl" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-white/90 px-3 py-1 text-xs font-medium text-emerald-700 shadow-sm">
+              <Sparkles className="h-3.5 w-3.5" />
+              Installed skills
+            </div>
+            <div className="space-y-2">
+              <h2 className="max-w-2xl text-2xl font-semibold tracking-tight text-slate-900">
+                Treat skills like runtime modules, not hidden markdown files.
+              </h2>
+              <p className="max-w-2xl text-sm leading-6 text-slate-600">
+                You can now browse installed items, inspect the parsed body, and verify whether a
+                skill is always-on before toggling it.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <SkillMetric label="Installed" value={String(installedCount)} />
+              <SkillMetric label="Always on" value={String(alwaysOnCount)} />
+              <SkillMetric label="Selected" value={selectedSkill?.name ?? 'None'} muted={!selectedSkill} />
+            </div>
+          </div>
+
+          <div className="w-full lg:w-[340px]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search skills, tags, author"
+                className="h-11 rounded-2xl border-emerald-200/60 bg-white/90 pl-9 shadow-sm"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
       {isLoading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-52 rounded-xl" />
-          ))}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <Skeleton className="h-[720px] rounded-[28px]" />
+          <Skeleton className="h-[720px] rounded-[28px]" />
         </div>
       )}
 
       {!isLoading && marketplaceSkills.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="h-14 w-14 flex items-center justify-center rounded-xl bg-muted mb-4">
-            <span className="text-xl text-muted-foreground">*</span>
+        <div className="rounded-[28px] border border-dashed border-slate-300 bg-white/90 px-6 py-20 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-[20px] bg-slate-900 text-white">
+            <FileCode2 className="h-6 w-6" />
           </div>
-          <h3 className="text-sm font-semibold text-foreground mb-1.5">
-            {t('marketplaceEmptyTitle')}
-          </h3>
-          <p className="text-sm text-muted-foreground max-w-sm">
+          <h3 className="text-lg font-semibold text-slate-900">{t('marketplaceEmptyTitle')}</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
             {t('marketplaceEmptyDescription')}
           </p>
         </div>
       )}
 
       {!isLoading && marketplaceSkills.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {marketplaceSkills.map((skill) => {
-            const isEnabling =
-              enableSkill.isPending && enableSkill.variables === skill.id;
-            const isDisabling =
-              disableSkill.isPending && disableSkill.variables === skill.id;
-            const isBusy = isEnabling || isDisabling;
-
-            return (
-              <Card key={skill.id}>
-                <CardContent className="p-5 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-foreground truncate">
-                        {skill.name || skill.id}
-                      </h3>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {skill.id}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium shrink-0',
-                        skill.enabled
-                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                          : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'h-1.5 w-1.5 rounded-full',
-                          skill.enabled ? 'bg-emerald-500' : 'bg-gray-400',
-                        )}
-                      />
-                      {skill.enabled ? t('on') : t('off')}
-                    </span>
-                  </div>
-
-                  <p className="text-sm text-muted-foreground min-h-[2.5rem]">
-                    {skill.description || t('marketplaceNoDescription')}
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <Card className="overflow-hidden rounded-[28px] border-slate-200/80 bg-white/95 shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">Skills</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {filteredSkills.length} visible · {installedCount} enabled
                   </p>
+                </div>
+                <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                  <ToggleLeft className="h-3.5 w-3.5" />
+                  Local install
+                </div>
+              </div>
+            </div>
 
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    <div>
-                      {t('marketplaceVersion')}: {skill.version || '-'}
-                    </div>
-                    <div>
-                      {t('marketplaceAuthor')}: {skill.author || '-'}
-                    </div>
-                    <div>
-                      {t('marketplaceTags')}:{' '}
-                      {skill.tags && skill.tags.length > 0
-                        ? skill.tags.join(', ')
-                        : '-'}
-                    </div>
-                    <div className="truncate" title={skill.file_path || ''}>
-                      {t('marketplaceFilePath')}: {skill.file_path || '-'}
-                    </div>
-                  </div>
+            <ScrollArea className="h-[720px]">
+              <div className="space-y-2 p-3">
+                {filteredSkills.map((skill) => (
+                  <SkillListItem
+                    key={skill.id}
+                    skill={skill}
+                    selected={selectedSkillID === skill.id}
+                    onSelect={() => setSelectedSkillID(skill.id)}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
+          </Card>
 
-                  <div className="flex items-center gap-2 pt-1">
-                    {skill.enabled ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={isBusy || skill.always}
-                        onClick={() => handleDisable(skill.id)}
-                      >
-                        {isDisabling ? t('marketplaceDisabling') : t('marketplaceDisable')}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        disabled={isBusy || skill.always}
-                        onClick={() => handleEnable(skill.id)}
-                      >
-                        {isEnabling ? t('marketplaceEnabling') : t('marketplaceEnable')}
-                      </Button>
-                    )}
+          <Card className="overflow-hidden rounded-[28px] border-slate-200/80 bg-white/95 shadow-sm">
+            {!selectedSkillID && (
+              <div className="flex h-[720px] flex-col items-center justify-center px-6 text-center">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-[20px] bg-slate-100 text-slate-400">
+                  <FileText className="h-6 w-6" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900">Select a skill</h3>
+                <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
+                  Choose a skill from the left list to inspect metadata, body content, and runtime status.
+                </p>
+              </div>
+            )}
+
+            {selectedSkillID && (
+              <div className="flex h-[720px] flex-col">
+                <div className="border-b border-slate-100 px-5 py-5">
+                  {isLoadingItem ? (
+                    <Skeleton className="h-24 rounded-2xl" />
+                  ) : selectedSkill ? (
+                    <SkillDetailHeader
+                      skill={selectedSkill}
+                      isBusy={
+                        (enableSkill.isPending && enableSkill.variables === selectedSkill.id) ||
+                        (disableSkill.isPending && disableSkill.variables === selectedSkill.id)
+                      }
+                      onEnable={handleEnable}
+                      onDisable={handleDisable}
+                    />
+                  ) : null}
+                </div>
+
+                <ScrollArea className="flex-1">
+                  <div className="space-y-5 p-5">
+                    <section className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                      <SkillInfoCard
+                        icon={<BadgeCheck className="h-4 w-4" />}
+                        label={t('marketplaceVersion')}
+                        value={selectedSkill?.version || '-'}
+                      />
+                      <SkillInfoCard
+                        icon={<Pin className="h-4 w-4" />}
+                        label={t('marketplaceAuthor')}
+                        value={selectedSkill?.author || '-'}
+                      />
+                      <SkillInfoCard
+                        icon={<ToggleLeft className="h-4 w-4" />}
+                        label="State"
+                        value={selectedSkill?.enabled ? 'Enabled' : 'Disabled'}
+                      />
+                    </section>
+
+                    <section className="rounded-[24px] border border-slate-200/80 bg-slate-50/70 p-4">
+                      <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Description</div>
+                      <p className="mt-2 text-sm leading-6 text-slate-700">
+                        {selectedSkill?.description || t('marketplaceNoDescription')}
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {(selectedSkill?.tags ?? []).length > 0 ? (
+                          (selectedSkill?.tags ?? []).map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm"
+                            >
+                              {tag}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-xs text-slate-500">No tags</span>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="rounded-[24px] border border-slate-200/80 bg-white p-4">
+                      <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                        {t('marketplaceFilePath')}
+                      </div>
+                      <p className="mt-2 break-all text-sm leading-6 text-slate-700">
+                        {selectedSkill?.file_path || '-'}
+                      </p>
+                    </section>
+
+                    <section className="rounded-[24px] border border-slate-200/80 bg-slate-950 text-slate-100 shadow-inner">
+                      <div className="border-b border-white/10 px-4 py-3">
+                        <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                          Parsed body
+                        </div>
+                      </div>
+                      <div className="max-h-[280px] overflow-auto px-4 py-4">
+                        {isLoadingContent ? (
+                          <Skeleton className="h-52 rounded-2xl bg-white/10" />
+                        ) : (
+                          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6 text-slate-200">
+                            {selectedContent?.body_raw || ''}
+                          </pre>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="rounded-[24px] border border-slate-200/80 bg-white">
+                      <div className="border-b border-slate-100 px-4 py-3">
+                        <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                          Raw source
+                        </div>
+                      </div>
+                      <div className="max-h-[320px] overflow-auto px-4 py-4">
+                        {isLoadingContent ? (
+                          <Skeleton className="h-64 rounded-2xl" />
+                        ) : (
+                          <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6 text-slate-700">
+                            {selectedContent?.raw || ''}
+                          </pre>
+                        )}
+                      </div>
+                    </section>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                </ScrollArea>
+              </div>
+            )}
+          </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+function SkillMetric({
+  label,
+  value,
+  muted,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="min-w-[120px] rounded-2xl border border-emerald-200/70 bg-white/90 px-4 py-3 shadow-sm">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</div>
+      <div className={cn('mt-1 text-base font-semibold text-slate-900', muted && 'text-slate-500')}>{value}</div>
+    </div>
+  );
+}
+
+function SkillListItem({
+  skill,
+  selected,
+  onSelect,
+}: {
+  skill: MarketplaceSkill;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        'w-full rounded-[22px] border p-4 text-left transition-all',
+        selected
+          ? 'border-emerald-300 bg-emerald-50/70 shadow-sm'
+          : 'border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/70',
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-sm font-semibold text-slate-900">{skill.name || skill.id}</h3>
+            {skill.always && (
+              <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-sky-700">
+                Always
+              </span>
+            )}
+          </div>
+          <p className="mt-1 truncate text-xs text-slate-500">{skill.id}</p>
+        </div>
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
+            skill.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600',
+          )}
+        >
+          <span className={cn('h-1.5 w-1.5 rounded-full', skill.enabled ? 'bg-emerald-500' : 'bg-slate-400')} />
+          {skill.enabled ? t('on') : t('off')}
+        </span>
+      </div>
+
+      <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600">
+        {skill.description || t('marketplaceNoDescription')}
+      </p>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(skill.tags ?? []).slice(0, 3).map((tag) => (
+          <span key={tag} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+            {tag}
+          </span>
+        ))}
+      </div>
+    </button>
+  );
+}
+
+function SkillDetailHeader({
+  skill,
+  isBusy,
+  onEnable,
+  onDisable,
+}: {
+  skill: MarketplaceSkill;
+  isBusy: boolean;
+  onEnable: (id: string) => void;
+  onDisable: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-xl font-semibold tracking-tight text-slate-900">{skill.name || skill.id}</h3>
+          {skill.always && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700">
+              <Pin className="h-3.5 w-3.5" />
+              Always on
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-slate-500">{skill.id}</p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {skill.enabled ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={isBusy || skill.always}
+            onClick={() => onDisable(skill.id)}
+            className="rounded-xl"
+          >
+            {isBusy ? t('marketplaceDisabling') : t('marketplaceDisable')}
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            disabled={isBusy || skill.always}
+            onClick={() => onEnable(skill.id)}
+            className="rounded-xl"
+          >
+            {isBusy ? t('marketplaceEnabling') : t('marketplaceEnable')}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SkillInfoCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
     </div>
   );
 }

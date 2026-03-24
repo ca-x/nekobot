@@ -15,6 +15,19 @@ export interface MarketplaceSkill {
   tags: string[];
 }
 
+export interface MarketplaceInstalledResponse {
+  total: number;
+  records: MarketplaceSkill[];
+}
+
+export interface MarketplaceSkillContent {
+  id: string;
+  name: string;
+  file_path: string;
+  raw: string;
+  body_raw: string;
+}
+
 interface MarketplaceToggleResponse {
   status: 'enabled' | 'disabled';
 }
@@ -22,6 +35,9 @@ interface MarketplaceToggleResponse {
 const marketplaceKeys = {
   all: ['marketplace'] as const,
   skills: () => [...marketplaceKeys.all, 'skills'] as const,
+  installed: () => [...marketplaceKeys.all, 'installed'] as const,
+  item: (skillID: string) => [...marketplaceKeys.all, 'item', skillID] as const,
+  content: (skillID: string) => [...marketplaceKeys.all, 'content', skillID] as const,
 };
 
 export function useMarketplaceSkills() {
@@ -35,6 +51,35 @@ export function useMarketplaceSkills() {
   });
 }
 
+export function useInstalledMarketplaceSkills() {
+  return useQuery<MarketplaceInstalledResponse>({
+    queryKey: marketplaceKeys.installed(),
+    queryFn: () => api.get<MarketplaceInstalledResponse>('/api/marketplace/skills/installed'),
+    staleTime: 30_000,
+  });
+}
+
+export function useMarketplaceSkillItem(skillID: string | null) {
+  return useQuery<MarketplaceSkill>({
+    queryKey: marketplaceKeys.item(skillID ?? ''),
+    queryFn: () => api.get<MarketplaceSkill>(`/api/marketplace/skills/items/${encodeURIComponent(skillID ?? '')}`),
+    enabled: Boolean(skillID),
+    staleTime: 30_000,
+  });
+}
+
+export function useMarketplaceSkillContent(skillID: string | null) {
+  return useQuery<MarketplaceSkillContent>({
+    queryKey: marketplaceKeys.content(skillID ?? ''),
+    queryFn: () =>
+      api.get<MarketplaceSkillContent>(
+        `/api/marketplace/skills/items/${encodeURIComponent(skillID ?? '')}/content`,
+      ),
+    enabled: Boolean(skillID),
+    staleTime: 30_000,
+  });
+}
+
 export function useEnableMarketplaceSkill() {
   const qc = useQueryClient();
   return useMutation<MarketplaceToggleResponse, Error, string>({
@@ -43,8 +88,10 @@ export function useEnableMarketplaceSkill() {
         `/api/marketplace/skills/${encodeURIComponent(skillID)}/enable`,
         {},
       ),
-    onSuccess: () => {
+    onSuccess: (_data, skillID) => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.installed() });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.item(skillID) });
       toast.success(t('marketplaceSkillEnabled'));
     },
     onError: (err) => toast.error(err.message),
@@ -59,8 +106,10 @@ export function useDisableMarketplaceSkill() {
         `/api/marketplace/skills/${encodeURIComponent(skillID)}/disable`,
         {},
       ),
-    onSuccess: () => {
+    onSuccess: (_data, skillID) => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.installed() });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.item(skillID) });
       toast.success(t('marketplaceSkillDisabled'));
     },
     onError: (err) => toast.error(err.message),

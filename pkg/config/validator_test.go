@@ -52,6 +52,39 @@ func TestValidateConfigRejectsInvalidMemoryBackend(t *testing.T) {
 	t.Fatalf("expected memory.backend validation error, got %v", err)
 }
 
+func TestValidateConfigRejectsInvalidMemoryContextConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Memory.Enabled = true
+	cfg.Memory.Context.Enabled = true
+	cfg.Memory.Context.RecentDailyNoteDays = -1
+	cfg.Memory.Context.MaxChars = 0
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for memory context config")
+	}
+
+	validationErrors, ok := err.(ValidationErrors)
+	if !ok {
+		t.Fatalf("expected ValidationErrors, got %T", err)
+	}
+
+	foundDays := false
+	foundChars := false
+	for _, validationErr := range validationErrors {
+		if validationErr.Field == "memory.context.recent_daily_note_days" {
+			foundDays = true
+		}
+		if validationErr.Field == "memory.context.max_chars" {
+			foundChars = true
+		}
+	}
+	if !foundDays || !foundChars {
+		t.Fatalf("expected memory context validation errors, got %v", err)
+	}
+}
+
 func TestValidateConfigRejectsInvalidMCPServerConfig(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
@@ -167,5 +200,80 @@ func TestValidateConfigRejectsInvalidWechatPollInterval(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "channels.wechat.poll_interval_seconds") {
 		t.Fatalf("expected wechat poll interval validation error, got %v", err)
+	}
+}
+
+func TestValidateConfigRejectsInvalidGotifyConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Channels.Gotify.Enabled = true
+	cfg.Channels.Gotify.ServerURL = ""
+	cfg.Channels.Gotify.AppToken = ""
+	cfg.Channels.Gotify.Priority = 11
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for gotify config")
+	}
+
+	requiredFields := []string{
+		"channels.gotify.server_url",
+		"channels.gotify.app_token",
+		"channels.gotify.priority",
+	}
+	for _, field := range requiredFields {
+		if !strings.Contains(err.Error(), field) {
+			t.Fatalf("expected %s validation error, got %v", field, err)
+		}
+	}
+}
+
+func TestValidateConfigRejectsSessionPersistenceWithoutSources(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Sessions.Enabled = true
+	cfg.Sessions.Sources = SessionSourcesConfig{}
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for session sources")
+	}
+	if !strings.Contains(err.Error(), "sessions.sources") {
+		t.Fatalf("expected sessions.sources validation error, got %v", err)
+	}
+}
+
+func TestValidateConfigRejectsSessionPersistenceWithoutContent(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Sessions.Enabled = true
+	cfg.Sessions.Content = SessionContentConfig{}
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for session content")
+	}
+	if !strings.Contains(err.Error(), "sessions.content") {
+		t.Fatalf("expected sessions.content validation error, got %v", err)
+	}
+}
+
+func TestValidateConfigRejectsInvalidSessionCleanupConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Sessions.Enabled = true
+	cfg.Sessions.Cleanup.Enabled = true
+	cfg.Sessions.Cleanup.IntervalMinutes = 0
+	cfg.Sessions.Cleanup.MaxAgeDays = 0
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for session cleanup")
+	}
+	if !strings.Contains(err.Error(), "sessions.cleanup.interval_minutes") {
+		t.Fatalf("expected sessions.cleanup.interval_minutes validation error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "sessions.cleanup.max_age_days") {
+		t.Fatalf("expected sessions.cleanup.max_age_days validation error, got %v", err)
 	}
 }

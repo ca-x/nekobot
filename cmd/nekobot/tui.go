@@ -183,7 +183,7 @@ func runTUI(cmd *cobra.Command, args []string) {
 					go func() {
 						defer cancel()
 
-						sess, err := sm.Get(tuiSessionID)
+						sess, err := sm.GetWithSource(tuiSessionID, session.SourceTUI)
 						if err != nil {
 							log.Error("Failed to get session", zap.Error(err))
 							return

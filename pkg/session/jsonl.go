@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"nekobot/pkg/agent"
 )
 
 // Message represents a single message in a session.
@@ -34,10 +36,61 @@ type SessionJSONL struct {
 	Metadata  map[string]interface{}
 }
 
+func sessionJSONMessagesFromAgent(messages []agent.Message) []Message {
+	result := make([]Message, 0, len(messages))
+	for _, msg := range messages {
+		item := Message{
+			Role:       msg.Role,
+			Content:    msg.Content,
+			Timestamp:  time.Now(),
+			ToolCallID: msg.ToolCallID,
+		}
+		if len(msg.ToolCalls) > 0 {
+			item.ToolCalls = make([]ToolCall, 0, len(msg.ToolCalls))
+			for _, call := range msg.ToolCalls {
+				item.ToolCalls = append(item.ToolCalls, ToolCall{
+					ID:     call.ID,
+					Name:   call.Name,
+					Params: call.Arguments,
+				})
+			}
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func sessionAgentMessagesFromJSON(messages []Message) []agent.Message {
+	result := make([]agent.Message, 0, len(messages))
+	for _, msg := range messages {
+		item := agent.Message{
+			Role:       msg.Role,
+			Content:    msg.Content,
+			ToolCallID: msg.ToolCallID,
+		}
+		if len(msg.ToolCalls) > 0 {
+			item.ToolCalls = make([]agent.ToolCall, 0, len(msg.ToolCalls))
+			for _, call := range msg.ToolCalls {
+				item.ToolCalls = append(item.ToolCalls, agent.ToolCall{
+					ID:        call.ID,
+					Name:      call.Name,
+					Arguments: call.Params,
+				})
+			}
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
 // SaveJSONL saves a session in JSONL format (one JSON object per line).
 // This format is more streaming-friendly and easier to process incrementally.
 func (m *Manager) SaveJSONL(key string, messages []Message, metadata map[string]interface{}) error {
 	path := m.getJSONLPath(key)
+	createdAt := time.Now()
+	if existing, err := m.LoadJSONL(key); err == nil && !existing.CreatedAt.IsZero() {
+		createdAt = existing.CreatedAt
+	}
 
 	// Create temp file
 	tmpPath := path + ".tmp"
@@ -53,7 +106,7 @@ func (m *Manager) SaveJSONL(key string, messages []Message, metadata map[string]
 	metadataLine := map[string]interface{}{
 		"_type":      "metadata",
 		"key":        key,
-		"created_at": time.Now(),
+		"created_at": createdAt,
 		"updated_at": time.Now(),
 		"metadata":   metadata,
 	}

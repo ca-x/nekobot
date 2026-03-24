@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"nekobot/pkg/config"
+	"nekobot/pkg/conversationbindings"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -30,13 +31,15 @@ type RuntimePreset struct {
 
 // RuntimeBindingService manages WeChat chat-to-runtime bindings on top of tool sessions.
 type RuntimeBindingService struct {
-	mgr *toolsessions.Manager
-	cfg *config.Config
+	service *conversationbindings.Service
 }
 
 // NewRuntimeBindingService creates a new WeChat runtime binding service.
 func NewRuntimeBindingService(mgr *toolsessions.Manager, cfg *config.Config) *RuntimeBindingService {
-	return &RuntimeBindingService{mgr: mgr, cfg: cfg}
+	_ = cfg
+	return &RuntimeBindingService{
+		service: conversationbindings.New(mgr, toolsessions.SourceChannel, "wechat", wechatConversationPrefix),
+	}
 }
 
 // BindConversation binds a WeChat conversation to a tool session.
@@ -44,16 +47,10 @@ func (s *RuntimeBindingService) BindConversation(
 	ctx context.Context,
 	chatID, sessionID string,
 ) error {
-	if s == nil || s.mgr == nil {
-		return fmt.Errorf("tool session manager is required")
+	if s == nil || s.service == nil {
+		return fmt.Errorf("conversation binding service is required")
 	}
-	return s.mgr.BindSessionConversation(
-		ctx,
-		sessionID,
-		toolsessions.SourceChannel,
-		"wechat",
-		wechatConversationKey(chatID),
-	)
+	return s.service.Bind(ctx, chatID, sessionID)
 }
 
 // ResolveConversation resolves the currently bound tool session for a WeChat chat.
@@ -61,39 +58,26 @@ func (s *RuntimeBindingService) ResolveConversation(
 	ctx context.Context,
 	chatID string,
 ) (*toolsessions.Session, error) {
-	if s == nil || s.mgr == nil {
-		return nil, fmt.Errorf("tool session manager is required")
+	if s == nil || s.service == nil {
+		return nil, fmt.Errorf("conversation binding service is required")
 	}
-	return s.mgr.FindSessionByConversation(
-		ctx,
-		toolsessions.SourceChannel,
-		"wechat",
-		wechatConversationKey(chatID),
-	)
+	return s.service.Resolve(ctx, chatID)
 }
 
 // ClearConversation clears the binding for a WeChat chat.
 func (s *RuntimeBindingService) ClearConversation(ctx context.Context, chatID string) error {
-	if s == nil || s.mgr == nil {
-		return fmt.Errorf("tool session manager is required")
+	if s == nil || s.service == nil {
+		return fmt.Errorf("conversation binding service is required")
 	}
-	return s.mgr.ClearConversationBinding(
-		ctx,
-		toolsessions.SourceChannel,
-		"wechat",
-		wechatConversationKey(chatID),
-	)
+	return s.service.Clear(ctx, chatID)
 }
 
 // ListBindings lists all current WeChat conversation bindings.
 func (s *RuntimeBindingService) ListBindings(ctx context.Context) ([]*toolsessions.Session, error) {
-	if s == nil || s.mgr == nil {
-		return nil, fmt.Errorf("tool session manager is required")
+	if s == nil || s.service == nil {
+		return nil, fmt.Errorf("conversation binding service is required")
 	}
-	return s.mgr.ListSessions(ctx, toolsessions.ListSessionsInput{
-		Source: toolsessions.SourceChannel,
-		Limit:  200,
-	})
+	return s.service.List(ctx)
 }
 
 // BuildRuntimePreset normalizes WeChat runtime creation requests.
@@ -163,11 +147,7 @@ func BuildRuntimePreset(cfg *config.Config, spec RuntimeSpec) (RuntimePreset, er
 }
 
 func wechatConversationKey(chatID string) string {
-	trimmed := strings.TrimSpace(chatID)
-	if trimmed == "" {
-		return ""
-	}
-	return wechatConversationPrefix + trimmed
+	return conversationbindings.New(nil, "", "", wechatConversationPrefix).ConversationKey(chatID)
 }
 
 func firstCommandToken(command string) string {

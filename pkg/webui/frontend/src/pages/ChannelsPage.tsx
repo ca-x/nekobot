@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 /** Emoji icons for known channel types; unknown channels get their first letter. */
 const channelEmoji: Record<string, string> = {
   telegram: 'TG',
+  gotify: 'GF',
   discord: 'DC',
   slack: 'SK',
   whatsapp: 'WA',
@@ -38,6 +39,7 @@ const channelEmoji: Record<string, string> = {
 /** Background color per channel (for the badge). */
 const channelColors: Record<string, string> = {
   telegram: 'bg-sky-500',
+  gotify: 'bg-orange-600',
   discord: 'bg-indigo-500',
   slack: 'bg-emerald-600',
   whatsapp: 'bg-green-500',

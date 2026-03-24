@@ -197,10 +197,10 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
       {
         name: provider?.name,
         provider_kind: watchedKind,
-        api_key: watchedApiKey || provider?.api_key,
-        api_base: watchedApiBase || provider?.api_base,
-        proxy: watchedProxy || provider?.proxy,
-        timeout: watchedTimeout ? parseInt(watchedTimeout, 10) : provider?.timeout,
+                        api_key: watchedApiKey || undefined,
+                        api_base: watchedApiBase || provider?.api_base,
+                        proxy: watchedProxy || provider?.proxy,
+                        timeout: watchedTimeout ? parseInt(watchedTimeout, 10) : provider?.timeout,
       },
       {
         onSuccess: (resp) => {
@@ -345,9 +345,9 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                       id="pf-key"
                       value={field.value}
                       onChange={field.onChange}
-                      isSet={isEdit && !!provider?.api_key}
+                      isSet={isEdit && !!provider?.api_key_set}
                       placeholder={
-                        isEdit && provider?.api_key
+                        isEdit && provider?.api_key_set
                           ? 'sk-****  (leave blank to keep current)'
                           : 'sk-\u2026'
                       }

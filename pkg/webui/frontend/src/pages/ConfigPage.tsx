@@ -23,6 +23,9 @@ import {
   Eye,
   EyeOff,
   FormInput,
+  FolderKanban,
+  Layers3,
+  LibraryBig,
   RotateCcw,
   Save,
   Search,
@@ -35,6 +38,7 @@ const CONFIG_SECTIONS = [
   'tools',
   'transcription',
   'memory',
+  'sessions',
   'heartbeat',
   'approval',
   'logger',
@@ -60,6 +64,7 @@ const SECTION_DESCRIPTIONS: Record<ConfigSection, string> = {
   tools: t('configSectionDescTools'),
   transcription: t('configSectionDescTranscription'),
   memory: t('configSectionDescMemory'),
+  sessions: t('configSectionDescSessions'),
   heartbeat: t('configSectionDescHeartbeat'),
   approval: t('configSectionDescApproval'),
   logger: t('configSectionDescLogger'),
@@ -73,6 +78,7 @@ function sectionLabel(section: ConfigSection): string {
     tools: t('configSectionTools'),
     transcription: t('configSectionTranscription'),
     memory: t('configSectionMemory'),
+    sessions: t('configSectionSessions'),
     heartbeat: t('configSectionHeartbeat'),
     approval: t('configSectionApproval'),
     logger: t('configSectionLogger'),
@@ -119,6 +125,18 @@ function setNestedValue(target: Record<string, unknown>, path: string, value: un
     cursor = cursor[part] as Record<string, unknown>;
   }
   cursor[parts[parts.length - 1]] = value;
+}
+
+function getNestedValue(target: Record<string, unknown>, path: string): unknown {
+  const parts = path.split('.');
+  let cursor: unknown = target;
+  for (const part of parts) {
+    if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor)) {
+      return undefined;
+    }
+    cursor = (cursor as Record<string, unknown>)[part];
+  }
+  return cursor;
 }
 
 function lastSegment(path: string): string {
@@ -305,6 +323,539 @@ function FormField({
         </div>
       );
   }
+}
+
+function MemoryField({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4 shadow-[0_18px_40px_-34px_rgba(120,55,75,0.35)]">
+      <div className="mb-3">
+        <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{label}</Label>
+        {hint ? <div className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</div> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function MemorySectionForm({
+  data,
+  onChange,
+}: {
+  data: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+}) {
+  const readBool = (path: string) => Boolean(getNestedValue(data, path));
+  const readNumber = (path: string) => {
+    const value = getNestedValue(data, path);
+    return typeof value === 'number' ? value : 0;
+  };
+  const readString = (path: string) => {
+    const value = getNestedValue(data, path);
+    return typeof value === 'string' ? value : '';
+  };
+  const readPaths = () => {
+    const value = getNestedValue(data, 'qmd.paths');
+    if (!Array.isArray(value)) {
+      return '';
+    }
+    return value
+      .map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          return '';
+        }
+        const record = item as Record<string, unknown>;
+        const name = typeof record.name === 'string' ? record.name : '';
+        const path = typeof record.path === 'string' ? record.path : '';
+        const pattern = typeof record.pattern === 'string' ? record.pattern : '';
+        return [name, path, pattern].join('|');
+      })
+      .filter(Boolean)
+      .join('\n');
+  };
+
+  const writePaths = (input: string) => {
+    const paths = input
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [name = '', path = '', pattern = '**/*.md'] = line.split('|').map((part) => part.trim());
+        return { name, path, pattern: pattern || '**/*.md' };
+      });
+    onChange('qmd.paths', paths);
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(255,250,247,0.95),rgba(255,244,248,0.9))] shadow-[0_24px_60px_-42px_rgba(120,55,75,0.45)]">
+          <CardHeader className="pb-4">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
+              <LibraryBig className="h-3.5 w-3.5" />
+              {t('memoryBasicTitle')}
+            </div>
+            <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('memoryBasicHeadline')}</CardTitle>
+            <CardDescription>{t('memoryBasicDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div>
+                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryEnabled')}</Label>
+                <div className="mt-1 text-xs text-muted-foreground">{t('memoryEnabledHint')}</div>
+              </div>
+              <Switch checked={readBool('enabled')} onCheckedChange={(next) => onChange('enabled', next)} />
+            </div>
+
+            <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div>
+                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryContextEnabled')}</Label>
+                <div className="mt-1 text-xs text-muted-foreground">{t('memoryContextEnabledHint')}</div>
+              </div>
+              <Switch
+                checked={readBool('context.enabled')}
+                onCheckedChange={(next) => onChange('context.enabled', next)}
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">
+                    {t('memoryContextIncludeWorkspace')}
+                  </Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('memoryContextIncludeWorkspaceHint')}</div>
+                </div>
+                <Switch
+                  checked={readBool('context.include_workspace_memory')}
+                  onCheckedChange={(next) => onChange('context.include_workspace_memory', next)}
+                />
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">
+                    {t('memoryContextIncludeLongTerm')}
+                  </Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('memoryContextIncludeLongTermHint')}</div>
+                </div>
+                <Switch
+                  checked={readBool('context.include_long_term')}
+                  onCheckedChange={(next) => onChange('context.include_long_term', next)}
+                />
+              </div>
+            </div>
+
+            <MemoryField label={t('memoryBackend')} hint={t('memoryBackendHint')}>
+              <Select value={readString('backend') || 'file'} onValueChange={(value) => onChange('backend', value)}>
+                <SelectTrigger className="h-11 rounded-xl bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="file">file</SelectItem>
+                  <SelectItem value="db">db</SelectItem>
+                  <SelectItem value="kv">kv</SelectItem>
+                </SelectContent>
+              </Select>
+            </MemoryField>
+
+            <MemoryField label={t('memoryFilePath')} hint={t('memoryFilePathHint')}>
+              <Input
+                className="h-11 rounded-xl bg-white"
+                value={readString('file_path')}
+                onChange={(event) => onChange('file_path', event.target.value)}
+                placeholder="workspace/memory"
+              />
+            </MemoryField>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <MemoryField label={t('memoryDBPrefix')} hint={t('memoryDBPrefixHint')}>
+                <Input
+                  className="h-11 rounded-xl bg-white"
+                  value={readString('db_prefix')}
+                  onChange={(event) => onChange('db_prefix', event.target.value)}
+                />
+              </MemoryField>
+              <MemoryField label={t('memoryKVPrefix')} hint={t('memoryKVPrefixHint')}>
+                <Input
+                  className="h-11 rounded-xl bg-white"
+                  value={readString('kv_prefix')}
+                  onChange={(event) => onChange('kv_prefix', event.target.value)}
+                />
+              </MemoryField>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <MemoryField label={t('memoryContextRecentDays')} hint={t('memoryContextRecentDaysHint')}>
+                <Input
+                  type="number"
+                  className="h-11 rounded-xl bg-white"
+                  value={String(readNumber('context.recent_daily_note_days'))}
+                  onChange={(event) => onChange('context.recent_daily_note_days', Number(event.target.value || 0))}
+                />
+              </MemoryField>
+              <MemoryField label={t('memoryContextMaxChars')} hint={t('memoryContextMaxCharsHint')}>
+                <Input
+                  type="number"
+                  className="h-11 rounded-xl bg-white"
+                  value={String(readNumber('context.max_chars'))}
+                  onChange={(event) => onChange('context.max_chars', Number(event.target.value || 0))}
+                />
+              </MemoryField>
+            </div>
+
+            <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] bg-white/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
+              {t('memoryPromptHint')}
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-[rgba(255,248,239,0.9)] px-4 py-3 text-xs leading-6 text-amber-800">
+              {t('memoryNoMigrationHint')}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(243,250,255,0.95),rgba(239,246,255,0.92))] shadow-[0_24px_60px_-42px_rgba(54,92,140,0.35)]">
+          <CardHeader className="pb-4">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700">
+              <Layers3 className="h-3.5 w-3.5" />
+              {t('memoryRetrievalTitle')}
+            </div>
+            <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('memoryRetrievalHeadline')}</CardTitle>
+            <CardDescription>{t('memoryRetrievalDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex items-center justify-between rounded-2xl border border-sky-100 bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memorySemanticEnabled')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('memorySemanticEnabledHint')}</div>
+                </div>
+                <Switch checked={readBool('semantic.enabled')} onCheckedChange={(next) => onChange('semantic.enabled', next)} />
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-sky-100 bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryEpisodicEnabled')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('memoryEpisodicEnabledHint')}</div>
+                </div>
+                <Switch checked={readBool('episodic.enabled')} onCheckedChange={(next) => onChange('episodic.enabled', next)} />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <MemoryField label={t('memorySearchPolicy')} hint={t('memorySearchPolicyHint')}>
+                <Select
+                  value={readString('semantic.search_policy') || 'vector'}
+                  onValueChange={(value) => onChange('semantic.search_policy', value)}
+                >
+                  <SelectTrigger className="h-11 rounded-xl bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="vector">vector</SelectItem>
+                    <SelectItem value="hybrid">hybrid</SelectItem>
+                  </SelectContent>
+                </Select>
+              </MemoryField>
+              <MemoryField label={t('memoryIncludeScores')} hint={t('memoryIncludeScoresHint')}>
+                <div className="flex items-center justify-end">
+                  <Switch
+                    checked={readBool('semantic.include_scores')}
+                    onCheckedChange={(next) => onChange('semantic.include_scores', next)}
+                  />
+                </div>
+              </MemoryField>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <MemoryField label={t('memoryDefaultTopK')}>
+                <Input
+                  type="number"
+                  className="h-11 rounded-xl bg-white"
+                  value={String(readNumber('semantic.default_top_k'))}
+                  onChange={(event) => onChange('semantic.default_top_k', Number(event.target.value || 0))}
+                />
+              </MemoryField>
+              <MemoryField label={t('memoryMaxTopK')}>
+                <Input
+                  type="number"
+                  className="h-11 rounded-xl bg-white"
+                  value={String(readNumber('semantic.max_top_k'))}
+                  onChange={(event) => onChange('semantic.max_top_k', Number(event.target.value || 0))}
+                />
+              </MemoryField>
+              <MemoryField label={t('memorySummaryWindow')}>
+                <Input
+                  type="number"
+                  className="h-11 rounded-xl bg-white"
+                  value={String(readNumber('episodic.summary_window_messages'))}
+                  onChange={(event) => onChange('episodic.summary_window_messages', Number(event.target.value || 0))}
+                />
+              </MemoryField>
+              <MemoryField label={t('memoryMaxSummaries')}>
+                <Input
+                  type="number"
+                  className="h-11 rounded-xl bg-white"
+                  value={String(readNumber('episodic.max_summaries'))}
+                  onChange={(event) => onChange('episodic.max_summaries', Number(event.target.value || 0))}
+                />
+              </MemoryField>
+            </div>
+
+            <MemoryField label={t('memoryShortTermLimit')} hint={t('memoryShortTermLimitHint')}>
+              <Input
+                type="number"
+                className="h-11 rounded-xl bg-white"
+                value={String(readNumber('short_term.raw_history_limit'))}
+                onChange={(event) => onChange('short_term.raw_history_limit', Number(event.target.value || 0))}
+              />
+            </MemoryField>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(246,255,248,0.96),rgba(239,253,245,0.92))] shadow-[0_24px_60px_-42px_rgba(52,114,84,0.3)]">
+        <CardHeader className="pb-4">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-700">
+            <FolderKanban className="h-3.5 w-3.5" />
+            {t('memoryQMDTitle')}
+          </div>
+          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('memoryQMDHeadline')}</CardTitle>
+          <CardDescription>{t('memoryQMDDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-2">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryQMDEnabled')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('memoryQMDEnabledHint')}</div>
+                </div>
+                <Switch checked={readBool('qmd.enabled')} onCheckedChange={(next) => onChange('qmd.enabled', next)} />
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryQMDIncludeDefault')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('memoryQMDIncludeDefaultHint')}</div>
+                </div>
+                <Switch checked={readBool('qmd.include_default')} onCheckedChange={(next) => onChange('qmd.include_default', next)} />
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryQMDSessionsEnabled')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('memoryQMDSessionsEnabledHint')}</div>
+                </div>
+                <Switch checked={readBool('qmd.sessions.enabled')} onCheckedChange={(next) => onChange('qmd.sessions.enabled', next)} />
+              </div>
+              <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryQMDOnBoot')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('memoryQMDOnBootHint')}</div>
+                </div>
+                <Switch checked={readBool('qmd.update.on_boot')} onCheckedChange={(next) => onChange('qmd.update.on_boot', next)} />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <MemoryField label={t('memoryQMDCommand')} hint={t('memoryQMDCommandHint')}>
+                <Input
+                  className="h-11 rounded-xl bg-white"
+                  value={readString('qmd.command')}
+                  onChange={(event) => onChange('qmd.command', event.target.value)}
+                  placeholder="qmd"
+                />
+              </MemoryField>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <MemoryField label={t('memoryQMDSessionExportDir')}>
+                  <Input
+                    className="h-11 rounded-xl bg-white"
+                    value={readString('qmd.sessions.export_dir')}
+                    onChange={(event) => onChange('qmd.sessions.export_dir', event.target.value)}
+                  />
+                </MemoryField>
+                <MemoryField label={t('memoryQMDSessionRetentionDays')}>
+                  <Input
+                    type="number"
+                    className="h-11 rounded-xl bg-white"
+                    value={String(readNumber('qmd.sessions.retention_days'))}
+                    onChange={(event) => onChange('qmd.sessions.retention_days', Number(event.target.value || 0))}
+                  />
+                </MemoryField>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <MemoryField label={t('memoryQMDInterval')}>
+                  <Input
+                    className="h-11 rounded-xl bg-white"
+                    value={readString('qmd.update.interval')}
+                    onChange={(event) => onChange('qmd.update.interval', event.target.value)}
+                  />
+                </MemoryField>
+                <MemoryField label={t('memoryQMDCommandTimeout')}>
+                  <Input
+                    className="h-11 rounded-xl bg-white"
+                    value={readString('qmd.update.command_timeout')}
+                    onChange={(event) => onChange('qmd.update.command_timeout', event.target.value)}
+                  />
+                </MemoryField>
+                <MemoryField label={t('memoryQMDUpdateTimeout')}>
+                  <Input
+                    className="h-11 rounded-xl bg-white"
+                    value={readString('qmd.update.update_timeout')}
+                    onChange={(event) => onChange('qmd.update.update_timeout', event.target.value)}
+                  />
+                </MemoryField>
+              </div>
+            </div>
+          </div>
+
+          <MemoryField label={t('memoryQMDPaths')} hint={t('memoryQMDPathsHint')}>
+            <textarea
+              className="min-h-[140px] w-full rounded-xl border border-input bg-white px-3 py-2 font-mono text-sm leading-6"
+              value={readPaths()}
+              onChange={(event) => writePaths(event.target.value)}
+              spellCheck={false}
+              placeholder="docs|/workspace/docs|**/*.md"
+            />
+          </MemoryField>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SessionsSectionForm({
+  data,
+  onChange,
+}: {
+  data: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+}) {
+  const readBool = (path: string) => Boolean(getNestedValue(data, path));
+  const readNumber = (path: string) => Number(getNestedValue(data, path) ?? 0);
+
+  return (
+    <div className="space-y-5">
+      <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(255,250,247,0.95),rgba(255,244,248,0.9))] shadow-[0_24px_60px_-42px_rgba(120,55,75,0.45)]">
+        <CardHeader className="pb-4">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
+            <LibraryBig className="h-3.5 w-3.5" />
+            {t('sessionsPersistenceTitle')}
+          </div>
+          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('sessionsPersistenceHeadline')}</CardTitle>
+          <CardDescription>{t('sessionsPersistenceDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+            <div>
+              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('sessionsEnabled')}</Label>
+              <div className="mt-1 text-xs text-muted-foreground">{t('sessionsEnabledHint')}</div>
+            </div>
+            <Switch checked={readBool('enabled')} onCheckedChange={(next) => onChange('enabled', next)} />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card className="border-white/70 bg-white/80 shadow-none">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{t('sessionsSourcesTitle')}</CardTitle>
+                <CardDescription>{t('sessionsSourcesHint')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {[
+                  ['sources.cli', t('sessionsSourceCLI'), t('sessionsSourceCLIDesc')],
+                  ['sources.tui', t('sessionsSourceTUI'), t('sessionsSourceTUIDesc')],
+                  ['sources.webui', t('sessionsSourceWebUI'), t('sessionsSourceWebUIDesc')],
+                  ['sources.channels', t('sessionsSourceChannels'), t('sessionsSourceChannelsDesc')],
+                  ['sources.heartbeat', t('sessionsSourceHeartbeat'), t('sessionsSourceHeartbeatDesc')],
+                  ['sources.cron', t('sessionsSourceCron'), t('sessionsSourceCronDesc')],
+                  ['sources.gateway', t('sessionsSourceGateway'), t('sessionsSourceGatewayDesc')],
+                ].map(([path, label, hint]) => (
+                  <div key={path} className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                    <div>
+                      <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{label}</Label>
+                      <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
+                    </div>
+                    <Switch checked={readBool(path)} onCheckedChange={(next) => onChange(path, next)} />
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card className="border-white/70 bg-white/80 shadow-none">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{t('sessionsContentTitle')}</CardTitle>
+                <CardDescription>{t('sessionsContentHint')}</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {[
+                  ['content.user_messages', t('sessionsContentUserMessages'), t('sessionsContentUserMessagesDesc')],
+                  ['content.assistant_messages', t('sessionsContentAssistantMessages'), t('sessionsContentAssistantMessagesDesc')],
+                  ['content.system_messages', t('sessionsContentSystemMessages'), t('sessionsContentSystemMessagesDesc')],
+                  ['content.tool_calls', t('sessionsContentToolCalls'), t('sessionsContentToolCallsDesc')],
+                  ['content.tool_results', t('sessionsContentToolResults'), t('sessionsContentToolResultsDesc')],
+                ].map(([path, label, hint]) => (
+                  <div key={path} className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                    <div>
+                      <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{label}</Label>
+                      <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
+                    </div>
+                    <Switch checked={readBool(path)} onCheckedChange={(next) => onChange(path, next)} />
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-white/70 bg-white/80 shadow-none">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">{t('sessionsCleanupTitle')}</CardTitle>
+              <CardDescription>{t('sessionsCleanupHint')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('sessionsCleanupEnabled')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('sessionsCleanupEnabledDesc')}</div>
+                </div>
+                <Switch checked={readBool('cleanup.enabled')} onCheckedChange={(next) => onChange('cleanup.enabled', next)} />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('sessionsCleanupIntervalMinutes')}</Label>
+                  <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('sessionsCleanupIntervalMinutesDesc')}</div>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={String(readNumber('cleanup.interval_minutes'))}
+                    onChange={(event) => onChange('cleanup.interval_minutes', Number(event.target.value || 0))}
+                  />
+                </div>
+
+                <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('sessionsCleanupMaxAgeDays')}</Label>
+                  <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('sessionsCleanupMaxAgeDaysDesc')}</div>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={String(readNumber('cleanup.max_age_days'))}
+                    onChange={(event) => onChange('cleanup.max_age_days', Number(event.target.value || 0))}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] bg-white/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
+            {t('sessionsDiskHint')}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 export default function ConfigPage() {
@@ -606,6 +1157,10 @@ export default function ConfigPage() {
                     spellCheck={false}
                   />
                 </div>
+              ) : section === 'memory' ? (
+                <MemorySectionForm data={currentData} onChange={handleFieldChange} />
+              ) : section === 'sessions' ? (
+                <SessionsSectionForm data={currentData} onChange={handleFieldChange} />
               ) : filteredFields.length === 0 ? (
                 <div className="py-16 text-center">
                   <div className="text-sm font-medium text-[hsl(var(--gray-900))]">{t('configNoMatchingFields')}</div>

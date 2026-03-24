@@ -222,6 +222,76 @@ func TestBuildSystemPrompt_CacheRefreshesOnToolDescriptionChange(t *testing.T) {
 	}
 }
 
+func TestBuildSystemPrompt_IncludesLayeredMemoryContext(t *testing.T) {
+	workspace := t.TempDir()
+	store := NewMemoryStore(workspace)
+	if err := os.WriteFile(filepath.Join(workspace, "MEMORY.md"), []byte("workspace memory"), 0644); err != nil {
+		t.Fatalf("write workspace memory: %v", err)
+	}
+	if err := store.WriteLongTerm("long term memory that should be truncated after the configured prompt budget is exceeded"); err != nil {
+		t.Fatalf("write long term memory: %v", err)
+	}
+	if err := store.AppendToday("today note"); err != nil {
+		t.Fatalf("append today note: %v", err)
+	}
+
+	cb := NewContextBuilderWithMemory(workspace, store)
+	cb.SetToolDescriptionsFunc(func() []string { return nil })
+
+	prompt := cb.BuildSystemPrompt()
+	if !strings.Contains(prompt, "# Memory\n\n## Workspace Memory\n\nworkspace memory") {
+		t.Fatalf("expected workspace memory in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "## Long-term Memory\n\nlong term memory") {
+		t.Fatalf("expected long-term memory in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "## Today's Notes\n\n# ") {
+		t.Fatalf("expected today's notes heading in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "today note") {
+		t.Fatalf("expected today's note content in prompt, got %q", prompt)
+	}
+}
+
+func TestBuildSystemPrompt_RespectsMemoryContextOptions(t *testing.T) {
+	workspace := t.TempDir()
+	store := NewMemoryStore(workspace)
+	if err := os.WriteFile(filepath.Join(workspace, "MEMORY.md"), []byte("workspace memory"), 0644); err != nil {
+		t.Fatalf("write workspace memory: %v", err)
+	}
+	if err := store.WriteLongTerm(
+		"long term memory that should be truncated after the configured prompt budget is exceeded",
+	); err != nil {
+		t.Fatalf("write long term memory: %v", err)
+	}
+	if err := store.AppendToday("today note"); err != nil {
+		t.Fatalf("append today note: %v", err)
+	}
+
+	cb := NewContextBuilderWithMemory(workspace, store)
+	cb.SetToolDescriptionsFunc(func() []string { return nil })
+	cb.SetMemoryContextOptions(MemoryContextOptions{
+		IncludeWorkspaceMemory: false,
+		IncludeLongTerm:        true,
+		RecentDailyNoteDays:    0,
+		MaxChars:               48,
+	})
+
+	prompt := cb.BuildSystemPrompt()
+	if strings.Contains(prompt, "workspace memory") {
+		t.Fatalf("expected workspace memory to be omitted, got %q", prompt)
+	}
+	if strings.Contains(prompt, "today note") {
+		t.Fatalf("expected daily note to be omitted, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "## Long-term Memory") {
+		t.Fatalf("expected long-term memory section to remain, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "[Memory context truncated]") {
+		t.Fatalf("expected truncation marker, got %q", prompt)
+	}
+}
+
 func TestBuildMessages_DeduplicatesTrailingCurrentUserMessage(t *testing.T) {
 	workspace := t.TempDir()
 	cb := NewContextBuilderWithMemory(workspace, NewMemoryStoreWithBackend(workspace, &memoryNoopBackend{}))
