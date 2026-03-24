@@ -79,3 +79,35 @@ func TestSessionDoesNotPersistDisabledSource(t *testing.T) {
 		t.Fatalf("expected session file to be absent, got err=%v", err)
 	}
 }
+
+func TestGetHistorySafeExpandsToKeepAssistantToolGroup(t *testing.T) {
+	sess := &Session{
+		ID: "history-safe",
+		Messages: []agent.Message{
+			{Role: "user", Content: "first"},
+			{
+				Role:    "assistant",
+				Content: "",
+				ToolCalls: []agent.ToolCall{
+					{ID: "call-1", Name: "read_file", Arguments: map[string]interface{}{"path": "/tmp/a"}},
+				},
+			},
+			{Role: "tool", Content: "file contents", ToolCallID: "call-1"},
+			{Role: "assistant", Content: "done"},
+		},
+	}
+
+	history := sess.GetHistorySafe(2)
+	if len(history) != 3 {
+		t.Fatalf("expected 3 messages after safe expansion, got %d", len(history))
+	}
+	if history[0].Role != "assistant" || len(history[0].ToolCalls) != 1 {
+		t.Fatalf("expected assistant tool-call turn retained, got %#v", history[0])
+	}
+	if history[1].Role != "tool" || history[1].ToolCallID != "call-1" {
+		t.Fatalf("expected matching tool result retained, got %#v", history[1])
+	}
+	if history[2].Role != "assistant" || history[2].Content != "done" {
+		t.Fatalf("expected trailing assistant message retained, got %#v", history[2])
+	}
+}

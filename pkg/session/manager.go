@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"nekobot/pkg/config"
 	"nekobot/pkg/agent"
+	"nekobot/pkg/config"
 )
 
 // Session represents a conversation session with history.
@@ -203,6 +203,46 @@ func (s *Session) GetMessages() []agent.Message {
 	return messages
 }
 
+// GetHistorySafe returns the most recent messages without splitting tool-call groups.
+func (s *Session) GetHistorySafe(maxMessages int) []agent.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if maxMessages <= 0 || maxMessages >= len(s.Messages) {
+		messages := make([]agent.Message, len(s.Messages))
+		copy(messages, s.Messages)
+		return messages
+	}
+
+	startIdx := len(s.Messages) - maxMessages
+	for startIdx > 0 {
+		msg := s.Messages[startIdx]
+
+		if msg.Role == "tool" {
+			assistantIdx, found := findToolCallAssistant(s.Messages, startIdx, msg.ToolCallID)
+			if !found {
+				startIdx++
+				break
+			}
+			startIdx = assistantIdx
+			continue
+		}
+
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			if !assistantToolGroupComplete(s.Messages, startIdx) {
+				startIdx--
+				continue
+			}
+		}
+
+		break
+	}
+
+	messages := make([]agent.Message, len(s.Messages)-startIdx)
+	copy(messages, s.Messages[startIdx:])
+	return messages
+}
+
 // Clear clears all messages in the session.
 func (s *Session) Clear() {
 	s.mu.Lock()
@@ -369,4 +409,45 @@ func (m *Manager) filterMessage(msg agent.Message) (bool, agent.Message) {
 
 func stringsTrimmed(v string) string {
 	return strings.TrimSpace(strings.ToLower(v))
+}
+
+func findToolCallAssistant(messages []agent.Message, toolIdx int, toolCallID string) (int, bool) {
+	if toolCallID == "" || toolIdx <= 0 {
+		return 0, false
+	}
+
+	for i := toolIdx - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
+			continue
+		}
+		for _, toolCall := range msg.ToolCalls {
+			if toolCall.ID == toolCallID {
+				return i, true
+			}
+		}
+	}
+
+	return 0, false
+}
+
+func assistantToolGroupComplete(messages []agent.Message, assistantIdx int) bool {
+	msg := messages[assistantIdx]
+	for _, toolCall := range msg.ToolCalls {
+		found := false
+		for i := assistantIdx + 1; i < len(messages); i++ {
+			if messages[i].Role == "assistant" || messages[i].Role == "user" || messages[i].Role == "system" {
+				break
+			}
+			if messages[i].Role == "tool" && messages[i].ToolCallID == toolCall.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+
+	return true
 }

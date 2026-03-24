@@ -404,6 +404,38 @@ func TestTrimTrailingCurrentUserMessage(t *testing.T) {
 	}
 }
 
+func TestSessionHistoryUsesSafeWindowWhenAvailable(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Memory.ShortTerm.Enabled = true
+	cfg.Memory.ShortTerm.RawHistoryLimit = 2
+
+	ag := &Agent{config: cfg}
+	sess := &testSession{
+		messages: []Message{
+			{Role: "user", Content: "older"},
+			{
+				Role: "assistant",
+				ToolCalls: []ToolCall{
+					{ID: "call-1", Name: "read_file", Arguments: map[string]interface{}{"path": "/tmp/a"}},
+				},
+			},
+			{Role: "tool", Content: "result", ToolCallID: "call-1"},
+			{Role: "assistant", Content: "done"},
+		},
+	}
+
+	history := ag.sessionHistory(sess)
+	if len(history) != 3 {
+		t.Fatalf("expected safe history expansion to 3 messages, got %d", len(history))
+	}
+	if history[0].Role != "assistant" || len(history[0].ToolCalls) != 1 {
+		t.Fatalf("expected assistant tool-call message first, got %#v", history[0])
+	}
+	if history[1].Role != "tool" || history[1].ToolCallID != "call-1" {
+		t.Fatalf("expected matching tool result second, got %#v", history[1])
+	}
+}
+
 func TestNewMemoryStoreFromConfig_FileBackendDefaultPath(t *testing.T) {
 	workspace := t.TempDir()
 	cfg := config.DefaultConfig()
@@ -1214,6 +1246,47 @@ type testSession struct {
 
 func (s *testSession) GetMessages() []Message {
 	return s.messages
+}
+
+func (s *testSession) GetHistorySafe(limit int) []Message {
+	if limit <= 0 || limit >= len(s.messages) {
+		return s.messages
+	}
+
+	start := len(s.messages) - limit
+	for start > 0 {
+		msg := s.messages[start]
+		if msg.Role == "tool" {
+			start--
+			continue
+		}
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			complete := true
+			for _, tc := range msg.ToolCalls {
+				found := false
+				for i := start + 1; i < len(s.messages); i++ {
+					if s.messages[i].Role == "assistant" || s.messages[i].Role == "user" || s.messages[i].Role == "system" {
+						break
+					}
+					if s.messages[i].Role == "tool" && s.messages[i].ToolCallID == tc.ID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					complete = false
+					break
+				}
+			}
+			if !complete {
+				start--
+				continue
+			}
+		}
+		break
+	}
+
+	return s.messages[start:]
 }
 
 func (s *testSession) AddMessage(msg Message) {

@@ -34,6 +34,10 @@ type SessionInterface interface {
 	AddMessage(Message)
 }
 
+type safeHistorySession interface {
+	GetHistorySafe(int) []Message
+}
+
 // Agent represents an AI agent that can interact with users and use tools.
 type Agent struct {
 	config   *config.Config
@@ -246,6 +250,30 @@ func (a *Agent) chatWithProviderModel(ctx context.Context, sess SessionInterface
 	}
 }
 
+func (a *Agent) sessionHistory(sess SessionInterface) []Message {
+	if sess == nil {
+		return nil
+	}
+
+	limit := 0
+	if a != nil && a.config != nil && a.config.Memory.ShortTerm.Enabled {
+		limit = a.config.Memory.ShortTerm.RawHistoryLimit
+	}
+
+	if limit > 0 {
+		if historySession, ok := sess.(safeHistorySession); ok {
+			return historySession.GetHistorySafe(limit)
+		}
+		history := sess.GetMessages()
+		if len(history) > limit {
+			return history[len(history)-limit:]
+		}
+		return history
+	}
+
+	return sess.GetMessages()
+}
+
 func newMemoryStoreFromConfig(cfg *config.Config, workspace string, kvStore state.KV, runtimeEntClient *ent.Client) *promptmemory.Store {
 	if cfg == nil || !cfg.Memory.Enabled {
 		return promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend())
@@ -321,7 +349,7 @@ func (a *Agent) chatWithLegacyOrchestrator(ctx context.Context, sess SessionInte
 	clientCache := make(map[string]*providers.Client)
 
 	// Build initial messages with session history
-	history := sess.GetMessages() // Get messages from session
+	history := a.sessionHistory(sess)
 	messages := a.context.BuildMessages(history, userMessage)
 
 	// Convert to provider format

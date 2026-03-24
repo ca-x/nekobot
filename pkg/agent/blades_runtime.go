@@ -558,7 +558,7 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 		return "", fmt.Errorf("create blades agent: %w", err)
 	}
 
-	normalizedHistory := trimTrailingCurrentUserMessage(sess.GetMessages(), userMessage)
+	normalizedHistory := trimTrailingCurrentUserMessage(a.sessionHistory(sess), userMessage)
 	history := sanitizeHistory(normalizedHistory)
 	bladesSession := blades.NewSession()
 	for _, msg := range history {
