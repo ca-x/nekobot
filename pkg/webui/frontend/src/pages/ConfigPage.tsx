@@ -43,6 +43,8 @@ const CONFIG_SECTIONS = [
 
 type ConfigSection = (typeof CONFIG_SECTIONS)[number];
 
+type ConfigShape = { [section: string]: Record<string, unknown> };
+
 type Primitive = string | number | boolean | null;
 
 interface FieldDef {
@@ -53,19 +55,19 @@ interface FieldDef {
 }
 
 const SECTION_DESCRIPTIONS: Record<ConfigSection, string> = {
-  agents: 'Agent defaults, workspace, model routing and MCP integration.',
-  gateway: 'Gateway bind host and service ports.',
-  tools: 'Web and exec tool behavior, including sandboxing.',
-  transcription: 'Speech-to-text provider, model and timeout settings.',
-  memory: 'Long-term, episodic and semantic memory behavior.',
-  heartbeat: 'Periodic autonomous execution cadence.',
-  approval: 'Command approval and allow/deny behavior.',
-  logger: 'Log verbosity and file rotation settings.',
-  webui: 'Dashboard port and interactive session access settings.',
+  agents: 'Agent defaults, model routing, workspace and MCP integration.',
+  gateway: 'Gateway listen host and service ports.',
+  tools: 'Web tool behavior, exec timeout and sandbox settings.',
+  transcription: 'Speech-to-text provider, API base, model and timeout.',
+  memory: 'Long-term, semantic and episodic memory controls.',
+  heartbeat: 'Autonomous heartbeat interval and task cadence.',
+  approval: 'Allow/deny policy and approval mode.',
+  logger: 'Logging level, output target and rotation strategy.',
+  webui: 'Dashboard port and interactive session settings.',
 };
 
 function sectionLabel(section: ConfigSection): string {
-  const map: Record<ConfigSection, string> = {
+  const labels: Record<ConfigSection, string> = {
     agents: t('configSectionAgents'),
     gateway: t('configSectionGateway'),
     tools: t('configSectionTools'),
@@ -76,37 +78,39 @@ function sectionLabel(section: ConfigSection): string {
     logger: t('configSectionLogger'),
     webui: t('configSectionWebUI'),
   };
-  return map[section];
+  return labels[section];
 }
 
-function cloneSection(data: Record<string, unknown>): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(data ?? {})) as Record<string, unknown>;
+function cloneSection(value: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value ?? {})) as Record<string, unknown>;
 }
 
-function stringifyStable(value: unknown): string {
+function stableStringify(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function flattenObject(obj: Record<string, unknown>, prefix = ''): Record<string, unknown> {
+function flattenObject(value: Record<string, unknown>, prefix = ''): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return result;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return result;
+  }
 
-  for (const key of Object.keys(obj)) {
-    const fullKey = prefix ? `${prefix}.${key}` : key;
-    const value = obj[key];
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      Object.assign(result, flattenObject(value as Record<string, unknown>, fullKey));
+  for (const key of Object.keys(value)) {
+    const currentPath = prefix ? `${prefix}.${key}` : key;
+    const currentValue = value[key];
+    if (currentValue !== null && typeof currentValue === 'object' && !Array.isArray(currentValue)) {
+      Object.assign(result, flattenObject(currentValue as Record<string, unknown>, currentPath));
       continue;
     }
-    result[fullKey] = value;
+    result[currentPath] = currentValue;
   }
 
   return result;
 }
 
-function setNestedValue(obj: Record<string, unknown>, dotPath: string, value: unknown) {
-  const parts = dotPath.split('.');
-  let cursor: Record<string, unknown> = obj;
+function setNestedValue(target: Record<string, unknown>, path: string, value: unknown) {
+  const parts = path.split('.');
+  let cursor: Record<string, unknown> = target;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
     if (!cursor[part] || typeof cursor[part] !== 'object' || Array.isArray(cursor[part])) {
@@ -117,38 +121,47 @@ function setNestedValue(obj: Record<string, unknown>, dotPath: string, value: un
   cursor[parts[parts.length - 1]] = value;
 }
 
-function isPrimitiveArray(value: unknown): value is Primitive[] {
-  return Array.isArray(value) && value.every((item) => item == null || ['string', 'number', 'boolean'].includes(typeof item));
+function lastSegment(path: string): string {
+  const parts = path.split('.');
+  return parts.length > 0 ? parts[parts.length - 1] : path;
 }
 
-function isSecretKey(key: string): boolean {
-  return /(api[_-]?key|token|secret|password|jwt)/i.test(key);
-}
-
-function fieldLabel(key: string): string {
-  const parts = key.split('.');
-  const last = parts.length > 0 ? parts[parts.length - 1] : key;
-  return last
+function humanizeLabel(path: string): string {
+  return lastSegment(path)
     .split('_')
     .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 }
 
-function inferFields(data: Record<string, unknown>): FieldDef[] {
-  const flat = flattenObject(data);
-  return Object.entries(flat)
+function isSecretKey(path: string): boolean {
+  return /(api[_-]?key|token|secret|password|jwt)/i.test(path);
+}
+
+function isPrimitiveArray(value: unknown): value is Primitive[] {
+  return Array.isArray(value) &&
+    value.every((item) => item == null || ['string', 'number', 'boolean'].includes(typeof item));
+}
+
+function inferFields(sectionData: Record<string, unknown>): FieldDef[] {
+  return Object.entries(flattenObject(sectionData))
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, value]) => {
       let type: FieldDef['type'] = 'text';
-      if (typeof value === 'boolean') type = 'bool';
-      else if (typeof value === 'number') type = 'number';
-      else if (isPrimitiveArray(value)) type = 'tags';
-      else if (Array.isArray(value)) type = 'json';
-      else if (isSecretKey(key)) type = 'secret';
+      if (typeof value === 'boolean') {
+        type = 'bool';
+      } else if (typeof value === 'number') {
+        type = 'number';
+      } else if (isPrimitiveArray(value)) {
+        type = 'tags';
+      } else if (Array.isArray(value)) {
+        type = 'json';
+      } else if (isSecretKey(key)) {
+        type = 'secret';
+      }
 
       return {
         key,
-        label: fieldLabel(key),
+        label: humanizeLabel(key),
         type,
         value,
       };
@@ -166,7 +179,7 @@ function filterFields(fields: FieldDef[], query: string): FieldDef[] {
   );
 }
 
-function SectionBadge({ dirty }: { dirty: boolean }) {
+function DirtyDot({ dirty }: { dirty: boolean }) {
   return (
     <span
       className={
@@ -180,26 +193,34 @@ function SectionBadge({ dirty }: { dirty: boolean }) {
 
 function FormField({
   field,
-  onChange,
   secretVisible,
+  onChange,
   onToggleSecret,
-  onSwitchToJSON,
+  onOpenJSONMode,
 }: {
   field: FieldDef;
-  onChange: (key: string, value: unknown) => void;
   secretVisible: boolean;
+  onChange: (key: string, value: unknown) => void;
   onToggleSecret: (key: string) => void;
-  onSwitchToJSON: () => void;
+  onOpenJSONMode: () => void;
 }) {
-  const shell = 'rounded-2xl border border-[hsl(var(--gray-200))] bg-white/80 p-4 shadow-[0_18px_40px_-34px_rgba(120,55,75,0.35)]';
+  const containerClassName =
+    'rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4 shadow-[0_18px_40px_-34px_rgba(120,55,75,0.35)]';
+
   const header = (
-    <div className="mb-3 flex items-start justify-between gap-4">
+    <div className="mb-3 flex items-start justify-between gap-3">
       <div className="space-y-1">
         <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{field.label}</Label>
         <div className="text-xs font-mono text-muted-foreground">{field.key}</div>
       </div>
       {field.type === 'secret' ? (
-        <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-2" onClick={() => onToggleSecret(field.key)}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 rounded-full px-2"
+          onClick={() => onToggleSecret(field.key)}
+        >
           {secretVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </Button>
       ) : null}
@@ -209,19 +230,19 @@ function FormField({
   switch (field.type) {
     case 'bool':
       return (
-        <div className={shell}>
+        <div className={containerClassName}>
           <div className="flex items-center justify-between gap-4">
             <div>
               <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{field.label}</Label>
               <div className="mt-1 text-xs font-mono text-muted-foreground">{field.key}</div>
             </div>
-            <Switch checked={Boolean(field.value)} onCheckedChange={(value) => onChange(field.key, value)} />
+            <Switch checked={Boolean(field.value)} onCheckedChange={(next) => onChange(field.key, next)} />
           </div>
         </div>
       );
     case 'number':
       return (
-        <div className={shell}>
+        <div className={containerClassName}>
           {header}
           <Input
             type="number"
@@ -233,12 +254,12 @@ function FormField({
       );
     case 'tags':
       return (
-        <div className={shell}>
+        <div className={containerClassName}>
           {header}
           <textarea
-            className="min-h-[100px] w-full rounded-xl border border-input bg-white px-3 py-2 text-sm leading-6"
+            className="min-h-[96px] w-full rounded-xl border border-input bg-white px-3 py-2 text-sm leading-6"
             rows={4}
-            value={Array.isArray(field.value) ? field.value.map((item) => String(item)).join('\n') : String(field.value ?? '')}
+            value={Array.isArray(field.value) ? field.value.map((item) => String(item)).join('\n') : ''}
             onChange={(event) =>
               onChange(
                 field.key,
@@ -251,17 +272,17 @@ function FormField({
       );
     case 'json':
       return (
-        <div className={shell}>
+        <div className={containerClassName}>
           {header}
           <pre className="max-h-[220px] overflow-auto rounded-xl border border-amber-200 bg-[rgba(255,248,239,0.9)] px-3 py-3 font-mono text-xs leading-6 text-amber-950">
-            {stringifyStable(field.value)}
+            {stableStringify(field.value)}
           </pre>
           <div className="mt-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs text-amber-700">
               <AlertTriangle className="h-3.5 w-3.5" />
-              JSON field. Edit this section in JSON mode to keep the structure intact.
+              JSON field. Edit this section in JSON mode to preserve the structure.
             </div>
-            <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={onSwitchToJSON}>
+            <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={onOpenJSONMode}>
               <Code className="mr-1.5 h-4 w-4" />
               {t('configJsonMode')}
             </Button>
@@ -272,7 +293,7 @@ function FormField({
     case 'text':
     default:
       return (
-        <div className={shell}>
+        <div className={containerClassName}>
           {header}
           <Input
             type={field.type === 'secret' && !secretVisible ? 'password' : 'text'}
@@ -290,8 +311,8 @@ export default function ConfigPage() {
   const [section, setSection] = useState<ConfigSection>('agents');
   const [mode, setMode] = useState<'form' | 'json'>('form');
   const [search, setSearch] = useState('');
-  const [jsonDrafts, setJSONDrafts] = useState<Partial<Record<ConfigSection, string>>>({});
   const [drafts, setDrafts] = useState<Partial<Record<ConfigSection, Record<string, unknown>>>>({});
+  const [jsonDrafts, setJSONDrafts] = useState<Partial<Record<ConfigSection, string>>>({});
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -301,7 +322,7 @@ export default function ConfigPage() {
   const importConfig = useImportConfig();
 
   const persistedSections = useMemo(() => {
-    const next: Record<ConfigSection, Record<string, unknown>> = {} as Record<ConfigSection, Record<string, unknown>>;
+    const next = {} as Record<ConfigSection, Record<string, unknown>>;
     for (const item of CONFIG_SECTIONS) {
       next[item] = (config?.[item] as Record<string, unknown>) ?? {};
     }
@@ -310,18 +331,18 @@ export default function ConfigPage() {
 
   const currentDraft = drafts[section];
   const currentData = currentDraft ?? persistedSections[section];
-  const currentJSON = jsonDrafts[section] ?? stringifyStable(currentData);
-
-  const currentFields = useMemo(() => inferFields(currentData), [currentData]);
-  const filteredFields = useMemo(() => filterFields(currentFields, search), [currentFields, search]);
+  const currentJSON = jsonDrafts[section] ?? stableStringify(currentData);
+  const fields = useMemo(() => inferFields(currentData), [currentData]);
+  const filteredFields = useMemo(() => filterFields(fields, search), [fields, search]);
 
   const sectionDirty = useMemo(() => {
-    const result: Record<ConfigSection, boolean> = {} as Record<ConfigSection, boolean>;
+    const result = {} as Record<ConfigSection, boolean>;
     for (const item of CONFIG_SECTIONS) {
       const draft = drafts[item];
-      const draftDirty = draft ? stringifyStable(draft) !== stringifyStable(persistedSections[item]) : false;
-      const jsonSource = jsonDrafts[item];
-      const jsonDirty = typeof jsonSource === 'string' ? jsonSource !== stringifyStable(draft ?? persistedSections[item]) : false;
+      const draftDirty = draft ? stableStringify(draft) !== stableStringify(persistedSections[item]) : false;
+      const jsonDraft = jsonDrafts[item];
+      const jsonBase = stableStringify(draft ?? persistedSections[item]);
+      const jsonDirty = typeof jsonDraft === 'string' ? jsonDraft !== jsonBase : false;
       result[item] = draftDirty || jsonDirty;
     }
     return result;
@@ -342,46 +363,47 @@ export default function ConfigPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [dirtyCount]);
 
-  const syncDraftForSection = useCallback((target: ConfigSection, updater: (base: Record<string, unknown>) => Record<string, unknown>) => {
+  const updateDraft = useCallback((targetSection: ConfigSection, updater: (base: Record<string, unknown>) => Record<string, unknown>) => {
     setDrafts((prev) => {
-      const base = cloneSection(prev[target] ?? persistedSections[target]);
-      const nextValue = updater(base);
-      return { ...prev, [target]: nextValue };
+      const base = cloneSection(prev[targetSection] ?? persistedSections[targetSection]);
+      return { ...prev, [targetSection]: updater(base) };
     });
   }, [persistedSections]);
 
-  const handleFieldChange = useCallback((key: string, value: unknown) => {
-    syncDraftForSection(section, (base) => {
-      const copy = cloneSection(base);
-      if (typeof value === 'string' && inferFields(copy).find((field) => field.key === key)?.type === 'json') {
-        try {
-          setNestedValue(copy, key, JSON.parse(value));
-        } catch {
-          setNestedValue(copy, key, value);
-        }
-      } else {
-        setNestedValue(copy, key, value);
+  const handleFieldChange = useCallback((path: string, value: unknown) => {
+    setJSONDrafts((prev) => {
+      if (!(section in prev)) {
+        return prev;
       }
-      return copy;
+      const next = { ...prev };
+      delete next[section];
+      return next;
     });
-  }, [section, syncDraftForSection]);
+    updateDraft(section, (base) => {
+      const next = cloneSection(base);
+      setNestedValue(next, path, value);
+      return next;
+    });
+  }, [section, updateDraft]);
 
   const handleJSONChange = useCallback((value: string) => {
     setJSONDrafts((prev) => ({ ...prev, [section]: value }));
   }, [section]);
 
   const handleSectionChange = useCallback((nextSection: ConfigSection) => {
-    if (nextSection === section) {
-      return;
-    }
-    setSearch('');
     setSection(nextSection);
+    setSearch('');
     setMode('form');
-  }, [section]);
+  }, []);
 
   const handleToggleMode = useCallback(() => {
     if (mode === 'form') {
-      setJSONDrafts((prev) => ({ ...prev, [section]: stringifyStable(currentData) }));
+      setJSONDrafts((prev) => {
+        if (typeof prev[section] === 'string') {
+          return prev;
+        }
+        return { ...prev, [section]: stableStringify(currentData) };
+      });
       setMode('json');
       return;
     }
@@ -421,7 +443,7 @@ export default function ConfigPage() {
         return next;
       });
     } catch {
-      // Error toast is handled in the hook.
+      // Hook handles the error toast.
     }
   }, [currentData, currentJSON, mode, saveConfig, section]);
 
@@ -440,7 +462,7 @@ export default function ConfigPage() {
     setMode('form');
   }, [section]);
 
-  const handleImportFile = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImport = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
@@ -449,8 +471,8 @@ export default function ConfigPage() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const data = JSON.parse(reader.result as string) as { [section: string]: Record<string, unknown> };
-        importConfig.mutate(data, {
+        const payload = JSON.parse(reader.result as string) as ConfigShape;
+        importConfig.mutate(payload, {
           onSuccess: () => {
             setDrafts({});
             setJSONDrafts({});
@@ -464,8 +486,8 @@ export default function ConfigPage() {
     event.target.value = '';
   }, [importConfig]);
 
-  const toggleSecretVisibility = useCallback((key: string) => {
-    setVisibleSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleSecretVisibility = useCallback((path: string) => {
+    setVisibleSecrets((prev) => ({ ...prev, [path]: !prev[path] }));
   }, []);
 
   return (
@@ -475,9 +497,7 @@ export default function ConfigPage() {
         <Card className="overflow-hidden border-white/70 bg-[linear-gradient(180deg,rgba(255,250,247,0.96),rgba(252,242,246,0.9))] shadow-[0_24px_60px_-42px_rgba(120,55,75,0.5)]">
           <CardHeader className="border-b border-white/60 pb-5">
             <CardTitle className="text-xl text-[hsl(var(--gray-900))]">Config Control</CardTitle>
-            <CardDescription>
-              Database-backed runtime settings. Drafts stay local until saved.
-            </CardDescription>
+            <CardDescription>Database-backed runtime settings. Drafts stay local until saved.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 p-4">
             {CONFIG_SECTIONS.map((item) => (
@@ -493,7 +513,7 @@ export default function ConfigPage() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold text-[hsl(var(--gray-900))]">{sectionLabel(item)}</div>
-                  <SectionBadge dirty={sectionDirty[item]} />
+                  <DirtyDot dirty={sectionDirty[item]} />
                 </div>
                 <div className="mt-1 text-xs leading-5 text-muted-foreground">{SECTION_DESCRIPTIONS[item]}</div>
               </button>
@@ -506,7 +526,7 @@ export default function ConfigPage() {
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-[hsl(var(--brand-700))]">
-                  <SectionBadge dirty={sectionDirty[section]} />
+                  <DirtyDot dirty={sectionDirty[section]} />
                   {sectionLabel(section)}
                 </div>
                 <CardTitle className="text-2xl text-[hsl(var(--gray-900))]">{sectionLabel(section)}</CardTitle>
@@ -546,12 +566,7 @@ export default function ConfigPage() {
                   <RotateCcw className="mr-1.5 h-4 w-4" />
                   {t('reset')}
                 </Button>
-                <Button
-                  size="sm"
-                  className="rounded-full"
-                  onClick={handleSave}
-                  disabled={saveConfig.isPending || !sectionDirty[section]}
-                >
+                <Button size="sm" className="rounded-full" onClick={handleSave} disabled={saveConfig.isPending || !sectionDirty[section]}>
                   <Save className="mr-1.5 h-4 w-4" />
                   {t('save')}
                 </Button>
@@ -563,7 +578,7 @@ export default function ConfigPage() {
                   <Upload className="mr-1.5 h-4 w-4" />
                   {t('importConfig')}
                 </Button>
-                <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
+                <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
               </div>
             </div>
 
@@ -582,7 +597,7 @@ export default function ConfigPage() {
               ) : mode === 'json' ? (
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-amber-200 bg-[rgba(255,248,239,0.92)] px-4 py-3 text-sm text-amber-800">
-                    JSON mode edits the entire section as-is. Use this for arrays of objects and advanced structures.
+                    JSON mode edits the entire section exactly as stored. Use this for arrays of objects and advanced nested structures.
                   </div>
                   <textarea
                     className="min-h-[62vh] w-full rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[hsl(var(--gray-950))] px-5 py-4 font-mono text-sm leading-6 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
@@ -604,11 +619,16 @@ export default function ConfigPage() {
                     <FormField
                       key={field.key}
                       field={field}
-                      onChange={handleFieldChange}
                       secretVisible={Boolean(visibleSecrets[field.key])}
+                      onChange={handleFieldChange}
                       onToggleSecret={toggleSecretVisibility}
-                      onSwitchToJSON={() => {
-                        setJSONDrafts((prev) => ({ ...prev, [section]: stringifyStable(currentData) }));
+                      onOpenJSONMode={() => {
+                        setJSONDrafts((prev) => {
+                          if (typeof prev[section] === 'string') {
+                            return prev;
+                          }
+                          return { ...prev, [section]: stableStringify(currentData) };
+                        });
                         setMode('json');
                       }}
                     />
