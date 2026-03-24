@@ -1,0 +1,150 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+	"nekobot/pkg/config"
+)
+
+func TestSkillsCommand_RegistersValidateAndInstallDeps(t *testing.T) {
+	for _, path := range [][]string{
+		{"skills", "validate", "demo-skill"},
+		{"skills", "install-deps", "demo-skill"},
+	} {
+		cmd, _, err := rootCmd.Find(path)
+		if err != nil {
+			t.Fatalf("find command %v: %v", path, err)
+		}
+		if cmd == nil {
+			t.Fatalf("expected command for %v", path)
+		}
+	}
+}
+
+func TestSkillsValidateCommand_RequiresExactlyOneArg(t *testing.T) {
+	if err := skillsValidateCmd.Args(skillsValidateCmd, nil); err == nil {
+		t.Fatal("expected args validation error for empty args")
+	}
+	if err := skillsValidateCmd.Args(skillsValidateCmd, []string{"a", "b"}); err == nil {
+		t.Fatal("expected args validation error for extra args")
+	}
+	if err := skillsValidateCmd.Args(skillsValidateCmd, []string{"demo-skill"}); err != nil {
+		t.Fatalf("expected valid args, got error: %v", err)
+	}
+}
+
+func TestSkillsInstallDepsCommand_RequiresExactlyOneArg(t *testing.T) {
+	if err := skillsInstallDepsCmd.Args(skillsInstallDepsCmd, nil); err == nil {
+		t.Fatal("expected args validation error for empty args")
+	}
+	if err := skillsInstallDepsCmd.Args(skillsInstallDepsCmd, []string{"a", "b"}); err == nil {
+		t.Fatal("expected args validation error for extra args")
+	}
+	if err := skillsInstallDepsCmd.Args(skillsInstallDepsCmd, []string{"demo-skill"}); err != nil {
+		t.Fatalf("expected valid args, got error: %v", err)
+	}
+}
+
+func TestRunSkillsValidateReportsMissingRequirements(t *testing.T) {
+	root, cfgPath := writeSkillsCLIConfig(t)
+	t.Setenv("HOME", root)
+	t.Setenv(config.ConfigPathEnv, cfgPath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	runSkillsValidate(cmd, []string{"demo-skill"})
+
+	output := stdout.String()
+	for _, fragment := range []string{
+		"Skill: Demo Skill",
+		"Eligible: no",
+		"missing config paths: channels.discord",
+		"missing python packages: requests",
+		"missing node packages: typescript",
+	} {
+		if !strings.Contains(output, fragment) {
+			t.Fatalf("expected output to contain %q, got:\n%s", fragment, output)
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got:\n%s", stderr.String())
+	}
+}
+
+func TestRunSkillsInstallDepsRunsInstallers(t *testing.T) {
+	root, cfgPath := writeSkillsCLIConfig(t)
+	t.Setenv("HOME", root)
+	t.Setenv(config.ConfigPathEnv, cfgPath)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	runSkillsInstallDeps(cmd, []string{"demo-skill"})
+
+	output := stdout.String()
+	for _, fragment := range []string{
+		"Installing dependencies for skill demo-skill",
+		"[ok] command printf demo-install-ok",
+		"Installed 1/1 dependencies",
+	} {
+		if !strings.Contains(output, fragment) {
+			t.Fatalf("expected output to contain %q, got:\n%s", fragment, output)
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got:\n%s", stderr.String())
+	}
+}
+
+func writeSkillsCLIConfig(t *testing.T) (string, string) {
+	t.Helper()
+
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".nekobot", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills dir: %v", err)
+	}
+
+	skillContent := `---
+id: demo-skill
+name: Demo Skill
+enabled: true
+requirements:
+  config_paths:
+    - channels.discord
+  python_packages:
+    - requests
+  node_packages:
+    - typescript
+  custom:
+    install:
+      - method: command
+        package: "printf demo-install-ok"
+---
+
+Demo skill instructions that are long enough for validation.`
+	if err := os.WriteFile(filepath.Join(skillsDir, "demo-skill.md"), []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("write skill file: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+
+	cfgPath := filepath.Join(root, ".nekobot", "config.json")
+	if err := config.SaveToFile(cfg, cfgPath); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	return root, cfgPath
+}
