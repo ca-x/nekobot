@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -211,6 +212,75 @@ func TestHandleExportConfigIncludesMemorySection(t *testing.T) {
 	}
 	if memory.Semantic.SearchPolicy != "vector" || memory.ShortTerm.RawHistoryLimit != 432 {
 		t.Fatalf("unexpected exported memory section: %+v", memory)
+	}
+}
+
+func TestPersistChatRoutingClearsProviderAndModel(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "primary"
+	cfg.Agents.Defaults.Model = "claude-sonnet"
+	cfg.Agents.Defaults.Fallback = []string{"backup"}
+
+	s := &Server{
+		config: cfg,
+	}
+
+	if err := s.persistChatRouting("", "", nil); err != nil {
+		t.Fatalf("persistChatRouting failed: %v", err)
+	}
+
+	if cfg.Agents.Defaults.Provider != "" {
+		t.Fatalf("expected provider to be cleared, got %q", cfg.Agents.Defaults.Provider)
+	}
+	if cfg.Agents.Defaults.Model != "" {
+		t.Fatalf("expected model to be cleared, got %q", cfg.Agents.Defaults.Model)
+	}
+	if len(cfg.Agents.Defaults.Fallback) != 0 {
+		t.Fatalf("expected fallback to be cleared, got %v", cfg.Agents.Defaults.Fallback)
+	}
+}
+
+func TestPersistChatRoutingRejectsUnknownProvider(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Providers = []config.ProviderProfile{
+		{Name: "primary", ProviderKind: "openai"},
+	}
+
+	s := &Server{
+		config: cfg,
+	}
+
+	if err := s.persistChatRouting("missing", "gpt-4o", nil); err == nil {
+		t.Fatal("expected error for unknown provider")
+	}
+	if cfg.Agents.Defaults.Provider != "" {
+		t.Fatalf("unexpected provider mutation: %q", cfg.Agents.Defaults.Provider)
+	}
+}
+
+func TestPersistChatRoutingUpdatesRouteFields(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Providers = []config.ProviderProfile{
+		{Name: "primary", ProviderKind: "openai"},
+		{Name: "backup", ProviderKind: "openai"},
+	}
+
+	s := &Server{
+		config: cfg,
+	}
+
+	if err := s.persistChatRouting("primary", "gpt-4.1", []string{"backup"}); err != nil {
+		t.Fatalf("persistChatRouting failed: %v", err)
+	}
+
+	if cfg.Agents.Defaults.Provider != "primary" {
+		t.Fatalf("expected provider to update, got %q", cfg.Agents.Defaults.Provider)
+	}
+	if cfg.Agents.Defaults.Model != "gpt-4.1" {
+		t.Fatalf("expected model to update, got %q", cfg.Agents.Defaults.Model)
+	}
+	if !reflect.DeepEqual(cfg.Agents.Defaults.Fallback, []string{"backup"}) {
+		t.Fatalf("expected fallback to update, got %v", cfg.Agents.Defaults.Fallback)
 	}
 }
 

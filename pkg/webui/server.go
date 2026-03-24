@@ -3420,12 +3420,12 @@ func (s *Server) persistChatRouting(provider, model string, fallback []string) e
 		if !s.hasProvider(provider) {
 			return fmt.Errorf("provider not found: %s", provider)
 		}
-		if strings.TrimSpace(s.config.Agents.Defaults.Provider) != provider {
-			s.config.Agents.Defaults.Provider = provider
-			changed = true
-		}
 	}
-	if trimmedModel := strings.TrimSpace(model); trimmedModel != "" && s.config.Agents.Defaults.Model != trimmedModel {
+	if strings.TrimSpace(s.config.Agents.Defaults.Provider) != provider {
+		s.config.Agents.Defaults.Provider = provider
+		changed = true
+	}
+	if trimmedModel := strings.TrimSpace(model); s.config.Agents.Defaults.Model != trimmedModel {
 		s.config.Agents.Defaults.Model = trimmedModel
 		changed = true
 	}

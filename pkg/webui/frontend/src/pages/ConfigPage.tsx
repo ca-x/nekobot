@@ -55,15 +55,15 @@ interface FieldDef {
 }
 
 const SECTION_DESCRIPTIONS: Record<ConfigSection, string> = {
-  agents: 'Agent defaults, model routing, workspace and MCP integration.',
-  gateway: 'Gateway listen host and service ports.',
-  tools: 'Web tool behavior, exec timeout and sandbox settings.',
-  transcription: 'Speech-to-text provider, API base, model and timeout.',
-  memory: 'Long-term, semantic and episodic memory controls.',
-  heartbeat: 'Autonomous heartbeat interval and task cadence.',
-  approval: 'Allow/deny policy and approval mode.',
-  logger: 'Logging level, output target and rotation strategy.',
-  webui: 'Dashboard port and interactive session settings.',
+  agents: t('configSectionDescAgents'),
+  gateway: t('configSectionDescGateway'),
+  tools: t('configSectionDescTools'),
+  transcription: t('configSectionDescTranscription'),
+  memory: t('configSectionDescMemory'),
+  heartbeat: t('configSectionDescHeartbeat'),
+  approval: t('configSectionDescApproval'),
+  logger: t('configSectionDescLogger'),
+  webui: t('configSectionDescWebUI'),
 };
 
 function sectionLabel(section: ConfigSection): string {
@@ -267,7 +267,7 @@ function FormField({
               )
             }
           />
-          <div className="mt-2 text-xs text-muted-foreground">One item per line.</div>
+          <div className="mt-2 text-xs text-muted-foreground">{t('configListHint')}</div>
         </div>
       );
     case 'json':
@@ -280,7 +280,7 @@ function FormField({
           <div className="mt-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs text-amber-700">
               <AlertTriangle className="h-3.5 w-3.5" />
-              JSON field. Edit this section in JSON mode to preserve the structure.
+              {t('configJsonFieldHint')}
             </div>
             <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={onOpenJSONMode}>
               <Code className="mr-1.5 h-4 w-4" />
@@ -497,7 +497,7 @@ export default function ConfigPage() {
         <Card className="overflow-hidden border-white/70 bg-[linear-gradient(180deg,rgba(255,250,247,0.96),rgba(252,242,246,0.9))] shadow-[0_24px_60px_-42px_rgba(120,55,75,0.5)]">
           <CardHeader className="border-b border-white/60 pb-5">
             <CardTitle className="text-xl text-[hsl(var(--gray-900))]">Config Control</CardTitle>
-            <CardDescription>Database-backed runtime settings. Drafts stay local until saved.</CardDescription>
+            <CardDescription>{t('configPageDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 p-4">
             {CONFIG_SECTIONS.map((item) => (
@@ -538,7 +538,7 @@ export default function ConfigPage() {
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     className="h-10 rounded-full border-white bg-white/85 pl-9"
-                    placeholder="Search fields"
+                    placeholder={t('configSearchPlaceholder')}
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                   />
@@ -585,7 +585,7 @@ export default function ConfigPage() {
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               <span>{t('configSectionHint', sectionLabel(section))}</span>
               <span className="rounded-full bg-[hsl(var(--gray-100))] px-2.5 py-1">
-                {dirtyCount > 0 ? `${dirtyCount} draft section(s)` : 'No unsaved drafts'}
+                {dirtyCount > 0 ? t('configDraftSections', String(dirtyCount)) : t('configNoUnsavedDrafts')}
               </span>
             </div>
           </CardHeader>
@@ -593,11 +593,11 @@ export default function ConfigPage() {
           <CardContent className="min-h-0 p-0">
             <ScrollArea className="h-[calc(100vh-15rem)] px-6 py-5">
               {isLoading ? (
-                <div className="py-12 text-center text-sm text-muted-foreground">Loading…</div>
+                <div className="py-12 text-center text-sm text-muted-foreground">{t('loading')}</div>
               ) : mode === 'json' ? (
                 <div className="space-y-3">
                   <div className="rounded-2xl border border-amber-200 bg-[rgba(255,248,239,0.92)] px-4 py-3 text-sm text-amber-800">
-                    JSON mode edits the entire section exactly as stored. Use this for arrays of objects and advanced nested structures.
+                    {t('configJsonModeHint')}
                   </div>
                   <textarea
                     className="min-h-[62vh] w-full rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[hsl(var(--gray-950))] px-5 py-4 font-mono text-sm leading-6 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
@@ -608,9 +608,9 @@ export default function ConfigPage() {
                 </div>
               ) : filteredFields.length === 0 ? (
                 <div className="py-16 text-center">
-                  <div className="text-sm font-medium text-[hsl(var(--gray-900))]">No matching fields.</div>
+                  <div className="text-sm font-medium text-[hsl(var(--gray-900))]">{t('configNoMatchingFields')}</div>
                   <div className="mt-1 text-sm text-muted-foreground">
-                    {search.trim() ? 'Try a broader keyword.' : 'This section has no editable fields.'}
+                    {search.trim() ? t('configNoMatchingFieldsHint') : t('configNoEditableFields')}
                   </div>
                 </div>
               ) : (

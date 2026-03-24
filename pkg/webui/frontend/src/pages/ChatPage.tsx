@@ -41,6 +41,7 @@ interface ModelEntry {
 }
 
 const EMPTY_VALUE = '__default__';
+const MODEL_VALUE_SEPARATOR = '::';
 
 function toSelectValue(value: string): string {
   return value.trim() === '' ? EMPTY_VALUE : value;
@@ -48,6 +49,36 @@ function toSelectValue(value: string): string {
 
 function fromSelectValue(value: string): string {
   return value === EMPTY_VALUE ? '' : value;
+}
+
+function encodeModelValue(entry: ModelEntry): string {
+  return `${entry.provider}${MODEL_VALUE_SEPARATOR}${entry.model}`;
+}
+
+function decodeModelValue(value: string): ModelEntry {
+  const separatorIndex = value.indexOf(MODEL_VALUE_SEPARATOR);
+  if (separatorIndex === -1) {
+    return { provider: '', model: value };
+  }
+  return {
+    provider: value.slice(0, separatorIndex),
+    model: value.slice(separatorIndex + MODEL_VALUE_SEPARATOR.length),
+  };
+}
+
+function findModelEntry(models: ModelEntry[], provider: string, model: string): ModelEntry | undefined {
+  const normalizedModel = model.trim();
+  if (!normalizedModel) {
+    return undefined;
+  }
+
+  const normalizedProvider = provider.trim();
+  if (normalizedProvider) {
+    return models.find((entry) => entry.provider === normalizedProvider && entry.model === normalizedModel);
+  }
+
+  return models.find((entry) => entry.provider === 'default' && entry.model === normalizedModel)
+    ?? models.find((entry) => entry.model === normalizedModel);
 }
 
 function formatTime(timestamp: number): string {
@@ -208,7 +239,6 @@ export default function ChatPage() {
   const [fallbackInput, setFallbackInput] = useState('');
   const [chatInput, setChatInput] = useState('');
   const scrollEndRef = useRef<HTMLDivElement>(null);
-  const hydratedRef = useRef(false);
 
   const filteredModels = useMemo(() => {
     if (!selectedProvider) {
@@ -218,15 +248,28 @@ export default function ChatPage() {
   }, [models, selectedProvider]);
 
   useEffect(() => {
-    if (hydratedRef.current) {
+    if (routeSettings.provider || routeSettings.model || routeSettings.fallback.length > 0) {
       return;
     }
-    hydratedRef.current = true;
+    if (selectedProvider || selectedModel || customModel || fallbackInput.trim()) {
+      return;
+    }
     setSelectedProvider(defaultProvider);
     setSelectedModel(defaultModel);
     setCustomModel(defaultModel);
     setFallbackInput(defaultFallback.join(', '));
-  }, [defaultFallback, defaultModel, defaultProvider]);
+  }, [
+    customModel,
+    defaultFallback,
+    defaultModel,
+    defaultProvider,
+    fallbackInput,
+    routeSettings.fallback,
+    routeSettings.model,
+    routeSettings.provider,
+    selectedModel,
+    selectedProvider,
+  ]);
 
   useEffect(() => {
     if (!routeSettings.provider && !routeSettings.model && routeSettings.fallback.length === 0) {
@@ -243,12 +286,14 @@ export default function ChatPage() {
   }, [messages, isAwaitingReply]);
 
   const messageCount = messages.filter((message) => message.role === 'user' || message.role === 'assistant').length;
-  const activeModel = customModel.trim() || selectedModel.trim() || routeSettings.model || defaultModel;
-  const activeProvider = selectedProvider.trim() || routeSettings.provider || defaultProvider;
+  const activeModel = customModel.trim() || selectedModel.trim();
+  const activeProvider = selectedProvider.trim();
   const activeFallback = fallbackInput
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+  const selectedModelEntry = findModelEntry(filteredModels, selectedProvider, selectedModel);
+  const selectedModelValue = selectedModelEntry ? encodeModelValue(selectedModelEntry) : EMPTY_VALUE;
 
   function handleProviderChange(value: string) {
     const provider = fromSelectValue(value);
@@ -266,14 +311,17 @@ export default function ChatPage() {
   }
 
   function handleModelChange(value: string) {
-    const model = fromSelectValue(value);
-    setSelectedModel(model);
-    setCustomModel(model);
+    if (value === EMPTY_VALUE) {
+      setSelectedModel('');
+      setCustomModel('');
+      return;
+    }
+
+    const entry = decodeModelValue(value);
+    setSelectedModel(entry.model);
+    setCustomModel(entry.model);
     if (!selectedProvider) {
-      const owner = models.find((entry) => entry.model === model);
-      if (owner) {
-        setSelectedProvider(owner.provider === 'default' ? '' : owner.provider);
-      }
+      setSelectedProvider(entry.provider === 'default' ? '' : entry.provider);
     }
   }
 
@@ -384,14 +432,14 @@ export default function ChatPage() {
               <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 {t('defaultModel')}
               </label>
-              <Select value={toSelectValue(selectedModel)} onValueChange={handleModelChange}>
+              <Select value={selectedModelValue} onValueChange={handleModelChange}>
                 <SelectTrigger className="h-11 rounded-2xl border-white bg-white/80">
                   <SelectValue placeholder={t('defaultModel')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={EMPTY_VALUE}>{t('chatModelUnset')}</SelectItem>
                   {filteredModels.map((entry) => (
-                    <SelectItem key={`${entry.provider}::${entry.model}`} value={entry.model}>
+                    <SelectItem key={encodeModelValue(entry)} value={encodeModelValue(entry)}>
                       {selectedProvider ? entry.model : `${entry.model} (${entry.provider})`}
                     </SelectItem>
                   ))}
