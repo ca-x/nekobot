@@ -59,6 +59,6 @@ ENV NEKOBOT_WORKSPACE_DIR=/app/data/workspace
 EXPOSE 18790 18791
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:18790/health || exit 1
+  CMD wget -q -T 3 -O /dev/null http://127.0.0.1:18790/health || exit 1
 
 CMD ["./nekobot", "gateway"]
