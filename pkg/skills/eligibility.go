@@ -36,6 +36,11 @@ func (c *EligibilityChecker) Check(skill *Skill) (bool, []string) {
 		reasons = append(reasons, "missing binaries: "+strings.Join(missingBinaries, ", "))
 	}
 
+	// Check any-of binary requirements
+	if len(skill.Requirements.AnyBinaries) > 0 && !c.CheckAnyBinaries(skill.Requirements.AnyBinaries) {
+		reasons = append(reasons, "missing any-of binaries: "+strings.Join(skill.Requirements.AnyBinaries, ", "))
+	}
+
 	// Check required environment variables
 	missingEnvVars := c.CheckEnvVars(skill.Requirements.Env)
 	if len(missingEnvVars) > 0 {
@@ -119,6 +124,16 @@ func (c *EligibilityChecker) CheckBinaries(binaries []string) []string {
 	}
 
 	return missing
+}
+
+// CheckAnyBinaries reports whether at least one required binary exists.
+func (c *EligibilityChecker) CheckAnyBinaries(binaries []string) bool {
+	for _, bin := range binaries {
+		if _, err := exec.LookPath(bin); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckEnvVars checks which required environment variables are missing.

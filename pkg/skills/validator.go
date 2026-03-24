@@ -177,6 +177,17 @@ func (v *Validator) ValidateRequirements(req *SkillRequirements) []Diagnostic {
 		}
 	}
 
+	for _, bin := range req.AnyBinaries {
+		if strings.TrimSpace(bin) == "" {
+			diagnostics = append(diagnostics, Diagnostic{
+				Severity: DiagnosticError,
+				Message:  "Any-binary requirement cannot be empty",
+				Field:    "requirements.any_binaries",
+				Fixable:  false,
+			})
+		}
+	}
+
 	// Validate env vars
 	for _, envVar := range req.Env {
 		if strings.TrimSpace(envVar) == "" {

@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"nekobot/pkg/logger"
@@ -60,6 +61,47 @@ No always instructions`
 	}
 	if skill.Always {
 		t.Fatalf("expected always=false when not configured")
+	}
+}
+
+func TestParseSkillContentMergesOpenClawRequirements(t *testing.T) {
+	content := `---
+id: coding-agent
+name: coding-agent
+metadata:
+  openclaw:
+    requires:
+      bins: ["git"]
+      anyBins: ["claude", "codex"]
+      env: ["OPENAI_API_KEY"]
+      config: ["channels.discord"]
+      os: ["linux", "darwin"]
+---
+
+Coding agent instructions`
+
+	skill, err := parseSkillContent(content, "/tmp/coding-agent/SKILL.md")
+	if err != nil {
+		t.Fatalf("parse skill content: %v", err)
+	}
+	if skill.Requirements == nil {
+		t.Fatalf("expected merged requirements")
+	}
+	if len(skill.Requirements.Binaries) != 1 || skill.Requirements.Binaries[0] != "git" {
+		t.Fatalf("unexpected binaries: %#v", skill.Requirements.Binaries)
+	}
+	if len(skill.Requirements.AnyBinaries) != 2 || skill.Requirements.AnyBinaries[0] != "claude" || skill.Requirements.AnyBinaries[1] != "codex" {
+		t.Fatalf("unexpected any binaries: %#v", skill.Requirements.AnyBinaries)
+	}
+	if len(skill.Requirements.Env) != 1 || skill.Requirements.Env[0] != "OPENAI_API_KEY" {
+		t.Fatalf("unexpected env requirements: %#v", skill.Requirements.Env)
+	}
+	if len(skill.Requirements.ConfigPaths) != 1 || skill.Requirements.ConfigPaths[0] != "channels.discord" {
+		t.Fatalf("unexpected config requirements: %#v", skill.Requirements.ConfigPaths)
+	}
+	osReq, ok := skill.Requirements.Custom["os"].([]string)
+	if !ok || len(osReq) != 2 {
+		t.Fatalf("expected os requirements merged, got %#v", skill.Requirements.Custom["os"])
 	}
 }
 
@@ -153,5 +195,39 @@ Weather instructions.`
 	}
 	if _, ok := loaded["weather"]; !ok {
 		t.Fatalf("expected directory SKILL.md skill to be discovered")
+	}
+}
+
+func TestEligibilityCheckSupportsAnyBinariesAndMetadataOS(t *testing.T) {
+	checker := NewEligibilityChecker()
+
+	eligible, reasons := checker.Check(&Skill{
+		ID:      "coding-agent",
+		Enabled: true,
+		Requirements: &SkillRequirements{
+			AnyBinaries: []string{"definitely-missing-bin", "go"},
+			Custom: map[string]interface{}{
+				"os": []string{runtime.GOOS},
+			},
+		},
+	})
+	if !eligible {
+		t.Fatalf("expected any-binary requirement to pass when one binary exists, got reasons: %v", reasons)
+	}
+
+	ineligible, reasons := checker.Check(&Skill{
+		ID:      "wrong-os",
+		Enabled: true,
+		Requirements: &SkillRequirements{
+			Custom: map[string]interface{}{
+				"os": []string{"plan9"},
+			},
+		},
+	})
+	if ineligible {
+		t.Fatalf("expected wrong-os skill to be ineligible")
+	}
+	if len(reasons) == 0 {
+		t.Fatalf("expected ineligible reasons")
 	}
 }

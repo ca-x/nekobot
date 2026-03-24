@@ -337,6 +337,7 @@ func parseSkillContent(content, path string) (*Skill, error) {
 	if !skill.Always {
 		skill.Always = parseAlwaysFromMetadata(skill.Metadata)
 	}
+	mergeMetadataRequirements(skill)
 
 	return skill, nil
 }
@@ -357,6 +358,102 @@ func parseAlwaysFromMetadata(metadata map[string]interface{}) bool {
 	}
 
 	return always
+}
+
+func mergeMetadataRequirements(skill *Skill) {
+	if skill == nil || len(skill.Metadata) == 0 {
+		return
+	}
+
+	if skill.Requirements == nil {
+		skill.Requirements = &SkillRequirements{}
+	}
+	if skill.Requirements.Custom == nil {
+		skill.Requirements.Custom = make(map[string]interface{})
+	}
+
+	for _, key := range []string{"openclaw", "goclaw", "nextclaw"} {
+		raw, ok := skill.Metadata[key]
+		if !ok {
+			continue
+		}
+		metadata, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		mergeRequirementBlock(skill.Requirements, metadata)
+	}
+}
+
+func mergeRequirementBlock(req *SkillRequirements, metadata map[string]interface{}) {
+	if req == nil || len(metadata) == 0 {
+		return
+	}
+
+	if osList := stringListValue(metadata["os"]); len(osList) > 0 && req.Custom["os"] == nil {
+		req.Custom["os"] = osList
+	}
+
+	requires, ok := metadata["requires"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	req.Binaries = appendUniqueStrings(req.Binaries, stringListValue(requires["bins"]))
+	req.AnyBinaries = appendUniqueStrings(req.AnyBinaries, stringListValue(requires["anyBins"]))
+	req.AnyBinaries = appendUniqueStrings(req.AnyBinaries, stringListValue(requires["any_bins"]))
+	req.Env = appendUniqueStrings(req.Env, stringListValue(requires["env"]))
+	req.ConfigPaths = appendUniqueStrings(req.ConfigPaths, stringListValue(requires["config"]))
+
+	if osList := stringListValue(requires["os"]); len(osList) > 0 && req.Custom["os"] == nil {
+		req.Custom["os"] = osList
+	}
+}
+
+func stringListValue(raw interface{}) []string {
+	switch v := raw.(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			trimmed := strings.TrimSpace(item)
+			if trimmed != "" {
+				out = append(out, trimmed)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if text, ok := item.(string); ok {
+				trimmed := strings.TrimSpace(text)
+				if trimmed != "" {
+					out = append(out, trimmed)
+				}
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func appendUniqueStrings(dst []string, values []string) []string {
+	if len(values) == 0 {
+		return dst
+	}
+
+	seen := make(map[string]struct{}, len(dst))
+	for _, item := range dst {
+		seen[item] = struct{}{}
+	}
+	for _, item := range values {
+		if _, exists := seen[item]; exists {
+			continue
+		}
+		dst = append(dst, item)
+		seen[item] = struct{}{}
+	}
+	return dst
 }
 
 // CheckEligibility checks if a skill is eligible to run on current system.

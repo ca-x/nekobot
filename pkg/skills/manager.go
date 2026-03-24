@@ -43,11 +43,13 @@ type Skill struct {
 
 // SkillRequirements defines what a skill needs to run.
 type SkillRequirements struct {
-	Tools     []string               `yaml:"tools" json:"tools,omitempty"`         // Required tools
-	Env       []string               `yaml:"env" json:"env,omitempty"`             // Required env vars
-	Binaries  []string               `yaml:"binaries" json:"binaries,omitempty"`   // Required binaries
-	Languages map[string]string      `yaml:"languages" json:"languages,omitempty"` // Language versions
-	Custom    map[string]interface{} `yaml:"custom" json:"custom,omitempty"`       // Custom requirements
+	Tools       []string               `yaml:"tools" json:"tools,omitempty"`               // Required tools
+	Env         []string               `yaml:"env" json:"env,omitempty"`                   // Required env vars
+	Binaries    []string               `yaml:"binaries" json:"binaries,omitempty"`         // Required binaries
+	AnyBinaries []string               `yaml:"any_binaries" json:"any_binaries,omitempty"` // At least one required binary
+	ConfigPaths []string               `yaml:"config_paths" json:"config_paths,omitempty"` // Required config paths
+	Languages   map[string]string      `yaml:"languages" json:"languages,omitempty"`       // Language versions
+	Custom      map[string]interface{} `yaml:"custom" json:"custom,omitempty"`             // Custom requirements
 }
 
 // Manager manages skill discovery, loading, and execution.
