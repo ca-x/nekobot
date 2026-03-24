@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -164,6 +165,47 @@ func TestSaveDatabaseSectionsUnknownSection(t *testing.T) {
 
 	if err := SaveDatabaseSections(cfg, "unknown_section"); err == nil {
 		t.Fatalf("expected error for unknown section")
+	}
+}
+
+func TestApplyDatabaseOverridesLoadsGatewayLoggerAndWebUI(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = 19100
+	cfg.Logger.Level = "debug"
+	cfg.Logger.OutputPath = filepath.Join(t.TempDir(), "runtime.log")
+	cfg.WebUI.Enabled = false
+	cfg.WebUI.Port = 19101
+	cfg.WebUI.PublicBaseURL = "https://ui.example.com"
+	cfg.WebUI.ToolSessionOTPTTLSeconds = 222
+
+	if err := ApplyDatabaseOverrides(cfg); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides initial failed: %v", err)
+	}
+
+	cfg.Gateway.Host = "0.0.0.0"
+	cfg.Gateway.Port = 1
+	cfg.Logger.Level = "error"
+	cfg.Logger.OutputPath = ""
+	cfg.WebUI.Enabled = true
+	cfg.WebUI.Port = 2
+	cfg.WebUI.PublicBaseURL = ""
+	cfg.WebUI.ToolSessionOTPTTLSeconds = 1
+
+	if err := ApplyDatabaseOverrides(cfg); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides reload failed: %v", err)
+	}
+
+	if cfg.Gateway.Host != "127.0.0.1" || cfg.Gateway.Port != 19100 {
+		t.Fatalf("expected gateway loaded from DB, got %+v", cfg.Gateway)
+	}
+	if cfg.Logger.Level != "debug" || cfg.Logger.OutputPath == "" {
+		t.Fatalf("expected logger loaded from DB, got %+v", cfg.Logger)
+	}
+	if cfg.WebUI.Enabled || cfg.WebUI.Port != 19101 || cfg.WebUI.PublicBaseURL != "https://ui.example.com" || cfg.WebUI.ToolSessionOTPTTLSeconds != 222 {
+		t.Fatalf("expected webui loaded from DB, got %+v", cfg.WebUI)
 	}
 }
 

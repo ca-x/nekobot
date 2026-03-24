@@ -34,3 +34,29 @@ func TestDefaultConfig_UsesNekobotWorkspace(t *testing.T) {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
 }
+
+func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
+	target := DefaultConfig()
+	source := DefaultConfig()
+
+	source.Gateway.Host = "127.0.0.1"
+	source.Gateway.Port = 19090
+	source.Logger.Level = "debug"
+	source.Logger.OutputPath = filepath.Join(t.TempDir(), "nekobot.log")
+	source.WebUI.Enabled = false
+	source.WebUI.Port = 19091
+	source.WebUI.PublicBaseURL = "https://nekobot.example.com"
+	source.WebUI.ToolSessionOTPTTLSeconds = 321
+
+	target.ApplyFrom(source)
+
+	if target.Gateway != source.Gateway {
+		t.Fatalf("expected gateway copied, got %+v want %+v", target.Gateway, source.Gateway)
+	}
+	if target.Logger != source.Logger {
+		t.Fatalf("expected logger copied, got %+v want %+v", target.Logger, source.Logger)
+	}
+	if target.WebUI != source.WebUI {
+		t.Fatalf("expected webui copied, got %+v want %+v", target.WebUI, source.WebUI)
+	}
+}

@@ -43,6 +43,9 @@ type SessionsConfig struct {
 	// Enabled indicates if session export is active.
 	Enabled bool
 
+	// SessionsDir is the source JSONL session directory to export from.
+	SessionsDir string
+
 	// ExportDir is where exported session markdown files are stored.
 	ExportDir string
 

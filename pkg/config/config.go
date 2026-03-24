@@ -798,9 +798,12 @@ func (c *Config) ApplyFrom(other *Config) {
 	c.Channels = other.Channels
 	c.Providers = other.Providers
 	c.Transcription = other.Transcription
+	c.Gateway = other.Gateway
 	c.Tools = other.Tools
 	c.Heartbeat = other.Heartbeat
+	c.Logger = other.Logger
 	c.Memory = other.Memory
 	c.Sessions = other.Sessions
 	c.Approval = other.Approval
+	c.WebUI = other.WebUI
 }

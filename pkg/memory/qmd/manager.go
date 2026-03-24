@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,13 +17,13 @@ import (
 
 // Manager manages QMD collections and operations.
 type Manager struct {
-	log      *logger.Logger
-	config   Config
-	executor *ProcessExecutor
+	log         *logger.Logger
+	config      Config
+	executor    *ProcessExecutor
 	collections map[string]*Collection
-	mu       sync.RWMutex
-	available bool
-	version  string
+	mu          sync.RWMutex
+	available   bool
+	version     string
 }
 
 // NewManager creates a new QMD manager.
@@ -97,6 +98,9 @@ func (m *Manager) Initialize(ctx context.Context, workspaceDir string) error {
 
 	// Initialize sessions collection
 	if m.config.Sessions.Enabled {
+		if m.config.Sessions.SessionsDir == "" {
+			m.config.Sessions.SessionsDir = filepath.Join(workspaceDir, "sessions")
+		}
 		sessionsPath := m.config.Sessions.ExportDir
 		if sessionsPath != "" {
 			sessionsPath = os.ExpandEnv(sessionsPath)
@@ -135,10 +139,10 @@ func (m *Manager) EnsureCollection(ctx context.Context, name, path, pattern stri
 
 	// Add to our tracking
 	m.collections[name] = &Collection{
-		Name:         name,
-		Path:         path,
-		Pattern:      pattern,
-		LastUpdated:  time.Now(),
+		Name:        name,
+		Path:        path,
+		Pattern:     pattern,
+		LastUpdated: time.Now(),
 	}
 
 	return nil
@@ -169,6 +173,10 @@ func (m *Manager) UpdateAll(ctx context.Context) error {
 		return fmt.Errorf("qmd not available")
 	}
 
+	if err := m.exportSessions(ctx); err != nil {
+		m.log.Warn("Failed to export sessions before QMD update", zap.Error(err))
+	}
+
 	m.mu.RLock()
 	names := make([]string, 0, len(m.collections))
 	for name := range m.collections {
@@ -185,6 +193,32 @@ func (m *Manager) UpdateAll(ctx context.Context) error {
 	}
 
 	m.log.Info("Updated all QMD collections", zap.Int("count", len(names)))
+	return nil
+}
+
+func (m *Manager) exportSessions(ctx context.Context) error {
+	if !m.config.Sessions.Enabled {
+		return nil
+	}
+
+	exportDir := strings.TrimSpace(os.ExpandEnv(expandHome(m.config.Sessions.ExportDir)))
+	if exportDir == "" {
+		return nil
+	}
+
+	sessionsDir := strings.TrimSpace(os.ExpandEnv(expandHome(m.config.Sessions.SessionsDir)))
+	if sessionsDir == "" {
+		return nil
+	}
+
+	exporter := NewSessionExporter(m.log, exportDir, m.config.Sessions.RetentionDays)
+	if err := exporter.ExportAllSessions(ctx, sessionsDir); err != nil {
+		return fmt.Errorf("export sessions: %w", err)
+	}
+	if err := exporter.CleanupOldExports(ctx); err != nil {
+		return fmt.Errorf("cleanup exported sessions: %w", err)
+	}
+
 	return nil
 }
 

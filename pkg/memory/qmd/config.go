@@ -24,6 +24,7 @@ func ConfigFromConfig(cfg config.QMDConfig) Config {
 		Paths:          paths,
 		Sessions: SessionsConfig{
 			Enabled:       cfg.Sessions.Enabled,
+			SessionsDir:   "",
 			ExportDir:     cfg.Sessions.ExportDir,
 			RetentionDays: cfg.Sessions.RetentionDays,
 		},

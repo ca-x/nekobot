@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -53,6 +54,20 @@ func (se *SessionExporter) ExportSession(ctx context.Context, sessionID string, 
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
+		}
+
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			se.log.Warn("Failed to parse message",
+				zap.String("session", sessionID),
+				zap.Error(err))
+			continue
+		}
+		if rawType, ok := raw["_type"]; ok {
+			var kind string
+			if err := json.Unmarshal(rawType, &kind); err == nil && kind == "metadata" {
+				continue
+			}
 		}
 
 		var msg SessionMessage
@@ -110,8 +125,8 @@ func (se *SessionExporter) convertToMarkdown(sessionID string, messages []Sessio
 		role := strings.Title(strings.ToLower(msg.Role))
 		sb.WriteString(fmt.Sprintf("## %s\n\n", role))
 
-		// Write message content
-		sb.WriteString(msg.Content)
+		// Write message content with basic redaction to avoid leaking common secrets into QMD.
+		sb.WriteString(sanitizeText(msg.Content))
 		sb.WriteString("\n\n")
 
 		// Add separator between messages (except last)
@@ -153,6 +168,21 @@ func (se *SessionExporter) ExportAllSessions(ctx context.Context, sessionsDir st
 		zap.Int("count", count))
 
 	return nil
+}
+
+var (
+	apiKeyPattern   = regexp.MustCompile(`(?i)(api[_-]?key|apikey|secret|token)["\s:=]+([a-zA-Z0-9_\-]{16,})`)
+	passwordPattern = regexp.MustCompile(`(?i)(password|passwd|pwd)["\s:=]+([^\s]+)`)
+	emailPattern    = regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`)
+	phonePattern    = regexp.MustCompile(`1[3-9]\d{9}`)
+)
+
+func sanitizeText(text string) string {
+	text = apiKeyPattern.ReplaceAllString(text, `$1 [REDACTED_API_KEY]`)
+	text = passwordPattern.ReplaceAllString(text, `$1 [REDACTED_PASSWORD]`)
+	text = emailPattern.ReplaceAllString(text, "[REDACTED_EMAIL]")
+	text = phonePattern.ReplaceAllString(text, "[REDACTED_PHONE]")
+	return text
 }
 
 // CleanupOldExports removes exported sessions older than retention period.
