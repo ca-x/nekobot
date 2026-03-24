@@ -25,6 +25,23 @@ export interface MarketplaceInstalledResponse {
   records: MarketplaceSkill[];
 }
 
+export interface MarketplaceSearchResponse {
+  query: string;
+  success: boolean;
+  proxy: string;
+  output: string;
+  error: string;
+  has_output: boolean;
+}
+
+export interface MarketplaceInstallSkillResponse {
+  source: string;
+  target: string;
+  proxy: string;
+  installed: boolean;
+  refreshed: boolean;
+}
+
 export interface MarketplaceSkillContent {
   id: string;
   name: string;
@@ -94,6 +111,18 @@ export function useInstalledMarketplaceSkills() {
     queryKey: marketplaceKeys.installed(),
     queryFn: () => api.get<MarketplaceInstalledResponse>('/api/marketplace/skills/installed'),
     staleTime: 30_000,
+  });
+}
+
+export function useSearchMarketplaceSkills(query: string) {
+  return useQuery<MarketplaceSearchResponse>({
+    queryKey: [...marketplaceKeys.all, 'search', query],
+    queryFn: () =>
+      api.get<MarketplaceSearchResponse>(
+        `/api/marketplace/skills/search?q=${encodeURIComponent(query)}`,
+      ),
+    enabled: query.trim().length > 0,
+    staleTime: 15_000,
   });
 }
 
@@ -171,6 +200,20 @@ export function useInstallMarketplaceSkillDependencies() {
         return;
       }
       toast.error('Some dependencies failed to install');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useInstallMarketplaceSkill() {
+  const qc = useQueryClient();
+  return useMutation<MarketplaceInstallSkillResponse, Error, string>({
+    mutationFn: (source) =>
+      api.post<MarketplaceInstallSkillResponse>('/api/marketplace/skills/install', { source }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.installed() });
+      toast.success('Skill installed');
     },
     onError: (err) => toast.error(err.message),
   });

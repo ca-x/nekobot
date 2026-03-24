@@ -1,17 +1,43 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/skills"
 )
+
+type stubRemoteRegistry struct {
+	searchOutput string
+	searchErr    error
+	installPath  string
+	installErr   error
+	lastQuery    string
+	lastSource   string
+	lastTarget   string
+}
+
+func (s *stubRemoteRegistry) Search(_ context.Context, query string) (string, error) {
+	s.lastQuery = query
+	return s.searchOutput, s.searchErr
+}
+
+func (s *stubRemoteRegistry) Install(_ context.Context, source, targetDir string) (string, error) {
+	s.lastSource = source
+	s.lastTarget = targetDir
+	if s.installErr != nil {
+		return "", s.installErr
+	}
+	return s.installPath, nil
+}
 
 func TestMarketplaceHandlers_Return503WithoutSkillsManager(t *testing.T) {
 	s := &Server{}
@@ -434,6 +460,78 @@ Use this skill for detail and content route tests.
 	}
 	if body, _ := contentPayload["body_raw"].(string); body == "" || body == contentPayload["raw"] {
 		t.Fatalf("expected extracted body_raw, got %+v", contentPayload["body_raw"])
+	}
+}
+
+func TestMarketplaceHandlers_SearchAndInstallRemoteSkill(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillsDir := filepath.Join(tmpDir, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills dir: %v", err)
+	}
+
+	log := newTestLogger(t)
+	mgr := skills.NewManagerWithOptions(log, skillsDir, false, "http://127.0.0.1:9000")
+	registry := &stubRemoteRegistry{
+		searchOutput: "demo-skill\n  repo: https://example.com/demo.git",
+		installPath:  filepath.Join(skillsDir, "demo"),
+	}
+	mgr.SetRemoteRegistry(registry)
+
+	s := &Server{skillsMgr: mgr, logger: log}
+	e := echo.New()
+
+	searchReq := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/search?q=demo", nil)
+	searchRec := httptest.NewRecorder()
+	searchCtx := e.NewContext(searchReq, searchRec)
+	if err := s.handleSearchMarketplaceSkills(searchCtx); err != nil {
+		t.Fatalf("search handler failed: %v", err)
+	}
+	if searchRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, searchRec.Code)
+	}
+
+	var searchPayload map[string]interface{}
+	if err := json.Unmarshal(searchRec.Body.Bytes(), &searchPayload); err != nil {
+		t.Fatalf("unmarshal search payload: %v", err)
+	}
+	if got, _ := searchPayload["proxy"].(string); got != "http://127.0.0.1:9000" {
+		t.Fatalf("expected proxy in payload, got %+v", searchPayload["proxy"])
+	}
+	if got, _ := searchPayload["output"].(string); got == "" {
+		t.Fatalf("expected registry output, got %+v", searchPayload)
+	}
+	if registry.lastQuery != "demo" {
+		t.Fatalf("expected registry query demo, got %q", registry.lastQuery)
+	}
+
+	installReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/marketplace/skills/install",
+		strings.NewReader(`{"source":"https://example.com/demo.git"}`),
+	)
+	installReq.Header.Set("Content-Type", "application/json")
+	installRec := httptest.NewRecorder()
+	installCtx := e.NewContext(installReq, installRec)
+	if err := s.handleInstallMarketplaceSkill(installCtx); err != nil {
+		t.Fatalf("install handler failed: %v", err)
+	}
+	if installRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, installRec.Code)
+	}
+
+	var installPayload map[string]interface{}
+	if err := json.Unmarshal(installRec.Body.Bytes(), &installPayload); err != nil {
+		t.Fatalf("unmarshal install payload: %v", err)
+	}
+	if got, _ := installPayload["target"].(string); got != registry.installPath {
+		t.Fatalf("expected install target %q, got %q", registry.installPath, got)
+	}
+	if registry.lastSource != "https://example.com/demo.git" {
+		t.Fatalf("expected install source to be captured, got %q", registry.lastSource)
+	}
+	if registry.lastTarget != skillsDir {
+		t.Fatalf("expected install target dir %q, got %q", skillsDir, registry.lastTarget)
 	}
 }
 

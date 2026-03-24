@@ -207,8 +207,10 @@ func (s *Server) setup() {
 	// Marketplace routes
 	api.GET("/marketplace/skills", s.handleListMarketplaceSkills)
 	api.GET("/marketplace/skills/installed", s.handleListInstalledMarketplaceSkills)
+	api.GET("/marketplace/skills/search", s.handleSearchMarketplaceSkills)
 	api.GET("/marketplace/skills/items/:id", s.handleGetMarketplaceSkillItem)
 	api.GET("/marketplace/skills/items/:id/content", s.handleGetMarketplaceSkillContent)
+	api.POST("/marketplace/skills/install", s.handleInstallMarketplaceSkill)
 	api.POST("/marketplace/skills/:id/enable", s.handleEnableMarketplaceSkill)
 	api.POST("/marketplace/skills/:id/disable", s.handleDisableMarketplaceSkill)
 	api.POST("/marketplace/skills/:id/install-deps", s.handleInstallMarketplaceSkillDependencies)
@@ -2295,6 +2297,28 @@ func (s *Server) handleListInstalledMarketplaceSkills(c *echo.Context) error {
 	})
 }
 
+func (s *Server) handleSearchMarketplaceSkills(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	query := strings.TrimSpace(c.QueryParam("q"))
+	if query == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "query is required"})
+	}
+
+	output, err := s.skillsMgr.SearchRegistry(c.Request().Context(), query)
+	success := err == nil
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"query":      query,
+		"success":    success,
+		"proxy":      s.skillsMgr.SkillsProxy(),
+		"output":     strings.TrimSpace(output),
+		"error":      errorString(err),
+		"has_output": strings.TrimSpace(output) != "",
+	})
+}
+
 func (s *Server) marketplaceSkillIsInstalled(skill *skills.Skill) bool {
 	if skill == nil {
 		return false
@@ -2362,6 +2386,40 @@ func (s *Server) handleGetMarketplaceSkillContent(c *echo.Context) error {
 		"file_path": strings.TrimSpace(skill.FilePath),
 		"raw":       raw,
 		"body_raw":  bodyRaw,
+	})
+}
+
+func (s *Server) handleInstallMarketplaceSkill(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	var body struct {
+		Source string `json:"source"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	source := strings.TrimSpace(body.Source)
+	if source == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "source is required"})
+	}
+
+	targetPath, err := s.skillsMgr.InstallSkill(c.Request().Context(), source)
+	if err != nil {
+		s.logger.Error("Failed to install marketplace skill",
+			zap.String("source", source),
+			zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to install skill"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"source":    source,
+		"target":    targetPath,
+		"proxy":     s.skillsMgr.SkillsProxy(),
+		"installed": true,
+		"refreshed": true,
 	})
 }
 

@@ -66,7 +66,7 @@ type Manager struct {
 	validator        *Validator
 	eligibilityCheck *EligibilityChecker
 	installer        *Installer
-	registry         *RegistryClient
+	registry         RemoteRegistry
 	loader           *MultiPathLoader
 	snapshotMgr      *SnapshotManager
 	versionMgr       *VersionManager
@@ -212,6 +212,14 @@ func (m *Manager) SkillsDir() string {
 // SkillsProxy returns the configured proxy URL for skill search and install flows.
 func (m *Manager) SkillsProxy() string {
 	return strings.TrimSpace(m.skillsProxy)
+}
+
+// SetRemoteRegistry replaces the remote registry implementation.
+func (m *Manager) SetRemoteRegistry(registry RemoteRegistry) {
+	if m == nil {
+		return
+	}
+	m.registry = registry
 }
 
 // Get retrieves a skill by ID.

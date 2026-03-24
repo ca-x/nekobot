@@ -16,6 +16,12 @@ import (
 
 const defaultRegistrySearchTimeout = 30 * time.Second
 
+// RemoteRegistry defines remote skill discovery and installation operations.
+type RemoteRegistry interface {
+	Search(context.Context, string) (string, error)
+	Install(context.Context, string, string) (string, error)
+}
+
 // RegistryClient wraps remote skill discovery and installation helpers.
 type RegistryClient struct {
 	proxyURL string

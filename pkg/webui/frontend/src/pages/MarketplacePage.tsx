@@ -8,11 +8,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   useDisableMarketplaceSkill,
   useEnableMarketplaceSkill,
+  useInstallMarketplaceSkill,
   useInstallMarketplaceSkillDependencies,
   useInstalledMarketplaceSkills,
   useMarketplaceSkillContent,
   useMarketplaceSkillItem,
   useMarketplaceSkills,
+  useSearchMarketplaceSkills,
   type MarketplaceInstallResult,
   type MarketplaceSkill,
 } from '@/hooks/useMarketplace';
@@ -21,6 +23,7 @@ import { cn } from '@/lib/utils';
 import {
   AlertTriangle,
   BadgeCheck,
+  Download,
   FileCode2,
   FileText,
   Pin,
@@ -35,12 +38,16 @@ import {
 export default function MarketplacePage() {
   const { data: skills, isLoading } = useMarketplaceSkills();
   const { data: installed } = useInstalledMarketplaceSkills();
+  const installSkill = useInstallMarketplaceSkill();
   const enableSkill = useEnableMarketplaceSkill();
   const disableSkill = useDisableMarketplaceSkill();
   const installDependencies = useInstallMarketplaceSkillDependencies();
 
   const [query, setQuery] = useState('');
+  const [remoteQuery, setRemoteQuery] = useState('');
+  const [installSource, setInstallSource] = useState('');
   const [selectedSkillID, setSelectedSkillID] = useState<string | null>(null);
+  const { data: remoteSearch, isFetching: isSearchingRemote } = useSearchMarketplaceSkills(remoteQuery);
 
   const marketplaceSkills = skills ?? [];
   const filteredSkills = useMemo(() => {
@@ -79,6 +86,16 @@ export default function MarketplacePage() {
 
   const handleInstallDependencies = (id: string) => {
     installDependencies.mutate(id);
+  };
+
+  const handleInstallSkill = () => {
+    const source = installSource.trim();
+    if (!source) {
+      return;
+    }
+    installSkill.mutate(source, {
+      onSuccess: () => setInstallSource(''),
+    });
   };
 
   const installedCount = installed?.total ?? marketplaceSkills.filter((skill) => skill.enabled).length;
@@ -131,6 +148,86 @@ export default function MarketplacePage() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <Card className="rounded-[28px] border-slate-200/80 bg-white/95 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                Remote search
+              </div>
+              <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                Search the external skills registry with the configured proxy.
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                This uses <span className="font-mono">agents.defaults.skills_proxy</span> when set.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+              {remoteSearch?.proxy ? 'Proxy enabled' : 'Direct'}
+            </span>
+          </div>
+
+          <div className="mt-4">
+            <Input
+              value={remoteQuery}
+              onChange={(event) => setRemoteQuery(event.target.value)}
+              placeholder="Search remote registry"
+              className="h-11 rounded-2xl"
+            />
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200/80 bg-slate-950 p-4 text-slate-100">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                Registry output
+              </div>
+              {isSearchingRemote ? <span className="text-xs text-slate-400">Searching…</span> : null}
+            </div>
+            <pre className="mt-3 min-h-[180px] whitespace-pre-wrap break-words font-mono text-xs leading-6 text-slate-200">
+              {remoteQuery.trim().length === 0
+                ? 'Enter a query to search the remote registry.'
+                : remoteSearch?.output || remoteSearch?.error || 'No registry output.'}
+            </pre>
+          </div>
+        </Card>
+
+        <Card className="rounded-[28px] border-slate-200/80 bg-white/95 p-5 shadow-sm">
+          <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Install skill</div>
+          <h3 className="mt-2 text-lg font-semibold text-slate-900">
+            Install from a git URL or local path without leaving the dashboard.
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Remote installs clone through the same skills proxy. Local paths are copied into the writable skills directory.
+          </p>
+
+          <div className="mt-5 space-y-3">
+            <Input
+              value={installSource}
+              onChange={(event) => setInstallSource(event.target.value)}
+              placeholder="https://example.com/skills/repo.git or /path/to/skill"
+              className="h-11 rounded-2xl"
+            />
+            <Button
+              onClick={handleInstallSkill}
+              disabled={!installSource.trim() || installSkill.isPending}
+              className="rounded-xl"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {installSkill.isPending ? 'Installing…' : 'Install skill'}
+            </Button>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
+            <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Last install</div>
+            <p className="mt-2 text-sm leading-6 text-slate-700">
+              {installSkill.data
+                ? `Installed ${installSkill.data.source} to ${installSkill.data.target}`
+                : 'No install has been triggered in this session.'}
+            </p>
+          </div>
+        </Card>
       </section>
 
       {isLoading && (
