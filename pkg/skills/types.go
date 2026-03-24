@@ -12,18 +12,22 @@ type SkillEntry struct {
 	LoadedAt time.Time // When the skill was loaded
 
 	// Installation metadata
-	Installed      bool      // Whether dependencies are installed
-	InstallStatus  string    // "pending", "installing", "installed", "failed"
-	InstallError   error     // Last installation error
-	InstalledAt    time.Time // When dependencies were installed
-	LastCheckedAt  time.Time // Last eligibility check
+	Installed     bool      // Whether dependencies are installed
+	InstallStatus string    // "pending", "installing", "installed", "failed"
+	InstallError  error     // Last installation error
+	InstalledAt   time.Time // When dependencies were installed
+	LastCheckedAt time.Time // Last eligibility check
 
 	// Eligibility status
-	Eligible         bool     // Whether skill meets all requirements
-	MissingBinaries  []string // Missing binary dependencies
-	MissingEnvVars   []string // Missing environment variables
-	MissingPaths     []string // Missing config paths
-	IneligibleReason string   // Why the skill is not eligible
+	Eligible              bool     // Whether skill meets all requirements
+	MissingBinaries       []string // Missing binary dependencies
+	MissingAnyBinaries    []string // Missing any-of binary dependencies.
+	MissingEnvVars        []string // Missing environment variables
+	MissingPaths          []string // Missing config paths
+	MissingPythonPackages []string // Missing Python package dependencies.
+	MissingNodePackages   []string // Missing Node.js package dependencies.
+	Reasons               []string // Structured ineligibility reasons.
+	IneligibleReason      string   // Why the skill is not eligible
 }
 
 // SkillChangeEvent represents a change to a skill file.
@@ -76,13 +80,13 @@ func ParseInstallSpec(method, pkg string, opts map[string]interface{}) InstallSp
 
 // InstallResult represents the result of a dependency installation.
 type InstallResult struct {
-	Success    bool      // Whether installation succeeded
-	Method     string    // Installation method used
-	Package    string    // Package that was installed
-	Output     string    // Installation output
-	Error      error     // Error if failed
-	Duration   time.Duration // How long it took
-	InstalledAt time.Time // When it was installed
+	Success     bool          // Whether installation succeeded
+	Method      string        // Installation method used
+	Package     string        // Package that was installed
+	Output      string        // Installation output
+	Error       error         // Error if failed
+	Duration    time.Duration // How long it took
+	InstalledAt time.Time     // When it was installed
 }
 
 // Diagnostic represents a validation issue.
@@ -115,10 +119,10 @@ type SkillSnapshot struct {
 
 // WatcherStatus represents the status of the file watcher.
 type WatcherStatus struct {
-	Active      bool      // Whether watcher is active
-	WatchPaths  []string  // Paths being watched
-	LastEvent   time.Time // Last event received
-	EventCount  int       // Total events processed
-	ErrorCount  int       // Total errors encountered
-	LastError   error     // Last error (if any)
+	Active     bool      // Whether watcher is active
+	WatchPaths []string  // Paths being watched
+	LastEvent  time.Time // Last event received
+	EventCount int       // Total events processed
+	ErrorCount int       // Total errors encountered
+	LastError  error     // Last error (if any)
 }

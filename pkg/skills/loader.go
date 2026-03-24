@@ -407,6 +407,12 @@ func mergeRequirementBlock(req *SkillRequirements, metadata map[string]interface
 	req.AnyBinaries = appendUniqueStrings(req.AnyBinaries, stringListValue(requires["any_bins"]))
 	req.Env = appendUniqueStrings(req.Env, stringListValue(requires["env"]))
 	req.ConfigPaths = appendUniqueStrings(req.ConfigPaths, stringListValue(requires["config"]))
+	req.PythonPackages = appendUniqueStrings(req.PythonPackages, stringListValue(requires["pythonPkgs"]))
+	req.PythonPackages = appendUniqueStrings(req.PythonPackages, stringListValue(requires["python_pkgs"]))
+	req.PythonPackages = appendUniqueStrings(req.PythonPackages, stringListValue(requires["pythonPackages"]))
+	req.NodePackages = appendUniqueStrings(req.NodePackages, stringListValue(requires["nodePkgs"]))
+	req.NodePackages = appendUniqueStrings(req.NodePackages, stringListValue(requires["node_pkgs"]))
+	req.NodePackages = appendUniqueStrings(req.NodePackages, stringListValue(requires["nodePackages"]))
 
 	if osList := stringListValue(requires["os"]); len(osList) > 0 && req.Custom["os"] == nil {
 		req.Custom["os"] = osList

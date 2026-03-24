@@ -77,6 +77,8 @@ metadata:
       env: ["OPENAI_API_KEY"]
       config: ["channels.discord"]
       os: ["linux", "darwin"]
+      pythonPkgs: ["requests"]
+      nodePkgs: ["typescript"]
 ---
 
 Coding agent instructions`
@@ -99,6 +101,12 @@ Coding agent instructions`
 	}
 	if len(skill.Requirements.ConfigPaths) != 1 || skill.Requirements.ConfigPaths[0] != "channels.discord" {
 		t.Fatalf("unexpected config requirements: %#v", skill.Requirements.ConfigPaths)
+	}
+	if len(skill.Requirements.PythonPackages) != 1 || skill.Requirements.PythonPackages[0] != "requests" {
+		t.Fatalf("unexpected python package requirements: %#v", skill.Requirements.PythonPackages)
+	}
+	if len(skill.Requirements.NodePackages) != 1 || skill.Requirements.NodePackages[0] != "typescript" {
+		t.Fatalf("unexpected node package requirements: %#v", skill.Requirements.NodePackages)
 	}
 	osReq, ok := skill.Requirements.Custom["os"].([]string)
 	if !ok || len(osReq) != 2 {
@@ -306,6 +314,31 @@ func TestEligibilityCheckSupportsRuntimeConfigPaths(t *testing.T) {
 		t.Fatalf("expected missing config path to make skill ineligible")
 	}
 	if len(reasons) != 1 || reasons[0] != "missing config paths: channels.wechat" {
+		t.Fatalf("unexpected reasons: %v", reasons)
+	}
+}
+
+func TestEligibilityCheckSupportsPythonAndNodePackages(t *testing.T) {
+	checker := NewEligibilityChecker()
+	checker.SetPythonPackageInstalled(func(pkg string) bool {
+		return pkg == "requests"
+	})
+	checker.SetNodePackageInstalled(func(pkg string) bool {
+		return false
+	})
+
+	eligible, reasons := checker.Check(&Skill{
+		ID:      "package-skill",
+		Enabled: true,
+		Requirements: &SkillRequirements{
+			PythonPackages: []string{"requests"},
+			NodePackages:   []string{"typescript"},
+		},
+	})
+	if eligible {
+		t.Fatalf("expected missing node package to make skill ineligible")
+	}
+	if len(reasons) != 1 || reasons[0] != "missing node packages: typescript" {
 		t.Fatalf("unexpected reasons: %v", reasons)
 	}
 }

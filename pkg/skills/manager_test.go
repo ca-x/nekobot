@@ -164,3 +164,58 @@ func TestValidateAlwaysWarnsWhenDisabled(t *testing.T) {
 		t.Fatalf("expected always field diagnostic, got %s", diagnostics[0].Field)
 	}
 }
+
+func TestCheckRequirementsReportIncludesStructuredMissingDeps(t *testing.T) {
+	mgr := newSkillsTestManager(t)
+	mgr.eligibilityCheck.SetPythonPackageInstalled(func(pkg string) bool {
+		return false
+	})
+	mgr.eligibilityCheck.SetNodePackageInstalled(func(pkg string) bool {
+		return pkg == "typescript"
+	})
+	mgr.skills["report-skill"] = &Skill{
+		ID:      "report-skill",
+		Name:    "Report Skill",
+		Enabled: true,
+		Requirements: &SkillRequirements{
+			Binaries:       []string{"definitely-missing-bin"},
+			AnyBinaries:    []string{"missing-a", "missing-b"},
+			Env:            []string{"REPORT_SKILL_ENV"},
+			ConfigPaths:    []string{"channels.discord"},
+			PythonPackages: []string{"requests"},
+			NodePackages:   []string{"typescript"},
+		},
+	}
+	mgr.eligibilityCheck.SetConfigPathExists(func(path string) bool {
+		return false
+	})
+
+	report, err := mgr.CheckRequirementsReport("report-skill")
+	if err != nil {
+		t.Fatalf("check requirements report: %v", err)
+	}
+	if report.Eligible {
+		t.Fatalf("expected report to be ineligible")
+	}
+	if len(report.MissingBinaries) != 1 || report.MissingBinaries[0] != "definitely-missing-bin" {
+		t.Fatalf("unexpected missing binaries: %#v", report.MissingBinaries)
+	}
+	if len(report.MissingAnyBinaries) != 2 {
+		t.Fatalf("unexpected missing any-binaries: %#v", report.MissingAnyBinaries)
+	}
+	if len(report.MissingEnvVars) != 1 || report.MissingEnvVars[0] != "REPORT_SKILL_ENV" {
+		t.Fatalf("unexpected missing env vars: %#v", report.MissingEnvVars)
+	}
+	if len(report.MissingPaths) != 1 || report.MissingPaths[0] != "channels.discord" {
+		t.Fatalf("unexpected missing config paths: %#v", report.MissingPaths)
+	}
+	if len(report.MissingPythonPackages) != 1 || report.MissingPythonPackages[0] != "requests" {
+		t.Fatalf("unexpected missing python packages: %#v", report.MissingPythonPackages)
+	}
+	if len(report.MissingNodePackages) != 0 {
+		t.Fatalf("expected node packages to be satisfied, got %#v", report.MissingNodePackages)
+	}
+	if len(report.Reasons) == 0 {
+		t.Fatalf("expected report reasons")
+	}
+}

@@ -43,13 +43,15 @@ type Skill struct {
 
 // SkillRequirements defines what a skill needs to run.
 type SkillRequirements struct {
-	Tools       []string               `yaml:"tools" json:"tools,omitempty"`               // Required tools
-	Env         []string               `yaml:"env" json:"env,omitempty"`                   // Required env vars
-	Binaries    []string               `yaml:"binaries" json:"binaries,omitempty"`         // Required binaries
-	AnyBinaries []string               `yaml:"any_binaries" json:"any_binaries,omitempty"` // At least one required binary
-	ConfigPaths []string               `yaml:"config_paths" json:"config_paths,omitempty"` // Required config paths
-	Languages   map[string]string      `yaml:"languages" json:"languages,omitempty"`       // Language versions
-	Custom      map[string]interface{} `yaml:"custom" json:"custom,omitempty"`             // Custom requirements
+	Tools          []string               `yaml:"tools" json:"tools,omitempty"`                     // Required tools
+	Env            []string               `yaml:"env" json:"env,omitempty"`                         // Required env vars
+	Binaries       []string               `yaml:"binaries" json:"binaries,omitempty"`               // Required binaries
+	AnyBinaries    []string               `yaml:"any_binaries" json:"any_binaries,omitempty"`       // At least one required binary
+	ConfigPaths    []string               `yaml:"config_paths" json:"config_paths,omitempty"`       // Required config paths
+	PythonPackages []string               `yaml:"python_packages" json:"python_packages,omitempty"` // Required Python packages
+	NodePackages   []string               `yaml:"node_packages" json:"node_packages,omitempty"`     // Required Node.js packages
+	Languages      map[string]string      `yaml:"languages" json:"languages,omitempty"`             // Language versions
+	Custom         map[string]interface{} `yaml:"custom" json:"custom,omitempty"`                   // Custom requirements
 }
 
 // Manager manages skill discovery, loading, and execution.
@@ -275,6 +277,30 @@ func (m *Manager) Enable(id string) error {
 	return nil
 }
 
+// SetConfigPathExists configures runtime config-path eligibility checks.
+func (m *Manager) SetConfigPathExists(fn func(string) bool) {
+	if m == nil || m.eligibilityCheck == nil {
+		return
+	}
+	m.eligibilityCheck.SetConfigPathExists(fn)
+}
+
+// SetPythonPackageInstalled configures Python package eligibility checks.
+func (m *Manager) SetPythonPackageInstalled(fn func(string) bool) {
+	if m == nil || m.eligibilityCheck == nil {
+		return
+	}
+	m.eligibilityCheck.SetPythonPackageInstalled(fn)
+}
+
+// SetNodePackageInstalled configures Node.js package eligibility checks.
+func (m *Manager) SetNodePackageInstalled(fn func(string) bool) {
+	if m == nil || m.eligibilityCheck == nil {
+		return
+	}
+	m.eligibilityCheck.SetNodePackageInstalled(fn)
+}
+
 // Disable disables a skill by ID.
 func (m *Manager) Disable(id string) error {
 	m.mu.Lock()
@@ -498,16 +524,21 @@ func (m *Manager) WatcherStatus() *WatcherStatus {
 
 // CheckRequirements checks if a skill's requirements are met.
 func (m *Manager) CheckRequirements(ctx context.Context, skillID string) (bool, []string) {
-	skill, err := m.Get(skillID)
+	report, err := m.CheckRequirementsReport(skillID)
 	if err != nil {
 		return false, []string{fmt.Sprintf("skill not found: %s", skillID)}
 	}
+	return report.Eligible, report.Reasons
+}
 
-	if skill.Requirements == nil {
-		return true, nil
+// CheckRequirementsReport returns a structured requirement report for a skill.
+func (m *Manager) CheckRequirementsReport(skillID string) (*SkillEntry, error) {
+	skill, err := m.Get(skillID)
+	if err != nil {
+		return nil, err
 	}
 
-	return m.eligibilityCheck.Check(skill)
+	return m.buildSkillEntry(skill), nil
 }
 
 // ValidateSkill validates a skill and returns diagnostics.
@@ -548,4 +579,27 @@ func (m *Manager) InstallDependencies(ctx context.Context, skillID string) ([]In
 	}
 
 	return results, nil
+}
+
+func (m *Manager) buildSkillEntry(skill *Skill) *SkillEntry {
+	entry := &SkillEntry{
+		Skill:     skill,
+		Installed: skill != nil && strings.TrimSpace(skill.FilePath) != "" && !strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://"),
+	}
+	if skill == nil || skill.Requirements == nil {
+		entry.Eligible = true
+		return entry
+	}
+
+	report := m.eligibilityCheck.Report(skill.Requirements)
+	entry.Eligible = report.Eligible
+	entry.MissingBinaries = append([]string(nil), report.MissingBinaries...)
+	entry.MissingAnyBinaries = append([]string(nil), report.MissingAnyBinaries...)
+	entry.MissingEnvVars = append([]string(nil), report.MissingEnvVars...)
+	entry.MissingPaths = append([]string(nil), report.MissingConfigPaths...)
+	entry.MissingPythonPackages = append([]string(nil), report.MissingPythonPackages...)
+	entry.MissingNodePackages = append([]string(nil), report.MissingNodePackages...)
+	entry.Reasons = append([]string(nil), report.Reasons...)
+	entry.IneligibleReason = strings.Join(report.Reasons, "; ")
+	return entry
 }

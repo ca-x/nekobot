@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"regexp"
@@ -11,7 +12,22 @@ import (
 
 // EligibilityChecker checks if a skill meets system requirements.
 type EligibilityChecker struct {
-	configPathExists func(string) bool
+	configPathExists       func(string) bool
+	pythonPackageInstalled func(string) bool
+	nodePackageInstalled   func(string) bool
+}
+
+// EligibilityReport is a structured view of missing requirements.
+type EligibilityReport struct {
+	Eligible              bool
+	Reasons               []string
+	MissingBinaries       []string
+	MissingAnyBinaries    []string
+	MissingEnvVars        []string
+	MissingConfigPaths    []string
+	MissingTools          []string
+	MissingPythonPackages []string
+	MissingNodePackages   []string
 }
 
 // NewEligibilityChecker creates a new eligibility checker.
@@ -27,50 +43,89 @@ func (c *EligibilityChecker) SetConfigPathExists(fn func(string) bool) {
 	c.configPathExists = fn
 }
 
+// SetPythonPackageInstalled sets the Python package probe used by requirement gating.
+func (c *EligibilityChecker) SetPythonPackageInstalled(fn func(string) bool) {
+	if c == nil {
+		return
+	}
+	c.pythonPackageInstalled = fn
+}
+
+// SetNodePackageInstalled sets the Node.js package probe used by requirement gating.
+func (c *EligibilityChecker) SetNodePackageInstalled(fn func(string) bool) {
+	if c == nil {
+		return
+	}
+	c.nodePackageInstalled = fn
+}
+
 // Check checks if a skill is eligible to run on the current system.
 func (c *EligibilityChecker) Check(skill *Skill) (bool, []string) {
 	if skill.Requirements == nil {
 		return true, nil
 	}
 
-	var reasons []string
+	report := c.Report(skill.Requirements)
+	return report.Eligible, report.Reasons
+}
+
+// Report computes a structured requirements report.
+func (c *EligibilityChecker) Report(req *SkillRequirements) EligibilityReport {
+	if req == nil {
+		return EligibilityReport{Eligible: true}
+	}
+
+	report := EligibilityReport{Eligible: true}
 
 	// Check OS compatibility
-	if !c.CheckOS(skill.Requirements) {
-		reasons = append(reasons, "incompatible operating system")
+	if !c.CheckOS(req) {
+		report.Reasons = append(report.Reasons, "incompatible operating system")
 	}
 
 	// Check required binaries
-	missingBinaries := c.CheckBinaries(skill.Requirements.Binaries)
-	if len(missingBinaries) > 0 {
-		reasons = append(reasons, "missing binaries: "+strings.Join(missingBinaries, ", "))
+	report.MissingBinaries = c.CheckBinaries(req.Binaries)
+	if len(report.MissingBinaries) > 0 {
+		report.Reasons = append(report.Reasons, "missing binaries: "+strings.Join(report.MissingBinaries, ", "))
 	}
 
 	// Check any-of binary requirements
-	if len(skill.Requirements.AnyBinaries) > 0 && !c.CheckAnyBinaries(skill.Requirements.AnyBinaries) {
-		reasons = append(reasons, "missing any-of binaries: "+strings.Join(skill.Requirements.AnyBinaries, ", "))
+	if len(req.AnyBinaries) > 0 && !c.CheckAnyBinaries(req.AnyBinaries) {
+		report.MissingAnyBinaries = append([]string(nil), req.AnyBinaries...)
+		report.Reasons = append(report.Reasons, "missing any-of binaries: "+strings.Join(req.AnyBinaries, ", "))
 	}
 
 	// Check required environment variables
-	missingEnvVars := c.CheckEnvVars(skill.Requirements.Env)
-	if len(missingEnvVars) > 0 {
-		reasons = append(reasons, "missing environment variables: "+strings.Join(missingEnvVars, ", "))
+	report.MissingEnvVars = c.CheckEnvVars(req.Env)
+	if len(report.MissingEnvVars) > 0 {
+		report.Reasons = append(report.Reasons, "missing environment variables: "+strings.Join(report.MissingEnvVars, ", "))
 	}
 
 	// Check required config paths when a runtime config probe is available.
-	missingConfigPaths := c.CheckConfigPaths(skill.Requirements.ConfigPaths)
-	if len(missingConfigPaths) > 0 {
-		reasons = append(reasons, "missing config paths: "+strings.Join(missingConfigPaths, ", "))
+	report.MissingConfigPaths = c.CheckConfigPaths(req.ConfigPaths)
+	if len(report.MissingConfigPaths) > 0 {
+		report.Reasons = append(report.Reasons, "missing config paths: "+strings.Join(report.MissingConfigPaths, ", "))
+	}
+
+	// Check Python packages.
+	report.MissingPythonPackages = c.CheckPythonPackages(req.PythonPackages)
+	if len(report.MissingPythonPackages) > 0 {
+		report.Reasons = append(report.Reasons, "missing python packages: "+strings.Join(report.MissingPythonPackages, ", "))
+	}
+
+	// Check Node.js packages.
+	report.MissingNodePackages = c.CheckNodePackages(req.NodePackages)
+	if len(report.MissingNodePackages) > 0 {
+		report.Reasons = append(report.Reasons, "missing node packages: "+strings.Join(report.MissingNodePackages, ", "))
 	}
 
 	// Check required tools
-	missingTools := c.CheckTools(skill.Requirements.Tools)
-	if len(missingTools) > 0 {
-		reasons = append(reasons, "missing tools: "+strings.Join(missingTools, ", "))
+	report.MissingTools = c.CheckTools(req.Tools)
+	if len(report.MissingTools) > 0 {
+		report.Reasons = append(report.Reasons, "missing tools: "+strings.Join(report.MissingTools, ", "))
 	}
 
-	eligible := len(reasons) == 0
-	return eligible, reasons
+	report.Eligible = len(report.Reasons) == 0
+	return report
 }
 
 // CheckOS checks if the current OS is compatible with the skill.
@@ -181,6 +236,42 @@ func (c *EligibilityChecker) CheckConfigPaths(paths []string) []string {
 	return missing
 }
 
+// CheckPythonPackages checks which required Python packages are missing.
+func (c *EligibilityChecker) CheckPythonPackages(packages []string) []string {
+	if len(packages) == 0 {
+		return nil
+	}
+
+	var missing []string
+	for _, pkg := range packages {
+		if strings.TrimSpace(pkg) == "" {
+			continue
+		}
+		if !c.pythonPackageAvailable(pkg) {
+			missing = append(missing, pkg)
+		}
+	}
+	return missing
+}
+
+// CheckNodePackages checks which required Node.js packages are missing.
+func (c *EligibilityChecker) CheckNodePackages(packages []string) []string {
+	if len(packages) == 0 {
+		return nil
+	}
+
+	var missing []string
+	for _, pkg := range packages {
+		if strings.TrimSpace(pkg) == "" {
+			continue
+		}
+		if !c.nodePackageAvailable(pkg) {
+			missing = append(missing, pkg)
+		}
+	}
+	return missing
+}
+
 // CheckTools checks which required tools are missing.
 // Tools are similar to binaries but may have version requirements.
 func (c *EligibilityChecker) CheckTools(tools []string) []string {
@@ -209,6 +300,38 @@ func (c *EligibilityChecker) CheckTools(tools []string) []string {
 	}
 
 	return missing
+}
+
+func (c *EligibilityChecker) pythonPackageAvailable(pkg string) bool {
+	if c != nil && c.pythonPackageInstalled != nil {
+		return c.pythonPackageInstalled(pkg)
+	}
+
+	pythonTool := ""
+	if _, err := exec.LookPath("python3"); err == nil {
+		pythonTool = "python3"
+	} else if _, err := exec.LookPath("python"); err == nil {
+		pythonTool = "python"
+	}
+	if pythonTool == "" {
+		return false
+	}
+
+	cmd := exec.CommandContext(context.Background(), pythonTool, "-c", "import "+pkg)
+	return cmd.Run() == nil
+}
+
+func (c *EligibilityChecker) nodePackageAvailable(pkg string) bool {
+	if c != nil && c.nodePackageInstalled != nil {
+		return c.nodePackageInstalled(pkg)
+	}
+
+	if _, err := exec.LookPath("npm"); err != nil {
+		return false
+	}
+
+	cmd := exec.CommandContext(context.Background(), "npm", "list", "--global", "--depth=0", pkg)
+	return cmd.Run() == nil
 }
 
 // CheckLanguages checks which required language versions are missing.

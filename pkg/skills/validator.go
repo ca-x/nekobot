@@ -208,6 +208,28 @@ func (v *Validator) ValidateRequirements(req *SkillRequirements) []Diagnostic {
 		}
 	}
 
+	for _, pkg := range req.PythonPackages {
+		if strings.TrimSpace(pkg) == "" {
+			diagnostics = append(diagnostics, Diagnostic{
+				Severity: DiagnosticError,
+				Message:  "Python package requirement cannot be empty",
+				Field:    "requirements.python_packages",
+				Fixable:  false,
+			})
+		}
+	}
+
+	for _, pkg := range req.NodePackages {
+		if strings.TrimSpace(pkg) == "" {
+			diagnostics = append(diagnostics, Diagnostic{
+				Severity: DiagnosticError,
+				Message:  "Node.js package requirement cannot be empty",
+				Field:    "requirements.node_packages",
+				Fixable:  false,
+			})
+		}
+	}
+
 	return diagnostics
 }
 

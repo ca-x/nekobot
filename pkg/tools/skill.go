@@ -175,12 +175,24 @@ func (t *SkillTool) get(params map[string]interface{}) (string, error) {
 				sb.WriteString(fmt.Sprintf("- %s: %s\n", lang, version))
 			}
 		}
+		if len(skill.Requirements.ConfigPaths) > 0 {
+			sb.WriteString(fmt.Sprintf("- Config Paths: %s\n", strings.Join(skill.Requirements.ConfigPaths, ", ")))
+		}
+		if len(skill.Requirements.PythonPackages) > 0 {
+			sb.WriteString(fmt.Sprintf("- Python Packages: %s\n", strings.Join(skill.Requirements.PythonPackages, ", ")))
+		}
+		if len(skill.Requirements.NodePackages) > 0 {
+			sb.WriteString(fmt.Sprintf("- Node Packages: %s\n", strings.Join(skill.Requirements.NodePackages, ", ")))
+		}
 
 		// Check if requirements are met
-		eligible, reasons := t.manager.CheckRequirements(context.Background(), skill.ID)
-		if !eligible {
+		report, err := t.manager.CheckRequirementsReport(skill.ID)
+		if err != nil {
+			return "", err
+		}
+		if !report.Eligible {
 			sb.WriteString(fmt.Sprintf("\n⚠️  **Missing Requirements:**\n"))
-			for _, reason := range reasons {
+			for _, reason := range report.Reasons {
 				sb.WriteString(fmt.Sprintf("- %s\n", reason))
 			}
 		} else {
