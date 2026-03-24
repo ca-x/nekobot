@@ -15,6 +15,7 @@ export interface MarketplaceSkill {
   tags: string[];
   eligible: boolean;
   ineligibility_reasons: string[];
+  missing_requirements: MarketplaceMissingRequirements;
   install_specs: MarketplaceInstallSpec[];
   is_installed: boolean;
 }
@@ -30,6 +31,15 @@ export interface MarketplaceSkillContent {
   file_path: string;
   raw: string;
   body_raw: string;
+}
+
+export interface MarketplaceMissingRequirements {
+  binaries: string[];
+  any_binaries: string[];
+  env: string[];
+  config_paths: string[];
+  python_packages: string[];
+  node_packages: string[];
 }
 
 export interface MarketplaceInstallSpec {

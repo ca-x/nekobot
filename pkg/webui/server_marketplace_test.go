@@ -115,6 +115,10 @@ enabled: false
 requirements:
   env:
     - MARKETPLACE_TEST_TOKEN
+  python_packages:
+    - requests
+  node_packages:
+    - typescript
   custom:
     install:
       - method: command
@@ -128,6 +132,12 @@ Use this skill for tests.
 
 	log := newTestLogger(t)
 	mgr := skills.NewManager(log, skillsDir, false)
+	mgr.SetPythonPackageInstalled(func(pkg string) bool {
+		return true
+	})
+	mgr.SetNodePackageInstalled(func(pkg string) bool {
+		return true
+	})
 	if err := mgr.Discover(); err != nil {
 		t.Fatalf("discover skills: %v", err)
 	}
@@ -164,7 +174,7 @@ Use this skill for tests.
 
 	requiredKeys := []string{
 		"id", "name", "description", "version", "author", "enabled", "always", "file_path", "tags",
-		"eligible", "ineligibility_reasons", "install_specs", "is_installed",
+		"eligible", "ineligibility_reasons", "install_specs", "is_installed", "missing_requirements",
 	}
 	for _, key := range requiredKeys {
 		if _, ok := target[key]; !ok {
@@ -180,6 +190,19 @@ Use this skill for tests.
 	reasons, ok := target["ineligibility_reasons"].([]interface{})
 	if !ok || len(reasons) != 1 {
 		t.Fatalf("expected one ineligibility reason, got %+v", target["ineligibility_reasons"])
+	}
+	missingRequirements, ok := target["missing_requirements"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected structured missing requirements, got %+v", target["missing_requirements"])
+	}
+	if envs, ok := missingRequirements["env"].([]interface{}); !ok || len(envs) != 1 {
+		t.Fatalf("expected missing env requirements, got %+v", missingRequirements["env"])
+	}
+	if pyPkgs, ok := missingRequirements["python_packages"].([]interface{}); !ok || len(pyPkgs) != 0 {
+		t.Fatalf("expected missing python requirements, got %+v", missingRequirements["python_packages"])
+	}
+	if nodePkgs, ok := missingRequirements["node_packages"].([]interface{}); !ok || len(nodePkgs) != 0 {
+		t.Fatalf("expected missing node requirements, got %+v", missingRequirements["node_packages"])
 	}
 	installSpecs, ok := target["install_specs"].([]interface{})
 	if !ok || len(installSpecs) != 1 {
@@ -293,6 +316,10 @@ tags:
 enabled: true
 always: true
 requirements:
+  python_packages:
+    - requests
+  node_packages:
+    - typescript
   custom:
     install:
       - kind: custom
@@ -308,6 +335,12 @@ Use this skill for detail and content route tests.
 
 	log := newTestLogger(t)
 	mgr := skills.NewManager(log, skillsDir, false)
+	mgr.SetPythonPackageInstalled(func(pkg string) bool {
+		return true
+	})
+	mgr.SetNodePackageInstalled(func(pkg string) bool {
+		return true
+	})
 	if err := mgr.Discover(); err != nil {
 		t.Fatalf("discover skills: %v", err)
 	}
@@ -355,7 +388,7 @@ Use this skill for detail and content route tests.
 	}
 	requiredItemKeys := []string{
 		"id", "name", "description", "version", "author", "enabled", "always", "tags", "file_path",
-		"eligible", "ineligibility_reasons", "install_specs", "is_installed",
+		"eligible", "ineligibility_reasons", "install_specs", "is_installed", "missing_requirements",
 	}
 	for _, key := range requiredItemKeys {
 		if _, ok := itemPayload[key]; !ok {
@@ -364,6 +397,16 @@ Use this skill for detail and content route tests.
 	}
 	if eligible, _ := itemPayload["eligible"].(bool); !eligible {
 		t.Fatalf("expected detail skill to be eligible")
+	}
+	missingRequirements, ok := itemPayload["missing_requirements"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected missing requirements map, got %+v", itemPayload["missing_requirements"])
+	}
+	if pyPkgs, ok := missingRequirements["python_packages"].([]interface{}); !ok || len(pyPkgs) != 0 {
+		t.Fatalf("expected no missing python requirements, got %+v", missingRequirements["python_packages"])
+	}
+	if nodePkgs, ok := missingRequirements["node_packages"].([]interface{}); !ok || len(nodePkgs) != 0 {
+		t.Fatalf("expected no missing node requirements, got %+v", missingRequirements["node_packages"])
 	}
 	installSpecs, ok := itemPayload["install_specs"].([]interface{})
 	if !ok || len(installSpecs) != 1 {

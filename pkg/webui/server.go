@@ -2366,12 +2366,21 @@ func (s *Server) handleGetMarketplaceSkillContent(c *echo.Context) error {
 }
 
 func (s *Server) marketplaceSkillItem(skill *skills.Skill) map[string]interface{} {
-	eligible := true
-	var reasons []string
+	var report *skills.SkillEntry
 	if s != nil && s.skillsMgr != nil && skill != nil {
-		eligible, reasons = s.skillsMgr.CheckRequirements(context.Background(), skill.ID)
-	} else if skill != nil && skill.Requirements != nil {
-		eligible, reasons = skills.CheckEligibility(skill)
+		report, _ = s.skillsMgr.CheckRequirementsReport(skill.ID)
+	}
+	if report == nil {
+		report = &skills.SkillEntry{
+			Skill:     skill,
+			Eligible:  true,
+			Installed: skill != nil && !strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://"),
+		}
+		if skill != nil && skill.Requirements != nil {
+			eligible, reasons := skills.CheckEligibility(skill)
+			report.Eligible = eligible
+			report.Reasons = append([]string(nil), reasons...)
+		}
 	}
 
 	tags := append([]string(nil), skill.Tags...)
@@ -2385,10 +2394,18 @@ func (s *Server) marketplaceSkillItem(skill *skills.Skill) map[string]interface{
 		"always":                skill.Always,
 		"file_path":             strings.TrimSpace(skill.FilePath),
 		"tags":                  tags,
-		"eligible":              eligible,
-		"ineligibility_reasons": reasons,
-		"install_specs":         marketplaceInstallSpecs(skill),
-		"is_installed":          !strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://"),
+		"eligible":              report.Eligible,
+		"ineligibility_reasons": report.Reasons,
+		"missing_requirements": map[string]interface{}{
+			"binaries":        nonNilStrings(report.MissingBinaries),
+			"any_binaries":    nonNilStrings(report.MissingAnyBinaries),
+			"env":             nonNilStrings(report.MissingEnvVars),
+			"config_paths":    nonNilStrings(report.MissingPaths),
+			"python_packages": nonNilStrings(report.MissingPythonPackages),
+			"node_packages":   nonNilStrings(report.MissingNodePackages),
+		},
+		"install_specs": marketplaceInstallSpecs(skill),
+		"is_installed":  report.Installed,
 	}
 }
 
@@ -2512,6 +2529,13 @@ func errorString(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 // --- Channel Handlers ---

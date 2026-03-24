@@ -311,6 +311,34 @@ export default function MarketplacePage() {
                           ))}
                         </div>
                       )}
+                      {selectedSkill && (
+                        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <MissingRequirementGroup
+                            label="Config paths"
+                            values={selectedSkill.missing_requirements.config_paths}
+                          />
+                          <MissingRequirementGroup
+                            label="Environment"
+                            values={selectedSkill.missing_requirements.env}
+                          />
+                          <MissingRequirementGroup
+                            label="Binaries"
+                            values={selectedSkill.missing_requirements.binaries}
+                          />
+                          <MissingRequirementGroup
+                            label="Any-of binaries"
+                            values={selectedSkill.missing_requirements.any_binaries}
+                          />
+                          <MissingRequirementGroup
+                            label="Python packages"
+                            values={selectedSkill.missing_requirements.python_packages}
+                          />
+                          <MissingRequirementGroup
+                            label="Node packages"
+                            values={selectedSkill.missing_requirements.node_packages}
+                          />
+                        </div>
+                      )}
                     </section>
 
                     <section className="rounded-[24px] border border-slate-200/80 bg-white p-4">
@@ -613,6 +641,34 @@ function InstallResultCard({ result }: { result: MarketplaceInstallResult }) {
           {result.output}
         </pre>
       ) : null}
+    </div>
+  );
+}
+
+function MissingRequirementGroup({
+  label,
+  values,
+}: {
+  label: string;
+  values: string[];
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white/70 p-3">
+      <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">{label}</div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {values.length > 0 ? (
+          values.map((value) => (
+            <span
+              key={`${label}-${value}`}
+              className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800"
+            >
+              {value}
+            </span>
+          ))
+        ) : (
+          <span className="text-xs text-slate-400">None missing</span>
+        )}
+      </div>
     </div>
   );
 }
