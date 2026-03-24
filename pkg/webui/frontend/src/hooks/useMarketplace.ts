@@ -13,6 +13,10 @@ export interface MarketplaceSkill {
   always: boolean;
   file_path: string;
   tags: string[];
+  eligible: boolean;
+  ineligibility_reasons: string[];
+  install_specs: MarketplaceInstallSpec[];
+  is_installed: boolean;
 }
 
 export interface MarketplaceInstalledResponse {
@@ -26,6 +30,30 @@ export interface MarketplaceSkillContent {
   file_path: string;
   raw: string;
   body_raw: string;
+}
+
+export interface MarketplaceInstallSpec {
+  method: string;
+  package: string;
+  version: string;
+  post_hook: string;
+  options?: Record<string, unknown>;
+}
+
+export interface MarketplaceInstallResult {
+  success: boolean;
+  method: string;
+  package: string;
+  output: string;
+  error: string;
+  duration_ms: number;
+  installed_at: string;
+}
+
+export interface MarketplaceInstallDependenciesResponse {
+  skill_id: string;
+  success: boolean;
+  results: MarketplaceInstallResult[];
 }
 
 interface MarketplaceToggleResponse {
@@ -111,6 +139,28 @@ export function useDisableMarketplaceSkill() {
       qc.invalidateQueries({ queryKey: marketplaceKeys.installed() });
       qc.invalidateQueries({ queryKey: marketplaceKeys.item(skillID) });
       toast.success(t('marketplaceSkillDisabled'));
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useInstallMarketplaceSkillDependencies() {
+  const qc = useQueryClient();
+  return useMutation<MarketplaceInstallDependenciesResponse, Error, string>({
+    mutationFn: (skillID) =>
+      api.post<MarketplaceInstallDependenciesResponse>(
+        `/api/marketplace/skills/${encodeURIComponent(skillID)}/install-deps`,
+        {},
+      ),
+    onSuccess: (data, skillID) => {
+      qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.installed() });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.item(skillID) });
+      if (data.success) {
+        toast.success('Skill dependencies installed');
+        return;
+      }
+      toast.error('Some dependencies failed to install');
     },
     onError: (err) => toast.error(err.message),
   });

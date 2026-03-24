@@ -211,6 +211,7 @@ func (s *Server) setup() {
 	api.GET("/marketplace/skills/items/:id/content", s.handleGetMarketplaceSkillContent)
 	api.POST("/marketplace/skills/:id/enable", s.handleEnableMarketplaceSkill)
 	api.POST("/marketplace/skills/:id/disable", s.handleDisableMarketplaceSkill)
+	api.POST("/marketplace/skills/:id/install-deps", s.handleInstallMarketplaceSkillDependencies)
 
 	// Auth management (change password, profile)
 	api.POST("/auth/change-password", s.handleChangePassword)
@@ -2259,7 +2260,7 @@ func (s *Server) handleListMarketplaceSkills(c *echo.Context) error {
 
 	items := make([]map[string]interface{}, 0, len(skillsList))
 	for _, skill := range skillsList {
-		items = append(items, marketplaceSkillItem(skill))
+		items = append(items, s.marketplaceSkillItem(skill))
 	}
 
 	return c.JSON(http.StatusOK, items)
@@ -2285,7 +2286,7 @@ func (s *Server) handleListInstalledMarketplaceSkills(c *echo.Context) error {
 		if !s.marketplaceSkillIsInstalled(skill) {
 			continue
 		}
-		records = append(records, marketplaceSkillItem(skill))
+		records = append(records, s.marketplaceSkillItem(skill))
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
@@ -2333,7 +2334,7 @@ func (s *Server) handleGetMarketplaceSkillItem(c *echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
 	}
 
-	return c.JSON(http.StatusOK, marketplaceSkillItem(skill))
+	return c.JSON(http.StatusOK, s.marketplaceSkillItem(skill))
 }
 
 func (s *Server) handleGetMarketplaceSkillContent(c *echo.Context) error {
@@ -2364,19 +2365,54 @@ func (s *Server) handleGetMarketplaceSkillContent(c *echo.Context) error {
 	})
 }
 
-func marketplaceSkillItem(skill *skills.Skill) map[string]interface{} {
+func (s *Server) marketplaceSkillItem(skill *skills.Skill) map[string]interface{} {
+	eligible := true
+	var reasons []string
+	if s != nil && s.skillsMgr != nil && skill != nil {
+		eligible, reasons = s.skillsMgr.CheckRequirements(context.Background(), skill.ID)
+	} else if skill != nil && skill.Requirements != nil {
+		eligible, reasons = skills.CheckEligibility(skill)
+	}
+
 	tags := append([]string(nil), skill.Tags...)
 	return map[string]interface{}{
-		"id":          strings.TrimSpace(skill.ID),
-		"name":        strings.TrimSpace(skill.Name),
-		"description": strings.TrimSpace(skill.Description),
-		"version":     strings.TrimSpace(skill.Version),
-		"author":      strings.TrimSpace(skill.Author),
-		"enabled":     skill.Enabled,
-		"always":      skill.Always,
-		"file_path":   strings.TrimSpace(skill.FilePath),
-		"tags":        tags,
+		"id":                    strings.TrimSpace(skill.ID),
+		"name":                  strings.TrimSpace(skill.Name),
+		"description":           strings.TrimSpace(skill.Description),
+		"version":               strings.TrimSpace(skill.Version),
+		"author":                strings.TrimSpace(skill.Author),
+		"enabled":               skill.Enabled,
+		"always":                skill.Always,
+		"file_path":             strings.TrimSpace(skill.FilePath),
+		"tags":                  tags,
+		"eligible":              eligible,
+		"ineligibility_reasons": reasons,
+		"install_specs":         marketplaceInstallSpecs(skill),
+		"is_installed":          !strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://"),
 	}
+}
+
+func marketplaceInstallSpecs(skill *skills.Skill) []map[string]interface{} {
+	if skill == nil || skill.Requirements == nil {
+		return nil
+	}
+
+	specs := skills.ParseRequirementsToSpecs(skill.Requirements)
+	if len(specs) == 0 {
+		return nil
+	}
+
+	out := make([]map[string]interface{}, 0, len(specs))
+	for _, spec := range specs {
+		out = append(out, map[string]interface{}{
+			"method":    strings.TrimSpace(spec.Method),
+			"package":   strings.TrimSpace(spec.Package),
+			"version":   strings.TrimSpace(spec.Version),
+			"post_hook": strings.TrimSpace(spec.PostHook),
+			"options":   spec.Options,
+		})
+	}
+	return out
 }
 
 func readMarketplaceSkillContent(skill *skills.Skill) (string, string, error) {
@@ -2427,6 +2463,55 @@ func (s *Server) handleDisableMarketplaceSkill(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "disabled"})
+}
+
+func (s *Server) handleInstallMarketplaceSkillDependencies(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	skillID := strings.TrimSpace(c.Param("id"))
+	if _, ok := s.resolveMarketplaceSkill(skillID); !ok {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
+	}
+
+	results, err := s.skillsMgr.InstallDependencies(c.Request().Context(), skillID)
+	if err != nil {
+		s.logger.Error("Failed to install marketplace skill dependencies",
+			zap.String("skill_id", skillID),
+			zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to install dependencies"})
+	}
+
+	success := true
+	payload := make([]map[string]interface{}, 0, len(results))
+	for _, result := range results {
+		if !result.Success {
+			success = false
+		}
+		payload = append(payload, map[string]interface{}{
+			"success":      result.Success,
+			"method":       result.Method,
+			"package":      result.Package,
+			"output":       result.Output,
+			"error":        errorString(result.Error),
+			"duration_ms":  result.Duration.Milliseconds(),
+			"installed_at": result.InstalledAt,
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"skill_id": skillID,
+		"success":  success,
+		"results":  payload,
+	})
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // --- Channel Handlers ---

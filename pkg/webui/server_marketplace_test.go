@@ -64,6 +64,13 @@ func TestMarketplaceHandlers_Return503WithoutSkillsManager(t *testing.T) {
 			handler: s.handleDisableMarketplaceSkill,
 			paramID: "missing",
 		},
+		{
+			name:    "install deps",
+			method:  http.MethodPost,
+			path:    "/api/marketplace/skills/missing/install-deps",
+			handler: s.handleInstallMarketplaceSkillDependencies,
+			paramID: "missing",
+		},
 	}
 
 	for _, tc := range tests {
@@ -105,6 +112,13 @@ tags:
   - marketplace
   - test
 enabled: false
+requirements:
+  env:
+    - MARKETPLACE_TEST_TOKEN
+  custom:
+    install:
+      - method: command
+        package: "printf marketplace-install-ok"
 ---
 Use this skill for tests.
 `
@@ -148,7 +162,10 @@ Use this skill for tests.
 		t.Fatalf("expected skill %q in list payload", skillID)
 	}
 
-	requiredKeys := []string{"id", "name", "description", "version", "author", "enabled", "always", "file_path", "tags"}
+	requiredKeys := []string{
+		"id", "name", "description", "version", "author", "enabled", "always", "file_path", "tags",
+		"eligible", "ineligibility_reasons", "install_specs", "is_installed",
+	}
 	for _, key := range requiredKeys {
 		if _, ok := target[key]; !ok {
 			t.Fatalf("expected key %q in payload item: %+v", key, target)
@@ -156,6 +173,42 @@ Use this skill for tests.
 	}
 	if enabled, _ := target["enabled"].(bool); enabled {
 		t.Fatalf("expected skill to be disabled initially")
+	}
+	if eligible, _ := target["eligible"].(bool); eligible {
+		t.Fatalf("expected skill to be ineligible while required env is missing")
+	}
+	reasons, ok := target["ineligibility_reasons"].([]interface{})
+	if !ok || len(reasons) != 1 {
+		t.Fatalf("expected one ineligibility reason, got %+v", target["ineligibility_reasons"])
+	}
+	installSpecs, ok := target["install_specs"].([]interface{})
+	if !ok || len(installSpecs) != 1 {
+		t.Fatalf("expected one install spec, got %+v", target["install_specs"])
+	}
+
+	// Install dependencies.
+	installReq := httptest.NewRequest(http.MethodPost, "/api/marketplace/skills/marketplace-test-skill/install-deps", nil)
+	installRec := httptest.NewRecorder()
+	installCtx := e.NewContext(installReq, installRec)
+	installCtx.SetPath("/api/marketplace/skills/:id/install-deps")
+	installCtx.SetPathValues(echo.PathValues{{Name: "id", Value: skillID}})
+	if err := s.handleInstallMarketplaceSkillDependencies(installCtx); err != nil {
+		t.Fatalf("install deps handler failed: %v", err)
+	}
+	if installRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, installRec.Code)
+	}
+
+	var installPayload map[string]interface{}
+	if err := json.Unmarshal(installRec.Body.Bytes(), &installPayload); err != nil {
+		t.Fatalf("unmarshal install response: %v", err)
+	}
+	if success, _ := installPayload["success"].(bool); !success {
+		t.Fatalf("expected dependency installation success, got %+v", installPayload)
+	}
+	results, ok := installPayload["results"].([]interface{})
+	if !ok || len(results) != 1 {
+		t.Fatalf("expected one install result, got %+v", installPayload["results"])
 	}
 
 	// Enable skill.
@@ -239,6 +292,11 @@ tags:
   - detail
 enabled: true
 always: true
+requirements:
+  custom:
+    install:
+      - kind: custom
+        command: "printf marketplace-detail-install"
 ---
 # Marketplace Test Skill
 
@@ -295,11 +353,21 @@ Use this skill for detail and content route tests.
 	if err := json.Unmarshal(itemRec.Body.Bytes(), &itemPayload); err != nil {
 		t.Fatalf("unmarshal item payload: %v", err)
 	}
-	requiredItemKeys := []string{"id", "name", "description", "version", "author", "enabled", "always", "tags", "file_path"}
+	requiredItemKeys := []string{
+		"id", "name", "description", "version", "author", "enabled", "always", "tags", "file_path",
+		"eligible", "ineligibility_reasons", "install_specs", "is_installed",
+	}
 	for _, key := range requiredItemKeys {
 		if _, ok := itemPayload[key]; !ok {
 			t.Fatalf("expected key %q in item payload: %+v", key, itemPayload)
 		}
+	}
+	if eligible, _ := itemPayload["eligible"].(bool); !eligible {
+		t.Fatalf("expected detail skill to be eligible")
+	}
+	installSpecs, ok := itemPayload["install_specs"].([]interface{})
+	if !ok || len(installSpecs) != 1 {
+		t.Fatalf("expected one install spec, got %+v", itemPayload["install_specs"])
 	}
 
 	contentReq := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/items/"+skillID+"/content", nil)
@@ -376,6 +444,13 @@ func TestMarketplaceHandlers_Return404ForUnknownSkill(t *testing.T) {
 			path:    "/api/marketplace/skills/items/unknown/content",
 			route:   "/api/marketplace/skills/items/:id/content",
 			handler: s.handleGetMarketplaceSkillContent,
+		},
+		{
+			name:    "install deps unknown",
+			method:  http.MethodPost,
+			path:    "/api/marketplace/skills/unknown/install-deps",
+			route:   "/api/marketplace/skills/:id/install-deps",
+			handler: s.handleInstallMarketplaceSkillDependencies,
 		},
 	}
 
