@@ -47,11 +47,11 @@ export function useExportConfig() {
 export function useImportConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: ConfigData) => api.post<{ sections: number; providers: number }>('/api/config/import', data),
+    mutationFn: (data: ConfigData) => api.post<{ sections_saved: number; providers_imported: number }>('/api/config/import', data),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['config'] });
       if (result) {
-        toast.success(t('imported', String(result.sections ?? 0), String(result.providers ?? 0)));
+        toast.success(t('imported', String(result.sections_saved ?? 0), String(result.providers_imported ?? 0)));
       }
     },
     onError: () => toast.error(t('importFailed')),
