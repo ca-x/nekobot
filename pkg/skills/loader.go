@@ -393,6 +393,9 @@ func mergeRequirementBlock(req *SkillRequirements, metadata map[string]interface
 	if osList := stringListValue(metadata["os"]); len(osList) > 0 && req.Custom["os"] == nil {
 		req.Custom["os"] = osList
 	}
+	if install := metadata["install"]; install != nil {
+		req.Custom["install"] = mergeInstallRequirements(req.Custom["install"], install)
+	}
 
 	requires, ok := metadata["requires"].(map[string]interface{})
 	if !ok {
@@ -454,6 +457,30 @@ func appendUniqueStrings(dst []string, values []string) []string {
 		seen[item] = struct{}{}
 	}
 	return dst
+}
+
+func mergeInstallRequirements(existing interface{}, next interface{}) interface{} {
+	switch current := existing.(type) {
+	case nil:
+		return next
+	case []interface{}:
+		switch incoming := next.(type) {
+		case []interface{}:
+			return append(current, incoming...)
+		default:
+			return append(current, incoming)
+		}
+	default:
+		switch incoming := next.(type) {
+		case []interface{}:
+			merged := make([]interface{}, 0, len(incoming)+1)
+			merged = append(merged, current)
+			merged = append(merged, incoming...)
+			return merged
+		default:
+			return []interface{}{current, incoming}
+		}
+	}
 }
 
 // CheckEligibility checks if a skill is eligible to run on current system.

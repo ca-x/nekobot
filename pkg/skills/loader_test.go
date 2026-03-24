@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"testing"
 
+	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 )
 
@@ -102,6 +103,51 @@ Coding agent instructions`
 	osReq, ok := skill.Requirements.Custom["os"].([]string)
 	if !ok || len(osReq) != 2 {
 		t.Fatalf("expected os requirements merged, got %#v", skill.Requirements.Custom["os"])
+	}
+}
+
+func TestParseSkillContentMergesInstallMetadata(t *testing.T) {
+	content := `---
+id: github
+name: GitHub
+metadata:
+  goclaw:
+    install:
+      - kind: brew
+        formula: gh
+      - kind: apt
+        package: gh
+      - kind: custom
+        command: ./scripts/install-gh.sh
+        postHook: ./scripts/verify-gh.sh
+---
+
+GitHub instructions`
+
+	skill, err := parseSkillContent(content, "/tmp/github/SKILL.md")
+	if err != nil {
+		t.Fatalf("parse skill content: %v", err)
+	}
+	if skill.Requirements == nil || skill.Requirements.Custom == nil {
+		t.Fatalf("expected merged requirements with custom install metadata")
+	}
+
+	specs := ParseRequirementsToSpecs(skill.Requirements)
+	if len(specs) != 3 {
+		t.Fatalf("expected 3 install specs, got %d", len(specs))
+	}
+
+	if specs[0].Method != "brew" || specs[0].Package != "gh" {
+		t.Fatalf("unexpected brew spec: %#v", specs[0])
+	}
+	if specs[1].Method != "apt" || specs[1].Package != "gh" {
+		t.Fatalf("unexpected apt spec: %#v", specs[1])
+	}
+	if specs[2].Method != "command" || specs[2].Package != "./scripts/install-gh.sh" {
+		t.Fatalf("unexpected command spec: %#v", specs[2])
+	}
+	if specs[2].PostHook != "./scripts/verify-gh.sh" {
+		t.Fatalf("unexpected command post hook: %#v", specs[2].PostHook)
 	}
 }
 
@@ -229,5 +275,53 @@ func TestEligibilityCheckSupportsAnyBinariesAndMetadataOS(t *testing.T) {
 	}
 	if len(reasons) == 0 {
 		t.Fatalf("expected ineligible reasons")
+	}
+}
+
+func TestEligibilityCheckSupportsRuntimeConfigPaths(t *testing.T) {
+	checker := NewEligibilityChecker()
+	checker.SetConfigPathExists(func(path string) bool {
+		return path == "channels.discord"
+	})
+
+	eligible, reasons := checker.Check(&Skill{
+		ID:      "discord-helper",
+		Enabled: true,
+		Requirements: &SkillRequirements{
+			ConfigPaths: []string{"channels.discord"},
+		},
+	})
+	if !eligible {
+		t.Fatalf("expected config-gated skill to be eligible, got reasons: %v", reasons)
+	}
+
+	ineligible, reasons := checker.Check(&Skill{
+		ID:      "wechat-helper",
+		Enabled: true,
+		Requirements: &SkillRequirements{
+			ConfigPaths: []string{"channels.wechat"},
+		},
+	})
+	if ineligible {
+		t.Fatalf("expected missing config path to make skill ineligible")
+	}
+	if len(reasons) != 1 || reasons[0] != "missing config paths: channels.wechat" {
+		t.Fatalf("unexpected reasons: %v", reasons)
+	}
+}
+
+func TestHasConfigPathChecksEnabledChannels(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Channels.Discord.Enabled = true
+	cfg.Channels.WeChat.Enabled = false
+
+	if !hasConfigPath(cfg, "channels.discord") {
+		t.Fatalf("expected enabled discord channel config path to exist")
+	}
+	if hasConfigPath(cfg, "channels.wechat") {
+		t.Fatalf("expected disabled wechat channel config path to be missing")
+	}
+	if hasConfigPath(cfg, "channels.unknown") {
+		t.Fatalf("expected unknown config path to be missing")
 	}
 }

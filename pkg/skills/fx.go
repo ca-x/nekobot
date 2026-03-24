@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.uber.org/fx"
 	"go.uber.org/zap"
@@ -41,6 +42,9 @@ func ProvideManager(log *logger.Logger, cfg *config.Config) (*Manager, error) {
 
 	autoReload := cfg.Agents.Defaults.SkillsAutoReload
 	manager := NewManager(log, skillsDir, autoReload)
+	manager.eligibilityCheck.SetConfigPathExists(func(path string) bool {
+		return hasConfigPath(cfg, path)
+	})
 
 	// Discover skills on startup
 	if err := manager.Discover(); err != nil {
@@ -49,4 +53,46 @@ func ProvideManager(log *logger.Logger, cfg *config.Config) (*Manager, error) {
 	}
 
 	return manager, nil
+}
+
+func hasConfigPath(cfg *config.Config, path string) bool {
+	if cfg == nil {
+		return false
+	}
+
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return false
+	}
+
+	switch trimmed {
+	case "channels.discord":
+		return cfg.Channels.Discord.Enabled
+	case "channels.telegram":
+		return cfg.Channels.Telegram.Enabled
+	case "channels.wechat":
+		return cfg.Channels.WeChat.Enabled
+	case "channels.wework":
+		return cfg.Channels.WeWork.Enabled
+	case "channels.slack":
+		return cfg.Channels.Slack.Enabled
+	case "channels.whatsapp":
+		return cfg.Channels.WhatsApp.Enabled
+	case "channels.feishu":
+		return cfg.Channels.Feishu.Enabled
+	case "channels.qq":
+		return cfg.Channels.QQ.Enabled
+	case "channels.dingtalk":
+		return cfg.Channels.DingTalk.Enabled
+	case "channels.googlechat":
+		return cfg.Channels.GoogleChat.Enabled
+	case "channels.teams":
+		return cfg.Channels.Teams.Enabled
+	case "channels.infoflow":
+		return cfg.Channels.Infoflow.Enabled
+	case "channels.gotify":
+		return cfg.Channels.Gotify.Enabled
+	default:
+		return false
+	}
 }

@@ -42,6 +42,8 @@ func (i *Installer) Install(ctx context.Context, spec InstallSpec) InstallResult
 	switch spec.Method {
 	case "brew":
 		output, err = i.installBrew(ctx, spec)
+	case "apt":
+		output, err = i.installApt(ctx, spec)
 	case "go":
 		output, err = i.installGo(ctx, spec)
 	case "npm":
@@ -50,6 +52,8 @@ func (i *Installer) Install(ctx context.Context, spec InstallSpec) InstallResult
 		output, err = i.installPython(ctx, spec)
 	case "download":
 		output, err = i.installDownload(ctx, spec)
+	case "command":
+		output, err = i.runCommand(ctx, spec.Package)
 	default:
 		err = fmt.Errorf("unknown install method: %s", spec.Method)
 	}
@@ -109,6 +113,26 @@ func (i *Installer) installBrew(ctx context.Context, spec InstallSpec) (string, 
 	}
 
 	cmd := exec.CommandContext(ctx, "brew", "install", pkg)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// installApt installs a package using apt-get.
+func (i *Installer) installApt(ctx context.Context, spec InstallSpec) (string, error) {
+	if runtime.GOOS != "linux" {
+		return "", fmt.Errorf("apt is only available on Linux")
+	}
+
+	if _, err := exec.LookPath("apt-get"); err != nil {
+		return "", fmt.Errorf("apt-get not installed: %w", err)
+	}
+
+	pkg := spec.Package
+	if spec.Version != "" {
+		pkg = fmt.Sprintf("%s=%s", pkg, spec.Version)
+	}
+
+	cmd := exec.CommandContext(ctx, "apt-get", "install", "-y", pkg)
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
@@ -234,6 +258,9 @@ func (i *Installer) CanInstall(method string) bool {
 	case "brew":
 		_, err := exec.LookPath("brew")
 		return err == nil && (runtime.GOOS == "darwin" || runtime.GOOS == "linux")
+	case "apt":
+		_, err := exec.LookPath("apt-get")
+		return err == nil && runtime.GOOS == "linux"
 	case "go":
 		_, err := exec.LookPath("go")
 		return err == nil
@@ -251,6 +278,13 @@ func (i *Installer) CanInstall(method string) bool {
 		_, err1 := exec.LookPath("curl")
 		_, err2 := exec.LookPath("wget")
 		return err1 == nil || err2 == nil
+	case "command":
+		if runtime.GOOS == "windows" {
+			_, err := exec.LookPath("cmd")
+			return err == nil
+		}
+		_, err := exec.LookPath("sh")
+		return err == nil
 	default:
 		return false
 	}
@@ -291,25 +325,53 @@ func parseInstallMap(m map[string]interface{}) InstallSpec {
 
 	if method, ok := m["method"].(string); ok {
 		spec.Method = method
+	} else if kind, ok := m["kind"].(string); ok {
+		spec.Method = normalizeInstallMethod(kind)
 	}
 	if pkg, ok := m["package"].(string); ok {
 		spec.Package = pkg
+	} else if formula, ok := m["formula"].(string); ok {
+		spec.Package = formula
+	} else if command, ok := m["command"].(string); ok {
+		spec.Package = command
 	}
 	if version, ok := m["version"].(string); ok {
 		spec.Version = version
 	}
 	if postHook, ok := m["post_hook"].(string); ok {
 		spec.PostHook = postHook
+	} else if postHook, ok := m["postHook"].(string); ok {
+		spec.PostHook = postHook
 	}
 
 	// Copy all other fields to options
 	for k, v := range m {
-		if k != "method" && k != "package" && k != "version" && k != "post_hook" {
+		if k != "method" &&
+			k != "kind" &&
+			k != "package" &&
+			k != "formula" &&
+			k != "command" &&
+			k != "version" &&
+			k != "post_hook" &&
+			k != "postHook" {
 			spec.Options[k] = v
 		}
 	}
 
 	return spec
+}
+
+func normalizeInstallMethod(method string) string {
+	switch strings.TrimSpace(strings.ToLower(method)) {
+	case "node":
+		return "npm"
+	case "python":
+		return "pip"
+	case "custom":
+		return "command"
+	default:
+		return strings.TrimSpace(strings.ToLower(method))
+	}
 }
 
 // GetInstallSummary returns a human-readable summary of install results.

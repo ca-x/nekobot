@@ -10,11 +10,21 @@ import (
 )
 
 // EligibilityChecker checks if a skill meets system requirements.
-type EligibilityChecker struct{}
+type EligibilityChecker struct {
+	configPathExists func(string) bool
+}
 
 // NewEligibilityChecker creates a new eligibility checker.
 func NewEligibilityChecker() *EligibilityChecker {
 	return &EligibilityChecker{}
+}
+
+// SetConfigPathExists sets the runtime config-path probe used by requirement gating.
+func (c *EligibilityChecker) SetConfigPathExists(fn func(string) bool) {
+	if c == nil {
+		return
+	}
+	c.configPathExists = fn
 }
 
 // Check checks if a skill is eligible to run on the current system.
@@ -45,6 +55,12 @@ func (c *EligibilityChecker) Check(skill *Skill) (bool, []string) {
 	missingEnvVars := c.CheckEnvVars(skill.Requirements.Env)
 	if len(missingEnvVars) > 0 {
 		reasons = append(reasons, "missing environment variables: "+strings.Join(missingEnvVars, ", "))
+	}
+
+	// Check required config paths when a runtime config probe is available.
+	missingConfigPaths := c.CheckConfigPaths(skill.Requirements.ConfigPaths)
+	if len(missingConfigPaths) > 0 {
+		reasons = append(reasons, "missing config paths: "+strings.Join(missingConfigPaths, ", "))
 	}
 
 	// Check required tools
@@ -143,6 +159,22 @@ func (c *EligibilityChecker) CheckEnvVars(envVars []string) []string {
 	for _, envVar := range envVars {
 		if os.Getenv(envVar) == "" {
 			missing = append(missing, envVar)
+		}
+	}
+
+	return missing
+}
+
+// CheckConfigPaths checks runtime config-path requirements when a resolver is available.
+func (c *EligibilityChecker) CheckConfigPaths(paths []string) []string {
+	if len(paths) == 0 || c == nil || c.configPathExists == nil {
+		return nil
+	}
+
+	var missing []string
+	for _, path := range paths {
+		if !c.configPathExists(path) {
+			missing = append(missing, path)
 		}
 	}
 
