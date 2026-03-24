@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"nekobot/pkg/acpstate"
 	"nekobot/pkg/config"
 	"nekobot/pkg/process"
 	"nekobot/pkg/toolsessions"
@@ -56,6 +57,8 @@ type ControlService struct {
 
 type acpConversationClient interface {
 	Chat(ctx context.Context, conversationID, message string) (string, error)
+	SyncSessions(ctx context.Context, sessions map[string]string) error
+	SessionMap() map[string]string
 	Close() error
 }
 
@@ -230,7 +233,7 @@ func (s *ControlService) CreateRuntime(
 
 	switch preset.Driver {
 	case "acp":
-		if _, err := s.getACPClient(sess); err != nil {
+		if _, err := s.getACPClient(ctx, sess); err != nil {
 			_ = s.sessions.TerminateSession(context.Background(), sess.ID, "failed to start acp runtime: "+err.Error())
 			return nil, fmt.Errorf("start acp runtime: %w", err)
 		}
@@ -510,13 +513,16 @@ func (s *ControlService) sendToACP(
 	target *toolsessions.Session,
 	chatID, message string,
 ) (string, error) {
-	client, err := s.getACPClient(target)
+	client, err := s.getACPClient(ctx, target)
 	if err != nil {
 		return "", err
 	}
 	reply, err := client.Chat(ctx, strings.TrimSpace(chatID), message)
 	if err != nil {
 		return "", fmt.Errorf("acp chat failed: %w", err)
+	}
+	if err := s.persistACPSessionMap(ctx, target, client.SessionMap()); err != nil {
+		return "", err
 	}
 	if err := s.sessions.TouchSession(ctx, target.ID, toolsessions.StateRunning); err != nil {
 		return "", fmt.Errorf("touch runtime session: %w", err)
@@ -529,7 +535,7 @@ func (s *ControlService) sendToACP(
 	return reply, nil
 }
 
-func (s *ControlService) getACPClient(target *toolsessions.Session) (acpConversationClient, error) {
+func (s *ControlService) getACPClient(ctx context.Context, target *toolsessions.Session) (acpConversationClient, error) {
 	if target == nil {
 		return nil, fmt.Errorf("runtime session is nil")
 	}
@@ -554,8 +560,32 @@ func (s *ControlService) getACPClient(target *toolsessions.Session) (acpConversa
 	if err != nil {
 		return nil, err
 	}
+	if err := client.SyncSessions(ctx, acpstate.SessionMap(target.Metadata)); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("restore acp sessions: %w", err)
+	}
 	s.acp[target.ID] = client
 	return client, nil
+}
+
+func (s *ControlService) persistACPSessionMap(
+	ctx context.Context,
+	target *toolsessions.Session,
+	sessions map[string]string,
+) error {
+	if s == nil || s.sessions == nil || target == nil || len(sessions) == 0 {
+		return nil
+	}
+
+	nextMetadata := acpstate.SetConversationSession(target.Metadata, "", "")
+	for conversationID, sessionID := range sessions {
+		nextMetadata = acpstate.SetConversationSession(nextMetadata, conversationID, sessionID)
+	}
+	if err := s.sessions.UpdateSessionMetadata(ctx, target.ID, nextMetadata); err != nil {
+		return fmt.Errorf("persist acp session metadata: %w", err)
+	}
+	target.Metadata = nextMetadata
+	return nil
 }
 
 func runtimeDriver(session *toolsessions.Session) string {
@@ -617,6 +647,12 @@ type acpNewSessionParams struct {
 
 type acpNewSessionResult struct {
 	SessionID string `json:"sessionId"`
+}
+
+type acpLoadSessionParams struct {
+	SessionID  string        `json:"sessionId"`
+	Cwd        string        `json:"cwd"`
+	McpServers []interface{} `json:"mcpServers"`
 }
 
 type acpPromptParams struct {
@@ -705,7 +741,7 @@ func newACPConversationClient(p RuntimePreset) (acpConversationClient, error) {
 	initCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if _, err := client.call(initCtx, "initialize", acpInitParams{
-		ProtocolVersion:    1,
+		ProtocolVersion: 1,
 		ClientCapabilities: map[string]interface{}{
 			"fs": map[string]bool{
 				"readTextFile":  true,
@@ -768,6 +804,26 @@ func (a *acpConversationProcess) Chat(ctx context.Context, conversationID, messa
 	}
 }
 
+func (a *acpConversationProcess) SyncSessions(ctx context.Context, sessions map[string]string) error {
+	for conversationID, sessionID := range sessions {
+		if err := a.loadSession(ctx, conversationID, sessionID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *acpConversationProcess) SessionMap() map[string]string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	cloned := make(map[string]string, len(a.sessions))
+	for conversationID, sessionID := range a.sessions {
+		cloned[conversationID] = sessionID
+	}
+	return cloned
+}
+
 func (a *acpConversationProcess) Close() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -805,6 +861,34 @@ func (a *acpConversationProcess) getOrCreateSession(ctx context.Context, convers
 	a.sessions[conversationID] = payload.SessionID
 	a.mu.Unlock()
 	return payload.SessionID, nil
+}
+
+func (a *acpConversationProcess) loadSession(ctx context.Context, conversationID, sessionID string) error {
+	conversationID = strings.TrimSpace(conversationID)
+	sessionID = strings.TrimSpace(sessionID)
+	if conversationID == "" || sessionID == "" {
+		return nil
+	}
+
+	a.mu.Lock()
+	if existing, ok := a.sessions[conversationID]; ok && existing == sessionID {
+		a.mu.Unlock()
+		return nil
+	}
+	a.mu.Unlock()
+
+	if _, err := a.call(ctx, "session/load", acpLoadSessionParams{
+		SessionID:  sessionID,
+		Cwd:        a.workdir,
+		McpServers: []interface{}{},
+	}); err != nil {
+		return fmt.Errorf("load acp session %s for %s: %w", sessionID, conversationID, err)
+	}
+
+	a.mu.Lock()
+	a.sessions[conversationID] = sessionID
+	a.mu.Unlock()
+	return nil
 }
 
 func (a *acpConversationProcess) call(ctx context.Context, method string, params interface{}) (json.RawMessage, error) {
@@ -874,6 +958,9 @@ func (a *acpConversationProcess) readLoop() {
 			continue
 		}
 		if msg.Method != "session/update" {
+			if msg.Method == "session/request_permission" {
+				a.handlePermissionRequest(&msg)
+			}
 			continue
 		}
 
@@ -888,6 +975,54 @@ func (a *acpConversationProcess) readLoop() {
 			ch <- &params.Update
 		}
 	}
+}
+
+func (a *acpConversationProcess) handlePermissionRequest(msg *rpcResponse) {
+	if msg == nil || msg.ID == nil {
+		return
+	}
+
+	var params struct {
+		Options []struct {
+			OptionID string `json:"optionId"`
+			Kind     string `json:"kind"`
+		} `json:"options"`
+	}
+	if err := json.Unmarshal(msg.Params, &params); err != nil {
+		return
+	}
+
+	optionID := ""
+	for _, option := range params.Options {
+		if strings.TrimSpace(option.OptionID) == "" {
+			continue
+		}
+		optionID = option.OptionID
+		if strings.EqualFold(strings.TrimSpace(option.Kind), "allow") {
+			break
+		}
+	}
+	if optionID == "" {
+		return
+	}
+
+	data, err := json.Marshal(rpcRequest{
+		JSONRPC: "2.0",
+		ID:      *msg.ID,
+		Params: map[string]interface{}{
+			"outcome": map[string]interface{}{
+				"outcome":  "selected",
+				"optionId": optionID,
+			},
+		},
+	})
+	if err != nil {
+		return
+	}
+
+	a.mu.Lock()
+	_, _ = fmt.Fprintf(a.stdin, "%s\n", data)
+	a.mu.Unlock()
 }
 
 func extractACPChunkText(update *acpSessionUpdate) string {

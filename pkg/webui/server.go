@@ -2539,27 +2539,29 @@ func encodeQRCodeDataURL(content string) (string, error) {
 func (s *Server) handleGetConfig(c *echo.Context) error {
 	// Return sanitized config (no secrets)
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"agents":    s.config.Agents,
-		"gateway":   s.config.Gateway,
-		"tools":     s.config.Tools,
-		"heartbeat": s.config.Heartbeat,
-		"approval":  s.config.Approval,
-		"logger":    s.config.Logger,
-		"memory":    s.config.Memory,
-		"webui":     s.config.WebUI,
+		"agents":        s.config.Agents,
+		"gateway":       s.config.Gateway,
+		"tools":         s.config.Tools,
+		"heartbeat":     s.config.Heartbeat,
+		"approval":      s.config.Approval,
+		"logger":        s.config.Logger,
+		"memory":        s.config.Memory,
+		"webui":         s.config.WebUI,
+		"transcription": s.config.Transcription,
 	})
 }
 
 func (s *Server) handleSaveConfig(c *echo.Context) error {
 	var body struct {
-		Agents    *config.AgentsConfig    `json:"agents"`
-		Gateway   *config.GatewayConfig   `json:"gateway"`
-		Tools     *config.ToolsConfig     `json:"tools"`
-		Heartbeat *config.HeartbeatConfig `json:"heartbeat"`
-		Approval  *config.ApprovalConfig  `json:"approval"`
-		Logger    *config.LoggerConfig    `json:"logger"`
-		Memory    *config.MemoryConfig    `json:"memory"`
-		WebUI     *config.WebUIConfig     `json:"webui"`
+		Agents        *config.AgentsConfig        `json:"agents"`
+		Gateway       *config.GatewayConfig       `json:"gateway"`
+		Tools         *config.ToolsConfig         `json:"tools"`
+		Heartbeat     *config.HeartbeatConfig     `json:"heartbeat"`
+		Approval      *config.ApprovalConfig      `json:"approval"`
+		Logger        *config.LoggerConfig        `json:"logger"`
+		Memory        *config.MemoryConfig        `json:"memory"`
+		WebUI         *config.WebUIConfig         `json:"webui"`
+		Transcription *config.TranscriptionConfig `json:"transcription"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -2590,13 +2592,16 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	if body.WebUI != nil {
 		s.config.WebUI = *body.WebUI
 	}
+	if body.Transcription != nil {
+		s.config.Transcription = *body.Transcription
+	}
 
 	// Validate
 	if err := config.ValidateConfig(s.config); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	sections := make([]string, 0, 8)
+	sections := make([]string, 0, 9)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -2620,6 +2625,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.WebUI != nil {
 		sections = append(sections, "webui")
+	}
+	if body.Transcription != nil {
+		sections = append(sections, "transcription")
 	}
 
 	// Persist runtime config sections to database.
@@ -2646,15 +2654,16 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 	}
 
 	export := map[string]interface{}{
-		"agents":    s.config.Agents,
-		"gateway":   s.config.Gateway,
-		"tools":     s.config.Tools,
-		"heartbeat": s.config.Heartbeat,
-		"approval":  s.config.Approval,
-		"logger":    s.config.Logger,
-		"memory":    s.config.Memory,
-		"webui":     s.config.WebUI,
-		"providers": providerList,
+		"agents":        s.config.Agents,
+		"gateway":       s.config.Gateway,
+		"tools":         s.config.Tools,
+		"heartbeat":     s.config.Heartbeat,
+		"approval":      s.config.Approval,
+		"logger":        s.config.Logger,
+		"memory":        s.config.Memory,
+		"webui":         s.config.WebUI,
+		"transcription": s.config.Transcription,
+		"providers":     providerList,
 	}
 
 	c.Response().Header().Set("Content-Disposition", `attachment; filename="nekobot-config-export.json"`)
@@ -2663,15 +2672,16 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 
 func (s *Server) handleImportConfig(c *echo.Context) error {
 	var body struct {
-		Agents    *config.AgentsConfig     `json:"agents"`
-		Gateway   *config.GatewayConfig    `json:"gateway"`
-		Tools     *config.ToolsConfig      `json:"tools"`
-		Heartbeat *config.HeartbeatConfig  `json:"heartbeat"`
-		Approval  *config.ApprovalConfig   `json:"approval"`
-		Logger    *config.LoggerConfig     `json:"logger"`
-		Memory    *config.MemoryConfig     `json:"memory"`
-		WebUI     *config.WebUIConfig      `json:"webui"`
-		Providers []config.ProviderProfile `json:"providers"`
+		Agents        *config.AgentsConfig        `json:"agents"`
+		Gateway       *config.GatewayConfig       `json:"gateway"`
+		Tools         *config.ToolsConfig         `json:"tools"`
+		Heartbeat     *config.HeartbeatConfig     `json:"heartbeat"`
+		Approval      *config.ApprovalConfig      `json:"approval"`
+		Logger        *config.LoggerConfig        `json:"logger"`
+		Memory        *config.MemoryConfig        `json:"memory"`
+		WebUI         *config.WebUIConfig         `json:"webui"`
+		Transcription *config.TranscriptionConfig `json:"transcription"`
+		Providers     []config.ProviderProfile    `json:"providers"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON payload"})
@@ -2702,6 +2712,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	if body.WebUI != nil {
 		s.config.WebUI = *body.WebUI
 	}
+	if body.Transcription != nil {
+		s.config.Transcription = *body.Transcription
+	}
 
 	// Validate
 	if err := config.ValidateConfig(s.config); err != nil {
@@ -2709,7 +2722,7 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 
 	// Persist runtime sections to database
-	sections := make([]string, 0, 8)
+	sections := make([]string, 0, 9)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -2733,6 +2746,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 	if body.WebUI != nil {
 		sections = append(sections, "webui")
+	}
+	if body.Transcription != nil {
+		sections = append(sections, "transcription")
 	}
 	if len(sections) > 0 {
 		if err := config.SaveDatabaseSections(s.config, sections...); err != nil {

@@ -184,6 +184,7 @@
   "configSectionAgents": "Agents",
   "configSectionGateway": "Gateway",
   "configSectionTools": "Tools",
+  "configSectionTranscription": "Transcription",
   "configSectionMemory": "Memory",
   "configSectionHeartbeat": "Heartbeat",
   "configSectionApproval": "Approval",

@@ -2,9 +2,11 @@ package wechat
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"regexp"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,10 +20,11 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
+	"nekobot/pkg/richtext"
 	"nekobot/pkg/toolsessions"
+	"nekobot/pkg/transcription"
+	wxmedia "nekobot/pkg/wechat/media"
 )
-
-var reMarkdownImage = regexp.MustCompile(`!\[[^\]]*\]\(([^)]+)\)`)
 
 // Channel implements WeChat channel via WeChat iLink.
 type Channel struct {
@@ -32,6 +35,8 @@ type Channel struct {
 	commands *commands.Registry
 	store    *CredentialStore
 	runtime  *ControlService
+	renderer richtext.MarkdownImageRenderer
+	inbound  *wxmedia.InboundProcessor
 
 	mu      sync.RWMutex
 	client  *Client
@@ -53,6 +58,7 @@ func NewChannel(
 	toolSessionMgr *toolsessions.Manager,
 	processMgr *process.Manager,
 	rootCfg *config.Config,
+	transcriber transcription.Transcriber,
 ) (*Channel, error) {
 	if store == nil {
 		return nil, fmt.Errorf("credential store is required")
@@ -80,6 +86,8 @@ func NewChannel(
 		commands: cmdRegistry,
 		store:    store,
 		runtime:  runtimeControl,
+		renderer: richtext.NewBrowserMarkdownRenderer(log, filepath.Join(rootCfg.WorkspacePath(), "screenshots", "wechat")),
+		inbound:  wxmedia.NewInboundProcessor(wxmedia.NewDownloader(filepath.Join(rootCfg.DatabaseDir(), "wechat", "media")), transcriber),
 		client:   client,
 		creds:    creds,
 		cursors:  map[string]int{},
@@ -219,7 +227,7 @@ func (c *Channel) handleInbound(msg WeixinMessage) {
 		return
 	}
 
-	content := extractText(msg)
+	content := c.buildInboundContent(msg)
 	if strings.TrimSpace(content) == "" {
 		return
 	}
@@ -238,7 +246,7 @@ func (c *Channel) handleInbound(msg WeixinMessage) {
 		if err != nil {
 			sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_ = c.sendText(sendCtx, msg.FromUserID, "❌ "+err.Error(), msg.ContextToken)
+			_ = c.sendReply(sendCtx, msg.FromUserID, "❌ "+err.Error(), msg.ContextToken)
 			return
 		}
 		if handled {
@@ -255,7 +263,7 @@ func (c *Channel) handleInbound(msg WeixinMessage) {
 		if handled, err := c.handleRuntimeChat(msg, content); err != nil {
 			sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_ = c.sendText(sendCtx, msg.FromUserID, "❌ "+err.Error(), msg.ContextToken)
+			_ = c.sendReply(sendCtx, msg.FromUserID, "❌ "+err.Error(), msg.ContextToken)
 			return
 		} else if handled {
 			return
@@ -265,7 +273,7 @@ func (c *Channel) handleInbound(msg WeixinMessage) {
 	if c.agent == nil {
 		sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		if err := c.sendText(sendCtx, msg.FromUserID, "❌ Agent 不可用（未初始化）", msg.ContextToken); err != nil {
+		if err := c.sendReply(sendCtx, msg.FromUserID, "❌ Agent 不可用（未初始化）", msg.ContextToken); err != nil {
 			c.log.Error("Failed to send WeChat unavailable message", zap.Error(err))
 		}
 		return
@@ -290,7 +298,7 @@ func (c *Channel) handleInbound(msg WeixinMessage) {
 		reply = "（无输出）"
 	}
 
-	if err := c.sendText(ctx, msg.FromUserID, reply, msg.ContextToken); err != nil {
+	if err := c.sendReply(ctx, msg.FromUserID, reply, msg.ContextToken); err != nil {
 		c.log.Error("Failed to send WeChat reply", zap.Error(err))
 	}
 }
@@ -314,10 +322,10 @@ func (c *Channel) handleCommand(msg WeixinMessage, content string) {
 		Args:     args,
 	})
 	if err != nil {
-		_ = c.sendText(ctx, msg.FromUserID, "❌ Command failed: "+err.Error(), msg.ContextToken)
+		_ = c.sendReply(ctx, msg.FromUserID, "❌ Command failed: "+err.Error(), msg.ContextToken)
 		return
 	}
-	_ = c.sendText(ctx, msg.FromUserID, resp.Content, msg.ContextToken)
+	_ = c.sendReply(ctx, msg.FromUserID, resp.Content, msg.ContextToken)
 }
 
 func (c *Channel) handleControlCommand(msg WeixinMessage, content string) (bool, error) {
@@ -412,7 +420,7 @@ func (c *Channel) handleControlCommand(msg WeixinMessage, content string) (bool,
 	if strings.TrimSpace(reply) == "" {
 		reply = "OK"
 	}
-	if err := c.sendText(ctx, msg.FromUserID, reply, msg.ContextToken); err != nil {
+	if err := c.sendReply(ctx, msg.FromUserID, reply, msg.ContextToken); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -461,7 +469,7 @@ func (c *Channel) handleRuntimeChat(msg WeixinMessage, content string) (bool, er
 		return true, err
 	}
 	if strings.TrimSpace(reply) != "" {
-		if err := c.sendText(context.Background(), msg.FromUserID, reply, msg.ContextToken); err != nil {
+		if err := c.sendReply(context.Background(), msg.FromUserID, reply, msg.ContextToken); err != nil {
 			return true, err
 		}
 		return true, nil
@@ -484,7 +492,7 @@ func (c *Channel) handleRuntimeChat(msg WeixinMessage, content string) (bool, er
 			time.Sleep(200 * time.Millisecond)
 			continue
 		}
-		if err := c.sendText(context.Background(), msg.FromUserID, output, msg.ContextToken); err != nil {
+		if err := c.sendReply(context.Background(), msg.FromUserID, output, msg.ContextToken); err != nil {
 			return true, err
 		}
 		return true, nil
@@ -494,7 +502,7 @@ func (c *Channel) handleRuntimeChat(msg WeixinMessage, content string) (bool, er
 	if name == "" {
 		name = strings.TrimSpace(bound.Session.Tool)
 	}
-	if err := c.sendText(context.Background(), msg.FromUserID, fmt.Sprintf("已发送到 %s，等待输出中。", name), msg.ContextToken); err != nil {
+	if err := c.sendReply(context.Background(), msg.FromUserID, fmt.Sprintf("已发送到 %s，等待输出中。", name), msg.ContextToken); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -522,16 +530,37 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	if strings.TrimSpace(userID) == "" {
 		return fmt.Errorf("wechat session/user id is empty")
 	}
-	return c.sendText(ctx, userID, msg.Content, "")
+	return c.sendReply(ctx, userID, msg.Content, "")
 }
 
-func (c *Channel) sendText(ctx context.Context, toUserID, text, contextToken string) error {
+func (c *Channel) sendReply(ctx context.Context, toUserID, text, contextToken string) error {
+	if c.renderer != nil && richtext.ShouldRenderAsImage(text) {
+		imagePath, err := c.renderer.RenderMarkdown(ctx, text)
+		if err == nil {
+			sendErr := c.sendImage(ctx, toUserID, imagePath, contextToken)
+			if sendErr == nil {
+				return nil
+			}
+			c.log.Warn("Failed to send rendered WeChat image reply", zap.Error(sendErr))
+		} else {
+			c.log.Warn("Failed to render markdown image reply", zap.Error(err))
+		}
+	}
+
+	for _, segment := range richtext.SplitPlainText(richtext.MarkdownToPlainText(text), 1500) {
+		if err := c.sendPlainText(ctx, toUserID, segment, contextToken); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Channel) sendPlainText(ctx context.Context, toUserID, text, contextToken string) error {
 	client := c.currentClient()
 	if client == nil {
 		return fmt.Errorf("wechat client not bound")
 	}
 
-	plainText := MarkdownToPlainText(text)
 	req := &SendMessageRequest{
 		Msg: SendMsg{
 			FromUserID:   client.BotID(),
@@ -542,7 +571,7 @@ func (c *Channel) sendText(ctx context.Context, toUserID, text, contextToken str
 			ItemList: []MessageItem{
 				{
 					Type:     ItemTypeText,
-					TextItem: &TextItem{Text: plainText},
+					TextItem: &TextItem{Text: text},
 				},
 			},
 			ContextToken: contextToken,
@@ -556,6 +585,49 @@ func (c *Channel) sendText(ctx context.Context, toUserID, text, contextToken str
 	}
 	if resp.Ret != 0 {
 		return fmt.Errorf("send wechat message failed: ret=%d errmsg=%s", resp.Ret, resp.ErrMsg)
+	}
+	return nil
+}
+
+func (c *Channel) sendImage(ctx context.Context, toUserID, imagePath, contextToken string) error {
+	client := c.currentClient()
+	if client == nil {
+		return fmt.Errorf("wechat client not bound")
+	}
+	raw, err := os.ReadFile(imagePath)
+	if err != nil {
+		return fmt.Errorf("read image reply: %w", err)
+	}
+	format := strings.TrimPrefix(strings.ToLower(filepath.Ext(imagePath)), ".")
+	if format == "" {
+		format = "png"
+	}
+	req := &SendMessageRequest{
+		Msg: SendMsg{
+			FromUserID:   client.BotID(),
+			ToUserID:     toUserID,
+			ClientID:     uuid.NewString(),
+			MessageType:  MessageTypeBot,
+			MessageState: MessageStateFinish,
+			ItemList: []MessageItem{
+				{
+					Type: ItemTypeImage,
+					ImageItem: &ImageItem{
+						Data:   base64.StdEncoding.EncodeToString(raw),
+						Format: format,
+					},
+				},
+			},
+			ContextToken: contextToken,
+		},
+		BaseInfo: BaseInfo{},
+	}
+	resp, err := client.SendMessage(ctx, req)
+	if err != nil {
+		return fmt.Errorf("send wechat image: %w", err)
+	}
+	if resp.Ret != 0 {
+		return fmt.Errorf("send wechat image failed: ret=%d errmsg=%s", resp.Ret, resp.ErrMsg)
 	}
 	return nil
 }
@@ -599,13 +671,67 @@ func (c *Channel) isAllowed(userID string) bool {
 	return false
 }
 
-func extractText(msg WeixinMessage) string {
+func (c *Channel) buildInboundContent(msg WeixinMessage) string {
+	items := make([]wxmedia.Item, 0, len(msg.ItemList))
 	for _, item := range msg.ItemList {
-		if item.Type == ItemTypeText && item.TextItem != nil {
-			return strings.TrimSpace(item.TextItem.Text)
+		items = append(items, convertMessageItem(item))
+	}
+	if c.inbound == nil {
+		return strings.TrimSpace(wxmedia.BuildBody(items, nil))
+	}
+	body, err := c.inbound.Process(context.Background(), items)
+	if err != nil {
+		c.log.Warn("Failed to process WeChat inbound media", zap.Error(err), zap.String("user_id", msg.FromUserID))
+	}
+	return strings.TrimSpace(body)
+}
+
+func convertMessageItem(item MessageItem) wxmedia.Item {
+	converted := wxmedia.Item{Type: item.Type}
+	if item.TextItem != nil {
+		converted.Text = &wxmedia.TextItem{Text: item.TextItem.Text}
+	}
+	if item.VoiceItem != nil {
+		converted.Voice = &wxmedia.VoiceItem{
+			EncodeType: item.VoiceItem.EncodeType,
+			Text:       item.VoiceItem.Text,
+			Media:      convertCDNMedia(item.VoiceItem.Media),
 		}
 	}
-	return ""
+	if item.ImageItem != nil {
+		converted.Image = &wxmedia.ImageItem{
+			AESKey:  item.ImageItem.AESKey,
+			Data:    item.ImageItem.Data,
+			Format:  item.ImageItem.Format,
+			MidSize: item.ImageItem.MidSize,
+			Media:   convertCDNMedia(item.ImageItem.Media),
+			Thumb:   convertCDNMedia(item.ImageItem.Thumb),
+		}
+	}
+	if item.FileItem != nil {
+		converted.File = &wxmedia.FileItem{
+			FileName: item.FileItem.FileName,
+			Media:    convertCDNMedia(item.FileItem.Media),
+		}
+	}
+	if item.VideoItem != nil {
+		converted.Video = &wxmedia.VideoItem{
+			Media: convertCDNMedia(item.VideoItem.Media),
+			Thumb: convertCDNMedia(item.VideoItem.Thumb),
+		}
+	}
+	return converted
+}
+
+func convertCDNMedia(media *CDNMedia) *wxmedia.CDNMedia {
+	if media == nil {
+		return nil
+	}
+	return &wxmedia.CDNMedia{
+		EncryptQueryParam: media.EncryptQueryParam,
+		AESKey:            media.AESKey,
+		EncryptType:       media.EncryptType,
+	}
 }
 
 func minInt(a, b int) int {
@@ -630,26 +756,4 @@ func (s *simpleSession) AddMessage(msg agent.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = append(s.messages, msg)
-}
-
-// MarkdownToPlainText converts markdown to readable plain text for WeChat.
-func MarkdownToPlainText(text string) string {
-	result := text
-	result = reMarkdownImage.ReplaceAllString(result, "")
-	result = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`).ReplaceAllString(result, "$1")
-	result = regexp.MustCompile("(?s)```[^\\n]*\\n?(.*?)```").ReplaceAllString(result, "$1")
-	result = regexp.MustCompile("`([^`]+)`").ReplaceAllString(result, "$1")
-	result = regexp.MustCompile(`(?m)^#{1,6}\s+`).ReplaceAllString(result, "")
-	result = regexp.MustCompile(`\*\*(.+?)\*\*|__(.+?)__`).ReplaceAllStringFunc(result, func(match string) string {
-		m := regexp.MustCompile(`\*\*(.+?)\*\*|__(.+?)__`).FindStringSubmatch(match)
-		if m[1] != "" {
-			return m[1]
-		}
-		return m[2]
-	})
-	result = regexp.MustCompile(`~~(.+?)~~`).ReplaceAllString(result, "$1")
-	result = regexp.MustCompile(`(?m)^>\s?`).ReplaceAllString(result, "")
-	result = regexp.MustCompile(`(?m)^(\s*)[-*+]\s+`).ReplaceAllString(result, "${1}• ")
-	result = regexp.MustCompile(`\n{3,}`).ReplaceAllString(result, "\n\n")
-	return strings.TrimSpace(result)
 }

@@ -108,7 +108,8 @@ var channelDescriptors = []channelDescriptor{
 			if err != nil {
 				return nil, err
 			}
-			return wechat.NewChannel(log, cfg.Channels.WeChat, messageBus, ag, cmdRegistry, store, toolSessionMgr, processMgr, cfg)
+			transcriber := transcription.NewFromConfig(log, cfg)
+			return wechat.NewChannel(log, cfg.Channels.WeChat, messageBus, ag, cmdRegistry, store, toolSessionMgr, processMgr, cfg, transcriber)
 		},
 	},
 	{

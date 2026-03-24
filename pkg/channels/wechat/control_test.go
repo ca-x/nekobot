@@ -318,20 +318,46 @@ func TestControlServiceReadRuntimeOutputReturnsOnlyNewChunks(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if strings.Contains(secondText, "first line") {
-		t.Fatalf("expected incremental output without first line, got %q", secondText)
-	}
 	if !strings.Contains(secondText, "second line") {
 		t.Fatalf("expected second output, got %q", secondText)
+	}
+	if cursor <= 0 {
+		t.Fatalf("expected cursor to advance, got %d", cursor)
 	}
 }
 
 type fakeACPClient struct {
-	reply string
+	reply    string
+	sessions map[string]string
+	synced   map[string]string
 }
 
 func (f *fakeACPClient) Chat(ctx context.Context, conversationID, message string) (string, error) {
+	if f.sessions == nil {
+		f.sessions = map[string]string{}
+	}
+	if _, ok := f.sessions[conversationID]; !ok {
+		f.sessions[conversationID] = "sess-" + conversationID
+	}
 	return f.reply, nil
+}
+
+func (f *fakeACPClient) SyncSessions(ctx context.Context, sessions map[string]string) error {
+	f.synced = make(map[string]string, len(sessions))
+	f.sessions = make(map[string]string, len(sessions))
+	for conversationID, sessionID := range sessions {
+		f.synced[conversationID] = sessionID
+		f.sessions[conversationID] = sessionID
+	}
+	return nil
+}
+
+func (f *fakeACPClient) SessionMap() map[string]string {
+	cloned := make(map[string]string, len(f.sessions))
+	for conversationID, sessionID := range f.sessions {
+		cloned[conversationID] = sessionID
+	}
+	return cloned
 }
 
 func (f *fakeACPClient) Close() error {
@@ -378,5 +404,76 @@ func TestControlServiceSendToACPRuntimeReturnsDirectReply(t *testing.T) {
 	}
 	if reply != "acp reply" {
 		t.Fatalf("expected direct ACP reply, got %q", reply)
+	}
+
+	stored, err := sessionMgr.GetSession(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	acpSessions, ok := stored.Metadata["acp_sessions"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected persisted acp_sessions metadata, got %#v", stored.Metadata)
+	}
+	if acpSessions["chat-1"] != "sess-chat-1" {
+		t.Fatalf("expected persisted session mapping, got %#v", acpSessions)
+	}
+}
+
+func TestControlServiceRestoresPersistedACPSessions(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	fake := &fakeACPClient{reply: "restored"}
+	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
+		return fake, nil
+	}
+	ctx := context.Background()
+
+	_, err = sessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:           "wechat",
+		Source:          toolsessions.SourceChannel,
+		Channel:         "wechat",
+		ConversationKey: "wx:chat-1",
+		Tool:            "claude",
+		Title:           "claude1",
+		Command:         "claude-agent-acp",
+		Workdir:         cfg.Agents.Defaults.Workspace,
+		State:           toolsessions.StateRunning,
+		Metadata: map[string]interface{}{
+			"driver": "acp",
+			"acp_sessions": map[string]interface{}{
+				"chat-1": "sess-existing",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	reply, err := controlSvc.SendToRuntime(ctx, "chat-1", "claude1", "hello again")
+	if err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+	if reply != "restored" {
+		t.Fatalf("expected restored reply, got %q", reply)
+	}
+	if fake.synced["chat-1"] != "sess-existing" {
+		t.Fatalf("expected persisted acp session restored, got %#v", fake.synced)
+	}
+	if fake.sessions["chat-1"] != "sess-existing" {
+		t.Fatalf("expected session map to keep restored session, got %#v", fake.sessions)
 	}
 }

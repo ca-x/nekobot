@@ -105,13 +105,53 @@ type WeixinMessage struct {
 
 // MessageItem is a single item in a message.
 type MessageItem struct {
-	Type     int       `json:"type"`
-	TextItem *TextItem `json:"text_item,omitempty"`
+	Type      int        `json:"type"`
+	TextItem  *TextItem  `json:"text_item,omitempty"`
+	VoiceItem *VoiceItem `json:"voice_item,omitempty"`
+	ImageItem *ImageItem `json:"image_item,omitempty"`
+	FileItem  *FileItem  `json:"file_item,omitempty"`
+	VideoItem *VideoItem `json:"video_item,omitempty"`
 }
 
 // TextItem holds text content.
 type TextItem struct {
 	Text string `json:"text"`
+}
+
+// CDNMedia is a WeChat CDN media reference.
+type CDNMedia struct {
+	EncryptQueryParam string `json:"encrypt_query_param,omitempty"`
+	AESKey            string `json:"aes_key,omitempty"`
+	EncryptType       int    `json:"encrypt_type,omitempty"`
+}
+
+// VoiceItem holds voice content metadata.
+type VoiceItem struct {
+	Media      *CDNMedia `json:"media,omitempty"`
+	EncodeType int       `json:"encode_type,omitempty"`
+	Text       string    `json:"text,omitempty"`
+}
+
+// ImageItem holds image content metadata or outbound inline image data.
+type ImageItem struct {
+	Media   *CDNMedia `json:"media,omitempty"`
+	Thumb   *CDNMedia `json:"thumb_media,omitempty"`
+	AESKey  string    `json:"aeskey,omitempty"`
+	Data    string    `json:"data,omitempty"`
+	Format  string    `json:"format,omitempty"`
+	MidSize int       `json:"mid_size,omitempty"`
+}
+
+// FileItem holds file content metadata.
+type FileItem struct {
+	Media    *CDNMedia `json:"media,omitempty"`
+	FileName string    `json:"file_name,omitempty"`
+}
+
+// VideoItem holds video content metadata.
+type VideoItem struct {
+	Media *CDNMedia `json:"media,omitempty"`
+	Thumb *CDNMedia `json:"thumb_media,omitempty"`
 }
 
 // SendMessageRequest is the body for sendmessage.

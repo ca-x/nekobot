@@ -15,6 +15,7 @@ var runtimeConfigSections = []string{
 	"channels",
 	"gateway",
 	"tools",
+	"transcription",
 	"heartbeat",
 	"approval",
 	"logger",
@@ -156,6 +157,8 @@ func marshalSection(cfg *Config, section string) ([]byte, error) {
 		return json.Marshal(cfg.Gateway)
 	case "tools":
 		return json.Marshal(cfg.Tools)
+	case "transcription":
+		return json.Marshal(cfg.Transcription)
 	case "heartbeat":
 		return json.Marshal(cfg.Heartbeat)
 	case "approval":
@@ -200,6 +203,12 @@ func applySection(cfg *Config, section string, payload []byte) error {
 			return fmt.Errorf("decode tools config: %w", err)
 		}
 		cfg.Tools = v
+	case "transcription":
+		var v TranscriptionConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode transcription config: %w", err)
+		}
+		cfg.Transcription = v
 	case "heartbeat":
 		var v HeartbeatConfig
 		if err := json.Unmarshal(payload, &v); err != nil {
