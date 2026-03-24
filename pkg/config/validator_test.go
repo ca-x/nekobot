@@ -137,6 +137,50 @@ func TestValidateConfigRejectsInvalidMCPServerConfig(t *testing.T) {
 	}
 }
 
+func TestValidateConfigRejectsInvalidProviderGroupConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.ProviderGroups = []ProviderGroupConfig{
+		{
+			Name:     "",
+			Strategy: "weighted",
+			Members:  []string{"openai"},
+		},
+	}
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for provider group config")
+	}
+
+	requiredFields := []string{
+		"agents.defaults.provider_groups[0].name",
+		"agents.defaults.provider_groups[0].strategy",
+		"agents.defaults.provider_groups[0].members",
+	}
+	for _, field := range requiredFields {
+		if !strings.Contains(err.Error(), field) {
+			t.Fatalf("expected %s validation error, got %v", field, err)
+		}
+	}
+}
+
+func TestValidateConfigAcceptsValidProviderGroupConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.ProviderGroups = []ProviderGroupConfig{
+		{
+			Name:     "openai-pool",
+			Strategy: "least_used",
+			Members:  []string{"openai-a", "openai-b"},
+		},
+	}
+
+	if err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("expected valid provider group config, got %v", err)
+	}
+}
+
 func TestValidateConfigAcceptsValidMCPServerConfig(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Agents.Defaults.Workspace = t.TempDir()

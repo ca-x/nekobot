@@ -67,6 +67,78 @@ func TestBuildProviderOrder_UsesConfigDefaultsWhenRequestFallbackEmpty(t *testin
 	}
 }
 
+func TestBuildProviderOrder_ExpandsProviderGroupRoundRobin(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "openai-pool"
+	cfg.Agents.Defaults.ProviderGroups = []config.ProviderGroupConfig{
+		{
+			Name:     "openai-pool",
+			Strategy: "round_robin",
+			Members:  []string{"openai-a", "openai-b"},
+		},
+	}
+	cfg.Providers = []config.ProviderProfile{
+		{Name: "openai-a", ProviderKind: "openai"},
+		{Name: "openai-b", ProviderKind: "openai"},
+	}
+
+	ag := &Agent{
+		config:         cfg,
+		logger:         testLogger(t),
+		providerGroups: newProviderGroupPlanner(),
+	}
+
+	first, err := ag.buildProviderOrder("", nil)
+	if err != nil {
+		t.Fatalf("first buildProviderOrder failed: %v", err)
+	}
+	second, err := ag.buildProviderOrder("", nil)
+	if err != nil {
+		t.Fatalf("second buildProviderOrder failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(first, []string{"openai-a", "openai-b"}) {
+		t.Fatalf("unexpected first order: %v", first)
+	}
+	if !reflect.DeepEqual(second, []string{"openai-b", "openai-a"}) {
+		t.Fatalf("unexpected second order: %v", second)
+	}
+}
+
+func TestBuildProviderOrder_ExpandsProviderGroupLeastUsed(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "openai-pool"
+	cfg.Agents.Defaults.ProviderGroups = []config.ProviderGroupConfig{
+		{
+			Name:     "openai-pool",
+			Strategy: "least_used",
+			Members:  []string{"openai-a", "openai-b"},
+		},
+	}
+	cfg.Providers = []config.ProviderProfile{
+		{Name: "openai-a", ProviderKind: "openai"},
+		{Name: "openai-b", ProviderKind: "openai"},
+	}
+
+	ag := &Agent{
+		config:         cfg,
+		logger:         testLogger(t),
+		providerGroups: newProviderGroupPlanner(),
+	}
+	if _, err := ag.buildProviderOrder("", nil); err != nil {
+		t.Fatalf("warmup buildProviderOrder failed: %v", err)
+	}
+	ag.providerGroups.recordSuccess("openai-a")
+
+	got, err := ag.buildProviderOrder("", nil)
+	if err != nil {
+		t.Fatalf("buildProviderOrder failed: %v", err)
+	}
+	if !reflect.DeepEqual(got, []string{"openai-b", "openai-a"}) {
+		t.Fatalf("unexpected least-used order: %v", got)
+	}
+}
+
 func TestResolveModelForProvider_FallsBackToProviderDefaultModel(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Model = "claude-sonnet-4-5-20250929"
@@ -1055,6 +1127,7 @@ func newRoutingTestAgent(t *testing.T, orchestrator string) *Agent {
 		context:          NewContextBuilderWithMemory(workspace, memoryStore),
 		tools:            tools.NewRegistry(),
 		failoverCooldown: providers.NewCooldownTracker(),
+		providerGroups:   newProviderGroupPlanner(),
 		maxIterations:    1,
 	}
 	ag.context.SetToolDescriptionsFunc(ag.tools.GetDescriptions)
@@ -1158,10 +1231,24 @@ func newFailoverTestAgent(t *testing.T, cfg *config.Config) *Agent {
 		context:          NewContextBuilderWithMemory(workspace, memoryStore),
 		tools:            tools.NewRegistry(),
 		failoverCooldown: providers.NewCooldownTracker(),
+		providerGroups:   newProviderGroupPlanner(),
 		maxIterations:    1,
 	}
 	ag.context.SetToolDescriptionsFunc(ag.tools.GetDescriptions)
 	return ag
+}
+
+func testLogger(t *testing.T) *logger.Logger {
+	t.Helper()
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	return log
 }
 
 type toolExecutionResultStubTool struct {

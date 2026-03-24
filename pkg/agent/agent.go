@@ -55,6 +55,7 @@ type Agent struct {
 
 	failoverMu       sync.Mutex
 	failoverCooldown *providers.CooldownTracker
+	providerGroups   *providerGroupPlanner
 
 	maxIterations int
 }
@@ -190,6 +191,7 @@ func New(
 		semanticMemory:   semanticMemory,
 		acpSessions:      make(map[string]*acpSessionState),
 		failoverCooldown: providers.NewCooldownTracker(),
+		providerGroups:   newProviderGroupPlanner(),
 		maxIterations:    cfg.Agents.Defaults.MaxToolIterations,
 	}
 
@@ -508,28 +510,13 @@ func (a *Agent) buildProviderOrder(provider string, fallback []string) ([]string
 		fallbackOrder = a.config.Agents.Defaults.Fallback
 	}
 
-	seen := make(map[string]struct{})
-	order := make([]string, 0, 1+len(fallbackOrder))
-
-	addProvider := func(name string) {
-		trimmed := strings.TrimSpace(name)
-		if trimmed == "" {
-			return
-		}
-		if _, ok := seen[trimmed]; ok {
-			return
-		}
-		seen[trimmed] = struct{}{}
-		order = append(order, trimmed)
-	}
-
-	addProvider(primary)
-	for _, name := range fallbackOrder {
-		addProvider(name)
+	order, err := a.providerGroups.expand(a.config, a.logger, primary, fallbackOrder)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(order) == 0 && len(a.config.Providers) > 0 {
-		addProvider(a.config.Providers[0].Name)
+		order = append(order, a.config.Providers[0].Name)
 	}
 
 	if len(order) == 0 {
@@ -571,6 +558,9 @@ func (a *Agent) callLLMWithFallback(
 		if err != nil {
 			lastErr = err
 			tracker.MarkFailure(providerName, providers.FailoverReasonUnknown)
+			if a.providerGroups != nil {
+				a.providerGroups.recordFailure(providerName, err)
+			}
 			a.logger.Warn("Provider unavailable", zap.String("provider", providerName), zap.Error(err))
 			continue
 		}
@@ -608,10 +598,16 @@ func (a *Agent) callLLMWithFallback(
 			}
 
 			tracker.MarkFailure(providerName, reason)
+			if a.providerGroups != nil {
+				a.providerGroups.recordFailure(providerName, loggedErr)
+			}
 			continue
 		}
 
 		tracker.MarkSuccess(providerName)
+		if a.providerGroups != nil {
+			a.providerGroups.recordSuccess(providerName)
+		}
 		return resp, providerName, model, nil
 	}
 

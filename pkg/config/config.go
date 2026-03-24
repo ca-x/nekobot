@@ -53,21 +53,29 @@ type AgentsConfig struct {
 
 // AgentDefaults defines default settings for agents.
 type AgentDefaults struct {
-	Workspace           string            `mapstructure:"workspace" json:"workspace"`
-	RestrictToWorkspace bool              `mapstructure:"restrict_to_workspace" json:"restrict_to_workspace"`
-	Provider            string            `mapstructure:"provider" json:"provider"`
-	Fallback            []string          `mapstructure:"fallback" json:"fallback"`
-	Orchestrator        string            `mapstructure:"orchestrator" json:"orchestrator"`
-	Model               string            `mapstructure:"model" json:"model"`
-	MaxTokens           int               `mapstructure:"max_tokens" json:"max_tokens"`
-	Temperature         float64           `mapstructure:"temperature" json:"temperature"`
-	MaxToolIterations   int               `mapstructure:"max_tool_iterations" json:"max_tool_iterations"`
-	SkillsDir           string            `mapstructure:"skills_dir" json:"skills_dir"`
-	SkillsAutoReload    bool              `mapstructure:"skills_auto_reload" json:"skills_auto_reload"`
-	SkillsProxy         string            `mapstructure:"skills_proxy" json:"skills_proxy"`
-	ExtendedThinking    bool              `mapstructure:"extended_thinking" json:"extended_thinking"`
-	ThinkingBudget      int               `mapstructure:"thinking_budget" json:"thinking_budget"`
-	MCPServers          []MCPServerConfig `mapstructure:"mcp_servers" json:"mcp_servers"`
+	Workspace           string                `mapstructure:"workspace" json:"workspace"`
+	RestrictToWorkspace bool                  `mapstructure:"restrict_to_workspace" json:"restrict_to_workspace"`
+	Provider            string                `mapstructure:"provider" json:"provider"`
+	Fallback            []string              `mapstructure:"fallback" json:"fallback"`
+	ProviderGroups      []ProviderGroupConfig `mapstructure:"provider_groups" json:"provider_groups"`
+	Orchestrator        string                `mapstructure:"orchestrator" json:"orchestrator"`
+	Model               string                `mapstructure:"model" json:"model"`
+	MaxTokens           int                   `mapstructure:"max_tokens" json:"max_tokens"`
+	Temperature         float64               `mapstructure:"temperature" json:"temperature"`
+	MaxToolIterations   int                   `mapstructure:"max_tool_iterations" json:"max_tool_iterations"`
+	SkillsDir           string                `mapstructure:"skills_dir" json:"skills_dir"`
+	SkillsAutoReload    bool                  `mapstructure:"skills_auto_reload" json:"skills_auto_reload"`
+	SkillsProxy         string                `mapstructure:"skills_proxy" json:"skills_proxy"`
+	ExtendedThinking    bool                  `mapstructure:"extended_thinking" json:"extended_thinking"`
+	ThinkingBudget      int                   `mapstructure:"thinking_budget" json:"thinking_budget"`
+	MCPServers          []MCPServerConfig     `mapstructure:"mcp_servers" json:"mcp_servers"`
+}
+
+// ProviderGroupConfig defines a logical provider pool with a selection strategy.
+type ProviderGroupConfig struct {
+	Name     string   `mapstructure:"name" json:"name"`
+	Strategy string   `mapstructure:"strategy" json:"strategy"`
+	Members  []string `mapstructure:"members" json:"members"`
 }
 
 // MCPServerConfig defines an MCP server entry for blades tools resolver integration.
@@ -358,6 +366,7 @@ func DefaultConfig() *Config {
 				Workspace:           workspace,
 				RestrictToWorkspace: true,
 				Provider:            "",
+				ProviderGroups:      []ProviderGroupConfig{},
 				Orchestrator:        "blades",
 				Model:               "claude-sonnet-4-5-20250929",
 				MaxTokens:           8192,

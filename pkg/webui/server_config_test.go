@@ -82,7 +82,7 @@ func TestHandleSaveConfigPersistsMemorySection(t *testing.T) {
 		providers: providers,
 	}
 
-	body := `{"agents":{"defaults":{"workspace":"` + cfg.Agents.Defaults.Workspace + `","restrict_to_workspace":true,"provider":"","fallback":[],"orchestrator":"blades","model":"claude-sonnet-4-5-20250929","max_tokens":8192,"temperature":0.7,"max_tool_iterations":20,"skills_dir":"","skills_auto_reload":false,"skills_proxy":"http://127.0.0.1:9001","extended_thinking":false,"thinking_budget":0,"mcp_servers":[]}},"memory":{"enabled":true,"semantic":{"enabled":true,"default_top_k":7,"max_top_k":25,"search_policy":"vector","include_scores":true},"episodic":{"enabled":true,"summary_window_messages":30,"max_summaries":400},"short_term":{"enabled":true,"raw_history_limit":333},"qmd":{"enabled":false,"command":"qmd","include_default":false,"paths":[],"sessions":{"enabled":false,"export_dir":"","retention_days":0},"update":{"on_boot":false,"interval":"30m","command_timeout":"30s","update_timeout":"5m"}}}}`
+	body := `{"agents":{"defaults":{"workspace":"` + cfg.Agents.Defaults.Workspace + `","restrict_to_workspace":true,"provider":"","fallback":[],"provider_groups":[{"name":"openai-pool","strategy":"round_robin","members":["openai-a","openai-b"]}],"orchestrator":"blades","model":"claude-sonnet-4-5-20250929","max_tokens":8192,"temperature":0.7,"max_tool_iterations":20,"skills_dir":"","skills_auto_reload":false,"skills_proxy":"http://127.0.0.1:9001","extended_thinking":false,"thinking_budget":0,"mcp_servers":[]}},"memory":{"enabled":true,"semantic":{"enabled":true,"default_top_k":7,"max_top_k":25,"search_policy":"vector","include_scores":true},"episodic":{"enabled":true,"summary_window_messages":30,"max_summaries":400},"short_term":{"enabled":true,"raw_history_limit":333},"qmd":{"enabled":false,"command":"qmd","include_default":false,"paths":[],"sessions":{"enabled":false,"export_dir":"","retention_days":0},"update":{"on_boot":false,"interval":"30m","command_timeout":"30s","update_timeout":"5m"}}}}`
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(body))
@@ -103,6 +103,9 @@ func TestHandleSaveConfigPersistsMemorySection(t *testing.T) {
 	if s.config.Agents.Defaults.SkillsProxy != "http://127.0.0.1:9001" {
 		t.Fatalf("skills proxy not applied to runtime config: %+v", s.config.Agents.Defaults)
 	}
+	if len(s.config.Agents.Defaults.ProviderGroups) != 1 {
+		t.Fatalf("provider groups not applied to runtime config: %+v", s.config.Agents.Defaults.ProviderGroups)
+	}
 
 	reloaded := config.DefaultConfig()
 	reloaded.Storage.DBDir = cfg.Storage.DBDir
@@ -116,6 +119,9 @@ func TestHandleSaveConfigPersistsMemorySection(t *testing.T) {
 	}
 	if reloaded.Agents.Defaults.SkillsProxy != "http://127.0.0.1:9001" {
 		t.Fatalf("skills proxy not persisted: %+v", reloaded.Agents.Defaults)
+	}
+	if len(reloaded.Agents.Defaults.ProviderGroups) != 1 {
+		t.Fatalf("provider groups not persisted: %+v", reloaded.Agents.Defaults.ProviderGroups)
 	}
 }
 

@@ -117,6 +117,11 @@ func (v *Validator) validateAgents(cfg *AgentsConfig) {
 		prefix := fmt.Sprintf("agents.defaults.mcp_servers[%d]", i)
 		v.validateMCPServer(prefix, server)
 	}
+
+	for i, group := range cfg.Defaults.ProviderGroups {
+		prefix := fmt.Sprintf("agents.defaults.provider_groups[%d]", i)
+		v.validateProviderGroup(prefix, group)
+	}
 }
 
 func (v *Validator) validateMCPServer(prefix string, cfg MCPServerConfig) {
@@ -164,6 +169,23 @@ func parseMCPTimeout(raw string) (int64, error) {
 		return 0, fmt.Errorf("timeout duration must be greater than 0")
 	}
 	return int64(d), nil
+}
+
+func (v *Validator) validateProviderGroup(prefix string, cfg ProviderGroupConfig) {
+	if strings.TrimSpace(cfg.Name) == "" {
+		v.addError(prefix+".name", "name is required")
+	}
+
+	strategy := strings.TrimSpace(strings.ToLower(cfg.Strategy))
+	switch strategy {
+	case "", "round_robin", "least_used", "random":
+	default:
+		v.addError(prefix+".strategy", "strategy must be one of: round_robin, least_used, random")
+	}
+
+	if len(cfg.Members) < 2 {
+		v.addError(prefix+".members", "at least two provider members are required")
+	}
 }
 
 // validateProviders validates provider configuration.
