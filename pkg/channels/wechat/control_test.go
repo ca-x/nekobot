@@ -21,6 +21,9 @@ func TestParseControlCommandParsesUseAndNew(t *testing.T) {
 		{name: "use", input: "/use code1", want: controlCommandUse, wantArg: "code1"},
 		{name: "bindings", input: "/bindings", want: controlCommandBindings},
 		{name: "list", input: "/list", want: controlCommandList},
+		{name: "logs", input: "/logs code1", want: controlCommandLogs, wantArg: "code1"},
+		{name: "restart", input: "/restart code1", want: controlCommandRestart, wantArg: "code1"},
+		{name: "delete", input: "/delete code1", want: controlCommandDelete, wantArg: "code1"},
 	}
 
 	for _, tt := range tests {
@@ -323,6 +326,107 @@ func TestControlServiceReadRuntimeOutputReturnsOnlyNewChunks(t *testing.T) {
 	}
 	if cursor <= 0 {
 		t.Fatalf("expected cursor to advance, got %d", cursor)
+	}
+}
+
+func TestControlServiceGetRuntimeLogsReturnsRecentOutput(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	ctx := context.Background()
+
+	_, err = controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "echo3",
+		Driver: "process",
+		Tool:   "cat",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+	if _, err := controlSvc.SendToRuntime(ctx, "chat-1", "", "hello logs"); err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+
+	var logs string
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		logs, err = controlSvc.GetRuntimeLogs(ctx, "echo3", 50)
+		if err != nil {
+			t.Fatalf("GetRuntimeLogs failed: %v", err)
+		}
+		if strings.Contains(logs, "hello logs") {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("expected logs to include runtime output, got %q", logs)
+}
+
+func TestControlServiceRestartAndDeleteRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "echo4",
+		Driver: "process",
+		Tool:   "cat",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+
+	firstStatus, err := processMgr.GetStatus(created.ID)
+	if err != nil {
+		t.Fatalf("GetStatus failed: %v", err)
+	}
+	firstPID := firstStatus.ID
+	if err := controlSvc.RestartRuntime(ctx, "echo4"); err != nil {
+		t.Fatalf("RestartRuntime failed: %v", err)
+	}
+	restartedStatus, err := processMgr.GetStatus(created.ID)
+	if err != nil {
+		t.Fatalf("GetStatus after restart failed: %v", err)
+	}
+	if !restartedStatus.Running {
+		t.Fatal("expected restarted process to be running")
+	}
+	if restartedStatus.ID != firstPID {
+		t.Fatalf("expected same session id after restart, got %q", restartedStatus.ID)
+	}
+
+	if err := controlSvc.DeleteRuntime(ctx, "echo4"); err != nil {
+		t.Fatalf("DeleteRuntime failed: %v", err)
+	}
+	if _, err := sessionMgr.GetSession(ctx, created.ID); err == nil {
+		t.Fatal("expected session to be deleted")
 	}
 }
 

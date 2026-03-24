@@ -26,7 +26,10 @@ const (
 	controlCommandUse      controlCommandKind = "use"
 	controlCommandNew      controlCommandKind = "new"
 	controlCommandStatus   controlCommandKind = "status"
+	controlCommandLogs     controlCommandKind = "logs"
+	controlCommandRestart  controlCommandKind = "restart"
 	controlCommandStop     controlCommandKind = "stop"
+	controlCommandDelete   controlCommandKind = "delete"
 )
 
 type controlCommand struct {
@@ -124,11 +127,27 @@ func parseControlCommand(input string) (controlCommand, error) {
 			name = strings.TrimSpace(fields[1])
 		}
 		return controlCommand{Kind: controlCommandStatus, RuntimeName: name}, nil
+	case "/logs":
+		name := ""
+		if len(fields) > 1 {
+			name = strings.TrimSpace(fields[1])
+		}
+		return controlCommand{Kind: controlCommandLogs, RuntimeName: name}, nil
+	case "/restart":
+		if len(fields) < 2 {
+			return controlCommand{}, fmt.Errorf("usage: /restart <runtime>")
+		}
+		return controlCommand{Kind: controlCommandRestart, RuntimeName: strings.TrimSpace(fields[1])}, nil
 	case "/stop":
 		if len(fields) < 2 {
 			return controlCommand{}, fmt.Errorf("usage: /stop <runtime>")
 		}
 		return controlCommand{Kind: controlCommandStop, RuntimeName: strings.TrimSpace(fields[1])}, nil
+	case "/delete":
+		if len(fields) < 2 {
+			return controlCommand{}, fmt.Errorf("usage: /delete <runtime>")
+		}
+		return controlCommand{Kind: controlCommandDelete, RuntimeName: strings.TrimSpace(fields[1])}, nil
 	case "/new":
 		return parseNewControlCommand(trimmed)
 	default:
@@ -327,6 +346,99 @@ func (s *ControlService) StopRuntime(ctx context.Context, runtimeName string) er
 		return fmt.Errorf("terminate runtime session: %w", err)
 	}
 	return nil
+}
+
+// DeleteRuntime removes a named runtime session and clears any active WeChat binding to it.
+func (s *ControlService) DeleteRuntime(ctx context.Context, runtimeName string) error {
+	target, err := s.findRuntimeByName(ctx, runtimeName)
+	if err != nil {
+		return err
+	}
+
+	if runtimeDriver(target) == "acp" {
+		if err := s.closeACPClient(target.ID); err != nil {
+			return err
+		}
+	} else {
+		if err := s.process.Kill(target.ID); err != nil &&
+			!strings.Contains(strings.ToLower(err.Error()), "session not found") &&
+			!strings.Contains(strings.ToLower(err.Error()), "session not running") {
+			return fmt.Errorf("stop runtime process: %w", err)
+		}
+	}
+
+	if chatID := boundWechatChatID(target); chatID != "" {
+		if err := s.bindings.ClearConversation(ctx, chatID); err != nil {
+			return fmt.Errorf("clear runtime binding: %w", err)
+		}
+	}
+	if err := s.process.Reset(target.ID); err != nil {
+		return fmt.Errorf("reset runtime process: %w", err)
+	}
+	if err := s.sessions.DeleteSession(ctx, target.ID); err != nil {
+		return fmt.Errorf("delete runtime session: %w", err)
+	}
+	return nil
+}
+
+// RestartRuntime restarts a named runtime in place.
+func (s *ControlService) RestartRuntime(ctx context.Context, runtimeName string) error {
+	target, err := s.findRuntimeByName(ctx, runtimeName)
+	if err != nil {
+		return err
+	}
+
+	if runtimeDriver(target) == "acp" {
+		if err := s.closeACPClient(target.ID); err != nil {
+			return err
+		}
+		if _, err := s.getACPClient(ctx, target); err != nil {
+			return fmt.Errorf("restart acp runtime: %w", err)
+		}
+		if err := s.sessions.TouchSession(ctx, target.ID, toolsessions.StateRunning); err != nil {
+			return fmt.Errorf("touch acp runtime session: %w", err)
+		}
+		return nil
+	}
+
+	if err := s.process.Kill(target.ID); err != nil &&
+		!strings.Contains(strings.ToLower(err.Error()), "session not found") &&
+		!strings.Contains(strings.ToLower(err.Error()), "session not running") {
+		return fmt.Errorf("stop runtime process: %w", err)
+	}
+	if err := s.process.Reset(target.ID); err != nil {
+		return fmt.Errorf("reset runtime process: %w", err)
+	}
+	if err := s.process.Start(context.Background(), target.ID, target.Command, target.Workdir); err != nil {
+		return fmt.Errorf("restart runtime process: %w", err)
+	}
+	if err := s.sessions.TouchSession(ctx, target.ID, toolsessions.StateRunning); err != nil {
+		return fmt.Errorf("touch runtime session: %w", err)
+	}
+	return nil
+}
+
+// GetRuntimeLogs returns recent output for a named runtime.
+func (s *ControlService) GetRuntimeLogs(ctx context.Context, runtimeName string, limit int) (string, error) {
+	target, err := s.findRuntimeByName(ctx, runtimeName)
+	if err != nil {
+		return "", err
+	}
+	if runtimeDriver(target) == "acp" {
+		return "ACP runtime logs are not buffered yet. Use the bound chat to observe live output.", nil
+	}
+	if limit <= 0 {
+		limit = 120
+	}
+	lines, _, err := s.process.GetOutput(target.ID, 0, limit)
+	if err != nil {
+		return "", fmt.Errorf("get runtime logs: %w", err)
+	}
+	text := strings.TrimSpace(strings.Join(lines, ""))
+	if text == "" {
+		return "No runtime output yet.", nil
+	}
+	return text, nil
 }
 
 // BindRuntime binds a named runtime to a WeChat chat.

@@ -408,11 +408,42 @@ func (c *Channel) handleControlCommand(msg WeixinMessage, content string) (bool,
 			return true, err
 		}
 		reply = formatRuntimeStatus(status)
+	case controlCommandLogs:
+		runtimeName := strings.TrimSpace(cmd.RuntimeName)
+		if runtimeName == "" {
+			bound, err := c.runtime.GetConversationRuntime(ctx, msg.FromUserID)
+			if err != nil {
+				return true, err
+			}
+			if bound == nil || bound.Session == nil {
+				reply = "No runtime bound for current chat."
+				break
+			}
+			runtimeName = strings.TrimSpace(bound.Session.Title)
+			if runtimeName == "" {
+				runtimeName = strings.TrimSpace(bound.Session.Tool)
+			}
+		}
+		logs, err := c.runtime.GetRuntimeLogs(ctx, runtimeName, 120)
+		if err != nil {
+			return true, err
+		}
+		reply = logs
+	case controlCommandRestart:
+		if err := c.runtime.RestartRuntime(ctx, cmd.RuntimeName); err != nil {
+			return true, err
+		}
+		reply = fmt.Sprintf("Restarted runtime %s.", cmd.RuntimeName)
 	case controlCommandStop:
 		if err := c.runtime.StopRuntime(ctx, cmd.RuntimeName); err != nil {
 			return true, err
 		}
 		reply = fmt.Sprintf("Stopped runtime %s.", cmd.RuntimeName)
+	case controlCommandDelete:
+		if err := c.runtime.DeleteRuntime(ctx, cmd.RuntimeName); err != nil {
+			return true, err
+		}
+		reply = fmt.Sprintf("Deleted runtime %s.", cmd.RuntimeName)
 	default:
 		return false, nil
 	}

@@ -474,6 +474,26 @@ func (m *Manager) UpdateSessionMetadata(ctx context.Context, id string, metadata
 	return nil
 }
 
+// DeleteSession permanently removes a tool session and its events.
+func (m *Manager) DeleteSession(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return errors.New("session id is required")
+	}
+
+	if _, err := m.client.ToolEvent.Delete().Where(toolevent.SessionIDEQ(id)).Exec(ctx); err != nil {
+		return fmt.Errorf("delete session events: %w", err)
+	}
+	if err := m.client.ToolSession.DeleteOneID(id).Exec(ctx); err != nil {
+		if ent.IsNotFound(err) {
+			return os.ErrNotExist
+		}
+		return fmt.Errorf("delete session: %w", err)
+	}
+	m.clearSessionOTP(id)
+	return nil
+}
+
 // ArchiveTerminatedSessions archives terminated sessions, optionally scoped by owner.
 func (m *Manager) ArchiveTerminatedSessions(ctx context.Context, owner string) (int, error) {
 	q := m.client.ToolSession.Update().
