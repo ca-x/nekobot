@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"nekobot/pkg/config"
@@ -37,6 +38,20 @@ var skillsValidateCmd = &cobra.Command{
 	Run:   runSkillsValidate,
 }
 
+var skillsSearchCmd = &cobra.Command{
+	Use:   "search [query]",
+	Short: "Search installed skills and the remote registry",
+	Args:  cobra.MinimumNArgs(1),
+	Run:   runSkillsSearch,
+}
+
+var skillsInstallCmd = &cobra.Command{
+	Use:   "install [url|path]",
+	Short: "Install a skill from URL or local path",
+	Args:  cobra.ExactArgs(1),
+	Run:   runSkillsInstall,
+}
+
 var skillsInstallDepsCmd = &cobra.Command{
 	Use:   "install-deps [skill-id]",
 	Short: "Install dependencies for a skill",
@@ -48,6 +63,8 @@ func init() {
 	skillsCmd.AddCommand(skillsListCmd)
 	skillsCmd.AddCommand(skillsSourcesCmd)
 	skillsCmd.AddCommand(skillsValidateCmd)
+	skillsCmd.AddCommand(skillsSearchCmd)
+	skillsCmd.AddCommand(skillsInstallCmd)
 	skillsCmd.AddCommand(skillsInstallDepsCmd)
 	rootCmd.AddCommand(skillsCmd)
 }
@@ -158,6 +175,68 @@ func runSkillsInstallDeps(cmd *cobra.Command, args []string) {
 		}
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), skills.GetInstallSummary(results))
+}
+
+func runSkillsSearch(cmd *cobra.Command, args []string) {
+	manager, err := loadSkillsManager()
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
+		return
+	}
+
+	query := strings.TrimSpace(strings.Join(args, " "))
+	fmt.Fprintf(cmd.OutOrStdout(), "Search query: %s\n", query)
+
+	localResults := manager.Search(query)
+	if len(localResults) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "\nLocal matches: none")
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nLocal matches: %d\n", len(localResults))
+		for _, result := range localResults {
+			fmt.Fprintf(
+				cmd.OutOrStdout(),
+				"- %s (%s) [score=%.1f matches=%s]\n",
+				result.Skill.ID,
+				result.Skill.Name,
+				result.Score,
+				strings.Join(result.Matches, ","),
+			)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	remoteOutput, err := manager.SearchRegistry(ctx, query)
+	if err != nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nRemote registry unavailable: %v\n", err)
+		return
+	}
+	if strings.TrimSpace(remoteOutput) == "" {
+		fmt.Fprintln(cmd.OutOrStdout(), "\nRemote registry returned no results")
+		return
+	}
+
+	fmt.Fprintln(cmd.OutOrStdout(), "\nRemote registry:")
+	fmt.Fprintln(cmd.OutOrStdout(), remoteOutput)
+}
+
+func runSkillsInstall(cmd *cobra.Command, args []string) {
+	manager, err := loadSkillsManager()
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
+		return
+	}
+
+	source := strings.TrimSpace(args[0])
+	targetPath, err := manager.InstallSkill(context.Background(), source)
+	if err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to install skill: %v\n", err)
+		return
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Installed skill from %s\n", source)
+	fmt.Fprintf(cmd.OutOrStdout(), "Target: %s\n", targetPath)
 }
 
 func loadSkillsManager() (*skills.Manager, error) {

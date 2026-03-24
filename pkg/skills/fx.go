@@ -41,7 +41,7 @@ func ProvideManager(log *logger.Logger, cfg *config.Config) (*Manager, error) {
 	}
 
 	autoReload := cfg.Agents.Defaults.SkillsAutoReload
-	manager := NewManager(log, skillsDir, autoReload)
+	manager := NewManagerWithOptions(log, skillsDir, autoReload, cfg.Agents.Defaults.SkillsProxy)
 	manager.eligibilityCheck.SetConfigPathExists(func(path string) bool {
 		return hasConfigPath(cfg, path)
 	})

@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -14,13 +15,20 @@ import (
 
 // Installer handles dependency installation for skills.
 type Installer struct {
-	log *logger.Logger
+	log      *logger.Logger
+	proxyURL string
 }
 
 // NewInstaller creates a new skill installer.
 func NewInstaller(log *logger.Logger) *Installer {
+	return NewInstallerWithProxy(log, "")
+}
+
+// NewInstallerWithProxy creates a new skill installer with proxy support.
+func NewInstallerWithProxy(log *logger.Logger, proxyURL string) *Installer {
 	return &Installer{
-		log: log,
+		log:      log,
+		proxyURL: strings.TrimSpace(proxyURL),
 	}
 }
 
@@ -113,6 +121,7 @@ func (i *Installer) installBrew(ctx context.Context, spec InstallSpec) (string, 
 	}
 
 	cmd := exec.CommandContext(ctx, "brew", "install", pkg)
+	cmd.Env = i.proxyEnv()
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
@@ -133,6 +142,7 @@ func (i *Installer) installApt(ctx context.Context, spec InstallSpec) (string, e
 	}
 
 	cmd := exec.CommandContext(ctx, "apt-get", "install", "-y", pkg)
+	cmd.Env = i.proxyEnv()
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
@@ -152,6 +162,7 @@ func (i *Installer) installGo(ctx context.Context, spec InstallSpec) (string, er
 	}
 
 	cmd := exec.CommandContext(ctx, "go", "install", pkg)
+	cmd.Env = i.proxyEnv()
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
@@ -172,6 +183,7 @@ func (i *Installer) installNpm(ctx context.Context, spec InstallSpec) (string, e
 	args = append(args, pkg)
 
 	cmd := exec.CommandContext(ctx, "npm", args...)
+	cmd.Env = i.proxyEnv()
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
@@ -206,6 +218,7 @@ func (i *Installer) installPython(ctx context.Context, spec InstallSpec) (string
 	args = append(args, pkg)
 
 	cmd := exec.CommandContext(ctx, tool, args...)
+	cmd.Env = i.proxyEnv()
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
@@ -234,6 +247,7 @@ func (i *Installer) installDownload(ctx context.Context, spec InstallSpec) (stri
 		return "", fmt.Errorf("neither curl nor wget available")
 	}
 
+	cmd.Env = i.proxyEnv()
 	output, err := cmd.CombinedOutput()
 	return string(output), err
 }
@@ -248,8 +262,13 @@ func (i *Installer) runCommand(ctx context.Context, command string) (string, err
 		cmd = exec.CommandContext(ctx, "sh", "-c", command)
 	}
 
+	cmd.Env = i.proxyEnv()
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func (i *Installer) proxyEnv() []string {
+	return skillsProxyEnv(os.Environ(), i.proxyURL)
 }
 
 // CanInstall checks if an install method is available on the current system.

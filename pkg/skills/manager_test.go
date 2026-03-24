@@ -219,3 +219,32 @@ func TestCheckRequirementsReportIncludesStructuredMissingDeps(t *testing.T) {
 		t.Fatalf("expected report reasons")
 	}
 }
+
+func TestSearchRanksNameMatchAboveDescription(t *testing.T) {
+	mgr := newSkillsTestManager(t)
+	mgr.skills["git-helper"] = &Skill{
+		ID:           "git-helper",
+		Name:         "Git Helper",
+		Description:  "Assist with repository workflows.",
+		Instructions: "Use git commands carefully.",
+		Tags:         []string{"git", "repo"},
+	}
+	mgr.skills["repo-advisor"] = &Skill{
+		ID:           "repo-advisor",
+		Name:         "Repository Advisor",
+		Description:  "Git workflows and repository maintenance.",
+		Instructions: "Advise on repository health.",
+		Tags:         []string{"git"},
+	}
+
+	results := mgr.Search("git")
+	if len(results) != 2 {
+		t.Fatalf("expected 2 search results, got %d", len(results))
+	}
+	if results[0].Skill.ID != "git-helper" {
+		t.Fatalf("expected name match to rank first, got %s", results[0].Skill.ID)
+	}
+	if len(results[0].Matches) == 0 || results[0].Matches[0] != "id" {
+		t.Fatalf("expected match metadata to include id, got %#v", results[0].Matches)
+	}
+}

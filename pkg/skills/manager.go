@@ -58,6 +58,7 @@ type SkillRequirements struct {
 type Manager struct {
 	log              *logger.Logger
 	skillsDir        string
+	skillsProxy      string
 	skills           map[string]*Skill // ID -> Skill
 	mu               sync.RWMutex
 	autoReload       bool
@@ -65,6 +66,7 @@ type Manager struct {
 	validator        *Validator
 	eligibilityCheck *EligibilityChecker
 	installer        *Installer
+	registry         *RegistryClient
 	loader           *MultiPathLoader
 	snapshotMgr      *SnapshotManager
 	versionMgr       *VersionManager
@@ -72,6 +74,11 @@ type Manager struct {
 
 // NewManager creates a new skills manager.
 func NewManager(log *logger.Logger, skillsDir string, autoReload bool) *Manager {
+	return NewManagerWithOptions(log, skillsDir, autoReload, "")
+}
+
+// NewManagerWithOptions creates a new skills manager with extra runtime settings.
+func NewManagerWithOptions(log *logger.Logger, skillsDir string, autoReload bool, skillsProxy string) *Manager {
 	// Determine workspace directory (parent of skills dir)
 	workspaceDir := filepath.Dir(skillsDir)
 
@@ -82,14 +89,21 @@ func NewManager(log *logger.Logger, skillsDir string, autoReload bool) *Manager 
 	mgr := &Manager{
 		log:              log,
 		skillsDir:        skillsDir,
+		skillsProxy:      strings.TrimSpace(skillsProxy),
 		skills:           make(map[string]*Skill),
 		autoReload:       autoReload,
 		validator:        NewValidator(),
 		eligibilityCheck: NewEligibilityChecker(),
-		installer:        NewInstaller(log),
 		loader:           NewMultiPathLoader(log, workspaceDir),
 		snapshotMgr:      NewSnapshotManager(log, snapshotsDir),
 		versionMgr:       NewVersionManager(log, versionsDir),
+	}
+	mgr.installer = NewInstallerWithProxy(log, mgr.skillsProxy)
+	registry, err := NewRegistryClient(mgr.skillsProxy)
+	if err != nil {
+		log.Warn("Failed to initialize skills registry client", zap.Error(err))
+	} else {
+		mgr.registry = registry
 	}
 
 	// Initialize version manager
@@ -195,6 +209,11 @@ func (m *Manager) SkillsDir() string {
 	return m.skillsDir
 }
 
+// SkillsProxy returns the configured proxy URL for skill search and install flows.
+func (m *Manager) SkillsProxy() string {
+	return strings.TrimSpace(m.skillsProxy)
+}
+
 // Get retrieves a skill by ID.
 func (m *Manager) Get(id string) (*Skill, error) {
 	m.mu.RLock()
@@ -234,6 +253,44 @@ func (m *Manager) ListEnabled() []*Skill {
 	}
 
 	return skills
+}
+
+// Search ranks installed skills by fuzzy token matches.
+func (m *Manager) Search(query string) []SearchResult {
+	query = strings.TrimSpace(strings.ToLower(query))
+	if query == "" {
+		return nil
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	results := make([]SearchResult, 0, len(m.skills))
+	for _, skill := range m.skills {
+		score, matches := scoreSkillSearch(skill, query)
+		if score <= 0 {
+			continue
+		}
+		results = append(results, SearchResult{
+			Skill:   skill,
+			Score:   score,
+			Matches: matches,
+		})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score == results[j].Score {
+			leftID := strings.TrimSpace(results[i].Skill.ID)
+			rightID := strings.TrimSpace(results[j].Skill.ID)
+			if leftID == rightID {
+				return strings.TrimSpace(results[i].Skill.Name) < strings.TrimSpace(results[j].Skill.Name)
+			}
+			return leftID < rightID
+		}
+		return results[i].Score > results[j].Score
+	})
+
+	return results
 }
 
 // ListEligibleEnabled returns all enabled skills that meet system requirements.
@@ -581,6 +638,30 @@ func (m *Manager) InstallDependencies(ctx context.Context, skillID string) ([]In
 	return results, nil
 }
 
+// SearchRegistry queries the remote skills registry if available.
+func (m *Manager) SearchRegistry(ctx context.Context, query string) (string, error) {
+	if m == nil || m.registry == nil {
+		return "", fmt.Errorf("skills registry is not available")
+	}
+	return m.registry.Search(ctx, query)
+}
+
+// InstallSkill installs a skill from a local path or remote git URL into the writable skills directory.
+func (m *Manager) InstallSkill(ctx context.Context, source string) (string, error) {
+	if m == nil || m.registry == nil {
+		return "", fmt.Errorf("skills registry is not available")
+	}
+
+	targetPath, err := m.registry.Install(ctx, source, m.skillsDir)
+	if err != nil {
+		return "", err
+	}
+	if err := m.Discover(); err != nil {
+		return targetPath, fmt.Errorf("rediscover installed skills: %w", err)
+	}
+	return targetPath, nil
+}
+
 func (m *Manager) buildSkillEntry(skill *Skill) *SkillEntry {
 	entry := &SkillEntry{
 		Skill:     skill,
@@ -602,4 +683,52 @@ func (m *Manager) buildSkillEntry(skill *Skill) *SkillEntry {
 	entry.Reasons = append([]string(nil), report.Reasons...)
 	entry.IneligibleReason = strings.Join(report.Reasons, "; ")
 	return entry
+}
+
+func scoreSkillSearch(skill *Skill, query string) (float64, []string) {
+	if skill == nil {
+		return 0, nil
+	}
+
+	var (
+		score   float64
+		matches []string
+	)
+
+	addMatch := func(field string, delta float64) {
+		for _, existing := range matches {
+			if existing == field {
+				score += delta
+				return
+			}
+		}
+		matches = append(matches, field)
+		score += delta
+	}
+
+	id := strings.ToLower(strings.TrimSpace(skill.ID))
+	name := strings.ToLower(strings.TrimSpace(skill.Name))
+	description := strings.ToLower(strings.TrimSpace(skill.Description))
+	instructions := strings.ToLower(strings.TrimSpace(skill.Instructions))
+
+	if strings.Contains(id, query) {
+		addMatch("id", 9)
+	}
+	if strings.Contains(name, query) {
+		addMatch("name", 8)
+	}
+	if strings.Contains(description, query) {
+		addMatch("description", 4)
+	}
+	for _, tag := range skill.Tags {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(tag)), query) {
+			addMatch("tags", 6)
+			break
+		}
+	}
+	if strings.Contains(instructions, query) {
+		addMatch("instructions", 2)
+	}
+
+	return score, matches
 }

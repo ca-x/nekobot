@@ -30,6 +30,13 @@ type SkillEntry struct {
 	IneligibleReason      string   // Why the skill is not eligible
 }
 
+// SearchResult is a ranked skill search match.
+type SearchResult struct {
+	Skill   *Skill
+	Score   float64
+	Matches []string
+}
+
 // SkillChangeEvent represents a change to a skill file.
 type SkillChangeEvent struct {
 	Type      ChangeType // created, modified, deleted

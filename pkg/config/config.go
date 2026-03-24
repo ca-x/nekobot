@@ -64,6 +64,7 @@ type AgentDefaults struct {
 	MaxToolIterations   int               `mapstructure:"max_tool_iterations" json:"max_tool_iterations"`
 	SkillsDir           string            `mapstructure:"skills_dir" json:"skills_dir"`
 	SkillsAutoReload    bool              `mapstructure:"skills_auto_reload" json:"skills_auto_reload"`
+	SkillsProxy         string            `mapstructure:"skills_proxy" json:"skills_proxy"`
 	ExtendedThinking    bool              `mapstructure:"extended_thinking" json:"extended_thinking"`
 	ThinkingBudget      int               `mapstructure:"thinking_budget" json:"thinking_budget"`
 	MCPServers          []MCPServerConfig `mapstructure:"mcp_servers" json:"mcp_servers"`
