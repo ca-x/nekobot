@@ -71,6 +71,7 @@
 
 ### F. 本轮已完成迁移事项
 - [x] Subagent 完成通知回推 origin channel，并补齐 `spawn` 工具注册与 origin route 透传。
+- [x] `gua/libc/wechat` SDK 基线迁移到 `pkg/wechat`（types / client / auth / cdn / messaging / monitor / parse / typing / voice / bot）。
 
 ## 当前项目评估
 
@@ -94,10 +95,22 @@
 - [ ] Memory 检索后处理仍偏轻量，缺 MMR、多样性、时间衰减、引用格式、缓存等质量件。
 - [ ] 现有 channel 能力缺统一 capability 矩阵，平台差异还分散在各 channel 私实现里。
 - [ ] 缺“按聊天用户长期驻留的外部 agent runtime”这一层，尚未形成类似 `gua` 的用户级外部代理会话编排。
+- [ ] `pkg/wechat` 目前仍缺 `gua/libc/wechat` 的完整 SDK 分层，微信通道能力还主要堆在 `pkg/channels/wechat/*` 中。
+- [ ] WeChat 通道发送侧仍缺基于共享 SDK 的附件上传/发送链路，无法把回复中的本地文件路径提升为平台附件消息。
 
 ## Active Backlog（含进度）
 
 ### P0（优先先做）
+- [x] **`gua/libc/wechat` SDK 全量迁移到 `nekobot/pkg/wechat`**
+  - 现状：`nekobot` 只有轻量 `pkg/wechat/media`，其余微信协议、client、cdn、messaging、monitor、typing、voice、parse 等能力仍散落在 `pkg/channels/wechat/*` 或尚未抽出。
+  - 目标：先把 `gua/libc/wechat` 的 shared SDK 形态完整迁入 `pkg/wechat`，形成后续微信功能扩展的稳定底座。
+  - 来源：`gua/libc/wechat/*`。
+  - 位置：`pkg/wechat/*`。
+- [ ] **WeChat 通道附件发送增强（本地文件路径 -> 图片/视频/文件消息）**
+  - 现状：`pkg/channels/wechat/channel.go` 仅支持纯文本与 base64 内联图片；回复里出现本地文件路径时不会自动转成微信附件发送。
+  - 目标：基于迁入后的共享 SDK，补齐 WeChat CDN 上传与图片/视频/文件发送链路，并在回复链路里自动提取本地路径、清理正文中的路径文本。
+  - 来源：`gua/server/formatter.go`、`gua/channel/wechat/wechat.go`。
+  - 位置：`pkg/channels/wechat/*`、`pkg/wechat/*`。
 - [ ] **Slack interactive callback 扩展为完整交互闭环**
   - 现状：仅有 block actions 中的 skill install confirm/cancel，shortcut / modal submission 仍未处理。
   - 目标：至少补齐关键交互流，形成统一 action routing。
@@ -172,6 +185,8 @@
 - **验收**: 过期 backlog 移除，验证结果补充到 `progress.md`。
 
 ### Batch B（Channel 交互补齐）
+- [x] WeChat SDK baseline migration
+- [ ] WeChat attachment send pipeline
 - [ ] Slack interactive handlers 扩展
 - [x] Subagent origin notify 接线
 - [ ] MaixCAM command response

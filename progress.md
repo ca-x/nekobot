@@ -2,6 +2,21 @@
 
 ## 2026-03-25
 
+- Completed `gua/libc/wechat` SDK baseline migration into `nekobot/pkg/wechat`:
+  - added shared `types / client / auth / cdn / messaging / monitor / parse / typing / voice / bot` packages under `pkg/wechat`.
+  - kept existing `pkg/channels/wechat` working while introducing the new shared SDK layer, so follow-up channel enhancements can build on stable primitives instead of channel-local protocol code.
+- Verification run:
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./pkg/wechat/... ./pkg/channels/wechat` passed.
+
+- Re-ordered the WeChat workstream per latest requirement:
+  - promoted `gua/libc/wechat` SDK full migration into `nekobot/pkg/wechat` as the current feature slice.
+  - moved WeChat attachment/file-path send-path enhancement behind the shared SDK migration.
+
+- Re-scoped the next channel migration slice to WeChat SDK/send-path improvements:
+  - switched reference source from `goclaw` to `gua` for WeChat-specific presenter / formatter / upload behavior.
+  - identified the highest-value low-risk gap in `nekobot`: outbound replies cannot yet turn local file paths into WeChat image/video/file attachments.
+  - updated `task_plan.md` to prioritize a WeChat attachment send pipeline before broader Slack interaction work.
+
 - Implemented subagent completion notification flow and spawn context propagation:
   - Added `pkg/subagent` notification payload + outbound sender abstraction so finished tasks can render origin-channel notifications without coupling the package to the bus implementation.
   - Wired agent startup to enable subagents and bridge notifications into the message bus outbound path.
