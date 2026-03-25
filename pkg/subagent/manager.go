@@ -14,19 +14,7 @@ import (
 // Agent interface defines minimal agent capabilities needed by SubagentManager.
 // This avoids circular imports (agent -> tools -> agent).
 type Agent interface {
-	Chat(ctx context.Context, sess Session, message string) (string, error)
-}
-
-// Session defines the minimal conversation state required by subagent tasks.
-type Session interface {
-	GetMessages() []Message
-	AddMessage(Message)
-}
-
-// Message represents a role/content chat turn used by subagent sessions.
-type Message struct {
-	Role    string
-	Content string
+	Chat(ctx context.Context, message string) (string, error)
 }
 
 // SubagentTask represents a task being executed by a subagent.
@@ -48,14 +36,29 @@ type SubagentTask struct {
 // so the caller can route the notification to the origin channel.
 type NotifyFunc func(task *SubagentTask)
 
+// Notification contains a rendered subagent completion message.
+type Notification struct {
+	ID        string
+	Channel   string
+	ChatID    string
+	Content   string
+	Data      map[string]interface{}
+	Timestamp time.Time
+}
+
+// OutboundSender sends notification messages to origin channels.
+type OutboundSender interface {
+	SendNotification(msg *Notification) error
+}
+
 // SubagentManager manages subagent task execution.
 type SubagentManager struct {
-	log       *logger.Logger
-	agent     Agent // Use interface instead of concrete type
-	tasks     map[string]*SubagentTask
-	mu        sync.RWMutex
-	maxTasks  int
-	taskQueue chan *SubagentTask
+	log        *logger.Logger
+	agent      Agent // Use interface instead of concrete type
+	tasks      map[string]*SubagentTask
+	mu         sync.RWMutex
+	maxTasks   int
+	taskQueue  chan *SubagentTask
 	onComplete NotifyFunc
 }
 
@@ -194,8 +197,7 @@ func (sm *SubagentManager) executeTask(task *SubagentTask) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	sess := &taskSession{messages: make([]Message, 0, 2)}
-	result, err := sm.agent.Chat(ctx, sess, task.Task)
+	result, err := sm.agent.Chat(ctx, task.Task)
 
 	sm.mu.Lock()
 	task.CompletedAt = time.Now()
@@ -222,6 +224,23 @@ func (sm *SubagentManager) executeTask(task *SubagentTask) {
 // SetNotifyFunc sets the callback invoked when a task completes or fails.
 func (sm *SubagentManager) SetNotifyFunc(fn NotifyFunc) {
 	sm.onComplete = fn
+}
+
+// Stop stops all workers by closing the task queue.
+func (sm *SubagentManager) Stop() {
+	if sm == nil {
+		return
+	}
+
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.taskQueue == nil {
+		return
+	}
+
+	close(sm.taskQueue)
+	sm.taskQueue = nil
 }
 
 // PruneTasks removes completed tasks older than the specified duration.
@@ -253,14 +272,57 @@ func min(a, b int) int {
 	return b
 }
 
-type taskSession struct {
-	messages []Message
+// SendTaskNotification emits a text notification for a finished task.
+func SendTaskNotification(sender OutboundSender, task *SubagentTask) error {
+	if sender == nil {
+		return fmt.Errorf("outbound sender is required")
+	}
+	if task == nil {
+		return fmt.Errorf("task is required")
+	}
+	if task.Channel == "" {
+		return fmt.Errorf("task %s missing origin channel", task.ID)
+	}
+	if task.ChatID == "" {
+		return fmt.Errorf("task %s missing origin chat id", task.ID)
+	}
+
+	msg := &Notification{
+		ID:      "subagent:" + task.ID,
+		Channel: task.Channel,
+		ChatID:  task.ChatID,
+		Content: formatTaskNotification(task),
+		Data: map[string]interface{}{
+			"task_id": task.ID,
+			"status":  task.Status,
+			"label":   task.Label,
+		},
+		Timestamp: time.Now(),
+	}
+
+	return sender.SendNotification(msg)
 }
 
-func (s *taskSession) GetMessages() []Message {
-	return s.messages
-}
+func formatTaskNotification(task *SubagentTask) string {
+	label := task.Label
+	if label == "" {
+		label = task.ID
+	}
 
-func (s *taskSession) AddMessage(msg Message) {
-	s.messages = append(s.messages, msg)
+	switch task.Status {
+	case "completed":
+		result := task.Result
+		if result == "" {
+			result = "(no result)"
+		}
+		return fmt.Sprintf("Subagent task [%s] completed.\n%s", label, result)
+	case "failed":
+		errText := "unknown error"
+		if task.Error != nil {
+			errText = task.Error.Error()
+		}
+		return fmt.Sprintf("Subagent task [%s] failed.\n%s", label, errText)
+	default:
+		return fmt.Sprintf("Subagent task [%s] status changed: %s", label, task.Status)
+	}
 }

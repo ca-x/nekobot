@@ -20,6 +20,7 @@ import (
 	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/subagent"
 	"nekobot/pkg/tools"
 	"nekobot/pkg/toolsessions"
 )
@@ -60,6 +61,11 @@ type Agent struct {
 	providerGroups   *providerGroupPlanner
 
 	maxIterations int
+	subagents     *subagent.SubagentManager
+}
+
+type subagentAgentAdapter struct {
+	agent *Agent
 }
 
 // ChatRouteResult describes the routing request and the actual provider/model used.
@@ -237,6 +243,40 @@ func (a *Agent) RegisterSkillTool(skillsManager *skills.Manager) {
 	a.logger.Info("Skill tool registered")
 }
 
+// EnableSubagents registers the spawn tool and optional completion notifications.
+func (a *Agent) EnableSubagents(notify subagent.NotifyFunc) {
+	if a == nil {
+		return
+	}
+	if a.subagents != nil {
+		if notify != nil {
+			a.subagents.SetNotifyFunc(notify)
+		}
+		return
+	}
+
+	manager := subagent.NewSubagentManager(a.logger, &subagentAgentAdapter{agent: a}, 10)
+	if notify != nil {
+		manager.SetNotifyFunc(notify)
+	}
+
+	a.subagents = manager
+	if _, exists := a.tools.Get("spawn"); !exists {
+		a.tools.MustRegister(tools.NewSpawnTool(a.logger, manager))
+		a.logger.Info("Spawn tool registered")
+	}
+}
+
+// DisableSubagents stops subagent workers. Primarily used by tests.
+func (a *Agent) DisableSubagents() {
+	if a == nil || a.subagents == nil {
+		return
+	}
+
+	a.subagents.Stop()
+	a.subagents = nil
+}
+
 // Chat processes a user message and returns the agent's response.
 // It handles tool calls and iterates until the agent produces a final response.
 func (a *Agent) Chat(ctx context.Context, sess SessionInterface, userMessage string) (string, error) {
@@ -320,6 +360,9 @@ func (a *Agent) chatWithProviderModelDetailed(
 	fallback []string,
 	promptCtx PromptContext,
 ) (string, ChatRouteResult, error) {
+	ctx = context.WithValue(ctx, promptContextChannelKey, strings.TrimSpace(promptCtx.Channel))
+	ctx = context.WithValue(ctx, promptContextSessionKey, strings.TrimSpace(promptCtx.SessionID))
+
 	orchestrator, err := a.resolveOrchestrator()
 	if err != nil {
 		return "", ChatRouteResult{}, err
@@ -892,12 +935,56 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 		}
 	}
 
+	if toolCall.Name == "spawn" {
+		ctx = tools.WithSpawnContext(
+			ctx,
+			ctxStringValue(ctx, promptContextChannelKey),
+			ctxStringValue(ctx, promptContextSessionKey),
+		)
+	}
+
 	result, err := a.tools.Execute(ctx, toolCall.Name, toolCall.Arguments)
 	if err != nil {
 		return "", err
 	}
 
 	return result, nil
+}
+
+type promptContextKey string
+
+const (
+	promptContextChannelKey promptContextKey = "prompt_channel"
+	promptContextSessionKey promptContextKey = "prompt_session_id"
+)
+
+func ctxStringValue(ctx context.Context, key promptContextKey) string {
+	if ctx == nil {
+		return ""
+	}
+	value, _ := ctx.Value(key).(string)
+	return value
+}
+
+func (a *subagentAgentAdapter) Chat(ctx context.Context, message string) (string, error) {
+	if a == nil || a.agent == nil {
+		return "", fmt.Errorf("agent adapter is nil")
+	}
+
+	sess := &subagentSession{messages: make([]Message, 0, 8)}
+	return a.agent.Chat(ctx, sess, message)
+}
+
+type subagentSession struct {
+	messages []Message
+}
+
+func (s *subagentSession) GetMessages() []Message {
+	return s.messages
+}
+
+func (s *subagentSession) AddMessage(msg Message) {
+	s.messages = append(s.messages, msg)
 }
 
 // convertToProviderMessages converts agent messages to provider format.

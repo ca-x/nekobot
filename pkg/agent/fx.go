@@ -7,6 +7,7 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"nekobot/pkg/approval"
+	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
@@ -17,8 +18,29 @@ import (
 	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/subagent"
 	"nekobot/pkg/toolsessions"
 )
+
+type busNotificationSender struct {
+	bus bus.Bus
+}
+
+func (s busNotificationSender) SendNotification(msg *subagent.Notification) error {
+	if msg == nil {
+		return nil
+	}
+
+	return s.bus.SendOutbound(&bus.Message{
+		ID:        msg.ID,
+		ChannelID: msg.Channel,
+		SessionID: msg.ChatID,
+		Type:      bus.MessageTypeText,
+		Content:   msg.Content,
+		Data:      msg.Data,
+		Timestamp: msg.Timestamp,
+	})
+}
 
 // Module provides agent for fx dependency injection.
 var Module = fx.Module("agent",
@@ -33,6 +55,7 @@ type provideAgentDeps struct {
 	SkillsMgr     *skills.Manager
 	ProcessMgr    *process.Manager
 	ApprovalMgr   *approval.Manager
+	Bus           bus.Bus
 	ToolSessMgr   *toolsessions.Manager `optional:"true"`
 	LC            fx.Lifecycle
 	ProviderStore *providerstore.Manager `optional:"true"`
@@ -109,6 +132,11 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 
 	// Register skill tool
 	agent.RegisterSkillTool(skillsMgr)
+	agent.EnableSubagents(func(task *subagent.SubagentTask) {
+		if err := subagent.SendTaskNotification(busNotificationSender{bus: deps.Bus}, task); err != nil {
+			log.Warn("Subagent notification failed", zap.Error(err))
+		}
+	})
 
 	orchestrator := strings.TrimSpace(strings.ToLower(cfg.Agents.Defaults.Orchestrator))
 	if orchestrator == "" {
@@ -130,6 +158,7 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
+			agent.DisableSubagents()
 			log.Info("Agent shutting down")
 			return nil
 		},

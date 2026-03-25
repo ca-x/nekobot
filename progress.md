@@ -2,6 +2,51 @@
 
 ## 2026-03-25
 
+- Implemented subagent completion notification flow and spawn context propagation:
+  - Added `pkg/subagent` notification payload + outbound sender abstraction so finished tasks can render origin-channel notifications without coupling the package to the bus implementation.
+  - Wired agent startup to enable subagents and bridge notifications into the message bus outbound path.
+  - Registered the `spawn` tool in agent runtime and propagated channel/session route context into spawn tool execution.
+  - Updated direct channel agent call sites (Telegram / ServerChan / WeChat) to use `ChatWithPromptContext` so tool execution has origin channel/session metadata.
+- Added regression tests for:
+  - subagent notification rendering/sending (`pkg/subagent/notify_test.go`)
+  - spawn context route propagation (`pkg/tools/spawn_test.go`)
+  - agent spawn tool registration (`pkg/agent/agent_test.go`)
+- Verification run:
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./pkg/subagent ./pkg/tools ./pkg/agent` passed.
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./...` passed.
+- Updated planning artifacts after completing this feature:
+  - marked `Subagent 完成通知真正回推 origin channel` complete in `task_plan.md`
+  - marked Batch B `Subagent origin notify 接线` complete
+
+- Re-audited `nekobot` against current code, `~/code/goclaw`, and `~/code/gua`, then rewrote the task backlog to distinguish completed baseline vs actual remaining gaps.
+- Cleared stale backlog items that are already implemented:
+  - `/gateway restart` and `/gateway reload` are implemented in `pkg/gateway/controller.go`.
+  - memory hybrid text similarity already exists in `pkg/memory/store.go`.
+  - skills version/tool comparison already exists in `pkg/skills/eligibility.go`.
+  - cron `at` / `every` / `delete_after_run` / `run-now` already exist in `pkg/cron/*`, WebUI, and CLI.
+- Confirmed current stable baseline now includes:
+  - Web-first runtime admin for prompts / tool sessions / QMD / skills runtime status
+  - provider fallback + cooldown + route override
+  - session history sanitize / safe history / context compression
+  - multi-path skills with snapshots/versioning
+- Added new migration backlog sourced from `goclaw`:
+  - general thread/conversation binding layer
+  - memory quality pack (MMR / temporal decay / citations / cache)
+  - gateway control-plane hardening
+  - browser dual-mode session and advanced extraction
+  - OAuth credential manager
+- Added new migration backlog sourced from `gua`:
+  - user-scoped external agent runtime foundation
+  - permission / elicitation bridge for external agents
+  - WeChat presenter and attachment-output pipeline
+  - runtime prompt detection / tmux-style interactive control
+  - channel interaction model for weak-interaction platforms
+- Updated `task_plan.md` to reflect:
+  - completed capabilities
+  - real unfinished gaps
+  - new Batch A-E execution order
+  - rule that each completed feature must be committed and pushed individually
+
 - Added runtime-backed prompt management with Ent schemas for `prompt` and `prompt_binding`, including CRUD, binding resolution, and render helpers in `pkg/prompts`.
 - Wired prompt manager into FX/runtime startup and exposed WebUI prompt APIs with server-side tests in `pkg/webui/server_prompts_test.go`.
 - Added frontend Prompts page and `usePrompts` hook, plus supporting textarea component and i18n entries.

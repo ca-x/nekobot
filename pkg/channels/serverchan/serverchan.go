@@ -318,7 +318,12 @@ func (c *Channel) processUpdate(update Update) {
 	defer cancel()
 
 	sess := &simpleSession{messages: make([]agent.Message, 0, 8)}
-	reply, err := c.agent.Chat(ctx, sess, content)
+	reply, err := c.agent.ChatWithPromptContext(ctx, sess, content, agent.PromptContext{
+		Channel:   c.ID(),
+		SessionID: chatID,
+		UserID:    userID,
+		Username:  username,
+	})
 	if err != nil {
 		c.log.Error("ServerChan agent chat failed", zap.Error(err))
 		_ = c.sendMessage(chatID, "❌ 抱歉，处理消息时出现错误。", false)

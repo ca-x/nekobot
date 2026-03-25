@@ -328,6 +328,30 @@ func TestAgentRegistersMemoryToolWhenSemanticMemoryEnabled(t *testing.T) {
 	}
 }
 
+func TestEnableSubagentsRegistersSpawnTool(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	ag.EnableSubagents(nil)
+	defer ag.DisableSubagents()
+
+	if _, ok := ag.tools.Get("spawn"); !ok {
+		t.Fatal("expected spawn tool to be registered")
+	}
+}
+
 func TestBuildSystemPrompt_UsesCurrentTimePlaceholderReplacement(t *testing.T) {
 	workspace := t.TempDir()
 	cb := NewContextBuilderWithMemory(workspace, promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend()))

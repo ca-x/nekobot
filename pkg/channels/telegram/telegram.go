@@ -486,7 +486,12 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 	agentInput := c.applyUserProfile(context.Background(), busMsg.UserID, content)
 
 	// Process with agent
-	response, err := c.agent.Chat(ctx, sess, agentInput)
+	response, err := c.agent.ChatWithPromptContext(ctx, sess, agentInput, agent.PromptContext{
+		Channel:   c.ID(),
+		SessionID: busMsg.SessionID,
+		UserID:    busMsg.UserID,
+		Username:  busMsg.Username,
+	})
 	if err != nil {
 		c.log.Error("Agent chat failed", zap.Error(err))
 

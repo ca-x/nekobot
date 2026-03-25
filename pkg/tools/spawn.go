@@ -19,12 +19,25 @@ type SpawnTool struct {
 	currentChat string
 }
 
+type spawnContextKey string
+
+const (
+	spawnContextChannelKey spawnContextKey = "channel"
+	spawnContextChatKey    spawnContextKey = "chat"
+)
+
 // NewSpawnTool creates a new spawn tool.
 func NewSpawnTool(log *logger.Logger, manager *subagent.SubagentManager) *SpawnTool {
 	return &SpawnTool{
 		log:     log,
 		manager: manager,
 	}
+}
+
+// WithSpawnContext stores origin routing for the spawn tool.
+func WithSpawnContext(ctx context.Context, channel, chatID string) context.Context {
+	ctx = context.WithValue(ctx, spawnContextChannelKey, strings.TrimSpace(channel))
+	return context.WithValue(ctx, spawnContextChatKey, strings.TrimSpace(chatID))
 }
 
 // SetCurrent sets the current channel and chat context.
@@ -113,7 +126,8 @@ func (t *SpawnTool) spawn(ctx context.Context, params map[string]interface{}) (s
 		zap.String("task", task[:min(len(task), 100)]),
 		zap.String("label", label))
 
-	taskID, err := t.manager.Spawn(ctx, task, label, t.currentChan, t.currentChat)
+	channel, chatID := t.routeFromContext(ctx)
+	taskID, err := t.manager.Spawn(ctx, task, label, channel, chatID)
 	if err != nil {
 		return "", fmt.Errorf("failed to spawn subagent: %w", err)
 	}
@@ -224,3 +238,20 @@ func (t *SpawnTool) cancel(params map[string]interface{}) (string, error) {
 	return fmt.Sprintf("Task %s cancelled successfully", taskID), nil
 }
 
+func (t *SpawnTool) routeFromContext(ctx context.Context) (string, string) {
+	channel := strings.TrimSpace(t.currentChan)
+	chatID := strings.TrimSpace(t.currentChat)
+
+	if ctx == nil {
+		return channel, chatID
+	}
+
+	if value, ok := ctx.Value(spawnContextChannelKey).(string); ok && strings.TrimSpace(value) != "" {
+		channel = strings.TrimSpace(value)
+	}
+	if value, ok := ctx.Value(spawnContextChatKey).(string); ok && strings.TrimSpace(value) != "" {
+		chatID = strings.TrimSpace(value)
+	}
+
+	return channel, chatID
+}

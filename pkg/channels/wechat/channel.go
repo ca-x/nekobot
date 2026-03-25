@@ -289,7 +289,12 @@ func (c *Channel) handleInbound(msg WeixinMessage) {
 	}()
 
 	sess := &simpleSession{messages: make([]agent.Message, 0, 8)}
-	reply, err := c.agent.Chat(ctx, sess, content)
+	reply, err := c.agent.ChatWithPromptContext(ctx, sess, content, agent.PromptContext{
+		Channel:   c.ID(),
+		SessionID: msg.FromUserID,
+		UserID:    msg.FromUserID,
+		Username:  msg.FromUserID,
+	})
 	if err != nil {
 		c.log.Error("WeChat agent chat failed", zap.Error(err))
 		reply = "❌ 抱歉，处理消息时出现错误。"
