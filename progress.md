@@ -2,6 +2,14 @@
 
 ## 2026-03-25
 
+- Added the first WeChat weak-interaction slice:
+  - wired command responses with `commands.InteractionTypeSkillInstallConfirm` into the WeChat channel.
+  - added pending interaction state per WeChat user and command-style confirmation handling for `/yes`, `/no`, and `/cancel`.
+  - aligned the confirmation execution path with Telegram/Discord by re-running the command with `__confirm_install__ <repo>` and `skill_install_confirmed_repo` metadata.
+  - added regression tests for action parsing, pending interaction expiry, confirm execution, deny handling, and prompt rendering.
+- Verification run:
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./pkg/channels/wechat ./pkg/wechat/... ./pkg/webui` passed.
+
 - Removed the obsolete channel-local WeChat protocol layer:
   - deleted `pkg/channels/wechat/protocol.go` after confirming channel runtime, send path, and WebUI QR bind flow all use shared `pkg/wechat` packages.
   - simplified `pkg/channels/wechat/channel.go` to keep only bot-backed channel glue instead of duplicated client/credential protocol state.

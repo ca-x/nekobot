@@ -43,6 +43,9 @@ type Channel struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	cursors map[string]int
+
+	pendingSkillMu       sync.Mutex
+	pendingSkillInstalls map[string]pendingSkillInstall
 }
 
 // NewChannel creates a new WeChat channel.
@@ -77,17 +80,18 @@ func NewChannel(
 	}
 
 	return &Channel{
-		log:      log,
-		config:   cfg,
-		bus:      b,
-		agent:    ag,
-		commands: cmdRegistry,
-		store:    store,
-		runtime:  runtimeControl,
-		renderer: richtext.NewBrowserMarkdownRenderer(log, filepath.Join(rootCfg.WorkspacePath(), "screenshots", "wechat")),
-		inbound:  wxmedia.NewInboundProcessor(wxmedia.NewDownloader(filepath.Join(rootCfg.DatabaseDir(), "wechat", "media")), transcriber),
-		bot:      bot,
-		cursors:  map[string]int{},
+		log:                  log,
+		config:               cfg,
+		bus:                  b,
+		agent:                ag,
+		commands:             cmdRegistry,
+		store:                store,
+		runtime:              runtimeControl,
+		renderer:             richtext.NewBrowserMarkdownRenderer(log, filepath.Join(rootCfg.WorkspacePath(), "screenshots", "wechat")),
+		inbound:              wxmedia.NewInboundProcessor(wxmedia.NewDownloader(filepath.Join(rootCfg.DatabaseDir(), "wechat", "media")), transcriber),
+		bot:                  bot,
+		cursors:              map[string]int{},
+		pendingSkillInstalls: map[string]pendingSkillInstall{},
 	}, nil
 }
 
@@ -204,6 +208,20 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 		}
 	}
 
+	if reply, handled, err := c.resolvePendingInteraction(msg, content); err != nil {
+		sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_ = c.sendReply(sendCtx, msg.FromUserID, "❌ "+err.Error(), msg.ContextToken)
+		return
+	} else if handled {
+		sendCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := c.sendReply(sendCtx, msg.FromUserID, reply, msg.ContextToken); err != nil {
+			c.log.Error("Failed to send WeChat interaction reply", zap.Error(err))
+		}
+		return
+	}
+
 	if c.agent == nil {
 		sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -259,6 +277,27 @@ func (c *Channel) handleCommand(msg wxtypes.WeixinMessage, content string) {
 	})
 	if err != nil {
 		_ = c.sendReply(ctx, msg.FromUserID, "❌ Command failed: "+err.Error(), msg.ContextToken)
+		return
+	}
+	if resp.Interaction != nil && resp.Interaction.Type == commands.InteractionTypeSkillInstallConfirm {
+		repo := strings.TrimSpace(resp.Interaction.Repo)
+		if repo == "" {
+			_ = c.sendReply(ctx, msg.FromUserID, resp.Content, msg.ContextToken)
+			return
+		}
+
+		commandName := cmdName
+		if custom := strings.TrimSpace(resp.Interaction.Command); custom != "" {
+			commandName = custom
+		}
+		c.setPendingSkillInstall(msg.FromUserID, pendingSkillInstall{
+			UserID:    msg.FromUserID,
+			Command:   commandName,
+			Repo:      repo,
+			CreatedAt: time.Now(),
+		})
+		prompt := formatWeChatPrompt(resp.Content, resp.Interaction)
+		_ = c.sendReply(ctx, msg.FromUserID, prompt, msg.ContextToken)
 		return
 	}
 	_ = c.sendReply(ctx, msg.FromUserID, resp.Content, msg.ContextToken)
@@ -682,6 +721,34 @@ func newWeChatBot(creds *Credentials, store *CredentialStore) *wechatbot.Bot {
 	}
 
 	return wechatbot.NewBot(creds, opts...)
+}
+
+func (c *Channel) setPendingSkillInstall(userID string, pending pendingSkillInstall) {
+	c.pendingSkillMu.Lock()
+	defer c.pendingSkillMu.Unlock()
+	c.pendingSkillInstalls[strings.TrimSpace(userID)] = pending
+}
+
+func (c *Channel) getPendingSkillInstall(userID string) (pendingSkillInstall, bool) {
+	c.pendingSkillMu.Lock()
+	defer c.pendingSkillMu.Unlock()
+
+	key := strings.TrimSpace(userID)
+	pending, ok := c.pendingSkillInstalls[key]
+	if !ok {
+		return pendingSkillInstall{}, false
+	}
+	if time.Since(pending.CreatedAt) > 15*time.Minute {
+		delete(c.pendingSkillInstalls, key)
+		return pendingSkillInstall{}, false
+	}
+	return pending, true
+}
+
+func (c *Channel) clearPendingSkillInstall(userID string) {
+	c.pendingSkillMu.Lock()
+	defer c.pendingSkillMu.Unlock()
+	delete(c.pendingSkillInstalls, strings.TrimSpace(userID))
 }
 
 type simpleSession struct {
