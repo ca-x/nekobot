@@ -279,6 +279,36 @@ func TestPersistChatRoutingRejectsUnknownProvider(t *testing.T) {
 	}
 }
 
+func TestPersistChatRoutingAcceptsProviderGroupTargets(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Providers = []config.ProviderProfile{
+		{Name: "primary", ProviderKind: "openai"},
+		{Name: "backup", ProviderKind: "openai"},
+	}
+	cfg.Agents.Defaults.ProviderGroups = []config.ProviderGroupConfig{
+		{
+			Name:     "pool-a",
+			Strategy: "round_robin",
+			Members:  []string{"primary", "backup"},
+		},
+	}
+
+	s := &Server{
+		config: cfg,
+	}
+
+	if err := s.persistChatRouting("pool-a", "gpt-4.1", []string{"backup", "pool-a"}); err != nil {
+		t.Fatalf("persistChatRouting failed for provider group: %v", err)
+	}
+
+	if cfg.Agents.Defaults.Provider != "pool-a" {
+		t.Fatalf("expected provider group to be saved, got %q", cfg.Agents.Defaults.Provider)
+	}
+	if !reflect.DeepEqual(cfg.Agents.Defaults.Fallback, []string{"backup", "pool-a"}) {
+		t.Fatalf("expected fallback to keep provider group target, got %v", cfg.Agents.Defaults.Fallback)
+	}
+}
+
 func TestPersistChatRoutingUpdatesRouteFields(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Providers = []config.ProviderProfile{

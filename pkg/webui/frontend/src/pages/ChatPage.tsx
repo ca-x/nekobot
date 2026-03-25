@@ -25,12 +25,19 @@ interface ProviderInfo {
   models?: string[];
 }
 
+interface ProviderGroupInfo {
+  name: string;
+  strategy?: string;
+  members?: string[];
+}
+
 interface ConfigData {
   agents?: {
     defaults?: {
       provider?: string;
       model?: string;
       fallback?: string[];
+      provider_groups?: ProviderGroupInfo[];
     };
   };
 }
@@ -38,6 +45,12 @@ interface ConfigData {
 interface ModelEntry {
   provider: string;
   model: string;
+}
+
+interface RouteTarget {
+  name: string;
+  type: 'provider' | 'group';
+  strategy?: string;
 }
 
 const EMPTY_VALUE = '__default__';
@@ -107,13 +120,21 @@ function useAppConfig() {
 function buildModelList(
   providers: ProviderInfo[],
   config: ConfigData | undefined,
-): { models: ModelEntry[]; defaultProvider: string; defaultModel: string; defaultFallback: string[] } {
+): {
+  models: ModelEntry[];
+  defaultProvider: string;
+  defaultModel: string;
+  defaultFallback: string[];
+  routeTargets: RouteTarget[];
+} {
   const models: ModelEntry[] = [];
   const seen = new Set<string>();
   const defaults = config?.agents?.defaults;
   const defaultProvider = defaults?.provider?.trim() || '';
   const defaultModel = defaults?.model?.trim() || '';
   const defaultFallback = defaults?.fallback || [];
+  const routeTargets: RouteTarget[] = [];
+  const targetSeen = new Set<string>();
 
   const add = (provider: string, model: string) => {
     const normalizedProvider = provider.trim() || 'default';
@@ -129,8 +150,18 @@ function buildModelList(
     models.push({ provider: normalizedProvider, model: normalizedModel });
   };
 
+  const addRouteTarget = (target: RouteTarget) => {
+    const name = target.name.trim();
+    if (!name || targetSeen.has(name)) {
+      return;
+    }
+    targetSeen.add(name);
+    routeTargets.push({ ...target, name });
+  };
+
   add(defaultProvider, defaultModel);
   for (const provider of providers) {
+    addRouteTarget({ name: provider.name, type: 'provider' });
     if (provider.default_model) {
       add(provider.name, provider.default_model);
     }
@@ -139,7 +170,18 @@ function buildModelList(
     }
   }
 
-  return { models, defaultProvider, defaultModel, defaultFallback };
+  for (const group of defaults?.provider_groups || []) {
+    if (!group?.name?.trim()) {
+      continue;
+    }
+    addRouteTarget({
+      name: group.name,
+      type: 'group',
+      strategy: group.strategy?.trim() || '',
+    });
+  }
+
+  return { models, defaultProvider, defaultModel, defaultFallback, routeTargets };
 }
 
 function MessageBubble({ message }: { message: ChatMessage }) {
@@ -232,20 +274,27 @@ export default function ChatPage() {
     isAwaitingReply,
   } = useChat();
 
-  const { models, defaultProvider, defaultModel, defaultFallback } = buildModelList(providers, config);
+  const { models, defaultProvider, defaultModel, defaultFallback, routeTargets } = buildModelList(providers, config);
   const [selectedProvider, setSelectedProvider] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [customModel, setCustomModel] = useState('');
   const [fallbackInput, setFallbackInput] = useState('');
   const [chatInput, setChatInput] = useState('');
   const scrollEndRef = useRef<HTMLDivElement>(null);
+  const routeTargetMap = useMemo(
+    () => new Map(routeTargets.map((target) => [target.name, target])),
+    [routeTargets],
+  );
 
   const filteredModels = useMemo(() => {
     if (!selectedProvider) {
       return models;
     }
+    if (routeTargetMap.get(selectedProvider)?.type === 'group') {
+      return models;
+    }
     return models.filter((entry) => entry.provider === selectedProvider);
-  }, [models, selectedProvider]);
+  }, [models, routeTargetMap, selectedProvider]);
 
   useEffect(() => {
     if (routeSettings.provider || routeSettings.model || routeSettings.fallback.length > 0) {
@@ -419,9 +468,11 @@ export default function ChatPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={EMPTY_VALUE}>{t('chatRouteAuto')}</SelectItem>
-                  {providers.map((provider) => (
-                    <SelectItem key={provider.name} value={provider.name}>
-                      {provider.name}
+                  {routeTargets.map((target) => (
+                    <SelectItem key={target.name} value={target.name}>
+                      {target.type === 'group'
+                        ? `${target.name} (${t('chatRouteTargetGroup')})`
+                        : target.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

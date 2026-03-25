@@ -709,7 +709,7 @@ func (s *Server) ensureRoutingProvidersValid() error {
 	changed := false
 
 	defaultProvider := strings.TrimSpace(s.config.Agents.Defaults.Provider)
-	if defaultProvider != "" && !s.hasProvider(defaultProvider) {
+	if defaultProvider != "" && !s.hasRoutingTarget(defaultProvider) {
 		s.config.Agents.Defaults.Provider = ""
 		changed = true
 	}
@@ -724,7 +724,7 @@ func (s *Server) ensureRoutingProvidersValid() error {
 		if trimmed == "" {
 			continue
 		}
-		if !s.hasProvider(trimmed) {
+		if !s.hasRoutingTarget(trimmed) {
 			changed = true
 			continue
 		}
@@ -3767,12 +3767,33 @@ func (s *Server) hasProvider(name string) bool {
 	return false
 }
 
+func (s *Server) hasProviderGroup(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return false
+	}
+	for _, group := range s.config.Agents.Defaults.ProviderGroups {
+		if strings.TrimSpace(group.Name) == trimmed {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) hasRoutingTarget(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return false
+	}
+	return s.hasProvider(trimmed) || s.hasProviderGroup(trimmed)
+}
+
 func (s *Server) persistChatRouting(provider, model string, fallback []string) error {
 	changed := false
 
 	if provider != "" {
-		if !s.hasProvider(provider) {
-			return fmt.Errorf("provider not found: %s", provider)
+		if !s.hasRoutingTarget(provider) {
+			return fmt.Errorf("routing target not found: %s", provider)
 		}
 	}
 	if strings.TrimSpace(s.config.Agents.Defaults.Provider) != provider {
@@ -3785,8 +3806,8 @@ func (s *Server) persistChatRouting(provider, model string, fallback []string) e
 	}
 
 	for _, name := range fallback {
-		if !s.hasProvider(name) {
-			return fmt.Errorf("fallback provider not found: %s", name)
+		if !s.hasRoutingTarget(name) {
+			return fmt.Errorf("fallback routing target not found: %s", name)
 		}
 	}
 	if !reflect.DeepEqual(s.config.Agents.Defaults.Fallback, fallback) {
