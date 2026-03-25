@@ -27,15 +27,16 @@ import (
 
 // Channel implements WeChat channel via WeChat iLink.
 type Channel struct {
-	log      *logger.Logger
-	config   config.WeChatConfig
-	bus      bus.Bus
-	agent    *agent.Agent
-	commands *commands.Registry
-	store    *CredentialStore
-	runtime  *ControlService
-	renderer richtext.MarkdownImageRenderer
-	inbound  *wxmedia.InboundProcessor
+	log       *logger.Logger
+	config    config.WeChatConfig
+	bus       bus.Bus
+	agent     *agent.Agent
+	commands  *commands.Registry
+	store     *CredentialStore
+	runtime   *ControlService
+	renderer  richtext.MarkdownImageRenderer
+	inbound   *wxmedia.InboundProcessor
+	workspace string
 
 	mu      sync.RWMutex
 	bot     *wechatbot.Bot
@@ -89,6 +90,7 @@ func NewChannel(
 		runtime:              runtimeControl,
 		renderer:             richtext.NewBrowserMarkdownRenderer(log, filepath.Join(rootCfg.WorkspacePath(), "screenshots", "wechat")),
 		inbound:              wxmedia.NewInboundProcessor(wxmedia.NewDownloader(filepath.Join(rootCfg.DatabaseDir(), "wechat", "media")), transcriber),
+		workspace:            rootCfg.WorkspacePath(),
 		bot:                  bot,
 		cursors:              map[string]int{},
 		pendingSkillInstalls: map[string]pendingSkillInstall{},
@@ -238,7 +240,7 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 	defer stopTyping()
 
 	sess := &simpleSession{messages: make([]agent.Message, 0, 8)}
-	reply, err := c.agent.ChatWithPromptContext(ctx, sess, content, agent.PromptContext{
+	reply, err := c.agent.ChatWithPromptContext(ctx, sess, buildWeChatAgentInput(content, c.workspace), agent.PromptContext{
 		Channel:   c.ID(),
 		SessionID: msg.FromUserID,
 		UserID:    msg.FromUserID,

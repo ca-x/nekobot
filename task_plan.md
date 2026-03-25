@@ -75,6 +75,7 @@
 - [x] WeChat 通道切换到共享 `pkg/wechat` SDK，并补齐本地文件路径附件发送。
 - [x] 删除 `pkg/channels/wechat/protocol.go` 本地重复协议层，微信通道仅保留 channel/store/runtime 胶水。
 - [x] WeChat 弱交互协议首批落地：技能安装确认支持 `/yes` `/no` `/cancel`。
+- [x] WeChat presenter 输出规则注入 agent 输入，补齐“纯文本/本地文件路径附件”引导。
 
 ## 当前项目评估
 
@@ -101,7 +102,7 @@
 - [ ] `pkg/wechat` 目前仍缺 `gua/libc/wechat` 的完整 SDK 分层，微信通道能力还主要堆在 `pkg/channels/wechat/*` 中。
 - [x] WeChat 通道发送侧已补齐基于共享 SDK 的附件上传/发送链路，可将回复中的本地文件路径提升为平台附件消息。
 - [x] WeChat 通道本地协议/登录/client 重复实现已下线，WebUI 与 channel 已统一依赖共享 `pkg/wechat` SDK。
-- [ ] WeChat Presenter / 交互协议仍未完整迁移，当前仅完成技能安装确认的 `/yes` `/no` `/cancel` 闭环，`/select N` 等更通用交互尚未接入更广泛场景。
+- [ ] WeChat Presenter / 交互协议仍未完整迁移，当前已完成输出规则注入与技能安装确认的 `/yes` `/no` `/cancel` 闭环，`/select N` 等更通用交互尚未接入更广泛场景。
 
 ## Active Backlog（含进度）
 
@@ -169,7 +170,7 @@
   - 来源：`gua/agent/claude/session.go`、`gua/agent/claude/mcp.go`、`gua/server/server.go`。
   - 位置：新建 `pkg/externalagent/*` 或等价模块。
 - [ ] **WeChat Presenter / 交互协议与附件输出管线**
-  - 现状：附件输出已完成；交互协议方面已补齐技能安装确认的 `/yes` `/no` `/cancel` 闭环，但 `/select N` 等更通用场景还未接入。
+  - 现状：附件输出已完成；presenter 输出规则已注入 agent 输入；交互协议方面已补齐技能安装确认的 `/yes` `/no` `/cancel` 闭环，但 `/select N` 等更通用场景还未接入。
   - 目标：继续增强弱交互通道上的可操作性。
   - 来源：`gua/channel/wechat/presenter.go`、`gua/server/formatter.go`。
   - 位置：`pkg/channels/wechat/*`、公共 formatter 层。

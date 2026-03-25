@@ -2,6 +2,13 @@
 
 ## 2026-03-25
 
+- Added WeChat presenter-style output guidance for agent turns:
+  - prepended WeChat-specific output rules before user messages so the agent is explicitly told to avoid Markdown and prefer local absolute file paths for rich content.
+  - included workspace-root hints in the injected WeChat instructions so generated attachment files have a stable preferred location.
+  - added regression tests for presenter prompt assembly.
+- Verification run:
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./pkg/channels/wechat ./pkg/wechat/... ./pkg/webui` passed.
+
 - Added the first WeChat weak-interaction slice:
   - wired command responses with `commands.InteractionTypeSkillInstallConfirm` into the WeChat channel.
   - added pending interaction state per WeChat user and command-style confirmation handling for `/yes`, `/no`, and `/cancel`.
