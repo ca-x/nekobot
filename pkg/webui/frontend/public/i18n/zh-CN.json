@@ -46,6 +46,8 @@
   "chatNoFallback": "未设置回退供应商",
   "chatCustomModelHint": "留空则跟随上方选择的模型。",
   "chatFallbackHint": "例如 openai, gemini, claude",
+  "chatFallbackSelectHint": "直接选择 provider 或 provider 池，后端会按这里的顺序尝试回退。",
+  "chatFallbackEmpty": "还没有选择回退目标。",
   "chatTranscriptTitle": "对话区",
   "chatTranscriptSubtitle": "更聚焦的测试工作区，用来验证提示词、供应商和模型切换效果。",
   "send": "发送",

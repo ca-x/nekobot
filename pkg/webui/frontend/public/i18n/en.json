@@ -46,6 +46,8 @@
   "chatNoFallback": "No fallback providers",
   "chatCustomModelHint": "Leave empty to follow the selected model.",
   "chatFallbackHint": "openai, gemini, claude",
+  "chatFallbackSelectHint": "Select providers or pools in the order the backend should try them after the primary route.",
+  "chatFallbackEmpty": "No fallback targets selected.",
   "chatTranscriptTitle": "Conversation",
   "chatTranscriptSubtitle": "A cleaner workspace for testing prompts, providers, and models.",
   "send": "Send",

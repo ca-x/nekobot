@@ -46,6 +46,8 @@
   "chatNoFallback": "フォールバックなし",
   "chatCustomModelHint": "空欄なら上で選んだモデルを使います。",
   "chatFallbackHint": "例: openai, gemini, claude",
+  "chatFallbackSelectHint": "provider または provider プールを選ぶと、バックエンドがこの順序でフォールバックを試します。",
+  "chatFallbackEmpty": "フォールバック先はまだ選択されていません。",
   "chatTranscriptTitle": "会話",
   "chatTranscriptSubtitle": "プロンプト、プロバイダー、モデル切替を落ち着いて確認できる作業スペースです。",
   "send": "送信",

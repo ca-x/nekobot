@@ -278,7 +278,7 @@ export default function ChatPage() {
   const [selectedProvider, setSelectedProvider] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [customModel, setCustomModel] = useState('');
-  const [fallbackInput, setFallbackInput] = useState('');
+  const [selectedFallbackTargets, setSelectedFallbackTargets] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState('');
   const scrollEndRef = useRef<HTMLDivElement>(null);
   const routeTargetMap = useMemo(
@@ -300,22 +300,22 @@ export default function ChatPage() {
     if (routeSettings.provider || routeSettings.model || routeSettings.fallback.length > 0) {
       return;
     }
-    if (selectedProvider || selectedModel || customModel || fallbackInput.trim()) {
+    if (selectedProvider || selectedModel || customModel || selectedFallbackTargets.length > 0) {
       return;
     }
     setSelectedProvider(defaultProvider);
     setSelectedModel(defaultModel);
     setCustomModel(defaultModel);
-    setFallbackInput(defaultFallback.join(', '));
+    setSelectedFallbackTargets(defaultFallback);
   }, [
     customModel,
     defaultFallback,
     defaultModel,
     defaultProvider,
-    fallbackInput,
     routeSettings.fallback,
     routeSettings.model,
     routeSettings.provider,
+    selectedFallbackTargets.length,
     selectedModel,
     selectedProvider,
   ]);
@@ -327,8 +327,17 @@ export default function ChatPage() {
     setSelectedProvider(routeSettings.provider);
     setSelectedModel(routeSettings.model);
     setCustomModel(routeSettings.model);
-    setFallbackInput(routeSettings.fallback.join(', '));
+    setSelectedFallbackTargets(routeSettings.fallback);
   }, [routeSettings]);
+
+  useEffect(() => {
+    if (!selectedProvider) {
+      return;
+    }
+    setSelectedFallbackTargets((current) =>
+      current.filter((target) => target !== selectedProvider),
+    );
+  }, [selectedProvider]);
 
   useEffect(() => {
     scrollEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -337,12 +346,10 @@ export default function ChatPage() {
   const messageCount = messages.filter((message) => message.role === 'user' || message.role === 'assistant').length;
   const activeModel = customModel.trim() || selectedModel.trim();
   const activeProvider = selectedProvider.trim();
-  const activeFallback = fallbackInput
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const activeFallback = selectedFallbackTargets.filter((target) => target.trim().length > 0);
   const selectedModelEntry = findModelEntry(filteredModels, selectedProvider, selectedModel);
   const selectedModelValue = selectedModelEntry ? encodeModelValue(selectedModelEntry) : EMPTY_VALUE;
+  const fallbackRouteTargets = routeTargets.filter((target) => target.name !== activeProvider);
 
   function handleProviderChange(value: string) {
     const provider = fromSelectValue(value);
@@ -372,6 +379,14 @@ export default function ChatPage() {
     if (!selectedProvider) {
       setSelectedProvider(entry.provider === 'default' ? '' : entry.provider);
     }
+  }
+
+  function handleToggleFallbackTarget(targetName: string) {
+    setSelectedFallbackTargets((current) =>
+      current.includes(targetName)
+        ? current.filter((item) => item !== targetName)
+        : [...current, targetName],
+    );
   }
 
   function handleSend() {
@@ -514,12 +529,52 @@ export default function ChatPage() {
               <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 {t('fallbackProviders')}
               </label>
-              <Input
-                className="h-11 rounded-2xl border-white bg-white/80"
-                placeholder={t('chatFallbackHint')}
-                value={fallbackInput}
-                onChange={(event) => setFallbackInput(event.target.value)}
-              />
+              <div className="space-y-3 rounded-[1.4rem] border border-white bg-white/80 p-3">
+                <p className="text-sm text-muted-foreground">{t('chatFallbackSelectHint')}</p>
+                {activeFallback.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {activeFallback.map((targetName, index) => (
+                      <button
+                        key={targetName}
+                        type="button"
+                        onClick={() => handleToggleFallbackTarget(targetName)}
+                        className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
+                      >
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] text-[hsl(var(--brand-700))]">
+                          {index + 1}
+                        </span>
+                        {targetName}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
+                    {t('chatFallbackEmpty')}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {fallbackRouteTargets.map((target) => {
+                    const selected = activeFallback.includes(target.name);
+                    return (
+                      <button
+                        key={target.name}
+                        type="button"
+                        onClick={() => handleToggleFallbackTarget(target.name)}
+                        className={cn(
+                          'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                          selected
+                            ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
+                            : 'border-[hsl(var(--gray-200))] bg-white text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
+                        )}
+                      >
+                        {target.type === 'group'
+                          ? `${target.name} (${t('chatRouteTargetGroup')})`
+                          : target.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-2 pt-2">
