@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Header from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -6,17 +6,27 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  useCreateMarketplaceSnapshot,
+  useDeleteMarketplaceSnapshot,
   useDisableMarketplaceSkill,
   useEnableMarketplaceSkill,
   useInstallMarketplaceSkill,
   useInstallMarketplaceSkillDependencies,
   useInstalledMarketplaceSkills,
+  useMarketplaceInventory,
   useMarketplaceSkillContent,
   useMarketplaceSkillItem,
+  useMarketplaceSnapshots,
   useMarketplaceSkills,
+  useRepairWorkspace,
+  useRestoreMarketplaceSnapshot,
   useSearchMarketplaceSkills,
   type MarketplaceInstallResult,
+  type MarketplaceSnapshot,
   type MarketplaceSkill,
+  type MarketplaceSkillSource,
+  type WorkspaceStatus,
+  useWorkspaceStatus,
 } from '@/hooks/useMarketplace';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -26,13 +36,19 @@ import {
   Download,
   FileCode2,
   FileText,
+  FolderCog,
+  FolderOpen,
   Pin,
+  RefreshCcw,
+  RotateCcw,
   Search,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  TimerReset,
   ToggleLeft,
   Wrench,
+  Zap,
 } from 'lucide-react';
 
 export default function MarketplacePage() {
@@ -42,11 +58,20 @@ export default function MarketplacePage() {
   const enableSkill = useEnableMarketplaceSkill();
   const disableSkill = useDisableMarketplaceSkill();
   const installDependencies = useInstallMarketplaceSkillDependencies();
+  const createSnapshot = useCreateMarketplaceSnapshot();
+  const restoreSnapshot = useRestoreMarketplaceSnapshot();
+  const deleteSnapshot = useDeleteMarketplaceSnapshot();
+  const repairWorkspace = useRepairWorkspace();
+  const { data: inventory } = useMarketplaceInventory();
+  const { data: snapshots } = useMarketplaceSnapshots();
+  const { data: workspaceStatus } = useWorkspaceStatus();
 
   const [query, setQuery] = useState('');
   const [remoteQuery, setRemoteQuery] = useState('');
   const [installSource, setInstallSource] = useState('');
   const [selectedSkillID, setSelectedSkillID] = useState<string | null>(null);
+  const [snapshotLabel, setSnapshotLabel] = useState('');
+  const [snapshotNote, setSnapshotNote] = useState('');
   const { data: remoteSearch, isFetching: isSearchingRemote } = useSearchMarketplaceSkills(remoteQuery);
 
   const marketplaceSkills = skills ?? [];
@@ -103,6 +128,22 @@ export default function MarketplacePage() {
   const readyCount = marketplaceSkills.filter((skill) => skill.eligible).length;
   const selectedInstallResults =
     installDependencies.data?.skill_id === selectedSkillID ? installDependencies.data.results : [];
+  const snapshotItems = snapshots?.snapshots ?? [];
+
+  const handleCreateSnapshot = () => {
+    createSnapshot.mutate(
+      {
+        label: snapshotLabel.trim() || undefined,
+        note: snapshotNote.trim() || undefined,
+      },
+      {
+        onSuccess: () => {
+          setSnapshotLabel('');
+          setSnapshotNote('');
+        },
+      },
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -226,6 +267,178 @@ export default function MarketplacePage() {
                 ? `Installed ${installSkill.data.source} to ${installSkill.data.target}`
                 : 'No install has been triggered in this session.'}
             </p>
+          </div>
+        </Card>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)_minmax(0,1fr)]">
+        <Card className="rounded-[28px] border-slate-200/80 bg-white/95 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                Workspace
+              </div>
+              <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                Treat the runtime workspace as a first-class dependency.
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Bootstrap status, daily memory log, and heartbeat state are visible here instead of hidden behind CLI setup.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-xl"
+              disabled={repairWorkspace.isPending}
+              onClick={() => repairWorkspace.mutate()}
+            >
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              {repairWorkspace.isPending ? 'Repairing…' : 'Repair workspace'}
+            </Button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <SkillInfoCard
+              icon={<FolderOpen className="h-4 w-4" />}
+              label="Workspace path"
+              value={workspaceStatus?.path || '-'}
+            />
+            <SkillInfoCard
+              icon={<FolderCog className="h-4 w-4" />}
+              label="Bootstrap"
+              value={workspaceStatus?.bootstrapped ? 'Ready' : 'Needs repair'}
+            />
+            <SkillInfoCard
+              icon={<FileText className="h-4 w-4" />}
+              label="Today log"
+              value={workspaceStatus?.today_log_exists ? 'Present' : 'Missing'}
+            />
+            <SkillInfoCard
+              icon={<Zap className="h-4 w-4" />}
+              label="Heartbeat state"
+              value={workspaceStatus?.heartbeat_state_exists ? 'Present' : 'Missing'}
+            />
+          </div>
+
+          <div className="mt-4 rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-4">
+            <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Bootstrap files</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(workspaceStatus?.bootstrap_files ?? []).map((name) => {
+                const missing = (workspaceStatus?.missing_bootstrap ?? []).includes(name);
+                return (
+                  <span
+                    key={name}
+                    className={cn(
+                      'rounded-full px-2.5 py-1 text-xs font-medium',
+                      missing
+                        ? 'border border-amber-200 bg-amber-50 text-amber-800'
+                        : 'bg-emerald-100 text-emerald-700',
+                    )}
+                  >
+                    {name}
+                  </span>
+                );
+              })}
+            </div>
+            <p className="mt-4 break-all text-xs leading-6 text-slate-500">
+              Daily log: {workspaceStatus?.today_log_path || '-'}
+            </p>
+          </div>
+        </Card>
+
+        <Card className="rounded-[28px] border-slate-200/80 bg-white/95 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                Skill sources
+              </div>
+              <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                Multi-path overrides are visible and auditable from Web.
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Later sources override earlier ones. This helps diagnose why a skill definition changed at runtime.
+              </p>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+              {inventory?.source_count ?? 0} sources
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <SkillMetric label="Writable dir" value={inventory?.writable_dir || '-'} muted={!inventory?.writable_dir} />
+            <SkillMetric label="Enabled" value={String(inventory?.enabled_count ?? 0)} />
+            <SkillMetric label="Always on" value={String(inventory?.always_count ?? 0)} />
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {(inventory?.sources ?? []).map((source) => (
+              <SkillSourceRow key={`${source.type}-${source.path}-${source.priority}`} source={source} />
+            ))}
+            {(inventory?.sources ?? []).length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
+                No skill sources reported by the backend.
+              </p>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card className="rounded-[28px] border-slate-200/80 bg-white/95 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                Snapshots
+              </div>
+              <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                Capture current skill state before experiments and restore it when needed.
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Useful before bulk installs, remote sync, or manual edits in the writable skill directory.
+              </p>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
+              {snapshotItems.length} saved
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            <Input
+              value={snapshotLabel}
+              onChange={(event) => setSnapshotLabel(event.target.value)}
+              placeholder="Snapshot label"
+              className="h-11 rounded-2xl"
+            />
+            <Input
+              value={snapshotNote}
+              onChange={(event) => setSnapshotNote(event.target.value)}
+              placeholder="Short note for this checkpoint"
+              className="h-11 rounded-2xl"
+            />
+            <Button
+              onClick={handleCreateSnapshot}
+              disabled={createSnapshot.isPending}
+              className="rounded-xl"
+            >
+              <TimerReset className="mr-2 h-4 w-4" />
+              {createSnapshot.isPending ? 'Creating…' : 'Create snapshot'}
+            </Button>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {snapshotItems.map((snapshot) => (
+              <SnapshotCard
+                key={snapshot.id}
+                snapshot={snapshot}
+                isRestoring={restoreSnapshot.isPending && restoreSnapshot.variables === snapshot.id}
+                isDeleting={deleteSnapshot.isPending && deleteSnapshot.variables === snapshot.id}
+                onRestore={(id) => restoreSnapshot.mutate(id)}
+                onDelete={(id) => deleteSnapshot.mutate(id)}
+              />
+            ))}
+            {snapshotItems.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
+                No snapshots yet. Create one before the next large skill change.
+              </p>
+            ) : null}
           </div>
         </Card>
       </section>
@@ -775,7 +988,7 @@ function SkillInfoCard({
   label,
   value,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string;
 }) {
@@ -785,7 +998,90 @@ function SkillInfoCard({
         {icon}
         {label}
       </div>
-      <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
+      <div className="mt-2 break-all text-sm font-semibold text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function SkillSourceRow({ source }: { source: MarketplaceSkillSource }) {
+  return (
+    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-white">
+          {source.type}
+        </span>
+        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] text-slate-600">
+          priority {source.priority}
+        </span>
+        <span
+          className={cn(
+            'rounded-full px-2.5 py-1 text-[11px] font-medium',
+            source.exists ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
+          )}
+        >
+          {source.exists ? 'Available' : 'Missing'}
+        </span>
+      </div>
+      <p className="mt-3 break-all font-mono text-xs leading-6 text-slate-700">{source.path}</p>
+    </div>
+  );
+}
+
+function SnapshotCard({
+  snapshot,
+  isRestoring,
+  isDeleting,
+  onRestore,
+  onDelete,
+}: {
+  snapshot: MarketplaceSnapshot;
+  isRestoring: boolean;
+  isDeleting: boolean;
+  onRestore: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="rounded-[22px] border border-slate-200/80 bg-slate-50/70 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-semibold text-slate-900">
+              {snapshot.metadata.label || snapshot.id}
+            </span>
+            <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-slate-600">
+              {snapshot.skill_count} skills
+            </span>
+            <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-slate-600">
+              {snapshot.enabled_count} enabled
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">{snapshot.timestamp}</p>
+          {snapshot.metadata.note ? (
+            <p className="mt-2 text-sm leading-6 text-slate-600">{snapshot.metadata.note}</p>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded-xl"
+            disabled={isRestoring || isDeleting}
+            onClick={() => onRestore(snapshot.id)}
+          >
+            <RotateCcw className="mr-2 h-4 w-4" />
+            {isRestoring ? 'Restoring…' : 'Restore'}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded-xl"
+            disabled={isRestoring || isDeleting}
+            onClick={() => onDelete(snapshot.id)}
+          >
+            {isDeleting ? 'Deleting…' : 'Delete'}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

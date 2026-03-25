@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/skills"
+	"nekobot/pkg/workspace"
 )
 
 type stubRemoteRegistry struct {
@@ -610,5 +611,155 @@ func TestMarketplaceHandlers_Return404ForUnknownSkill(t *testing.T) {
 				t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
 			}
 		})
+	}
+}
+
+func TestMarketplaceHandlers_InventorySnapshotsAndWorkspace(t *testing.T) {
+	tmpDir := t.TempDir()
+	workspaceDir := filepath.Join(tmpDir, "workspace")
+	skillsDir := filepath.Join(workspaceDir, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills dir: %v", err)
+	}
+
+	skillPath := filepath.Join(skillsDir, "inventory-test.md")
+	skillContent := `---
+id: inventory-test
+name: Inventory Test
+description: Skill fixture for inventory and snapshot handlers
+version: 0.1.0
+author: test-suite
+enabled: true
+---
+Inventory body.
+`
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("write test skill: %v", err)
+	}
+
+	log := newTestLogger(t)
+	mgr := skills.NewManager(log, skillsDir, false)
+	if err := mgr.Discover(); err != nil {
+		t.Fatalf("discover skills: %v", err)
+	}
+
+	workspaceMgr := workspace.NewManager(workspaceDir, log)
+	s := &Server{
+		skillsMgr: mgr,
+		workspace: workspaceMgr,
+		logger:    log,
+	}
+	e := echo.New()
+
+	inventoryReq := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/inventory", nil)
+	inventoryRec := httptest.NewRecorder()
+	inventoryCtx := e.NewContext(inventoryReq, inventoryRec)
+	if err := s.handleGetMarketplaceInventory(inventoryCtx); err != nil {
+		t.Fatalf("inventory handler failed: %v", err)
+	}
+	if inventoryRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, inventoryRec.Code)
+	}
+
+	var inventoryPayload map[string]interface{}
+	if err := json.Unmarshal(inventoryRec.Body.Bytes(), &inventoryPayload); err != nil {
+		t.Fatalf("unmarshal inventory payload: %v", err)
+	}
+	if got, _ := inventoryPayload["writable_dir"].(string); got != skillsDir {
+		t.Fatalf("expected writable_dir %q, got %q", skillsDir, got)
+	}
+	sources, ok := inventoryPayload["sources"].([]interface{})
+	if !ok || len(sources) == 0 {
+		t.Fatalf("expected non-empty sources, got %+v", inventoryPayload["sources"])
+	}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/marketplace/skills/snapshots", strings.NewReader(`{"label":"before-change","note":"fixture"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	createCtx := e.NewContext(createReq, createRec)
+	if err := s.handleCreateMarketplaceSkillSnapshot(createCtx); err != nil {
+		t.Fatalf("create snapshot handler failed: %v", err)
+	}
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, createRec.Code)
+	}
+
+	var created map[string]interface{}
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created snapshot: %v", err)
+	}
+	snapshotID, _ := created["id"].(string)
+	if snapshotID == "" {
+		t.Fatalf("expected snapshot id in payload: %+v", created)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/snapshots", nil)
+	listRec := httptest.NewRecorder()
+	listCtx := e.NewContext(listReq, listRec)
+	if err := s.handleListMarketplaceSkillSnapshots(listCtx); err != nil {
+		t.Fatalf("list snapshots handler failed: %v", err)
+	}
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, listRec.Code)
+	}
+
+	restoreReq := httptest.NewRequest(http.MethodPost, "/api/marketplace/skills/snapshots/"+snapshotID+"/restore", nil)
+	restoreRec := httptest.NewRecorder()
+	restoreCtx := e.NewContext(restoreReq, restoreRec)
+	restoreCtx.SetPath("/api/marketplace/skills/snapshots/:id/restore")
+	restoreCtx.SetPathValues(echo.PathValues{{Name: "id", Value: snapshotID}})
+	if err := s.handleRestoreMarketplaceSkillSnapshot(restoreCtx); err != nil {
+		t.Fatalf("restore snapshot handler failed: %v", err)
+	}
+	if restoreRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, restoreRec.Code)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/marketplace/skills/snapshots/"+snapshotID, nil)
+	deleteRec := httptest.NewRecorder()
+	deleteCtx := e.NewContext(deleteReq, deleteRec)
+	deleteCtx.SetPath("/api/marketplace/skills/snapshots/:id")
+	deleteCtx.SetPathValues(echo.PathValues{{Name: "id", Value: snapshotID}})
+	if err := s.handleDeleteMarketplaceSkillSnapshot(deleteCtx); err != nil {
+		t.Fatalf("delete snapshot handler failed: %v", err)
+	}
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, deleteRec.Code)
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/workspace/status", nil)
+	statusRec := httptest.NewRecorder()
+	statusCtx := e.NewContext(statusReq, statusRec)
+	if err := s.handleGetWorkspaceStatus(statusCtx); err != nil {
+		t.Fatalf("workspace status handler failed: %v", err)
+	}
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, statusRec.Code)
+	}
+
+	var beforeRepair map[string]interface{}
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &beforeRepair); err != nil {
+		t.Fatalf("unmarshal workspace status payload: %v", err)
+	}
+	if bootstrapped, _ := beforeRepair["bootstrapped"].(bool); bootstrapped {
+		t.Fatalf("expected workspace to be unbootstrapped before repair")
+	}
+
+	repairReq := httptest.NewRequest(http.MethodPost, "/api/workspace/repair", nil)
+	repairRec := httptest.NewRecorder()
+	repairCtx := e.NewContext(repairReq, repairRec)
+	if err := s.handleRepairWorkspace(repairCtx); err != nil {
+		t.Fatalf("workspace repair handler failed: %v", err)
+	}
+	if repairRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, repairRec.Code)
+	}
+
+	var afterRepair map[string]interface{}
+	if err := json.Unmarshal(repairRec.Body.Bytes(), &afterRepair); err != nil {
+		t.Fatalf("unmarshal workspace repair payload: %v", err)
+	}
+	if bootstrapped, _ := afterRepair["bootstrapped"].(bool); !bootstrapped {
+		t.Fatalf("expected workspace to be bootstrapped after repair")
 	}
 }

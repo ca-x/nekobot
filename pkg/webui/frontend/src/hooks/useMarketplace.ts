@@ -87,12 +87,60 @@ interface MarketplaceToggleResponse {
   status: 'enabled' | 'disabled';
 }
 
+export interface MarketplaceSkillSource {
+  path: string;
+  priority: number;
+  type: string;
+  exists: boolean;
+  builtin: boolean;
+}
+
+export interface MarketplaceInventoryResponse {
+  writable_dir: string;
+  proxy: string;
+  source_count: number;
+  enabled_count: number;
+  always_count: number;
+  sources: MarketplaceSkillSource[];
+}
+
+export interface MarketplaceSnapshot {
+  id: string;
+  timestamp: string;
+  skill_count: number;
+  enabled_count: number;
+  metadata: Record<string, string>;
+}
+
+export interface MarketplaceSnapshotListResponse {
+  total: number;
+  snapshots: MarketplaceSnapshot[];
+}
+
+export interface WorkspaceStatus {
+  path: string;
+  exists: boolean;
+  bootstrapped: boolean;
+  bootstrap_files: string[];
+  missing_bootstrap: string[];
+  today_log_path: string;
+  today_log_exists: boolean;
+  heartbeat_state_path: string;
+  heartbeat_state_exists: boolean;
+  file_count: number;
+  directory_count: number;
+  updated_at: string;
+}
+
 const marketplaceKeys = {
   all: ['marketplace'] as const,
   skills: () => [...marketplaceKeys.all, 'skills'] as const,
   installed: () => [...marketplaceKeys.all, 'installed'] as const,
   item: (skillID: string) => [...marketplaceKeys.all, 'item', skillID] as const,
   content: (skillID: string) => [...marketplaceKeys.all, 'content', skillID] as const,
+  inventory: () => [...marketplaceKeys.all, 'inventory'] as const,
+  snapshots: () => [...marketplaceKeys.all, 'snapshots'] as const,
+  workspace: () => [...marketplaceKeys.all, 'workspace'] as const,
 };
 
 export function useMarketplaceSkills() {
@@ -147,6 +195,30 @@ export function useMarketplaceSkillContent(skillID: string | null) {
   });
 }
 
+export function useMarketplaceInventory() {
+  return useQuery<MarketplaceInventoryResponse>({
+    queryKey: marketplaceKeys.inventory(),
+    queryFn: () => api.get<MarketplaceInventoryResponse>('/api/marketplace/skills/inventory'),
+    staleTime: 30_000,
+  });
+}
+
+export function useMarketplaceSnapshots() {
+  return useQuery<MarketplaceSnapshotListResponse>({
+    queryKey: marketplaceKeys.snapshots(),
+    queryFn: () => api.get<MarketplaceSnapshotListResponse>('/api/marketplace/skills/snapshots'),
+    staleTime: 15_000,
+  });
+}
+
+export function useWorkspaceStatus() {
+  return useQuery<WorkspaceStatus>({
+    queryKey: marketplaceKeys.workspace(),
+    queryFn: () => api.get<WorkspaceStatus>('/api/workspace/status'),
+    staleTime: 15_000,
+  });
+}
+
 export function useEnableMarketplaceSkill() {
   const qc = useQueryClient();
   return useMutation<MarketplaceToggleResponse, Error, string>({
@@ -156,9 +228,7 @@ export function useEnableMarketplaceSkill() {
         {},
       ),
     onSuccess: (_data, skillID) => {
-      qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
-      qc.invalidateQueries({ queryKey: marketplaceKeys.installed() });
-      qc.invalidateQueries({ queryKey: marketplaceKeys.item(skillID) });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.all });
       toast.success(t('marketplaceSkillEnabled'));
     },
     onError: (err) => toast.error(err.message),
@@ -174,9 +244,7 @@ export function useDisableMarketplaceSkill() {
         {},
       ),
     onSuccess: (_data, skillID) => {
-      qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
-      qc.invalidateQueries({ queryKey: marketplaceKeys.installed() });
-      qc.invalidateQueries({ queryKey: marketplaceKeys.item(skillID) });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.all });
       toast.success(t('marketplaceSkillDisabled'));
     },
     onError: (err) => toast.error(err.message),
@@ -192,9 +260,7 @@ export function useInstallMarketplaceSkillDependencies() {
         {},
       ),
     onSuccess: (data, skillID) => {
-      qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
-      qc.invalidateQueries({ queryKey: marketplaceKeys.installed() });
-      qc.invalidateQueries({ queryKey: marketplaceKeys.item(skillID) });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.all });
       if (data.success) {
         toast.success('Skill dependencies installed');
         return;
@@ -211,9 +277,63 @@ export function useInstallMarketplaceSkill() {
     mutationFn: (source) =>
       api.post<MarketplaceInstallSkillResponse>('/api/marketplace/skills/install', { source }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
-      qc.invalidateQueries({ queryKey: marketplaceKeys.installed() });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.all });
       toast.success('Skill installed');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useCreateMarketplaceSnapshot() {
+  const qc = useQueryClient();
+  return useMutation<MarketplaceSnapshot, Error, { label?: string; note?: string }>({
+    mutationFn: (payload) => api.post<MarketplaceSnapshot>('/api/marketplace/skills/snapshots', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: marketplaceKeys.snapshots() });
+      toast.success('Snapshot created');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useRestoreMarketplaceSnapshot() {
+  const qc = useQueryClient();
+  return useMutation<{ id: string; status: string }, Error, string>({
+    mutationFn: (snapshotID) =>
+      api.post<{ id: string; status: string }>(
+        `/api/marketplace/skills/snapshots/${encodeURIComponent(snapshotID)}/restore`,
+        {},
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: marketplaceKeys.all });
+      toast.success('Snapshot restored');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useDeleteMarketplaceSnapshot() {
+  const qc = useQueryClient();
+  return useMutation<{ id: string; status: string }, Error, string>({
+    mutationFn: (snapshotID) =>
+      api.delete<{ id: string; status: string }>(
+        `/api/marketplace/skills/snapshots/${encodeURIComponent(snapshotID)}`,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: marketplaceKeys.snapshots() });
+      toast.success('Snapshot deleted');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useRepairWorkspace() {
+  const qc = useQueryClient();
+  return useMutation<WorkspaceStatus, Error, void>({
+    mutationFn: () => api.post<WorkspaceStatus>('/api/workspace/repair', {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: marketplaceKeys.workspace() });
+      toast.success('Workspace repaired');
     },
     onError: (err) => toast.error(err.message),
   });

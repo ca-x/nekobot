@@ -176,6 +176,11 @@ func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
 	return m.snapshotMgr.List()
 }
 
+// DeleteSnapshot removes a stored snapshot by ID.
+func (m *Manager) DeleteSnapshot(id string) error {
+	return m.snapshotMgr.Delete(id)
+}
+
 // RestoreSnapshot restores skills from a snapshot.
 func (m *Manager) RestoreSnapshot(id string) error {
 	skills, err := m.snapshotMgr.Restore(id)

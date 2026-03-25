@@ -14,9 +14,28 @@ QMD is an external CLI tool that provides:
 
 QMD is an optional dependency. Install it from:
 ```bash
-# Example (replace with actual QMD installation instructions)
-go install github.com/username/qmd@latest
+npm install -g @tobilu/qmd
 ```
+
+Repository: `https://github.com/tobi/qmd`
+
+## Docker
+
+The default nekobot image now pre-installs QMD.
+
+If you want to disable it explicitly, build with:
+
+```bash
+docker build --build-arg INSTALL_QMD=false -t nekobot:no-qmd .
+```
+
+By default, the runtime image installs `@tobilu/qmd` globally so `memory.qmd.command: "qmd"` works out of the box.
+
+For non-preinstalled scenarios, the Web config page also supports installing QMD into the persistent workspace runtime directory:
+
+`<workspace>/.nekobot/runtime/qmd/bin/qmd`
+
+That path survives container recreation as long as the workspace volume is preserved.
 
 ## Configuration
 

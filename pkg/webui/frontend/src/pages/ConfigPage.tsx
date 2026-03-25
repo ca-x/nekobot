@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import Header from '@/components/layout/Header';
 import { useConfig, useExportConfig, useImportConfig, useSaveConfig } from '@/hooks/useConfig';
 import { useProviders } from '@/hooks/useProviders';
+import { useInstallQMD, useQMDStatus, useUpdateQMD } from '@/hooks/useQMD';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,6 +28,7 @@ import {
   FolderKanban,
   Layers3,
   LibraryBig,
+  RefreshCw,
   Route,
   RotateCcw,
   Save,
@@ -364,6 +366,21 @@ function MemoryField({
   );
 }
 
+function QMDMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</div>
+      <div className="mt-2 break-all text-sm font-semibold text-slate-900">{value}</div>
+    </div>
+  );
+}
+
 function AgentsSectionForm({
   data,
   onChange,
@@ -662,6 +679,9 @@ function MemorySectionForm({
   data: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
 }) {
+  const { data: qmdStatus, isLoading: qmdLoading, refetch: refetchQMD, isFetching: qmdFetching } = useQMDStatus();
+  const updateQMD = useUpdateQMD();
+  const installQMD = useInstallQMD();
   const readBool = (path: string) => Boolean(getNestedValue(data, path));
   const readNumber = (path: string) => {
     const value = getNestedValue(data, path);
@@ -938,6 +958,118 @@ function MemorySectionForm({
           <CardDescription>{t('memoryQMDDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-[24px] border border-emerald-200/80 bg-white/86 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-700">
+                  {t('memoryQMDRuntimeTitle')}
+                </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  {t('memoryQMDRuntimeDescription')}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => refetchQMD()}
+                  disabled={qmdFetching}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${qmdFetching ? 'animate-spin' : ''}`} />
+                  {t('refresh')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => installQMD.mutate()}
+                  disabled={installQMD.isPending}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${installQMD.isPending ? 'animate-spin' : ''}`} />
+                  {installQMD.isPending ? t('memoryQMDInstalling') : t('memoryQMDInstallPersisted')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => updateQMD.mutate()}
+                  disabled={updateQMD.isPending || !qmdStatus?.available}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${updateQMD.isPending ? 'animate-spin' : ''}`} />
+                  {updateQMD.isPending ? t('memoryQMDUpdating') : t('memoryQMDUpdateNow')}
+                </Button>
+              </div>
+            </div>
+
+            {qmdLoading ? (
+              <div className="mt-4 text-sm text-muted-foreground">{t('memoryQMDRuntimeLoading')}</div>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <QMDMetric label={t('memoryQMDStatusEnabled')} value={qmdStatus?.enabled ? t('on') : t('off')} />
+                  <QMDMetric label={t('memoryQMDStatusAvailable')} value={qmdStatus?.available ? t('memoryQMDAvailable') : t('memoryQMDUnavailable')} />
+                  <QMDMetric label={t('memoryQMDStatusVersion')} value={qmdStatus?.version || '-'} />
+                  <QMDMetric label={t('memoryQMDStatusCollections')} value={String(qmdStatus?.collections.length ?? 0)} />
+                </div>
+
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
+                    {t('memoryQMDCommand')}
+                  </div>
+                  <div className="mt-2 break-all font-mono text-sm text-slate-700">
+                    {qmdStatus?.command || readString('qmd.command') || 'qmd'}
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <QMDMetric label={t('memoryQMDResolvedCommand')} value={qmdStatus?.resolved_command || '-'} />
+                    <QMDMetric label={t('memoryQMDCommandSource')} value={qmdStatus?.command_source || '-'} />
+                  </div>
+                  <div className="mt-3">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
+                      {t('memoryQMDPersistentCommand')}
+                    </div>
+                    <div className="mt-2 break-all font-mono text-xs text-slate-600">
+                      {qmdStatus?.persistent_command || '-'}
+                    </div>
+                  </div>
+                  {qmdStatus?.error ? (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                      {qmdStatus.error}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="space-y-3">
+                  {(qmdStatus?.collections ?? []).map((collection) => (
+                    <div
+                      key={`${collection.Name}-${collection.Path}`}
+                      className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-white">
+                          {collection.Name}
+                        </span>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] text-slate-600">
+                          {collection.Pattern}
+                        </span>
+                      </div>
+                      <div className="mt-3 break-all font-mono text-xs leading-6 text-slate-700">
+                        {collection.Path}
+                      </div>
+                    </div>
+                  ))}
+                  {(qmdStatus?.collections ?? []).length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
+                      {t('memoryQMDCollectionsEmpty')}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="grid gap-4 xl:grid-cols-2">
             <div className="space-y-4">
               <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-white/82 p-4">

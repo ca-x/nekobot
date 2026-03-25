@@ -42,6 +42,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/logger"
+	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
@@ -52,6 +53,7 @@ import (
 	"nekobot/pkg/userprefs"
 	"nekobot/pkg/version"
 	"nekobot/pkg/webui/frontend"
+	"nekobot/pkg/workspace"
 	rscqr "rsc.io/qr"
 )
 
@@ -74,10 +76,15 @@ type Server struct {
 	providers  *providerstore.Manager
 	cronMgr    *cron.Manager
 	skillsMgr  *skills.Manager
+	workspace  *workspace.Manager
 	entClient  *ent.Client
 	port       int
 	startedAt  time.Time
 }
+
+const defaultQMDNPMPackage = "@tobilu/qmd"
+
+var defaultNPMCommand = "npm"
 
 // NewServer creates a new WebUI server.
 func NewServer(
@@ -96,6 +103,7 @@ func NewServer(
 	providerStore *providerstore.Manager,
 	cronManager *cron.Manager,
 	skillsManager *skills.Manager,
+	workspaceManager *workspace.Manager,
 	entClient *ent.Client,
 ) *Server {
 	port := cfg.WebUI.Port
@@ -124,6 +132,7 @@ func NewServer(
 		providers:  providerStore,
 		cronMgr:    cronManager,
 		skillsMgr:  skillsManager,
+		workspace:  workspaceManager,
 		entClient:  entClient,
 		port:       port,
 		startedAt:  time.Now(),
@@ -186,6 +195,9 @@ func (s *Server) setup() {
 	api.PUT("/config", s.handleSaveConfig)
 	api.GET("/config/export", s.handleExportConfig)
 	api.POST("/config/import", s.handleImportConfig)
+	api.GET("/memory/qmd/status", s.handleGetQMDStatus)
+	api.POST("/memory/qmd/install", s.handleInstallQMD)
+	api.POST("/memory/qmd/update", s.handleUpdateQMD)
 
 	// Status
 	api.GET("/status", s.handleStatus)
@@ -211,9 +223,16 @@ func (s *Server) setup() {
 	api.GET("/marketplace/skills/items/:id", s.handleGetMarketplaceSkillItem)
 	api.GET("/marketplace/skills/items/:id/content", s.handleGetMarketplaceSkillContent)
 	api.POST("/marketplace/skills/install", s.handleInstallMarketplaceSkill)
+	api.GET("/marketplace/skills/inventory", s.handleGetMarketplaceInventory)
+	api.GET("/marketplace/skills/snapshots", s.handleListMarketplaceSkillSnapshots)
+	api.POST("/marketplace/skills/snapshots", s.handleCreateMarketplaceSkillSnapshot)
+	api.POST("/marketplace/skills/snapshots/:id/restore", s.handleRestoreMarketplaceSkillSnapshot)
+	api.DELETE("/marketplace/skills/snapshots/:id", s.handleDeleteMarketplaceSkillSnapshot)
 	api.POST("/marketplace/skills/:id/enable", s.handleEnableMarketplaceSkill)
 	api.POST("/marketplace/skills/:id/disable", s.handleDisableMarketplaceSkill)
 	api.POST("/marketplace/skills/:id/install-deps", s.handleInstallMarketplaceSkillDependencies)
+	api.GET("/workspace/status", s.handleGetWorkspaceStatus)
+	api.POST("/workspace/repair", s.handleRepairWorkspace)
 
 	// Auth management (change password, profile)
 	api.POST("/auth/change-password", s.handleChangePassword)
@@ -770,16 +789,16 @@ func (s *Server) handleDiscoverProviderModels(c *echo.Context) error {
 // --- Cron Handlers ---
 
 type createCronJobRequest struct {
-	Name           string `json:"name"`
-	ScheduleKind   string `json:"schedule_kind"`
-	Schedule       string `json:"schedule"`
-	AtTime         string `json:"at_time"`
-	EveryDuration  string `json:"every_duration"`
-	Prompt         string `json:"prompt"`
-	Provider       string `json:"provider"`
-	Model          string `json:"model"`
+	Name           string   `json:"name"`
+	ScheduleKind   string   `json:"schedule_kind"`
+	Schedule       string   `json:"schedule"`
+	AtTime         string   `json:"at_time"`
+	EveryDuration  string   `json:"every_duration"`
+	Prompt         string   `json:"prompt"`
+	Provider       string   `json:"provider"`
+	Model          string   `json:"model"`
 	Fallback       []string `json:"fallback"`
-	DeleteAfterRun bool   `json:"delete_after_run"`
+	DeleteAfterRun bool     `json:"delete_after_run"`
 }
 
 func (s *Server) handleListCronJobs(c *echo.Context) error {
@@ -2442,6 +2461,187 @@ func (s *Server) handleInstallMarketplaceSkill(c *echo.Context) error {
 	})
 }
 
+func (s *Server) handleGetMarketplaceInventory(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	sources := s.skillsMgr.GetSkillSources()
+	sourceItems := make([]map[string]interface{}, 0, len(sources))
+	for _, source := range sources {
+		exists := true
+		if source.Type != skills.SourceBuiltin {
+			if _, err := os.Stat(source.Path); err != nil {
+				if os.IsNotExist(err) {
+					exists = false
+				} else {
+					return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to inspect skill source"})
+				}
+			}
+		}
+
+		sourceItems = append(sourceItems, map[string]interface{}{
+			"path":     strings.TrimSpace(source.Path),
+			"priority": source.Priority,
+			"type":     string(source.Type),
+			"exists":   exists,
+			"builtin":  source.Type == skills.SourceBuiltin,
+		})
+	}
+
+	enabledCount := 0
+	alwaysCount := 0
+	for _, skill := range s.skillsMgr.List() {
+		if skill.Enabled {
+			enabledCount++
+		}
+		if skill.Always {
+			alwaysCount++
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"writable_dir":  strings.TrimSpace(s.skillsMgr.SkillsDir()),
+		"proxy":         strings.TrimSpace(s.skillsMgr.SkillsProxy()),
+		"source_count":  len(sourceItems),
+		"enabled_count": enabledCount,
+		"always_count":  alwaysCount,
+		"sources":       sourceItems,
+	})
+}
+
+func (s *Server) handleListMarketplaceSkillSnapshots(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	snapshotList, err := s.skillsMgr.ListSnapshots()
+	if err != nil {
+		s.logger.Error("Failed to list skill snapshots", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list skill snapshots"})
+	}
+
+	items := make([]map[string]interface{}, 0, len(snapshotList))
+	for _, snapshot := range snapshotList {
+		enabledCount := 0
+		for _, item := range snapshot.Skills {
+			if item.Enabled {
+				enabledCount++
+			}
+		}
+
+		items = append(items, map[string]interface{}{
+			"id":            snapshot.ID,
+			"timestamp":     snapshot.Timestamp.Format(time.RFC3339),
+			"skill_count":   len(snapshot.Skills),
+			"enabled_count": enabledCount,
+			"metadata":      snapshot.Metadata,
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"total":     len(items),
+		"snapshots": items,
+	})
+}
+
+func (s *Server) handleCreateMarketplaceSkillSnapshot(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	var body struct {
+		Label string `json:"label"`
+		Note  string `json:"note"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	metadata := map[string]string{
+		"source": "webui",
+	}
+	if label := strings.TrimSpace(body.Label); label != "" {
+		metadata["label"] = label
+	}
+	if note := strings.TrimSpace(body.Note); note != "" {
+		metadata["note"] = note
+	}
+
+	snapshot, err := s.skillsMgr.CreateSnapshot(metadata)
+	if err != nil {
+		s.logger.Error("Failed to create skill snapshot", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create skill snapshot"})
+	}
+
+	enabledCount := 0
+	for _, item := range snapshot.Skills {
+		if item.Enabled {
+			enabledCount++
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"id":            snapshot.ID,
+		"timestamp":     snapshot.Timestamp.Format(time.RFC3339),
+		"skill_count":   len(snapshot.Skills),
+		"enabled_count": enabledCount,
+		"metadata":      snapshot.Metadata,
+	})
+}
+
+func (s *Server) handleRestoreMarketplaceSkillSnapshot(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	snapshotID := strings.TrimSpace(c.Param("id"))
+	if snapshotID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "snapshot id is required"})
+	}
+
+	if err := s.skillsMgr.RestoreSnapshot(snapshotID); err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "snapshot not found"})
+		}
+		s.logger.Error("Failed to restore skill snapshot",
+			zap.String("snapshot_id", snapshotID),
+			zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to restore skill snapshot"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"id":     snapshotID,
+		"status": "restored",
+	})
+}
+
+func (s *Server) handleDeleteMarketplaceSkillSnapshot(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	snapshotID := strings.TrimSpace(c.Param("id"))
+	if snapshotID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "snapshot id is required"})
+	}
+
+	if err := s.skillsMgr.DeleteSnapshot(snapshotID); err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "snapshot not found"})
+		}
+		s.logger.Error("Failed to delete skill snapshot",
+			zap.String("snapshot_id", snapshotID),
+			zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete skill snapshot"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"id":     snapshotID,
+		"status": "deleted",
+	})
+}
+
 func (s *Server) marketplaceSkillItem(skill *skills.Skill) map[string]interface{} {
 	var report *skills.SkillEntry
 	if s != nil && s.skillsMgr != nil && skill != nil {
@@ -2484,6 +2684,177 @@ func (s *Server) marketplaceSkillItem(skill *skills.Skill) map[string]interface{
 		"install_specs": marketplaceInstallSpecs(skill),
 		"is_installed":  report.Installed,
 	}
+}
+
+func (s *Server) handleGetWorkspaceStatus(c *echo.Context) error {
+	if s.workspace == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "workspace manager not available"})
+	}
+
+	status, err := s.workspace.Inspect()
+	if err != nil {
+		s.logger.Error("Failed to inspect workspace", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to inspect workspace"})
+	}
+
+	return c.JSON(http.StatusOK, status)
+}
+
+func (s *Server) handleRepairWorkspace(c *echo.Context) error {
+	if s.workspace == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "workspace manager not available"})
+	}
+
+	if err := s.workspace.Ensure(); err != nil {
+		s.logger.Error("Failed to repair workspace", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to repair workspace"})
+	}
+
+	status, err := s.workspace.Inspect()
+	if err != nil {
+		s.logger.Error("Failed to inspect workspace after repair", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to inspect workspace"})
+	}
+
+	return c.JSON(http.StatusOK, status)
+}
+
+func (s *Server) handleGetQMDStatus(c *echo.Context) error {
+	qmdMgr, resolvedCommand, commandSource := s.newQMDManager()
+	status := qmdMgr.GetStatus()
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"enabled":            s.config.Memory.QMD.Enabled,
+		"command":            strings.TrimSpace(s.config.Memory.QMD.Command),
+		"resolved_command":   resolvedCommand,
+		"command_source":     commandSource,
+		"persistent_command": s.persistentQMDBinary(),
+		"include_default":    s.config.Memory.QMD.IncludeDefault,
+		"available":          status.Available,
+		"version":            status.Version,
+		"error":              status.Error,
+		"last_update":        status.LastUpdate.Format(time.RFC3339),
+		"collections":        status.Collections,
+	})
+}
+
+func (s *Server) handleInstallQMD(c *echo.Context) error {
+	prefix := s.persistentQMDPrefix()
+	if err := os.MkdirAll(prefix, 0o755); err != nil {
+		s.logger.Error("Failed to create persistent qmd directory", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prepare qmd install directory"})
+	}
+
+	cmd := exec.CommandContext(
+		c.Request().Context(),
+		defaultNPMCommand,
+		"install",
+		"-g",
+		"--prefix",
+		prefix,
+		defaultQMDNPMPackage,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		s.logger.Error("Failed to install qmd",
+			zap.String("prefix", prefix),
+			zap.ByteString("output", output),
+			zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
+			"error":  "failed to install qmd",
+			"output": strings.TrimSpace(string(output)),
+		})
+	}
+
+	qmdMgr, resolvedCommand, commandSource := s.newQMDManager()
+	status := qmdMgr.GetStatus()
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"installed":          true,
+		"package":            defaultQMDNPMPackage,
+		"prefix":             prefix,
+		"binary":             s.persistentQMDBinary(),
+		"command":            strings.TrimSpace(s.config.Memory.QMD.Command),
+		"resolved_command":   resolvedCommand,
+		"command_source":     commandSource,
+		"persistent_command": s.persistentQMDBinary(),
+		"available":          status.Available,
+		"version":            status.Version,
+		"error":              status.Error,
+		"output":             strings.TrimSpace(string(output)),
+	})
+}
+
+func (s *Server) handleUpdateQMD(c *echo.Context) error {
+	qmdMgr, resolvedCommand, commandSource := s.newQMDManager()
+	if !qmdMgr.IsAvailable() {
+		status := qmdMgr.GetStatus()
+		return c.JSON(http.StatusServiceUnavailable, map[string]interface{}{
+			"error":            "qmd not available",
+			"available":        false,
+			"detail":           status.Error,
+			"resolved_command": resolvedCommand,
+			"command_source":   commandSource,
+		})
+	}
+
+	ctx := c.Request().Context()
+	if err := qmdMgr.Initialize(ctx, s.config.WorkspacePath()); err != nil {
+		s.logger.Error("Failed to initialize qmd", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to initialize qmd"})
+	}
+	if err := qmdMgr.UpdateAll(ctx); err != nil {
+		s.logger.Error("Failed to update qmd", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update qmd"})
+	}
+
+	status := qmdMgr.GetStatus()
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"enabled":            s.config.Memory.QMD.Enabled,
+		"command":            strings.TrimSpace(s.config.Memory.QMD.Command),
+		"resolved_command":   resolvedCommand,
+		"command_source":     commandSource,
+		"persistent_command": s.persistentQMDBinary(),
+		"include_default":    s.config.Memory.QMD.IncludeDefault,
+		"available":          status.Available,
+		"version":            status.Version,
+		"error":              status.Error,
+		"last_update":        status.LastUpdate.Format(time.RFC3339),
+		"collections":        status.Collections,
+	})
+}
+
+func (s *Server) newQMDManager() (*memoryqmd.Manager, string, string) {
+	qmdCfg := memoryqmd.ConfigFromConfig(s.config.Memory.QMD)
+	resolvedCommand, commandSource := s.resolveQMDCommand()
+	qmdCfg.Command = resolvedCommand
+	qmdCfg.Sessions.SessionsDir = filepath.Join(s.config.WorkspacePath(), "sessions")
+	return memoryqmd.NewManager(s.logger, qmdCfg), resolvedCommand, commandSource
+}
+
+func (s *Server) persistentQMDPrefix() string {
+	return filepath.Join(s.config.WorkspacePath(), ".nekobot", "runtime", "qmd")
+}
+
+func (s *Server) persistentQMDBinary() string {
+	return filepath.Join(s.persistentQMDPrefix(), "bin", "qmd")
+}
+
+func (s *Server) resolveQMDCommand() (string, string) {
+	configured := strings.TrimSpace(s.config.Memory.QMD.Command)
+	if configured != "" && configured != "qmd" {
+		return configured, "config"
+	}
+
+	persistentBinary := s.persistentQMDBinary()
+	if info, err := os.Stat(persistentBinary); err == nil && !info.IsDir() {
+		return persistentBinary, "workspace"
+	}
+
+	if configured != "" {
+		return configured, "config"
+	}
+
+	return "qmd", "path"
 }
 
 func marketplaceInstallSpecs(skill *skills.Skill) []map[string]interface{} {

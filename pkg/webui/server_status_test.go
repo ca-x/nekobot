@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/config"
+	"nekobot/pkg/skills"
+	"nekobot/pkg/workspace"
 )
 
 func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
@@ -62,5 +65,75 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("expected key %q in payload, got: %v", key, payload)
 		}
+	}
+}
+
+func TestHandleQMDStatusAndUpdate(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Memory.QMD.Enabled = true
+	cfg.Memory.QMD.Command = "definitely-missing-qmd"
+
+	tmpDir := t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(tmpDir, "workspace")
+
+	log := newTestLogger(t)
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		skillsMgr: skills.NewManager(log, filepath.Join(cfg.WorkspacePath(), "skills"), false),
+		workspace: workspace.NewManager(cfg.WorkspacePath(), log),
+		startedAt: time.Now().Add(-2 * time.Second),
+	}
+
+	e := echo.New()
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/memory/qmd/status", nil)
+	statusRec := httptest.NewRecorder()
+	statusCtx := e.NewContext(statusReq, statusRec)
+	if err := s.handleGetQMDStatus(statusCtx); err != nil {
+		t.Fatalf("handleGetQMDStatus failed: %v", err)
+	}
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, statusRec.Code)
+	}
+
+	var statusPayload map[string]interface{}
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &statusPayload); err != nil {
+		t.Fatalf("unmarshal qmd status payload failed: %v", err)
+	}
+	if enabled, _ := statusPayload["enabled"].(bool); !enabled {
+		t.Fatalf("expected qmd enabled in payload")
+	}
+	if available, _ := statusPayload["available"].(bool); available {
+		t.Fatalf("expected qmd unavailable for missing command")
+	}
+	if _, ok := statusPayload["collections"]; !ok {
+		t.Fatalf("expected collections in payload")
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPost, "/api/memory/qmd/update", nil)
+	updateRec := httptest.NewRecorder()
+	updateCtx := e.NewContext(updateReq, updateRec)
+	if err := s.handleUpdateQMD(updateCtx); err != nil {
+		t.Fatalf("handleUpdateQMD failed: %v", err)
+	}
+	if updateRec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, updateRec.Code)
+	}
+
+	originalNPMCommand := defaultNPMCommand
+	defaultNPMCommand = "definitely-missing-npm"
+	t.Cleanup(func() {
+		defaultNPMCommand = originalNPMCommand
+	})
+
+	installReq := httptest.NewRequest(http.MethodPost, "/api/memory/qmd/install", nil)
+	installRec := httptest.NewRecorder()
+	installCtx := e.NewContext(installReq, installRec)
+	if err := s.handleInstallQMD(installCtx); err != nil {
+		t.Fatalf("handleInstallQMD failed: %v", err)
+	}
+	if installRec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, installRec.Code)
 	}
 }

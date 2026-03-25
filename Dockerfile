@@ -40,7 +40,14 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
 # Runtime stage
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata tmux
+ARG INSTALL_QMD=true
+ARG QMD_NPM_PACKAGE=@tobilu/qmd
+
+RUN apk add --no-cache ca-certificates tzdata tmux \
+    && if [ "$INSTALL_QMD" = "true" ]; then \
+      apk add --no-cache nodejs npm python3 make g++; \
+      npm install -g "$QMD_NPM_PACKAGE"; \
+    fi
 
 RUN addgroup -g 1000 app && adduser -D -u 1000 -G app app
 
