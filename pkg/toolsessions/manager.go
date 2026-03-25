@@ -36,6 +36,7 @@ type Manager struct {
 	log       *logger.Logger
 	client    *ent.Client
 	lifecycle LifecycleConfig
+	eventCfg  config.ToolSessionEventsConfig
 	otpTTL    time.Duration
 	otpMu     sync.Mutex
 	otpCodes  map[string]sessionOTP
@@ -55,6 +56,7 @@ func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Ma
 		log:       log,
 		client:    client,
 		lifecycle: defaultLifecycleConfig(),
+		eventCfg:  cfg.WebUI.ToolSessionEvents,
 		otpTTL:    normalizeOTPTTLSeconds(cfg.WebUI.ToolSessionOTPTTLSeconds),
 		otpCodes:  map[string]sessionOTP{},
 	}
@@ -713,6 +715,9 @@ func (m *Manager) appendEvent(ctx context.Context, sessionID, eventType string, 
 	if sessionID == "" || eventType == "" {
 		return nil
 	}
+	if !m.eventCfg.Enabled {
+		return nil
+	}
 	payloadJSON, err := marshalJSON(payload)
 	if err != nil {
 		return err
@@ -726,6 +731,31 @@ func (m *Manager) appendEvent(ctx context.Context, sessionID, eventType string, 
 		return fmt.Errorf("append event: %w", err)
 	}
 	return nil
+}
+
+// CleanupEvents removes old tool-session events according to retention policy.
+func (m *Manager) CleanupEvents(ctx context.Context) (int, error) {
+	if !m.eventCfg.Enabled || m.eventCfg.RetentionDays <= 0 {
+		return 0, nil
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -m.eventCfg.RetentionDays)
+	affected, err := m.client.ToolEvent.Delete().
+		Where(toolevent.CreatedAtLT(cutoff)).
+		Exec(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("cleanup tool session events: %w", err)
+	}
+	return affected, nil
+}
+
+// DeleteAllEvents removes all persisted tool-session events.
+func (m *Manager) DeleteAllEvents(ctx context.Context) (int, error) {
+	affected, err := m.client.ToolEvent.Delete().Exec(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("delete all tool session events: %w", err)
+	}
+	return affected, nil
 }
 
 // ListEvents returns most recent events for a session.
@@ -757,6 +787,15 @@ func (m *Manager) ListEvents(ctx context.Context, sessionID string, limit int) (
 		})
 	}
 	return out, nil
+}
+
+// EventsEnabled reports whether tool session events are persisted.
+func (m *Manager) EventsEnabled() bool {
+	return m.eventCfg.Enabled
+}
+
+func (m *Manager) SetEventConfig(cfg config.ToolSessionEventsConfig) {
+	m.eventCfg = cfg
 }
 
 // Cleanup transitions session lifecycle states according to policy.

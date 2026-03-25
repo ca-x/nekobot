@@ -21,6 +21,19 @@ export interface Provider {
   timeout: number;
 }
 
+export interface ProviderRuntime {
+  name: string;
+  available: boolean;
+  in_cooldown: boolean;
+  error_count: number;
+  cooldown_remaining_seconds: number;
+  failure_counts: Record<string, number>;
+  disabled_reason: string;
+  last_failure_unix: number;
+  cooldown_end_unix: number;
+  disabled_until_unix: number;
+}
+
 export interface CreateProviderInput {
   name: string;
   provider_kind: string;
@@ -57,12 +70,22 @@ interface DiscoverModelsResponse {
 // ---------- Hooks ----------
 
 const PROVIDERS_KEY = ['providers'] as const;
+const PROVIDER_RUNTIME_KEY = ['providers', 'runtime'] as const;
 
 export function useProviders() {
   return useQuery<Provider[]>({
     queryKey: [...PROVIDERS_KEY],
     queryFn: () => api.get('/api/providers'),
     staleTime: 30_000,
+  });
+}
+
+export function useProviderRuntime() {
+  return useQuery<ProviderRuntime[]>({
+    queryKey: [...PROVIDER_RUNTIME_KEY],
+    queryFn: () => api.get('/api/providers/runtime'),
+    staleTime: 5_000,
+    refetchInterval: 5_000,
   });
 }
 

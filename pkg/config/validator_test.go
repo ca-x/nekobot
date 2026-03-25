@@ -321,3 +321,28 @@ func TestValidateConfigRejectsInvalidSessionCleanupConfig(t *testing.T) {
 		t.Fatalf("expected sessions.cleanup.max_age_days validation error, got %v", err)
 	}
 }
+
+func TestValidateConfigRejectsInvalidWebUIRecordRetentionConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.WebUI.ToolSessionEvents.Enabled = true
+	cfg.WebUI.ToolSessionEvents.RetentionDays = 0
+	cfg.WebUI.SkillSnapshots.AutoPrune = true
+	cfg.WebUI.SkillSnapshots.MaxCount = 0
+	cfg.WebUI.SkillVersions.Enabled = true
+	cfg.WebUI.SkillVersions.MaxCount = 0
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for webui retention config")
+	}
+	if !strings.Contains(err.Error(), "webui.tool_session_events.retention_days") {
+		t.Fatalf("expected tool session event retention validation error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "webui.skill_snapshots.max_count") {
+		t.Fatalf("expected skill snapshot max_count validation error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "webui.skill_versions.max_count") {
+		t.Fatalf("expected skill version max_count validation error, got %v", err)
+	}
+}

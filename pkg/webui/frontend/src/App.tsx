@@ -10,6 +10,7 @@ const ToolSessionsPage = lazy(() => import('./pages/ToolSessionsPage'));
 const ProvidersPage = lazy(() => import('./pages/ProvidersPage'));
 const ChannelsPage = lazy(() => import('./pages/ChannelsPage'));
 const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
+const PromptsPage = lazy(() => import('./pages/PromptsPage'));
 const ConfigPage = lazy(() => import('./pages/ConfigPage'));
 const SystemPage = lazy(() => import('./pages/SystemPage'));
 const CronPage = lazy(() => import('./pages/CronPage'));
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/marketplace" element={<MarketplacePage />} />
+          <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/config" element={<ConfigPage />} />
           <Route path="/cron" element={<CronPage />} />
           <Route path="/system" element={<SystemPage />} />

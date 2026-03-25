@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,6 +109,9 @@ func TestHandleQMDStatusAndUpdate(t *testing.T) {
 	if available, _ := statusPayload["available"].(bool); available {
 		t.Fatalf("expected qmd unavailable for missing command")
 	}
+	if exportDir, _ := statusPayload["session_export_dir"].(string); strings.TrimSpace(exportDir) == "" {
+		t.Fatalf("expected qmd session export dir in payload")
+	}
 	if _, ok := statusPayload["collections"]; !ok {
 		t.Fatalf("expected collections in payload")
 	}
@@ -135,5 +140,68 @@ func TestHandleQMDStatusAndUpdate(t *testing.T) {
 	}
 	if installRec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, installRec.Code)
+	}
+}
+
+func TestHandleCleanupQMDSessionExports(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Memory.QMD.Enabled = true
+	cfg.Memory.QMD.Sessions.Enabled = true
+	cfg.Memory.QMD.Sessions.RetentionDays = 1
+
+	tmpDir := t.TempDir()
+	exportDir := filepath.Join(tmpDir, "exports")
+	if err := os.MkdirAll(exportDir, 0o755); err != nil {
+		t.Fatalf("mkdir export dir: %v", err)
+	}
+	oldFile := filepath.Join(exportDir, "old.md")
+	if err := os.WriteFile(oldFile, []byte("# old"), 0o644); err != nil {
+		t.Fatalf("write old export: %v", err)
+	}
+	oldTime := time.Now().Add(-72 * time.Hour)
+	if err := os.Chtimes(oldFile, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes old export: %v", err)
+	}
+	newFile := filepath.Join(exportDir, "new.md")
+	if err := os.WriteFile(newFile, []byte("# new"), 0o644); err != nil {
+		t.Fatalf("write new export: %v", err)
+	}
+
+	cfg.Memory.QMD.Sessions.ExportDir = exportDir
+	cfg.Agents.Defaults.Workspace = filepath.Join(tmpDir, "workspace")
+
+	s := &Server{
+		config: cfg,
+		logger: newTestLogger(t),
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/memory/qmd/sessions/cleanup", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleCleanupQMDSessionExports(ctx); err != nil {
+		t.Fatalf("handleCleanupQMDSessionExports failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal cleanup payload failed: %v", err)
+	}
+	if deleted, _ := payload["deleted"].(float64); deleted != 1 {
+		t.Fatalf("expected 1 deleted export, got %+v", payload)
+	}
+	if remaining, _ := payload["remaining"].(float64); remaining != 1 {
+		t.Fatalf("expected 1 remaining export, got %+v", payload)
+	}
+
+	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
+		t.Fatalf("expected old export to be deleted, err=%v", err)
+	}
+	if _, err := os.Stat(newFile); err != nil {
+		t.Fatalf("expected new export to remain: %v", err)
 	}
 }

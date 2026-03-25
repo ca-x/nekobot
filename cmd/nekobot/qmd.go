@@ -66,7 +66,7 @@ func runQMDStatus(cmd *cobra.Command, args []string) {
 	}
 
 	// Create QMD manager
-	qmdConfig := qmd.ConfigFromConfig(cfg.Memory.QMD)
+	qmdConfig := qmd.ConfigFromConfigWithWorkspace(cfg.Memory.QMD, cfg.WorkspacePath())
 	manager := qmd.NewManager(log, qmdConfig)
 
 	// Get status
@@ -95,7 +95,7 @@ func runQMDStatus(cmd *cobra.Command, args []string) {
 		}
 	} else {
 		fmt.Printf("  Error: %s\n", status.Error)
-		fmt.Println("\nTo use QMD, install it from: https://github.com/username/qmd")
+		fmt.Println("\nTo use QMD, install it from: https://github.com/tobi/qmd")
 	}
 }
 
@@ -118,7 +118,7 @@ func runQMDUpdate(cmd *cobra.Command, args []string) {
 	}
 
 	// Create QMD manager
-	qmdConfig := qmd.ConfigFromConfig(cfg.Memory.QMD)
+	qmdConfig := qmd.ConfigFromConfigWithWorkspace(cfg.Memory.QMD, cfg.WorkspacePath())
 	manager := qmd.NewManager(log, qmdConfig)
 
 	if !manager.IsAvailable() {
@@ -166,7 +166,7 @@ func runQMDSearch(cmd *cobra.Command, args []string) {
 	}
 
 	// Create QMD manager
-	qmdConfig := qmd.ConfigFromConfig(cfg.Memory.QMD)
+	qmdConfig := qmd.ConfigFromConfigWithWorkspace(cfg.Memory.QMD, cfg.WorkspacePath())
 	manager := qmd.NewManager(log, qmdConfig)
 
 	if !manager.IsAvailable() {

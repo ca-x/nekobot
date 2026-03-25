@@ -2,6 +2,10 @@
 package qmd
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
+
 	"nekobot/pkg/config"
 )
 
@@ -35,4 +39,45 @@ func ConfigFromConfig(cfg config.QMDConfig) Config {
 			UpdateTimeout:  cfg.Update.UpdateTimeout,
 		},
 	}
+}
+
+// ConfigFromConfigWithWorkspace resolves workspace-aware QMD paths.
+func ConfigFromConfigWithWorkspace(cfg config.QMDConfig, workspaceDir string) Config {
+	resolved := ConfigFromConfig(cfg)
+
+	resolved.Paths = make([]CollectionPath, 0, len(cfg.Paths))
+	for _, pathCfg := range cfg.Paths {
+		resolved.Paths = append(resolved.Paths, CollectionPath{
+			Name:    pathCfg.Name,
+			Path:    resolveWorkspacePath(pathCfg.Path, workspaceDir),
+			Pattern: pathCfg.Pattern,
+		})
+	}
+
+	resolved.Sessions.SessionsDir = filepath.Join(workspaceDir, "sessions")
+	if strings.TrimSpace(resolved.Sessions.ExportDir) == "" {
+		resolved.Sessions.ExportDir = filepath.Join(workspaceDir, "memory", "sessions")
+	} else {
+		resolved.Sessions.ExportDir = resolveWorkspacePath(resolved.Sessions.ExportDir, workspaceDir)
+	}
+
+	return resolved
+}
+
+func resolveWorkspacePath(path string, workspaceDir string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+
+	if workspace := strings.TrimSpace(workspaceDir); workspace != "" {
+		replacer := strings.NewReplacer(
+			"${WORKSPACE}", workspace,
+			"$WORKSPACE", workspace,
+		)
+		path = replacer.Replace(path)
+	}
+
+	path = os.ExpandEnv(path)
+	return expandHome(path)
 }

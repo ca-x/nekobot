@@ -18,6 +18,12 @@ type CronJob func(*sql.Selector)
 // Membership is the predicate function for membership builders.
 type Membership func(*sql.Selector)
 
+// Prompt is the predicate function for prompt builders.
+type Prompt func(*sql.Selector)
+
+// PromptBinding is the predicate function for promptbinding builders.
+type PromptBinding func(*sql.Selector)
+
 // Provider is the predicate function for provider builders.
 type Provider func(*sql.Selector)
 

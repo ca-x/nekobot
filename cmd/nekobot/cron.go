@@ -16,6 +16,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/session"
@@ -361,6 +362,7 @@ func buildCronManagerOrExit() (*cron.Manager, func()) {
 		workspace.Module,
 		skills.Module,
 		state.Module,
+		prompts.Module,
 		providerstore.Module,
 		agent.Module,
 		cron.Module,

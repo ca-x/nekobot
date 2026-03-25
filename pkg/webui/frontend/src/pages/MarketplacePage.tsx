@@ -18,6 +18,7 @@ import {
   useMarketplaceSkillItem,
   useMarketplaceSnapshots,
   useMarketplaceSkills,
+  usePruneMarketplaceSnapshots,
   useRepairWorkspace,
   useRestoreMarketplaceSnapshot,
   useSearchMarketplaceSkills,
@@ -61,6 +62,7 @@ export default function MarketplacePage() {
   const createSnapshot = useCreateMarketplaceSnapshot();
   const restoreSnapshot = useRestoreMarketplaceSnapshot();
   const deleteSnapshot = useDeleteMarketplaceSnapshot();
+  const pruneSnapshots = usePruneMarketplaceSnapshots();
   const repairWorkspace = useRepairWorkspace();
   const { data: inventory } = useMarketplaceInventory();
   const { data: snapshots } = useMarketplaceSnapshots();
@@ -129,6 +131,8 @@ export default function MarketplacePage() {
   const selectedInstallResults =
     installDependencies.data?.skill_id === selectedSkillID ? installDependencies.data.results : [];
   const snapshotItems = snapshots?.snapshots ?? [];
+  const snapshotMaxCount = snapshots?.max_count ?? 0;
+  const canPruneSnapshots = snapshotMaxCount > 0 && snapshotItems.length > snapshotMaxCount;
 
   const handleCreateSnapshot = () => {
     createSnapshot.mutate(
@@ -368,6 +372,17 @@ export default function MarketplacePage() {
             <SkillMetric label="Writable dir" value={inventory?.writable_dir || '-'} muted={!inventory?.writable_dir} />
             <SkillMetric label="Enabled" value={String(inventory?.enabled_count ?? 0)} />
             <SkillMetric label="Always on" value={String(inventory?.always_count ?? 0)} />
+            <SkillMetric label="Versioned skills" value={String(inventory?.version_history?.skill_count ?? 0)} />
+            <SkillMetric label="Version records" value={String(inventory?.version_history?.version_count ?? 0)} />
+            <SkillMetric
+              label="Version retention"
+              value={
+                inventory?.version_history
+                  ? `${inventory.version_history.enabled ? 'On' : 'Off'} · ${inventory.version_history.max_count}`
+                  : '-'
+              }
+              muted={!inventory?.version_history}
+            />
           </div>
 
           <div className="mt-4 space-y-3">
@@ -421,6 +436,20 @@ export default function MarketplacePage() {
               <TimerReset className="mr-2 h-4 w-4" />
               {createSnapshot.isPending ? 'Creating…' : 'Create snapshot'}
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => pruneSnapshots.mutate()}
+              disabled={pruneSnapshots.isPending || snapshotMaxCount < 1 || !canPruneSnapshots}
+              className="rounded-xl"
+            >
+              <RefreshCcw className="mr-2 h-4 w-4" />
+              {pruneSnapshots.isPending ? 'Pruning…' : `Prune to ${snapshotMaxCount || 0}`}
+            </Button>
+            <p className="text-xs leading-5 text-slate-500">
+              {snapshotMaxCount > 0
+                ? `Retention policy keeps the newest ${snapshotMaxCount} snapshots. Use prune to apply it immediately.`
+                : 'Snapshot retention limit is not configured yet.'}
+            </p>
           </div>
 
           <div className="mt-4 space-y-3">

@@ -56,6 +56,30 @@ func (f MembershipFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MembershipMutation", m)
 }
 
+// The PromptFunc type is an adapter to allow the use of ordinary
+// function as Prompt mutator.
+type PromptFunc func(context.Context, *ent.PromptMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PromptFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PromptMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PromptMutation", m)
+}
+
+// The PromptBindingFunc type is an adapter to allow the use of ordinary
+// function as PromptBinding mutator.
+type PromptBindingFunc func(context.Context, *ent.PromptBindingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PromptBindingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PromptBindingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PromptBindingMutation", m)
+}
+
 // The ProviderFunc type is an adapter to allow the use of ordinary
 // function as Provider mutator.
 type ProviderFunc func(context.Context, *ent.ProviderMutation) (ent.Value, error)

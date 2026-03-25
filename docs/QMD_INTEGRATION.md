@@ -92,7 +92,7 @@ Define custom collections to index:
 **Sessions:**
 Export and index conversation sessions:
 - `enabled` - Enable session export
-- `export_dir` - Where to export session markdown files
+- `export_dir` - Where to export session markdown files. Supports `${WORKSPACE}` and defaults to `${WORKSPACE}/memory/sessions` when left empty
 - `retention_days` - How long to keep exports (0 = forever)
 
 **Update:**

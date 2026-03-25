@@ -10,6 +10,8 @@ import (
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
+	"nekobot/pkg/storage/ent/prompt"
+	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/tenant"
 	"nekobot/pkg/storage/ent/toolevent"
@@ -85,6 +87,8 @@ func checkColumn(t, c string) error {
 			configsection.Table: configsection.ValidColumn,
 			cronjob.Table:       cronjob.ValidColumn,
 			membership.Table:    membership.ValidColumn,
+			prompt.Table:        prompt.ValidColumn,
+			promptbinding.Table: promptbinding.ValidColumn,
 			provider.Table:      provider.ValidColumn,
 			tenant.Table:        tenant.ValidColumn,
 			toolevent.Table:     toolevent.ValidColumn,

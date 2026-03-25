@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"nekobot/pkg/config"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/workspace"
 )
@@ -645,10 +647,12 @@ Inventory body.
 
 	workspaceMgr := workspace.NewManager(workspaceDir, log)
 	s := &Server{
+		config:    config.DefaultConfig(),
 		skillsMgr: mgr,
 		workspace: workspaceMgr,
 		logger:    log,
 	}
+	s.config.WebUI.SkillSnapshots.MaxCount = 2
 	e := echo.New()
 
 	inventoryReq := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/inventory", nil)
@@ -671,6 +675,16 @@ Inventory body.
 	sources, ok := inventoryPayload["sources"].([]interface{})
 	if !ok || len(sources) == 0 {
 		t.Fatalf("expected non-empty sources, got %+v", inventoryPayload["sources"])
+	}
+	versionHistory, ok := inventoryPayload["version_history"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected version_history in inventory payload: %+v", inventoryPayload)
+	}
+	if enabled, _ := versionHistory["enabled"].(bool); !enabled {
+		t.Fatalf("expected version history enabled in inventory payload: %+v", versionHistory)
+	}
+	if skillCount, _ := versionHistory["skill_count"].(float64); skillCount < 1 {
+		t.Fatalf("expected tracked version history skill_count in inventory payload: %+v", versionHistory)
 	}
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/marketplace/skills/snapshots", strings.NewReader(`{"label":"before-change","note":"fixture"}`))
@@ -725,6 +739,72 @@ Inventory body.
 	}
 	if deleteRec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, deleteRec.Code)
+	}
+
+	for idx := 0; idx < 3; idx++ {
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"/api/marketplace/skills/snapshots",
+			strings.NewReader(fmt.Sprintf(`{"label":"checkpoint-%d"}`, idx)),
+		)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		ctx := e.NewContext(req, rec)
+		if err := s.handleCreateMarketplaceSkillSnapshot(ctx); err != nil {
+			t.Fatalf("create prune snapshot %d handler failed: %v", idx, err)
+		}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status %d for prune snapshot %d, got %d", http.StatusOK, idx, rec.Code)
+		}
+	}
+
+	pruneReq := httptest.NewRequest(http.MethodPost, "/api/marketplace/skills/snapshots/prune", nil)
+	pruneRec := httptest.NewRecorder()
+	pruneCtx := e.NewContext(pruneReq, pruneRec)
+	if err := s.handlePruneMarketplaceSkillSnapshots(pruneCtx); err != nil {
+		t.Fatalf("prune snapshot handler failed: %v", err)
+	}
+	if pruneRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, pruneRec.Code)
+	}
+
+	var pruned map[string]interface{}
+	if err := json.Unmarshal(pruneRec.Body.Bytes(), &pruned); err != nil {
+		t.Fatalf("unmarshal prune payload: %v", err)
+	}
+	if deleted, _ := pruned["deleted"].(float64); deleted != 1 {
+		t.Fatalf("expected 1 pruned snapshot, got %+v", pruned)
+	}
+
+	postPruneReq := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/snapshots", nil)
+	postPruneRec := httptest.NewRecorder()
+	postPruneCtx := e.NewContext(postPruneReq, postPruneRec)
+	if err := s.handleListMarketplaceSkillSnapshots(postPruneCtx); err != nil {
+		t.Fatalf("post-prune list snapshots handler failed: %v", err)
+	}
+	if postPruneRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, postPruneRec.Code)
+	}
+
+	var postPrune map[string]interface{}
+	if err := json.Unmarshal(postPruneRec.Body.Bytes(), &postPrune); err != nil {
+		t.Fatalf("unmarshal post-prune payload: %v", err)
+	}
+	if total, _ := postPrune["total"].(float64); total != 2 {
+		t.Fatalf("expected 2 snapshots after prune, got %+v", postPrune)
+	}
+	if maxCount, _ := postPrune["max_count"].(float64); maxCount != 2 {
+		t.Fatalf("expected max_count 2 in snapshot list payload, got %+v", postPrune)
+	}
+
+	versionCleanupReq := httptest.NewRequest(http.MethodPost, "/api/marketplace/skills/versions/cleanup", nil)
+	versionCleanupRec := httptest.NewRecorder()
+	versionCleanupCtx := e.NewContext(versionCleanupReq, versionCleanupRec)
+	if err := s.handleCleanupMarketplaceSkillVersions(versionCleanupCtx); err != nil {
+		t.Fatalf("cleanup skill versions handler failed: %v", err)
+	}
+	if versionCleanupRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, versionCleanupRec.Code)
 	}
 
 	statusReq := httptest.NewRequest(http.MethodGet, "/api/workspace/status", nil)

@@ -69,7 +69,26 @@ type Manager struct {
 	registry         RemoteRegistry
 	loader           *MultiPathLoader
 	snapshotMgr      *SnapshotManager
+	snapshotCfg      SnapshotRetentionConfig
 	versionMgr       *VersionManager
+	versionCfg       VersionRetentionConfig
+}
+
+// SnapshotRetentionConfig controls automatic cleanup of skill snapshots.
+type SnapshotRetentionConfig struct {
+	AutoPrune bool
+	MaxCount  int
+}
+
+// VersionRetentionConfig controls skill version history retention.
+type VersionRetentionConfig struct {
+	Enabled  bool
+	MaxCount int
+}
+
+// SnapshotRetention returns the current snapshot retention policy.
+func (m *Manager) SnapshotRetention() SnapshotRetentionConfig {
+	return m.snapshotCfg
 }
 
 // NewManager creates a new skills manager.
@@ -79,6 +98,24 @@ func NewManager(log *logger.Logger, skillsDir string, autoReload bool) *Manager 
 
 // NewManagerWithOptions creates a new skills manager with extra runtime settings.
 func NewManagerWithOptions(log *logger.Logger, skillsDir string, autoReload bool, skillsProxy string) *Manager {
+	return NewManagerWithRuntimeOptions(log, skillsDir, autoReload, skillsProxy, SnapshotRetentionConfig{
+		AutoPrune: true,
+		MaxCount:  20,
+	}, VersionRetentionConfig{
+		Enabled:  true,
+		MaxCount: 20,
+	})
+}
+
+// NewManagerWithRuntimeOptions creates a new skills manager with runtime retention controls.
+func NewManagerWithRuntimeOptions(
+	log *logger.Logger,
+	skillsDir string,
+	autoReload bool,
+	skillsProxy string,
+	snapshotCfg SnapshotRetentionConfig,
+	versionCfg VersionRetentionConfig,
+) *Manager {
 	// Determine workspace directory (parent of skills dir)
 	workspaceDir := filepath.Dir(skillsDir)
 
@@ -96,7 +133,9 @@ func NewManagerWithOptions(log *logger.Logger, skillsDir string, autoReload bool
 		eligibilityCheck: NewEligibilityChecker(),
 		loader:           NewMultiPathLoader(log, workspaceDir),
 		snapshotMgr:      NewSnapshotManager(log, snapshotsDir),
-		versionMgr:       NewVersionManager(log, versionsDir),
+		snapshotCfg:      snapshotCfg,
+		versionMgr:       NewVersionManager(log, versionsDir, versionCfg.Enabled),
+		versionCfg:       versionCfg,
 	}
 	mgr.installer = NewInstallerWithProxy(log, mgr.skillsProxy)
 	registry, err := NewRegistryClient(mgr.skillsProxy)
@@ -140,6 +179,11 @@ func (m *Manager) Discover() error {
 			}
 		}
 	}
+	if m.versionMgr != nil && m.versionCfg.Enabled && m.versionCfg.MaxCount > 0 {
+		if err := m.versionMgr.Prune(m.versionCfg.MaxCount); err != nil {
+			m.log.Warn("Failed to prune old skill versions", zap.Error(err))
+		}
+	}
 
 	m.log.Info("Skills discovered",
 		zap.Int("total", len(skills)),
@@ -168,12 +212,26 @@ func (m *Manager) CreateSnapshot(metadata map[string]string) (*Snapshot, error) 
 	}
 	m.mu.RUnlock()
 
-	return m.snapshotMgr.Create(skillsCopy, metadata)
+	snapshot, err := m.snapshotMgr.Create(skillsCopy, metadata)
+	if err != nil {
+		return nil, err
+	}
+	if m.snapshotMgr != nil && m.snapshotCfg.AutoPrune && m.snapshotCfg.MaxCount > 0 {
+		if _, pruneErr := m.snapshotMgr.PruneOldest(m.snapshotCfg.MaxCount); pruneErr != nil {
+			m.log.Warn("Failed to prune old skill snapshots", zap.Error(pruneErr))
+		}
+	}
+	return snapshot, nil
 }
 
 // ListSnapshots returns all available snapshots.
 func (m *Manager) ListSnapshots() ([]*Snapshot, error) {
 	return m.snapshotMgr.List()
+}
+
+// PruneSnapshots keeps only the newest snapshots up to maxCount.
+func (m *Manager) PruneSnapshots(maxCount int) (int, error) {
+	return m.snapshotMgr.PruneOldest(maxCount)
 }
 
 // DeleteSnapshot removes a stored snapshot by ID.
@@ -202,6 +260,51 @@ func (m *Manager) RestoreSnapshot(id string) error {
 // GetVersionHistory returns version history for a skill.
 func (m *Manager) GetVersionHistory(skillID string) (*VersionHistory, error) {
 	return m.versionMgr.GetHistory(skillID)
+}
+
+// VersionRetention returns the current skill version retention policy.
+func (m *Manager) VersionRetention() VersionRetentionConfig {
+	return m.versionCfg
+}
+
+// SetSnapshotRetention updates runtime snapshot retention behavior.
+func (m *Manager) SetSnapshotRetention(cfg SnapshotRetentionConfig) {
+	if m == nil {
+		return
+	}
+	m.snapshotCfg = cfg
+}
+
+// SetVersionRetention updates runtime version history retention behavior.
+func (m *Manager) SetVersionRetention(cfg VersionRetentionConfig) {
+	if m == nil {
+		return
+	}
+	m.versionCfg = cfg
+	if m.versionMgr != nil {
+		m.versionMgr.enabled = cfg.Enabled
+	}
+}
+
+// PruneVersionHistory prunes skill version history to the configured count.
+func (m *Manager) PruneVersionHistory(maxCount int) error {
+	return m.versionMgr.Prune(maxCount)
+}
+
+// ClearVersionHistory deletes all stored skill version history.
+func (m *Manager) ClearVersionHistory() (int, error) {
+	return m.versionMgr.DeleteAll()
+}
+
+// VersionHistoryStats reports current persisted version history volume.
+func (m *Manager) VersionHistoryStats() map[string]int {
+	if m == nil || m.versionMgr == nil {
+		return map[string]int{
+			"skill_count":   0,
+			"version_count": 0,
+		}
+	}
+	return m.versionMgr.Stats()
 }
 
 // GetSkillSources returns all configured skill source paths.

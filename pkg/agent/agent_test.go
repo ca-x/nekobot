@@ -166,6 +166,36 @@ func TestResolveModelForProvider_FallsBackToProviderDefaultModel(t *testing.T) {
 	}
 }
 
+func TestGetFailoverSnapshots_ReturnsTrackedState(t *testing.T) {
+	cfg := config.DefaultConfig()
+	ag := &Agent{
+		config:           cfg,
+		failoverCooldown: providers.NewCooldownTracker(),
+	}
+
+	ag.failoverCooldown.MarkFailure("primary", providers.FailoverReasonRateLimit)
+
+	snapshots := ag.GetFailoverSnapshots([]string{"primary", "secondary"})
+	primary, ok := snapshots["primary"]
+	if !ok {
+		t.Fatalf("expected primary snapshot")
+	}
+	if primary.Available {
+		t.Fatalf("expected primary to be unavailable")
+	}
+	if got := primary.FailureCounts[providers.FailoverReasonRateLimit]; got != 1 {
+		t.Fatalf("expected one rate limit failure, got %d", got)
+	}
+
+	secondary, ok := snapshots["secondary"]
+	if !ok {
+		t.Fatalf("expected secondary snapshot")
+	}
+	if !secondary.Available {
+		t.Fatalf("expected secondary to be available")
+	}
+}
+
 func TestResolveOrchestratorDefaultsToBlades(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Orchestrator = ""
@@ -280,7 +310,7 @@ func TestAgentRegistersMemoryToolWhenSemanticMemoryEnabled(t *testing.T) {
 		t.Fatalf("create logger: %v", err)
 	}
 
-	ag, err := New(cfg, log, nil, nil, nil, nil, nil, nil)
+	ag, err := New(cfg, log, nil, nil, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}

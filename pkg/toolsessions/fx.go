@@ -54,17 +54,23 @@ func (m *Manager) cleanupLoop(ctx context.Context, interval time.Duration) {
 			result, err := m.Cleanup(context.Background())
 			if err != nil {
 				m.log.Warn("Tool session cleanup failed", zap.Error(err))
+			} else if result.DetachedByIdle != 0 || result.TerminatedByTTL != 0 || result.TerminatedByLife != 0 || result.ArchivedOld != 0 {
+				m.log.Info("Tool session cleanup applied",
+					zap.Int("detached_by_idle", result.DetachedByIdle),
+					zap.Int("terminated_by_ttl", result.TerminatedByTTL),
+					zap.Int("terminated_by_lifetime", result.TerminatedByLife),
+					zap.Int("archived_old", result.ArchivedOld),
+				)
+			}
+
+			eventsDeleted, eventsErr := m.CleanupEvents(context.Background())
+			if eventsErr != nil {
+				m.log.Warn("Tool session event cleanup failed", zap.Error(eventsErr))
 				continue
 			}
-			if result.DetachedByIdle == 0 && result.TerminatedByTTL == 0 && result.TerminatedByLife == 0 && result.ArchivedOld == 0 {
-				continue
+			if eventsDeleted > 0 {
+				m.log.Info("Tool session event cleanup applied", zap.Int("deleted", eventsDeleted))
 			}
-			m.log.Info("Tool session cleanup applied",
-				zap.Int("detached_by_idle", result.DetachedByIdle),
-				zap.Int("terminated_by_ttl", result.TerminatedByTTL),
-				zap.Int("terminated_by_lifetime", result.TerminatedByLife),
-				zap.Int("archived_old", result.ArchivedOld),
-			)
 		}
 	}
 }

@@ -158,6 +158,81 @@ var (
 			},
 		},
 	}
+	// PromptsColumns holds the columns for the "prompts" table.
+	PromptsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "prompt_key", Type: field.TypeString},
+		{Name: "name", Type: field.TypeString},
+		{Name: "description", Type: field.TypeString, Default: ""},
+		{Name: "mode", Type: field.TypeEnum, Enums: []string{"system", "user"}, Default: "system"},
+		{Name: "template", Type: field.TypeString},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "tags_json", Type: field.TypeString, Default: "[]"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// PromptsTable holds the schema information for the "prompts" table.
+	PromptsTable = &schema.Table{
+		Name:       "prompts",
+		Columns:    PromptsColumns,
+		PrimaryKey: []*schema.Column{PromptsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "prompt_prompt_key",
+				Unique:  true,
+				Columns: []*schema.Column{PromptsColumns[1]},
+			},
+			{
+				Name:    "prompt_mode",
+				Unique:  false,
+				Columns: []*schema.Column{PromptsColumns[4]},
+			},
+			{
+				Name:    "prompt_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{PromptsColumns[6]},
+			},
+			{
+				Name:    "prompt_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{PromptsColumns[9]},
+			},
+		},
+	}
+	// PromptBindingsColumns holds the columns for the "prompt_bindings" table.
+	PromptBindingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "scope", Type: field.TypeEnum, Enums: []string{"global", "channel", "session"}, Default: "global"},
+		{Name: "target", Type: field.TypeString, Default: ""},
+		{Name: "prompt_id", Type: field.TypeString},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "priority", Type: field.TypeInt, Default: 100},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// PromptBindingsTable holds the schema information for the "prompt_bindings" table.
+	PromptBindingsTable = &schema.Table{
+		Name:       "prompt_bindings",
+		Columns:    PromptBindingsColumns,
+		PrimaryKey: []*schema.Column{PromptBindingsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "promptbinding_scope_target_priority",
+				Unique:  false,
+				Columns: []*schema.Column{PromptBindingsColumns[1], PromptBindingsColumns[2], PromptBindingsColumns[5]},
+			},
+			{
+				Name:    "promptbinding_prompt_id",
+				Unique:  false,
+				Columns: []*schema.Column{PromptBindingsColumns[3]},
+			},
+			{
+				Name:    "promptbinding_scope_target_prompt_id",
+				Unique:  true,
+				Columns: []*schema.Column{PromptBindingsColumns[1], PromptBindingsColumns[2], PromptBindingsColumns[3]},
+			},
+		},
+	}
 	// ProvidersColumns holds the columns for the "providers" table.
 	ProvidersColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -341,6 +416,8 @@ var (
 		ConfigSectionsTable,
 		CronJobsTable,
 		MembershipsTable,
+		PromptsTable,
+		PromptBindingsTable,
 		ProvidersTable,
 		TenantsTable,
 		ToolEventsTable,

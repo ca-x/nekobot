@@ -5,15 +5,18 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v5"
 
+	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/providerstore"
+	"nekobot/pkg/skills"
 	"nekobot/pkg/storage/ent"
 )
 
@@ -122,6 +125,50 @@ func TestHandleSaveConfigPersistsMemorySection(t *testing.T) {
 	}
 	if len(reloaded.Agents.Defaults.ProviderGroups) != 1 {
 		t.Fatalf("provider groups not persisted: %+v", reloaded.Agents.Defaults.ProviderGroups)
+	}
+}
+
+func TestHandleSaveConfigUpdatesSkillRetentionRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	log := newTestLogger(t)
+	skillsDir := filepath.Join(cfg.WorkspacePath(), "skills")
+	mgr := skills.NewManagerWithRuntimeOptions(
+		log,
+		skillsDir,
+		false,
+		"",
+		skills.SnapshotRetentionConfig{AutoPrune: true, MaxCount: 20},
+		skills.VersionRetentionConfig{Enabled: true, MaxCount: 20},
+	)
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		skillsMgr: mgr,
+	}
+
+	body := `{"webui":{"enabled":true,"port":0,"public_base_url":"","tool_session_otp_ttl_seconds":180,"tool_session_events":{"enabled":true,"retention_days":14},"skill_snapshots":{"auto_prune":true,"max_count":3},"skill_versions":{"enabled":false,"max_count":5}}}`
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleSaveConfig(c); err != nil {
+		t.Fatalf("handleSaveConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	snapshotRetention := mgr.SnapshotRetention()
+	if snapshotRetention.MaxCount != 3 {
+		t.Fatalf("expected snapshot max_count 3, got %+v", snapshotRetention)
+	}
+	versionRetention := mgr.VersionRetention()
+	if versionRetention.Enabled || versionRetention.MaxCount != 5 {
+		t.Fatalf("unexpected version retention after save: %+v", versionRetention)
 	}
 }
 
@@ -423,6 +470,62 @@ func TestHandleGetProvidersReturnsProjectedView(t *testing.T) {
 	}
 	if secret, ok := item["api_key"].(string); ok && secret != "" {
 		t.Fatalf("expected projected provider to omit raw api_key, got %q", secret)
+	}
+}
+
+func TestHandleGetProviderRuntimeReturnsCooldownState(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	defer client.Close()
+
+	providerMgr, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	defer providerMgr.Close()
+
+	if _, err := providerMgr.Create(context.Background(), config.ProviderProfile{
+		Name:         "primary",
+		ProviderKind: "openai",
+	}); err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		providers: providerMgr,
+		agent:     &agent.Agent{},
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/providers/runtime", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleGetProviderRuntime(c); err != nil {
+		t.Fatalf("handleGetProviderRuntime failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload []map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal provider runtime payload failed: %v", err)
+	}
+	if len(payload) != 1 {
+		t.Fatalf("expected 1 runtime item, got %d", len(payload))
+	}
+	if got, _ := payload[0]["name"].(string); got != "primary" {
+		t.Fatalf("expected primary runtime item, got %q", got)
+	}
+	if available, ok := payload[0]["available"].(bool); !ok || !available {
+		t.Fatalf("expected primary to default to available, got %+v", payload[0]["available"])
 	}
 }
 

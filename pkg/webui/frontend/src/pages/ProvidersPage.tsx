@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import Header from '@/components/layout/Header';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { useProviders, type Provider } from '@/hooks/useProviders';
+import { useProviderRuntime, useProviders, type Provider, type ProviderRuntime } from '@/hooks/useProviders';
 import { useConfig, useSaveConfig } from '@/hooks/useConfig';
 import { ProviderForm } from '@/components/config/ProviderForm';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,7 @@ import {
   Search,
   ShieldCheck,
   Sparkles,
+  TimerReset,
 } from 'lucide-react';
 
 const KIND_TINTS: Record<string, string> = {
@@ -111,6 +112,7 @@ const PROVIDER_GROUP_STRATEGIES: Array<{
 
 export default function ProvidersPage() {
   const { data: providers, isLoading } = useProviders();
+  const { data: providerRuntime = [] } = useProviderRuntime();
   const { data: runtimeConfig } = useConfig();
   const saveConfig = useSaveConfig();
   const [formOpen, setFormOpen] = useState(false);
@@ -141,6 +143,10 @@ export default function ProvidersPage() {
   const readyCount = (providers ?? []).filter((provider) => provider.api_key_set).length;
   const routingDefault = (providers ?? []).find((provider) => provider.is_routing_default) ?? null;
   const providerNames = useMemo(() => (providers ?? []).map((provider) => provider.name), [providers]);
+  const runtimeMap = useMemo(
+    () => new Map(providerRuntime.map((item) => [item.name, item])),
+    [providerRuntime],
+  );
 
   useEffect(() => {
     const agents = runtimeConfig?.agents;
@@ -528,7 +534,12 @@ export default function ProvidersPage() {
       {!isLoading && filteredProviders.length > 0 && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {filteredProviders.map((provider) => (
-            <ProviderPanel key={provider.name} provider={provider} onClick={() => openEdit(provider)} />
+            <ProviderPanel
+              key={provider.name}
+              provider={provider}
+              runtime={runtimeMap.get(provider.name)}
+              onClick={() => openEdit(provider)}
+            />
           ))}
         </div>
       )}
@@ -637,9 +648,11 @@ function MetricCard({
 
 function ProviderPanel({
   provider,
+  runtime,
   onClick,
 }: {
   provider: Provider;
+  runtime?: ProviderRuntime;
   onClick: () => void;
 }) {
   const state = getProviderState(provider);
@@ -712,6 +725,39 @@ function ProviderPanel({
           />
         </div>
 
+        <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+            <TimerReset className="h-3.5 w-3.5" />
+            {t('providerRuntimeTitle')}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span
+              className={cn(
+                'rounded-full px-3 py-1.5 text-xs font-medium',
+                runtime?.in_cooldown
+                  ? 'bg-amber-50 text-amber-800'
+                  : 'bg-emerald-50 text-emerald-700',
+              )}
+            >
+              {runtime?.in_cooldown ? t('providerRuntimeCooldown') : t('providerRuntimeAvailable')}
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600">
+              {t('providerRuntimeErrors', String(runtime?.error_count ?? 0))}
+            </span>
+            {runtime?.in_cooldown && (
+              <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs text-amber-800">
+                {t('providerRuntimeRemaining', formatDuration(runtime.cooldown_remaining_seconds))}
+              </span>
+            )}
+            {runtime?.disabled_reason && (
+              <span className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-700">
+                {t('providerRuntimeReason', runtime.disabled_reason)}
+              </span>
+            )}
+          </div>
+          <p className="mt-3 text-sm leading-6 text-slate-500">{formatFailureSummary(runtime)}</p>
+        </div>
+
         <div className="space-y-3">
           <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
@@ -752,6 +798,32 @@ function ProviderPanel({
       </div>
     </Card>
   );
+}
+
+function formatDuration(totalSeconds: number): string {
+  if (!totalSeconds || totalSeconds <= 0) {
+    return '0s';
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+  if (seconds === 0) {
+    return `${minutes}m`;
+  }
+  return `${minutes}m ${seconds}s`;
+}
+
+function formatFailureSummary(runtime?: ProviderRuntime): string {
+  if (!runtime) {
+    return t('providerRuntimeIdle');
+  }
+  const entries = Object.entries(runtime.failure_counts ?? {}).filter(([, count]) => count > 0);
+  if (entries.length === 0) {
+    return t('providerRuntimeHealthy');
+  }
+  return entries.map(([reason, count]) => `${reason}: ${count}`).join(' · ');
 }
 
 function InfoTile({

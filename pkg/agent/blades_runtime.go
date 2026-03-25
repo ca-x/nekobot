@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kratos/blades"
@@ -16,6 +17,7 @@ import (
 	"go.uber.org/zap"
 	"nekobot/pkg/config"
 	"nekobot/pkg/memory"
+	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/tools"
 )
@@ -27,6 +29,14 @@ type bladesModelProvider struct {
 	providerOrder   []string
 	requestedModel  string
 	clientCache     map[string]*providers.Client
+	mu              sync.RWMutex
+	lastRoute       ChatRouteSnapshot
+}
+
+// ChatRouteSnapshot stores the latest actual provider/model used by an LLM call.
+type ChatRouteSnapshot struct {
+	Provider string
+	Model    string
 }
 
 func newBladesModelProvider(a *Agent, primaryProvider string, providerOrder []string, requestedModel string) *bladesModelProvider {
@@ -63,6 +73,7 @@ func (p *bladesModelProvider) Generate(ctx context.Context, req *blades.ModelReq
 			p.clientCache,
 		)
 		if err == nil {
+			p.recordRoute(providerUsed, modelUsed)
 			p.agent.logger.Debug("Blades model response",
 				zap.String("provider", providerUsed),
 				zap.String("model", modelUsed),
@@ -90,6 +101,28 @@ func (p *bladesModelProvider) Generate(ctx context.Context, req *blades.ModelReq
 	}
 
 	return nil, fmt.Errorf("llm call with fallback: retry exhausted")
+}
+
+func (p *bladesModelProvider) recordRoute(providerUsed, modelUsed string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lastRoute = ChatRouteSnapshot{
+		Provider: strings.TrimSpace(providerUsed),
+		Model:    strings.TrimSpace(modelUsed),
+	}
+}
+
+func latestBladesRouteSnapshot(p *bladesModelProvider) (ChatRouteSnapshot, bool) {
+	if p == nil {
+		return ChatRouteSnapshot{}, false
+	}
+
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.lastRoute.Provider == "" && p.lastRoute.Model == "" {
+		return ChatRouteSnapshot{}, false
+	}
+	return p.lastRoute, true
 }
 
 func (p *bladesModelProvider) NewStreaming(ctx context.Context, req *blades.ModelRequest) blades.Generator[*blades.ModelResponse, error] {
@@ -502,10 +535,21 @@ func schemaToMap(s *jsonschema.Schema) map[string]interface{} {
 	return out
 }
 
-func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
+func (a *Agent) chatWithBladesOrchestrator(
+	ctx context.Context,
+	sess SessionInterface,
+	userMessage, provider, model string,
+	fallback []string,
+	promptCtx PromptContext,
+) (string, ChatRouteResult, error) {
 	a.logger.Info("Processing chat message with blades orchestrator",
 		zap.String("message", truncate(userMessage, 100)),
 	)
+	routeResult := ChatRouteResult{
+		RequestedProvider: strings.TrimSpace(provider),
+		RequestedModel:    strings.TrimSpace(model),
+		RequestedFallback: append([]string(nil), fallback...),
+	}
 
 	if model == "" {
 		model = a.config.Agents.Defaults.Model
@@ -513,8 +557,9 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 
 	providerOrder, err := a.buildProviderOrder(provider, fallback)
 	if err != nil {
-		return "", err
+		return "", routeResult, err
 	}
+	routeResult.ResolvedOrder = append([]string(nil), providerOrder...)
 	primaryProvider := providerOrder[0]
 
 	modelProvider := newBladesModelProvider(a, primaryProvider, providerOrder, model)
@@ -523,7 +568,7 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 		toolResolver, mcpResolver, err = a.buildBladesToolsResolverWithMCP(state.mcpServers)
 	}
 	if err != nil {
-		return "", fmt.Errorf("build blades tools resolver: %w", err)
+		return "", routeResult, fmt.Errorf("build blades tools resolver: %w", err)
 	}
 	if mcpResolver != nil {
 		defer func() {
@@ -533,7 +578,11 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 		}()
 	}
 
-	instruction := a.context.BuildSystemPrompt()
+	resolvedPrompts, err := a.resolvePromptSet(ctx, provider, model, fallback, promptCtx)
+	if err != nil {
+		return "", routeResult, err
+	}
+	instruction := a.context.BuildSystemPromptWithInjected(resolvedPrompts)
 	agentOpts := []blades.AgentOption{
 		blades.WithModel(modelProvider),
 		blades.WithInstruction(instruction),
@@ -555,7 +604,7 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 		agentOpts...,
 	)
 	if err != nil {
-		return "", fmt.Errorf("create blades agent: %w", err)
+		return "", routeResult, fmt.Errorf("create blades agent: %w", err)
 	}
 
 	normalizedHistory := trimTrailingCurrentUserMessage(a.sessionHistory(sess), userMessage)
@@ -569,17 +618,26 @@ func (a *Agent) chatWithBladesOrchestrator(ctx context.Context, sess SessionInte
 			continue
 		}
 		if err := bladesSession.Append(ctx, toBladesMessage(msg)); err != nil {
-			return "", fmt.Errorf("append session history: %w", err)
+			return "", routeResult, fmt.Errorf("append session history: %w", err)
 		}
 	}
 
 	runner := blades.NewRunner(agentInstance)
-	output, err := runner.Run(ctx, blades.UserMessage(userMessage), blades.WithSession(bladesSession))
+	output, err := runner.Run(
+		ctx,
+		blades.UserMessage(prompts.ComposeUserMessage(resolvedPrompts.UserText, userMessage)),
+		blades.WithSession(bladesSession),
+	)
 	if err != nil {
-		return "", fmt.Errorf("blades runner run: %w", err)
+		return "", routeResult, fmt.Errorf("blades runner run: %w", err)
 	}
 
-	return output.Text(), nil
+	if snapshot, ok := latestBladesRouteSnapshot(modelProvider); ok {
+		routeResult.ActualProvider = snapshot.Provider
+		routeResult.ActualModel = snapshot.Model
+	}
+
+	return output.Text(), routeResult, nil
 }
 
 func (a *Agent) lookupACPSessionState(sess SessionInterface) (*acpSessionState, bool) {

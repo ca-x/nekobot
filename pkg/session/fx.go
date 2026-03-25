@@ -66,3 +66,20 @@ func registerCleanupLifecycle(
 		},
 	})
 }
+
+// CleanupPersistedSessions runs session pruning once using current config.
+func CleanupPersistedSessions(cfg *config.Config, manager *Manager) error {
+	if cfg == nil || manager == nil {
+		return nil
+	}
+	if !cfg.Sessions.Enabled || !cfg.Sessions.Cleanup.Enabled {
+		return nil
+	}
+
+	cleanup := cfg.Sessions.Cleanup
+	pruner := NewPruner(manager, PruneConfig{
+		Strategy:      PruneStrategyTTL,
+		MaxSessionAge: time.Duration(cleanup.MaxAgeDays) * 24 * time.Hour,
+	})
+	return pruner.Prune()
+}

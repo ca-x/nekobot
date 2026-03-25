@@ -40,4 +40,4 @@ jobs:
         run: go test ./...
 
       - name: Verify Docker build
-        run: docker build .
+        run: docker build --build-arg INSTALL_QMD=false .

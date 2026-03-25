@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useChat, type ChatMessage } from '@/hooks/useChat';
+import { usePrompts, usePromptSessionBindings } from '@/hooks/usePrompts';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -264,6 +265,8 @@ function StatusPill({
 export default function ChatPage() {
   const { data: providers = [] } = useProviders();
   const { data: config } = useAppConfig();
+  const { data: prompts = [] } = usePrompts();
+  const { data: sessionPromptBindings } = usePromptSessionBindings('webui-chat');
   const {
     messages,
     sendMessage,
@@ -271,6 +274,7 @@ export default function ChatPage() {
     connectionStatus,
     reconnect,
     routeSettings,
+    routeResult,
     isAwaitingReply,
   } = useChat();
 
@@ -279,6 +283,8 @@ export default function ChatPage() {
   const [selectedModel, setSelectedModel] = useState('');
   const [customModel, setCustomModel] = useState('');
   const [selectedFallbackTargets, setSelectedFallbackTargets] = useState<string[]>([]);
+  const [selectedSystemPromptIDs, setSelectedSystemPromptIDs] = useState<string[]>([]);
+  const [selectedUserPromptIDs, setSelectedUserPromptIDs] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState('');
   const scrollEndRef = useRef<HTMLDivElement>(null);
   const routeTargetMap = useMemo(
@@ -347,9 +353,28 @@ export default function ChatPage() {
   const activeModel = customModel.trim() || selectedModel.trim();
   const activeProvider = selectedProvider.trim();
   const activeFallback = selectedFallbackTargets.filter((target) => target.trim().length > 0);
+  const actualProvider = routeResult?.actual_provider?.trim() || '';
+  const actualModel = routeResult?.actual_model?.trim() || '';
+  const resolvedOrder = routeResult?.resolved_order ?? [];
   const selectedModelEntry = findModelEntry(filteredModels, selectedProvider, selectedModel);
   const selectedModelValue = selectedModelEntry ? encodeModelValue(selectedModelEntry) : EMPTY_VALUE;
   const fallbackRouteTargets = routeTargets.filter((target) => target.name !== activeProvider);
+  const systemPrompts = useMemo(
+    () => prompts.filter((item) => item.enabled && item.mode === 'system'),
+    [prompts],
+  );
+  const userPrompts = useMemo(
+    () => prompts.filter((item) => item.enabled && item.mode === 'user'),
+    [prompts],
+  );
+
+  useEffect(() => {
+    if (!sessionPromptBindings) {
+      return;
+    }
+    setSelectedSystemPromptIDs(sessionPromptBindings.system_prompt_ids ?? []);
+    setSelectedUserPromptIDs(sessionPromptBindings.user_prompt_ids ?? []);
+  }, [sessionPromptBindings]);
 
   function handleProviderChange(value: string) {
     const provider = fromSelectValue(value);
@@ -389,6 +414,15 @@ export default function ChatPage() {
     );
   }
 
+  function handleTogglePrompt(promptID: string, mode: 'system' | 'user') {
+    const setter = mode === 'system' ? setSelectedSystemPromptIDs : setSelectedUserPromptIDs;
+    setter((current) =>
+      current.includes(promptID)
+        ? current.filter((item) => item !== promptID)
+        : [...current, promptID],
+    );
+  }
+
   function handleSend() {
     const content = chatInput.trim();
     if (!content || connectionStatus !== 'connected') {
@@ -399,6 +433,8 @@ export default function ChatPage() {
       provider: activeProvider,
       model: activeModel,
       fallbackProviders: activeFallback,
+      systemPromptIDs: selectedSystemPromptIDs,
+      userPromptIDs: selectedUserPromptIDs,
     });
     setChatInput('');
   }
@@ -473,6 +509,29 @@ export default function ChatPage() {
               </div>
             </div>
 
+            <div className="rounded-[1.5rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.95),rgba(252,241,245,0.82))] p-4">
+              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
+                <Radio className="h-3.5 w-3.5" />
+                {t('chatActualRoute')}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white">
+                  {actualProvider || t('chatActualRoutePending')}
+                </span>
+                <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]">
+                  {actualModel || t('chatActualRoutePending')}
+                </span>
+                <span className="rounded-full border border-[hsl(var(--brand-200))] bg-white px-3 py-1.5 text-xs text-[hsl(var(--brand-800))]">
+                  {resolvedOrder.length > 0
+                    ? `${t('chatResolvedOrder')}: ${resolvedOrder.join(' -> ')}`
+                    : t('chatActualRouteNoResult')}
+                </span>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                {t('chatActualRouteHint')}
+              </p>
+            </div>
+
             <div className="space-y-3">
               <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 {t('defaultProvider')}
@@ -523,6 +582,76 @@ export default function ChatPage() {
                 value={customModel}
                 onChange={(event) => setCustomModel(event.target.value)}
               />
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {t('chatSystemPrompts')}
+              </label>
+              <div className="space-y-3 rounded-[1.4rem] border border-white bg-white/80 p-3">
+                <p className="text-sm text-muted-foreground">{t('chatSystemPromptsHint')}</p>
+                {systemPrompts.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
+                    {t('chatPromptEmpty')}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {systemPrompts.map((prompt) => {
+                      const selected = selectedSystemPromptIDs.includes(prompt.id);
+                      return (
+                        <button
+                          key={prompt.id}
+                          type="button"
+                          onClick={() => handleTogglePrompt(prompt.id, 'system')}
+                          className={cn(
+                            'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                            selected
+                              ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
+                              : 'border-[hsl(var(--gray-200))] bg-white text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
+                          )}
+                        >
+                          {prompt.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                {t('chatUserPrompts')}
+              </label>
+              <div className="space-y-3 rounded-[1.4rem] border border-white bg-white/80 p-3">
+                <p className="text-sm text-muted-foreground">{t('chatUserPromptsHint')}</p>
+                {userPrompts.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
+                    {t('chatPromptEmpty')}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {userPrompts.map((prompt) => {
+                      const selected = selectedUserPromptIDs.includes(prompt.id);
+                      return (
+                        <button
+                          key={prompt.id}
+                          type="button"
+                          onClick={() => handleTogglePrompt(prompt.id, 'user')}
+                          className={cn(
+                            'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                            selected
+                              ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
+                              : 'border-[hsl(var(--gray-200))] bg-white text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
+                          )}
+                        >
+                          {prompt.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -605,9 +734,9 @@ export default function ChatPage() {
               </div>
               <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--gray-100))] px-3 py-1.5 text-xs text-muted-foreground">
                 <Radio className="h-3.5 w-3.5" />
-                {activeProvider || t('chatRouteAuto')}
+                {actualProvider || activeProvider || t('chatRouteAuto')}
                 <span className="text-[hsl(var(--gray-300))]">/</span>
-                {activeModel || t('chatModelUnset')}
+                {actualModel || activeModel || t('chatModelUnset')}
               </div>
             </div>
           </CardHeader>

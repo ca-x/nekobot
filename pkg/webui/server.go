@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	echojwt "github.com/labstack/echo-jwt/v5"
 	"github.com/labstack/echo/v5"
@@ -44,6 +43,7 @@ import (
 	"nekobot/pkg/logger"
 	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/process"
+	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/session"
@@ -73,6 +73,7 @@ type Server struct {
 	toolSess   *toolsessions.Manager
 	sessionMgr *session.Manager
 	processMgr *process.Manager
+	prompts    *prompts.Manager
 	providers  *providerstore.Manager
 	cronMgr    *cron.Manager
 	skillsMgr  *skills.Manager
@@ -100,6 +101,7 @@ func NewServer(
 	toolSessionMgr *toolsessions.Manager,
 	sessionMgr *session.Manager,
 	processManager *process.Manager,
+	promptManager *prompts.Manager,
 	providerStore *providerstore.Manager,
 	cronManager *cron.Manager,
 	skillsManager *skills.Manager,
@@ -129,6 +131,7 @@ func NewServer(
 		toolSess:   toolSessionMgr,
 		sessionMgr: sessionMgr,
 		processMgr: processManager,
+		prompts:    promptManager,
 		providers:  providerStore,
 		cronMgr:    cronManager,
 		skillsMgr:  skillsManager,
@@ -176,6 +179,7 @@ func (s *Server) setup() {
 
 	// Provider routes
 	api.GET("/providers", s.handleGetProviders)
+	api.GET("/providers/runtime", s.handleGetProviderRuntime)
 	api.POST("/providers", s.handleCreateProvider)
 	api.POST("/providers/discover-models", s.handleDiscoverProviderModels)
 	api.PUT("/providers/:name", s.handleUpdateProvider)
@@ -198,6 +202,21 @@ func (s *Server) setup() {
 	api.GET("/memory/qmd/status", s.handleGetQMDStatus)
 	api.POST("/memory/qmd/install", s.handleInstallQMD)
 	api.POST("/memory/qmd/update", s.handleUpdateQMD)
+	api.POST("/memory/qmd/sessions/cleanup", s.handleCleanupQMDSessionExports)
+
+	// Prompt routes
+	api.GET("/prompts", s.handleListPrompts)
+	api.POST("/prompts", s.handleCreatePrompt)
+	api.PUT("/prompts/:id", s.handleUpdatePrompt)
+	api.DELETE("/prompts/:id", s.handleDeletePrompt)
+	api.GET("/prompts/bindings", s.handleListPromptBindings)
+	api.POST("/prompts/bindings", s.handleCreatePromptBinding)
+	api.PUT("/prompts/bindings/:id", s.handleUpdatePromptBinding)
+	api.DELETE("/prompts/bindings/:id", s.handleDeletePromptBinding)
+	api.POST("/prompts/resolve", s.handleResolvePrompts)
+	api.GET("/chat/prompts/session/:id", s.handleGetChatSessionPrompts)
+	api.PUT("/chat/prompts/session/:id", s.handlePutChatSessionPrompts)
+	api.DELETE("/chat/prompts/session/:id", s.handleDeleteChatSessionPrompts)
 
 	// Status
 	api.GET("/status", s.handleStatus)
@@ -215,6 +234,7 @@ func (s *Server) setup() {
 	api.GET("/sessions/:id", s.handleGetSession)
 	api.PUT("/sessions/:id/summary", s.handleUpdateSessionSummary)
 	api.DELETE("/sessions/:id", s.handleDeleteSession)
+	api.POST("/sessions/cleanup", s.handleCleanupSessions)
 
 	// Marketplace routes
 	api.GET("/marketplace/skills", s.handleListMarketplaceSkills)
@@ -226,6 +246,8 @@ func (s *Server) setup() {
 	api.GET("/marketplace/skills/inventory", s.handleGetMarketplaceInventory)
 	api.GET("/marketplace/skills/snapshots", s.handleListMarketplaceSkillSnapshots)
 	api.POST("/marketplace/skills/snapshots", s.handleCreateMarketplaceSkillSnapshot)
+	api.POST("/marketplace/skills/snapshots/prune", s.handlePruneMarketplaceSkillSnapshots)
+	api.POST("/marketplace/skills/versions/cleanup", s.handleCleanupMarketplaceSkillVersions)
 	api.POST("/marketplace/skills/snapshots/:id/restore", s.handleRestoreMarketplaceSkillSnapshot)
 	api.DELETE("/marketplace/skills/snapshots/:id", s.handleDeleteMarketplaceSkillSnapshot)
 	api.POST("/marketplace/skills/:id/enable", s.handleEnableMarketplaceSkill)
@@ -257,6 +279,7 @@ func (s *Server) setup() {
 	api.POST("/tool-sessions/:id/process/input", s.handleToolSessionProcessInput)
 	api.POST("/tool-sessions/:id/process/kill", s.handleToolSessionProcessKill)
 	api.POST("/tool-sessions/cleanup-terminated", s.handleCleanupTerminatedToolSessions)
+	api.POST("/tool-sessions/events/cleanup", s.handleCleanupToolSessionEvents)
 
 	// Approval routes
 	api.GET("/approvals", s.handleGetApprovals)
@@ -595,6 +618,63 @@ func (s *Server) handleGetProviders(c *echo.Context) error {
 		providers[i] = s.providerProfileToView(p)
 	}
 	return c.JSON(http.StatusOK, providers)
+}
+
+func (s *Server) handleGetProviderRuntime(c *echo.Context) error {
+	if s.agent == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "agent not available"})
+	}
+
+	loaded, err := s.providers.List(c.Request().Context())
+	if err != nil {
+		s.logger.Error("Failed to load providers from database", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load providers"})
+	}
+
+	names := make([]string, 0, len(loaded))
+	for _, provider := range loaded {
+		trimmed := strings.TrimSpace(provider.Name)
+		if trimmed == "" {
+			continue
+		}
+		names = append(names, trimmed)
+	}
+
+	snapshots := s.agent.GetFailoverSnapshots(names)
+	items := make([]map[string]interface{}, 0, len(names))
+	for _, name := range names {
+		snapshot := snapshots[name]
+		failureCounts := make(map[string]int, len(snapshot.FailureCounts))
+		for reason, count := range snapshot.FailureCounts {
+			failureCounts[string(reason)] = count
+		}
+
+		item := map[string]interface{}{
+			"name":                       name,
+			"available":                  snapshot.Available,
+			"in_cooldown":                snapshot.InCooldown,
+			"error_count":                snapshot.ErrorCount,
+			"cooldown_remaining_seconds": int(snapshot.CooldownRemaining.Seconds()),
+			"failure_counts":             failureCounts,
+			"disabled_reason":            string(snapshot.DisabledReason),
+			"last_failure_unix":          int64(0),
+			"cooldown_end_unix":          int64(0),
+			"disabled_until_unix":        int64(0),
+		}
+		if !snapshot.LastFailure.IsZero() {
+			item["last_failure_unix"] = snapshot.LastFailure.Unix()
+		}
+		if !snapshot.CooldownEnd.IsZero() {
+			item["cooldown_end_unix"] = snapshot.CooldownEnd.Unix()
+		}
+		if !snapshot.DisabledUntil.IsZero() {
+			item["disabled_until_unix"] = snapshot.DisabledUntil.Unix()
+		}
+
+		items = append(items, item)
+	}
+
+	return c.JSON(http.StatusOK, items)
 }
 
 func (s *Server) handleCreateProvider(c *echo.Context) error {
@@ -1192,6 +1272,17 @@ func (s *Server) handleCleanupTerminatedToolSessions(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]int{"archived": count})
+}
+
+func (s *Server) handleCleanupToolSessionEvents(c *echo.Context) error {
+	if s.toolSess == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
+	}
+	count, err := s.toolSess.DeleteAllEvents(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]int{"deleted": count})
 }
 
 func (s *Server) handleCreateToolSessionAttachToken(c *echo.Context) error {
@@ -2499,6 +2590,8 @@ func (s *Server) handleGetMarketplaceInventory(c *echo.Context) error {
 			alwaysCount++
 		}
 	}
+	versionStats := s.skillsMgr.VersionHistoryStats()
+	versionPolicy := s.skillVersionPolicy()
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"writable_dir":  strings.TrimSpace(s.skillsMgr.SkillsDir()),
@@ -2506,7 +2599,13 @@ func (s *Server) handleGetMarketplaceInventory(c *echo.Context) error {
 		"source_count":  len(sourceItems),
 		"enabled_count": enabledCount,
 		"always_count":  alwaysCount,
-		"sources":       sourceItems,
+		"version_history": map[string]interface{}{
+			"enabled":       versionPolicy.Enabled,
+			"max_count":     versionPolicy.MaxCount,
+			"skill_count":   versionStats["skill_count"],
+			"version_count": versionStats["version_count"],
+		},
+		"sources": sourceItems,
 	})
 }
 
@@ -2520,6 +2619,8 @@ func (s *Server) handleListMarketplaceSkillSnapshots(c *echo.Context) error {
 		s.logger.Error("Failed to list skill snapshots", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list skill snapshots"})
 	}
+
+	snapshotPolicy := s.skillSnapshotPolicy()
 
 	items := make([]map[string]interface{}, 0, len(snapshotList))
 	for _, snapshot := range snapshotList {
@@ -2540,8 +2641,10 @@ func (s *Server) handleListMarketplaceSkillSnapshots(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"total":     len(items),
-		"snapshots": items,
+		"total":      len(items),
+		"snapshots":  items,
+		"auto_prune": snapshotPolicy.AutoPrune,
+		"max_count":  snapshotPolicy.MaxCount,
 	})
 }
 
@@ -2588,6 +2691,81 @@ func (s *Server) handleCreateMarketplaceSkillSnapshot(c *echo.Context) error {
 		"enabled_count": enabledCount,
 		"metadata":      snapshot.Metadata,
 	})
+}
+
+func (s *Server) handlePruneMarketplaceSkillSnapshots(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	snapshotPolicy := s.skillSnapshotPolicy()
+	maxCount := snapshotPolicy.MaxCount
+	if maxCount < 1 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "skill snapshot max_count must be at least 1"})
+	}
+
+	deleted, err := s.skillsMgr.PruneSnapshots(maxCount)
+	if err != nil {
+		s.logger.Error("Failed to prune skill snapshots", zap.Int("max_count", maxCount), zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prune skill snapshots"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"deleted":    deleted,
+		"max_count":  maxCount,
+		"auto_prune": snapshotPolicy.AutoPrune,
+	})
+}
+
+func (s *Server) handleCleanupMarketplaceSkillVersions(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	policy := s.skillVersionPolicy()
+	if !policy.Enabled {
+		deleted, err := s.skillsMgr.ClearVersionHistory()
+		if err != nil {
+			s.logger.Error("Failed to clear skill version history", zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to clear skill version history"})
+		}
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"deleted":   deleted,
+			"max_count": policy.MaxCount,
+			"enabled":   policy.Enabled,
+			"mode":      "clear_all",
+		})
+	}
+
+	if policy.MaxCount < 1 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "skill version history max_count must be at least 1"})
+	}
+
+	if err := s.skillsMgr.PruneVersionHistory(policy.MaxCount); err != nil {
+		s.logger.Error("Failed to prune skill version history", zap.Int("max_count", policy.MaxCount), zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prune skill version history"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"deleted":   0,
+		"max_count": policy.MaxCount,
+		"enabled":   policy.Enabled,
+		"mode":      "prune_to_policy",
+	})
+}
+
+func (s *Server) skillSnapshotPolicy() config.SkillSnapshotsConfig {
+	if s.config == nil {
+		return config.DefaultConfig().WebUI.SkillSnapshots
+	}
+	return s.config.WebUI.SkillSnapshots
+}
+
+func (s *Server) skillVersionPolicy() config.SkillVersionsConfig {
+	if s.config == nil {
+		return config.DefaultConfig().WebUI.SkillVersions
+	}
+	return s.config.WebUI.SkillVersions
 }
 
 func (s *Server) handleRestoreMarketplaceSkillSnapshot(c *echo.Context) error {
@@ -2722,19 +2900,25 @@ func (s *Server) handleRepairWorkspace(c *echo.Context) error {
 func (s *Server) handleGetQMDStatus(c *echo.Context) error {
 	qmdMgr, resolvedCommand, commandSource := s.newQMDManager()
 	status := qmdMgr.GetStatus()
+	exportDir := s.qmdResolvedExportDir()
+	exportCount, _ := s.countQMDExportFiles(exportDir)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"enabled":            s.config.Memory.QMD.Enabled,
-		"command":            strings.TrimSpace(s.config.Memory.QMD.Command),
-		"resolved_command":   resolvedCommand,
-		"command_source":     commandSource,
-		"persistent_command": s.persistentQMDBinary(),
-		"include_default":    s.config.Memory.QMD.IncludeDefault,
-		"available":          status.Available,
-		"version":            status.Version,
-		"error":              status.Error,
-		"last_update":        status.LastUpdate.Format(time.RFC3339),
-		"collections":        status.Collections,
+		"enabled":                   s.config.Memory.QMD.Enabled,
+		"command":                   strings.TrimSpace(s.config.Memory.QMD.Command),
+		"resolved_command":          resolvedCommand,
+		"command_source":            commandSource,
+		"persistent_command":        s.persistentQMDBinary(),
+		"include_default":           s.config.Memory.QMD.IncludeDefault,
+		"available":                 status.Available,
+		"version":                   status.Version,
+		"error":                     status.Error,
+		"last_update":               status.LastUpdate.Format(time.RFC3339),
+		"collections":               status.Collections,
+		"sessions_enabled":          s.config.Memory.QMD.Sessions.Enabled,
+		"session_export_dir":        exportDir,
+		"session_retention_days":    s.config.Memory.QMD.Sessions.RetentionDays,
+		"session_export_file_count": exportCount,
 	})
 }
 
@@ -2808,31 +2992,112 @@ func (s *Server) handleUpdateQMD(c *echo.Context) error {
 	}
 
 	status := qmdMgr.GetStatus()
+	exportDir := s.qmdResolvedExportDir()
+	exportCount, _ := s.countQMDExportFiles(exportDir)
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"enabled":            s.config.Memory.QMD.Enabled,
-		"command":            strings.TrimSpace(s.config.Memory.QMD.Command),
-		"resolved_command":   resolvedCommand,
-		"command_source":     commandSource,
-		"persistent_command": s.persistentQMDBinary(),
-		"include_default":    s.config.Memory.QMD.IncludeDefault,
-		"available":          status.Available,
-		"version":            status.Version,
-		"error":              status.Error,
-		"last_update":        status.LastUpdate.Format(time.RFC3339),
-		"collections":        status.Collections,
+		"enabled":                   s.config.Memory.QMD.Enabled,
+		"command":                   strings.TrimSpace(s.config.Memory.QMD.Command),
+		"resolved_command":          resolvedCommand,
+		"command_source":            commandSource,
+		"persistent_command":        s.persistentQMDBinary(),
+		"include_default":           s.config.Memory.QMD.IncludeDefault,
+		"available":                 status.Available,
+		"version":                   status.Version,
+		"error":                     status.Error,
+		"last_update":               status.LastUpdate.Format(time.RFC3339),
+		"collections":               status.Collections,
+		"sessions_enabled":          s.config.Memory.QMD.Sessions.Enabled,
+		"session_export_dir":        exportDir,
+		"session_retention_days":    s.config.Memory.QMD.Sessions.RetentionDays,
+		"session_export_file_count": exportCount,
+	})
+}
+
+func (s *Server) handleCleanupQMDSessionExports(c *echo.Context) error {
+	if !s.config.Memory.QMD.Sessions.Enabled {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "qmd session export is disabled"})
+	}
+	if s.config.Memory.QMD.Sessions.RetentionDays < 1 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "qmd session export retention_days must be at least 1"})
+	}
+
+	exportDir := s.qmdResolvedExportDir()
+	exporter := memoryqmd.NewSessionExporter(s.logger, exportDir, s.config.Memory.QMD.Sessions.RetentionDays)
+	deleted, err := exporter.CleanupOldExportsCount(c.Request().Context())
+	if err != nil {
+		s.logger.Error("Failed to cleanup qmd session exports", zap.String("export_dir", exportDir), zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to cleanup qmd session exports"})
+	}
+
+	remaining, countErr := s.countQMDExportFiles(exportDir)
+	if countErr != nil {
+		s.logger.Warn("Failed to count qmd session exports after cleanup", zap.String("export_dir", exportDir), zap.Error(countErr))
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"deleted":                deleted,
+		"remaining":              remaining,
+		"session_export_dir":     exportDir,
+		"session_retention_days": s.config.Memory.QMD.Sessions.RetentionDays,
 	})
 }
 
 func (s *Server) newQMDManager() (*memoryqmd.Manager, string, string) {
-	qmdCfg := memoryqmd.ConfigFromConfig(s.config.Memory.QMD)
+	qmdCfg := memoryqmd.ConfigFromConfigWithWorkspace(s.config.Memory.QMD, s.config.WorkspacePath())
 	resolvedCommand, commandSource := s.resolveQMDCommand()
 	qmdCfg.Command = resolvedCommand
-	qmdCfg.Sessions.SessionsDir = filepath.Join(s.config.WorkspacePath(), "sessions")
 	return memoryqmd.NewManager(s.logger, qmdCfg), resolvedCommand, commandSource
 }
 
 func (s *Server) persistentQMDPrefix() string {
 	return filepath.Join(s.config.WorkspacePath(), ".nekobot", "runtime", "qmd")
+}
+
+func (s *Server) qmdExportDir() string {
+	exportDir := strings.TrimSpace(os.ExpandEnv(s.config.Memory.QMD.Sessions.ExportDir))
+	if exportDir == "" {
+		return ""
+	}
+	if exportDir == "~" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			exportDir = home
+		}
+	}
+	if strings.HasPrefix(exportDir, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			exportDir = filepath.Join(home, strings.TrimPrefix(exportDir, "~/"))
+		}
+	}
+	return exportDir
+}
+
+func (s *Server) qmdResolvedExportDir() string {
+	return memoryqmd.ConfigFromConfigWithWorkspace(s.config.Memory.QMD, s.config.WorkspacePath()).Sessions.ExportDir
+}
+
+func (s *Server) countQMDExportFiles(exportDir string) (int, error) {
+	if strings.TrimSpace(exportDir) == "" {
+		return 0, nil
+	}
+
+	entries, err := os.ReadDir(exportDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+			continue
+		}
+		count++
+	}
+	return count, nil
 }
 
 func (s *Server) persistentQMDBinary() string {
@@ -3326,6 +3591,19 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.WebUI != nil {
 		s.config.WebUI = *body.WebUI
+		if s.toolSess != nil {
+			s.toolSess.SetEventConfig(s.config.WebUI.ToolSessionEvents)
+		}
+		if s.skillsMgr != nil {
+			s.skillsMgr.SetSnapshotRetention(skills.SnapshotRetentionConfig{
+				AutoPrune: s.config.WebUI.SkillSnapshots.AutoPrune,
+				MaxCount:  s.config.WebUI.SkillSnapshots.MaxCount,
+			})
+			s.skillsMgr.SetVersionRetention(skills.VersionRetentionConfig{
+				Enabled:  s.config.WebUI.SkillVersions.Enabled,
+				MaxCount: s.config.WebUI.SkillVersions.MaxCount,
+			})
+		}
 	}
 	if body.Transcription != nil {
 		s.config.Transcription = *body.Transcription
@@ -3454,6 +3732,19 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 	if body.WebUI != nil {
 		s.config.WebUI = *body.WebUI
+		if s.toolSess != nil {
+			s.toolSess.SetEventConfig(s.config.WebUI.ToolSessionEvents)
+		}
+		if s.skillsMgr != nil {
+			s.skillsMgr.SetSnapshotRetention(skills.SnapshotRetentionConfig{
+				AutoPrune: s.config.WebUI.SkillSnapshots.AutoPrune,
+				MaxCount:  s.config.WebUI.SkillSnapshots.MaxCount,
+			})
+			s.skillsMgr.SetVersionRetention(skills.VersionRetentionConfig{
+				Enabled:  s.config.WebUI.SkillVersions.Enabled,
+				MaxCount: s.config.WebUI.SkillVersions.MaxCount,
+			})
+		}
 	}
 	if body.Transcription != nil {
 		s.config.Transcription = *body.Transcription
@@ -3683,8 +3974,45 @@ func (s *Server) handleDeleteSession(c *echo.Context) error {
 	if err := s.sessionMgr.Delete(id); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to delete session: %v", err)})
 	}
+	if s.prompts != nil {
+		if err := s.prompts.ClearSessionBindings(c.Request().Context(), id); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to delete session prompts: %v", err)})
+		}
+	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleCleanupSessions(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+	if err := session.CleanupPersistedSessions(s.config, s.sessionMgr); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if s.prompts != nil {
+		listed, err := s.sessionMgr.List()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("list sessions after cleanup: %v", err)})
+		}
+		active := make(map[string]struct{}, len(listed))
+		for _, item := range listed {
+			active[item] = struct{}{}
+		}
+		bindings, err := s.prompts.ListBindings(c.Request().Context(), prompts.ScopeSession, "")
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("list session prompt bindings: %v", err)})
+		}
+		for _, binding := range bindings {
+			if _, ok := active[binding.Target]; ok {
+				continue
+			}
+			if err := s.prompts.ClearSessionBindings(c.Request().Context(), binding.Target); err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("cleanup session prompts: %v", err)})
+			}
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "cleaned"})
 }
 
 // --- Status Handler ---
@@ -3726,24 +4054,36 @@ var wsUpgrader = websocket.Upgrader{
 }
 
 type chatWSMessage struct {
-	Type     string   `json:"type"`               // "message", "ping", "clear"
-	Content  string   `json:"content"`            // User message text
-	Model    string   `json:"model"`              // Optional model override
-	Provider string   `json:"provider,omitempty"` // Optional provider override
-	Fallback []string `json:"fallback,omitempty"` // Optional fallback provider order
+	Type            string   `json:"type"`                        // "message", "ping", "clear"
+	Content         string   `json:"content"`                     // User message text
+	Model           string   `json:"model"`                       // Optional model override
+	Provider        string   `json:"provider,omitempty"`          // Optional provider override
+	Fallback        []string `json:"fallback,omitempty"`          // Optional fallback provider order
+	SystemPromptIDs []string `json:"system_prompt_ids,omitempty"` // Optional session prompt overlays
+	UserPromptIDs   []string `json:"user_prompt_ids,omitempty"`   // Optional session prompt overlays
 }
 
 type chatWSResponse struct {
-	Type      string `json:"type"`                // "message", "thinking", "error", "system", "pong"
-	Content   string `json:"content"`             // Response text
-	Thinking  string `json:"thinking,omitempty"`  // Model's thinking (if extended thinking enabled)
-	Timestamp int64  `json:"timestamp,omitempty"` // Unix timestamp
+	Type      string          `json:"type"`                // "message", "thinking", "error", "system", "pong", "route_result"
+	Content   string          `json:"content"`             // Response text
+	Thinking  string          `json:"thinking,omitempty"`  // Model's thinking (if extended thinking enabled)
+	Timestamp int64           `json:"timestamp,omitempty"` // Unix timestamp
+	Route     *chatRouteState `json:"route,omitempty"`
 }
 
 type chatRouteSettings struct {
 	Provider string   `json:"provider"`
 	Model    string   `json:"model"`
 	Fallback []string `json:"fallback"`
+}
+
+type chatRouteState struct {
+	RequestedProvider string   `json:"requested_provider"`
+	RequestedModel    string   `json:"requested_model"`
+	RequestedFallback []string `json:"requested_fallback"`
+	ResolvedOrder     []string `json:"resolved_order"`
+	ActualProvider    string   `json:"actual_provider"`
+	ActualModel       string   `json:"actual_model"`
 }
 
 type toolWSMessage struct {
@@ -3764,13 +4104,22 @@ type toolWSResponse struct {
 	Message   string `json:"message,omitempty"`
 }
 
+func webUIChatSessionID(username string) string {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return "webui-chat"
+	}
+	return "webui-chat:" + username
+}
+
 func (s *Server) handleChatWS(c *echo.Context) error {
 	// Authenticate via token query param (since WebSocket can't use Authorization header easily)
 	tokenStr := c.QueryParam("token")
 	if tokenStr == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
 	}
-	if _, err := s.parseJWTSubject(tokenStr); err != nil {
+	username, err := s.parseJWTSubject(tokenStr)
+	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
 
@@ -3782,7 +4131,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 	}
 	defer conn.Close()
 
-	sessionID := "webui-chat:" + uuid.NewString()
+	sessionID := webUIChatSessionID(username)
 	sess, err := s.getOrCreateChatSession(sessionID)
 	if err != nil {
 		sendWSError(conn, fmt.Sprintf("session error: %v", err))
@@ -3861,7 +4210,11 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 
 		case "clear":
-			sess, err = s.getOrCreateChatSession("webui-chat:" + uuid.NewString())
+			if err := s.sessionMgr.Delete(sessionID); err != nil && !errors.Is(err, os.ErrNotExist) {
+				sendWSError(conn, fmt.Sprintf("session reset failed: %v", err))
+				continue
+			}
+			sess, err = s.getOrCreateChatSession(sessionID)
 			if err != nil {
 				sendWSError(conn, fmt.Sprintf("session error: %v", err))
 				continue
@@ -3885,6 +4238,17 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err))
 				continue
 			}
+			if s.prompts != nil {
+				if _, err := s.prompts.ReplaceSessionBindings(
+					context.Background(),
+					sessionID,
+					msg.SystemPromptIDs,
+					msg.UserPromptIDs,
+				); err != nil {
+					sendWSError(conn, fmt.Sprintf("save session prompts failed: %v", err))
+					continue
+				}
+			}
 
 			// Add user message to session
 			sess.AddMessage(agent.Message{
@@ -3892,8 +4256,21 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Content: content,
 			})
 
-			// Process with agent
-			response, err := s.agent.ChatWithProviderModelAndFallback(context.Background(), sess, content, provider, model, fallback)
+			// Process with agent.
+			response, routeResult, err := s.agent.ChatWithPromptContextDetailed(
+				context.Background(),
+				sess,
+				content,
+				agent.PromptContext{
+					Channel:           session.SourceWebUI,
+					SessionID:         sessionID,
+					UserID:            username,
+					Username:          username,
+					RequestedProvider: provider,
+					RequestedModel:    model,
+					RequestedFallback: fallback,
+				},
+			)
 			if err != nil {
 				sendWSError(conn, fmt.Sprintf("agent error: %v", err))
 				continue
@@ -3911,6 +4288,23 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Timestamp: time.Now().Unix(),
 			}
 			if data, err := json.Marshal(resp); err == nil {
+				conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+				conn.WriteMessage(websocket.TextMessage, data)
+			}
+
+			routeResp := chatWSResponse{
+				Type:      "route_result",
+				Timestamp: time.Now().Unix(),
+				Route: &chatRouteState{
+					RequestedProvider: routeResult.RequestedProvider,
+					RequestedModel:    routeResult.RequestedModel,
+					RequestedFallback: append([]string(nil), routeResult.RequestedFallback...),
+					ResolvedOrder:     append([]string(nil), routeResult.ResolvedOrder...),
+					ActualProvider:    routeResult.ActualProvider,
+					ActualModel:       routeResult.ActualModel,
+				},
+			}
+			if data, err := json.Marshal(routeResp); err == nil {
 				conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 				conn.WriteMessage(websocket.TextMessage, data)
 			}
@@ -4224,6 +4618,207 @@ func mustMarshalChatRouting(routing chatRouteSettings) string {
 	return string(data)
 }
 
+func (s *Server) handleListPrompts(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	items, err := s.prompts.ListPrompts(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleCreatePrompt(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	var body prompts.Prompt
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.prompts.CreatePrompt(c.Request().Context(), body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleUpdatePrompt(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	var body prompts.Prompt
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.prompts.UpdatePrompt(c.Request().Context(), c.Param("id"), body)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, prompts.ErrPromptNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleDeletePrompt(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	err := s.prompts.DeletePrompt(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, prompts.ErrPromptNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleListPromptBindings(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	items, err := s.prompts.ListBindings(
+		c.Request().Context(),
+		c.QueryParam("scope"),
+		c.QueryParam("target"),
+	)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleCreatePromptBinding(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	var body prompts.Binding
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.prompts.CreateBinding(c.Request().Context(), body)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, prompts.ErrPromptNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleUpdatePromptBinding(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	var body prompts.Binding
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.prompts.UpdateBinding(c.Request().Context(), c.Param("id"), body)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, prompts.ErrPromptNotFound) || errors.Is(err, prompts.ErrBindingNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleDeletePromptBinding(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	err := s.prompts.DeleteBinding(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, prompts.ErrBindingNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleResolvePrompts(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	var body prompts.ResolveInput
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if strings.TrimSpace(body.Workspace) == "" && s.config != nil {
+		body.Workspace = s.config.WorkspacePath()
+	}
+	resolved, err := s.prompts.Resolve(c.Request().Context(), body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, resolved)
+}
+
+func (s *Server) handleGetChatSessionPrompts(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	sessionID, err := s.resolveWebUIChatSessionAlias(c, c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	}
+	result, err := s.prompts.GetSessionBindingSet(c.Request().Context(), sessionID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handlePutChatSessionPrompts(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	var body struct {
+		SystemPromptIDs []string `json:"system_prompt_ids"`
+		UserPromptIDs   []string `json:"user_prompt_ids"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	sessionID, err := s.resolveWebUIChatSessionAlias(c, c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	}
+	result, err := s.prompts.ReplaceSessionBindings(c.Request().Context(), sessionID, body.SystemPromptIDs, body.UserPromptIDs)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, prompts.ErrPromptNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handleDeleteChatSessionPrompts(c *echo.Context) error {
+	if s.prompts == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
+	}
+	sessionID, err := s.resolveWebUIChatSessionAlias(c, c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	}
+	if err := s.prompts.ClearSessionBindings(c.Request().Context(), sessionID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 // --- Approval Handlers ---
 
 func (s *Server) handleGetApprovals(c *echo.Context) error {
@@ -4259,11 +4854,7 @@ func (s *Server) parseJWTSubject(tokenStr string) (string, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
-		secret, secretErr := config.GetJWTSecret(s.entClient)
-		if secretErr != nil {
-			return nil, secretErr
-		}
-		return []byte(secret), nil
+		return []byte(s.getJWTSecret()), nil
 	})
 	if err != nil || parsed == nil || !parsed.Valid {
 		return "", fmt.Errorf("invalid token")
@@ -4278,6 +4869,26 @@ func (s *Server) parseJWTSubject(tokenStr string) (string, error) {
 		return "", fmt.Errorf("subject is empty")
 	}
 	return sub, nil
+}
+
+func (s *Server) resolveWebUIChatSessionAlias(c *echo.Context, rawID string) (string, error) {
+	sessionID := strings.TrimSpace(rawID)
+	if sessionID != "webui-chat" {
+		return sessionID, nil
+	}
+	authHeader := strings.TrimSpace(c.Request().Header.Get("Authorization"))
+	if authHeader == "" {
+		return "", fmt.Errorf("authorization required")
+	}
+	tokenStr := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer"))
+	if tokenStr == "" {
+		return "", fmt.Errorf("authorization required")
+	}
+	username, err := s.parseJWTSubject(tokenStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid token")
+	}
+	return webUIChatSessionID(username), nil
 }
 
 func (s *Server) getJWTSecret() string {

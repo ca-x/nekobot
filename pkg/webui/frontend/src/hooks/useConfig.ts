@@ -65,3 +65,44 @@ export function useStatus() {
     staleTime: 10_000,
   });
 }
+
+export function useCleanupSessions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ status: string }>('/api/sessions/cleanup'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['config'] });
+      qc.invalidateQueries({ queryKey: ['sessions'] });
+      toast.success(t('sessionsCleanupRan'));
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useCleanupToolSessionEvents() {
+  return useMutation({
+    mutationFn: () => api.post<{ deleted: number }>('/api/tool-sessions/events/cleanup'),
+    onSuccess: (result) => {
+      toast.success(t('webuiToolSessionEventsCleanupDone', String(result.deleted ?? 0)));
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useCleanupSkillVersions() {
+  return useMutation({
+    mutationFn: () =>
+      api.post<{ deleted: number; max_count: number; enabled: boolean; mode: string }>(
+        '/api/marketplace/skills/versions/cleanup',
+        {},
+      ),
+    onSuccess: (result) => {
+      if (result.mode === 'clear_all') {
+        toast.success(t('webuiSkillVersionsCleanupDone', String(result.deleted ?? 0)));
+        return;
+      }
+      toast.success(t('webuiSkillVersionsPruned', String(result.max_count ?? 0)));
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}

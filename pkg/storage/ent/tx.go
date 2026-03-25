@@ -20,6 +20,10 @@ type Tx struct {
 	CronJob *CronJobClient
 	// Membership is the client for interacting with the Membership builders.
 	Membership *MembershipClient
+	// Prompt is the client for interacting with the Prompt builders.
+	Prompt *PromptClient
+	// PromptBinding is the client for interacting with the PromptBinding builders.
+	PromptBinding *PromptBindingClient
 	// Provider is the client for interacting with the Provider builders.
 	Provider *ProviderClient
 	// Tenant is the client for interacting with the Tenant builders.
@@ -165,6 +169,8 @@ func (tx *Tx) init() {
 	tx.ConfigSection = NewConfigSectionClient(tx.config)
 	tx.CronJob = NewCronJobClient(tx.config)
 	tx.Membership = NewMembershipClient(tx.config)
+	tx.Prompt = NewPromptClient(tx.config)
+	tx.PromptBinding = NewPromptBindingClient(tx.config)
 	tx.Provider = NewProviderClient(tx.config)
 	tx.Tenant = NewTenantClient(tx.config)
 	tx.ToolEvent = NewToolEventClient(tx.config)

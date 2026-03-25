@@ -67,5 +67,6 @@ jobs:
             VERSION=${{ github.ref_name }}
             BUILD_TIME=${{ steps.buildmeta.outputs.build_time }}
             GIT_COMMIT=${{ github.sha }}
+            INSTALL_QMD=true
           cache-from: type=gha
           cache-to: type=gha,mode=max

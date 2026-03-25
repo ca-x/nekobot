@@ -15,6 +15,7 @@ import (
 	"nekobot/pkg/memory"
 	promptmemory "nekobot/pkg/memory/prompt"
 	"nekobot/pkg/process"
+	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
@@ -49,6 +50,7 @@ type Agent struct {
 
 	skillsManager  *skills.Manager
 	semanticMemory memory.SearchManager
+	promptManager  *prompts.Manager
 
 	acpMu       sync.RWMutex
 	acpSessions map[string]*acpSessionState
@@ -58,6 +60,16 @@ type Agent struct {
 	providerGroups   *providerGroupPlanner
 
 	maxIterations int
+}
+
+// ChatRouteResult describes the routing request and the actual provider/model used.
+type ChatRouteResult struct {
+	RequestedProvider string
+	RequestedModel    string
+	RequestedFallback []string
+	ResolvedOrder     []string
+	ActualProvider    string
+	ActualModel       string
 }
 
 // acpSessionState stores ACP session-scoped routing and cancellation state.
@@ -82,6 +94,18 @@ type Config struct {
 	MaxIterations int
 }
 
+// PromptContext describes managed prompt resolution input for one chat turn.
+type PromptContext struct {
+	Channel           string
+	SessionID         string
+	UserID            string
+	Username          string
+	RequestedProvider string
+	RequestedModel    string
+	RequestedFallback []string
+	Custom            map[string]any
+}
+
 // New creates a new agent with the given configuration.
 func New(
 	cfg *config.Config,
@@ -92,6 +116,7 @@ func New(
 	toolSessionMgr *toolsessions.Manager,
 	kvStore state.KV,
 	runtimeEntClient *ent.Client,
+	promptMgr *prompts.Manager,
 ) (*Agent, error) {
 	workspace := cfg.WorkspacePath()
 
@@ -189,6 +214,7 @@ func New(
 		context:          contextBuilder,
 		approval:         approvalMgr,
 		semanticMemory:   semanticMemory,
+		promptManager:    promptMgr,
 		acpSessions:      make(map[string]*acpSessionState),
 		failoverCooldown: providers.NewCooldownTracker(),
 		providerGroups:   newProviderGroupPlanner(),
@@ -214,28 +240,89 @@ func (a *Agent) RegisterSkillTool(skillsManager *skills.Manager) {
 // Chat processes a user message and returns the agent's response.
 // It handles tool calls and iterates until the agent produces a final response.
 func (a *Agent) Chat(ctx context.Context, sess SessionInterface, userMessage string) (string, error) {
-	return a.chatWithProviderModel(ctx, sess, userMessage, "", a.config.Agents.Defaults.Model, nil)
+	return a.chatWithProviderModelAndPromptContext(ctx, sess, userMessage, "", a.config.Agents.Defaults.Model, nil, PromptContext{})
 }
 
 // ChatWithModel processes a message using a specific model override.
 func (a *Agent) ChatWithModel(ctx context.Context, sess SessionInterface, userMessage, model string) (string, error) {
-	return a.chatWithProviderModel(ctx, sess, userMessage, "", model, nil)
+	return a.chatWithProviderModelAndPromptContext(ctx, sess, userMessage, "", model, nil, PromptContext{})
 }
 
 // ChatWithProviderModel processes a message using provider/model overrides.
 func (a *Agent) ChatWithProviderModel(ctx context.Context, sess SessionInterface, userMessage, provider, model string) (string, error) {
-	return a.chatWithProviderModel(ctx, sess, userMessage, provider, model, nil)
+	return a.chatWithProviderModelAndPromptContext(ctx, sess, userMessage, provider, model, nil, PromptContext{})
 }
 
 // ChatWithProviderModelAndFallback processes a message using provider/model/fallback overrides.
 func (a *Agent) ChatWithProviderModelAndFallback(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
-	return a.chatWithProviderModel(ctx, sess, userMessage, provider, model, fallback)
+	return a.chatWithProviderModelAndPromptContext(ctx, sess, userMessage, provider, model, fallback, PromptContext{})
+}
+
+// ChatWithPromptContext applies managed prompt overlays for this request.
+func (a *Agent) ChatWithPromptContext(
+	ctx context.Context,
+	sess SessionInterface,
+	userMessage string,
+	promptCtx PromptContext,
+) (string, error) {
+	response, _, err := a.ChatWithPromptContextDetailed(ctx, sess, userMessage, promptCtx)
+	return response, err
+}
+
+// ChatWithPromptContextDetailed applies managed prompt overlays and returns routing diagnostics.
+func (a *Agent) ChatWithPromptContextDetailed(
+	ctx context.Context,
+	sess SessionInterface,
+	userMessage string,
+	promptCtx PromptContext,
+) (string, ChatRouteResult, error) {
+	return a.chatWithProviderModelDetailed(
+		ctx,
+		sess,
+		userMessage,
+		promptCtx.RequestedProvider,
+		promptCtx.RequestedModel,
+		promptCtx.RequestedFallback,
+		promptCtx,
+	)
+}
+
+// ChatWithProviderModelAndFallbackDetailed returns the response plus routing diagnostics.
+func (a *Agent) ChatWithProviderModelAndFallbackDetailed(
+	ctx context.Context,
+	sess SessionInterface,
+	userMessage, provider, model string,
+	fallback []string,
+) (string, ChatRouteResult, error) {
+	return a.chatWithProviderModelDetailed(ctx, sess, userMessage, provider, model, fallback, PromptContext{})
 }
 
 func (a *Agent) chatWithProviderModel(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
+	response, _, err := a.chatWithProviderModelDetailed(ctx, sess, userMessage, provider, model, fallback, PromptContext{})
+	return response, err
+}
+
+func (a *Agent) chatWithProviderModelAndPromptContext(
+	ctx context.Context,
+	sess SessionInterface,
+	userMessage, provider, model string,
+	fallback []string,
+	promptCtx PromptContext,
+) (string, error) {
+	response, _, err := a.chatWithProviderModelDetailed(ctx, sess, userMessage, provider, model, fallback, promptCtx)
+	return response, err
+}
+
+func (a *Agent) chatWithProviderModelDetailed(
+	ctx context.Context,
+	sess SessionInterface,
+	userMessage, provider, model string,
+	fallback []string,
+	promptCtx PromptContext,
+) (string, ChatRouteResult, error) {
 	orchestrator, err := a.resolveOrchestrator()
 	if err != nil {
-		return "", err
+		return "", ChatRouteResult{}, err
 	}
 
 	a.logger.Debug("Dispatching chat orchestration",
@@ -244,11 +331,11 @@ func (a *Agent) chatWithProviderModel(ctx context.Context, sess SessionInterface
 
 	switch orchestrator {
 	case orchestratorBlades:
-		return a.chatWithBladesOrchestrator(ctx, sess, userMessage, provider, model, fallback)
+		return a.chatWithBladesOrchestrator(ctx, sess, userMessage, provider, model, fallback, promptCtx)
 	case orchestratorLegacy:
-		return a.chatWithLegacyOrchestrator(ctx, sess, userMessage, provider, model, fallback)
+		return a.chatWithLegacyOrchestrator(ctx, sess, userMessage, provider, model, fallback, promptCtx)
 	default:
-		return "", fmt.Errorf("unsupported orchestrator: %s", orchestrator)
+		return "", ChatRouteResult{}, fmt.Errorf("unsupported orchestrator: %s", orchestrator)
 	}
 }
 
@@ -335,24 +422,40 @@ func (a *Agent) resolveOrchestrator() (string, error) {
 	}
 }
 
-func (a *Agent) chatWithLegacyOrchestrator(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
+func (a *Agent) chatWithLegacyOrchestrator(
+	ctx context.Context,
+	sess SessionInterface,
+	userMessage, provider, model string,
+	fallback []string,
+	promptCtx PromptContext,
+) (string, ChatRouteResult, error) {
 	a.logger.Info("Processing chat message",
 		zap.String("message", truncate(userMessage, 100)),
 	)
+	routeResult := ChatRouteResult{
+		RequestedProvider: strings.TrimSpace(provider),
+		RequestedModel:    strings.TrimSpace(model),
+		RequestedFallback: append([]string(nil), fallback...),
+	}
 	if model == "" {
 		model = a.config.Agents.Defaults.Model
 	}
 
 	providerOrder, err := a.buildProviderOrder(provider, fallback)
 	if err != nil {
-		return "", err
+		return "", routeResult, err
 	}
+	routeResult.ResolvedOrder = append([]string(nil), providerOrder...)
 	primaryProvider := providerOrder[0]
 	clientCache := make(map[string]*providers.Client)
 
 	// Build initial messages with session history
 	history := a.sessionHistory(sess)
-	messages := a.context.BuildMessages(history, userMessage)
+	resolvedPrompts, err := a.resolvePromptSet(ctx, provider, model, fallback, promptCtx)
+	if err != nil {
+		return "", routeResult, err
+	}
+	messages := a.context.BuildMessagesWithPromptSet(history, userMessage, resolvedPrompts)
 
 	// Convert to provider format
 	providerMessages := a.convertToProviderMessages(messages)
@@ -414,7 +517,13 @@ func (a *Agent) chatWithLegacyOrchestrator(ctx context.Context, sess SessionInte
 			break
 		}
 		if err != nil {
-			return "", fmt.Errorf("LLM call failed: %w", err)
+			return "", routeResult, fmt.Errorf("LLM call failed: %w", err)
+		}
+		if routeResult.ActualProvider == "" {
+			routeResult.ActualProvider = providerUsed
+		}
+		if routeResult.ActualModel == "" {
+			routeResult.ActualModel = modelUsed
 		}
 
 		a.logger.Debug("LLM response",
@@ -442,7 +551,7 @@ func (a *Agent) chatWithLegacyOrchestrator(ctx context.Context, sess SessionInte
 
 		// If no tool calls, we're done
 		if len(resp.ToolCalls) == 0 {
-			return resp.Content, nil
+			return resp.Content, routeResult, nil
 		}
 
 		// Execute tool calls
@@ -470,7 +579,79 @@ func (a *Agent) chatWithLegacyOrchestrator(ctx context.Context, sess SessionInte
 		}
 	}
 
-	return "", fmt.Errorf("max iterations (%d) reached without final response", a.maxIterations)
+	return "", routeResult, fmt.Errorf("max iterations (%d) reached without final response", a.maxIterations)
+}
+
+func (a *Agent) resolvePromptSet(
+	ctx context.Context,
+	provider, model string,
+	fallback []string,
+	promptCtx PromptContext,
+) (prompts.ResolvedPromptSet, error) {
+	if a == nil || a.promptManager == nil {
+		return prompts.ResolvedPromptSet{}, nil
+	}
+
+	input := prompts.ResolveInput{
+		Channel:           strings.TrimSpace(promptCtx.Channel),
+		SessionID:         strings.TrimSpace(promptCtx.SessionID),
+		UserID:            strings.TrimSpace(promptCtx.UserID),
+		Username:          strings.TrimSpace(promptCtx.Username),
+		RequestedProvider: firstNonEmpty(strings.TrimSpace(promptCtx.RequestedProvider), strings.TrimSpace(provider)),
+		RequestedModel:    firstNonEmpty(strings.TrimSpace(promptCtx.RequestedModel), strings.TrimSpace(model)),
+		RequestedFallback: normalizePromptFallback(promptCtx.RequestedFallback, fallback),
+		Workspace:         a.config.WorkspacePath(),
+		Custom:            clonePromptCustom(promptCtx.Custom),
+	}
+
+	resolved, err := a.promptManager.Resolve(ctx, input)
+	if err != nil {
+		return prompts.ResolvedPromptSet{}, fmt.Errorf("resolve prompts: %w", err)
+	}
+	if resolved == nil {
+		return prompts.ResolvedPromptSet{}, nil
+	}
+	return *resolved, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func normalizePromptFallback(primary, secondary []string) []string {
+	source := primary
+	if len(source) == 0 {
+		source = secondary
+	}
+	if len(source) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(source))
+	for _, item := range source {
+		trimmed := strings.TrimSpace(item)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func clonePromptCustom(input map[string]any) map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
 }
 
 func (a *Agent) newClientForProvider(providerName, model string) (*providers.Client, error) {
@@ -626,6 +807,20 @@ func (a *Agent) getFailoverCooldown() *providers.CooldownTracker {
 	}
 
 	return a.failoverCooldown
+}
+
+// GetFailoverSnapshots returns current runtime cooldown snapshots keyed by provider name.
+func (a *Agent) GetFailoverSnapshots(providerNames []string) map[string]providers.CooldownSnapshot {
+	tracker := a.getFailoverCooldown()
+	snapshots := make(map[string]providers.CooldownSnapshot, len(providerNames))
+	for _, providerName := range providerNames {
+		trimmed := strings.TrimSpace(providerName)
+		if trimmed == "" {
+			continue
+		}
+		snapshots[trimmed] = tracker.Snapshot(trimmed)
+	}
+	return snapshots
 }
 
 func (a *Agent) getProviderClient(providerName, model string, cache map[string]*providers.Client) (*providers.Client, error) {

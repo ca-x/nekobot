@@ -2,9 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '@/lib/i18n';
 import { toast } from 'sonner';
 import Header from '@/components/layout/Header';
-import { useConfig, useExportConfig, useImportConfig, useSaveConfig } from '@/hooks/useConfig';
+import {
+  useCleanupSessions,
+  useCleanupSkillVersions,
+  useCleanupToolSessionEvents,
+  useConfig,
+  useExportConfig,
+  useImportConfig,
+  useSaveConfig,
+} from '@/hooks/useConfig';
 import { useProviders } from '@/hooks/useProviders';
-import { useInstallQMD, useQMDStatus, useUpdateQMD } from '@/hooks/useQMD';
+import { useCleanupQMDExports, useInstallQMD, useQMDStatus, useUpdateQMD } from '@/hooks/useQMD';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -682,6 +690,7 @@ function MemorySectionForm({
   const { data: qmdStatus, isLoading: qmdLoading, refetch: refetchQMD, isFetching: qmdFetching } = useQMDStatus();
   const updateQMD = useUpdateQMD();
   const installQMD = useInstallQMD();
+  const cleanupQMDExports = useCleanupQMDExports();
   const readBool = (path: string) => Boolean(getNestedValue(data, path));
   const readNumber = (path: string) => {
     const value = getNestedValue(data, path);
@@ -1001,6 +1010,21 @@ function MemorySectionForm({
                   <RefreshCw className={`mr-2 h-4 w-4 ${updateQMD.isPending ? 'animate-spin' : ''}`} />
                   {updateQMD.isPending ? t('memoryQMDUpdating') : t('memoryQMDUpdateNow')}
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl"
+                  onClick={() => cleanupQMDExports.mutate()}
+                  disabled={
+                    cleanupQMDExports.isPending ||
+                    !qmdStatus?.sessions_enabled ||
+                    (qmdStatus?.session_retention_days ?? 0) < 1
+                  }
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${cleanupQMDExports.isPending ? 'animate-spin' : ''}`} />
+                  {cleanupQMDExports.isPending ? t('memoryQMDCleanupRunning') : t('memoryQMDCleanupNow')}
+                </Button>
               </div>
             </div>
 
@@ -1013,6 +1037,8 @@ function MemorySectionForm({
                   <QMDMetric label={t('memoryQMDStatusAvailable')} value={qmdStatus?.available ? t('memoryQMDAvailable') : t('memoryQMDUnavailable')} />
                   <QMDMetric label={t('memoryQMDStatusVersion')} value={qmdStatus?.version || '-'} />
                   <QMDMetric label={t('memoryQMDStatusCollections')} value={String(qmdStatus?.collections.length ?? 0)} />
+                  <QMDMetric label={t('memoryQMDStatusExports')} value={String(qmdStatus?.session_export_file_count ?? 0)} />
+                  <QMDMetric label={t('memoryQMDStatusRetention')} value={String(qmdStatus?.session_retention_days ?? 0)} />
                 </div>
 
                 <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
@@ -1034,11 +1060,21 @@ function MemorySectionForm({
                       {qmdStatus?.persistent_command || '-'}
                     </div>
                   </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <QMDMetric label={t('memoryQMDSessionExportDir')} value={qmdStatus?.session_export_dir || '-'} />
+                    <QMDMetric
+                      label={t('memoryQMDSessionsEnabled')}
+                      value={qmdStatus?.sessions_enabled ? t('on') : t('off')}
+                    />
+                  </div>
                   {qmdStatus?.error ? (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                       {qmdStatus.error}
                     </div>
                   ) : null}
+                  <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white/60 px-3 py-2 text-xs leading-6 text-slate-500">
+                    {t('memoryQMDSessionCleanupHint')}
+                  </div>
                 </div>
 
                 <div className="space-y-3">
@@ -1172,9 +1208,13 @@ function MemorySectionForm({
 function SessionsSectionForm({
   data,
   onChange,
+  onRunCleanup,
+  cleanupPending,
 }: {
   data: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
+  onRunCleanup: () => void;
+  cleanupPending: boolean;
 }) {
   const readBool = (path: string) => Boolean(getNestedValue(data, path));
   const readNumber = (path: string) => Number(getNestedValue(data, path) ?? 0);
@@ -1294,6 +1334,180 @@ function SessionsSectionForm({
           <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] bg-white/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
             {t('sessionsDiskHint')}
           </div>
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" className="rounded-xl" onClick={onRunCleanup} disabled={cleanupPending}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${cleanupPending ? 'animate-spin' : ''}`} />
+              {cleanupPending ? t('sessionsCleanupRunning') : t('sessionsCleanupNow')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function WebUISectionForm({
+  data,
+  onChange,
+  onCleanupToolSessionEvents,
+  cleanupEventsPending,
+  onCleanupSkillVersions,
+  cleanupSkillVersionsPending,
+}: {
+  data: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+  onCleanupToolSessionEvents: () => void;
+  cleanupEventsPending: boolean;
+  onCleanupSkillVersions: () => void;
+  cleanupSkillVersionsPending: boolean;
+}) {
+  const readBool = (path: string) => Boolean(getNestedValue(data, path));
+  const readNumber = (path: string) => Number(getNestedValue(data, path) ?? 0);
+  const readString = (path: string) => String(getNestedValue(data, path) ?? '');
+
+  return (
+    <div className="space-y-5">
+      <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(247,250,255,0.95),rgba(241,246,255,0.9))] shadow-[0_24px_60px_-42px_rgba(71,85,132,0.35)]">
+        <CardHeader className="pb-4">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700">
+            <Layers3 className="h-3.5 w-3.5" />
+            {t('webuiRuntimeTitle')}
+          </div>
+          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('webuiRuntimeHeadline')}</CardTitle>
+          <CardDescription>{t('webuiRuntimeDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiPublicBaseUrl')}</Label>
+              <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiPublicBaseUrlDesc')}</div>
+              <Input
+                value={readString('public_base_url')}
+                onChange={(event) => onChange('public_base_url', event.target.value)}
+                placeholder="https://example.com"
+              />
+            </div>
+            <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiToolSessionOTPSeconds')}</Label>
+              <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiToolSessionOTPSecondsDesc')}</div>
+              <Input
+                type="number"
+                min={0}
+                value={String(readNumber('tool_session_otp_ttl_seconds'))}
+                onChange={(event) => onChange('tool_session_otp_ttl_seconds', Number(event.target.value || 0))}
+              />
+            </div>
+          </div>
+
+          <Card className="border-white/70 bg-white/80 shadow-none">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">{t('webuiToolSessionEventsTitle')}</CardTitle>
+              <CardDescription>{t('webuiToolSessionEventsDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiToolSessionEventsEnabled')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('webuiToolSessionEventsEnabledDesc')}</div>
+                </div>
+                <Switch checked={readBool('tool_session_events.enabled')} onCheckedChange={(next) => onChange('tool_session_events.enabled', next)} />
+              </div>
+
+              <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiToolSessionEventsRetentionDays')}</Label>
+                <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiToolSessionEventsRetentionDaysDesc')}</div>
+                <Input
+                  type="number"
+                  min={1}
+                  value={String(readNumber('tool_session_events.retention_days'))}
+                  onChange={(event) => onChange('tool_session_events.retention_days', Number(event.target.value || 0))}
+                />
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-xl"
+                  onClick={onCleanupToolSessionEvents}
+                  disabled={cleanupEventsPending}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${cleanupEventsPending ? 'animate-spin' : ''}`} />
+                  {cleanupEventsPending ? t('webuiToolSessionEventsCleanupRunning') : t('webuiToolSessionEventsCleanupNow')}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-white/70 bg-white/80 shadow-none">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">{t('webuiSkillSnapshotsTitle')}</CardTitle>
+              <CardDescription>{t('webuiSkillSnapshotsDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiSkillSnapshotsAutoPrune')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('webuiSkillSnapshotsAutoPruneDesc')}</div>
+                </div>
+                <Switch checked={readBool('skill_snapshots.auto_prune')} onCheckedChange={(next) => onChange('skill_snapshots.auto_prune', next)} />
+              </div>
+
+              <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiSkillSnapshotsMaxCount')}</Label>
+                <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiSkillSnapshotsMaxCountDesc')}</div>
+                <Input
+                  type="number"
+                  min={1}
+                  value={String(readNumber('skill_snapshots.max_count'))}
+                  onChange={(event) => onChange('skill_snapshots.max_count', Number(event.target.value || 0))}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-white/70 bg-white/80 shadow-none">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">{t('webuiSkillVersionsTitle')}</CardTitle>
+              <CardDescription>{t('webuiSkillVersionsDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                <div>
+                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiSkillVersionsEnabled')}</Label>
+                  <div className="mt-1 text-xs text-muted-foreground">{t('webuiSkillVersionsEnabledDesc')}</div>
+                </div>
+                <Switch checked={readBool('skill_versions.enabled')} onCheckedChange={(next) => onChange('skill_versions.enabled', next)} />
+              </div>
+
+              <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiSkillVersionsMaxCount')}</Label>
+                <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiSkillVersionsMaxCountDesc')}</div>
+                <Input
+                  type="number"
+                  min={1}
+                  value={String(readNumber('skill_versions.max_count'))}
+                  onChange={(event) => onChange('skill_versions.max_count', Number(event.target.value || 0))}
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-xl"
+                  onClick={onCleanupSkillVersions}
+                  disabled={cleanupSkillVersionsPending}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${cleanupSkillVersionsPending ? 'animate-spin' : ''}`} />
+                  {cleanupSkillVersionsPending ? t('webuiSkillVersionsCleanupRunning') : t('webuiSkillVersionsCleanupNow')}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] bg-white/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
+            {t('webuiDiskHint')}
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -1313,6 +1527,9 @@ export default function ConfigPage() {
   const saveConfig = useSaveConfig();
   const exportConfig = useExportConfig();
   const importConfig = useImportConfig();
+  const cleanupSessions = useCleanupSessions();
+  const cleanupToolSessionEvents = useCleanupToolSessionEvents();
+  const cleanupSkillVersions = useCleanupSkillVersions();
 
   const persistedSections = useMemo(() => {
     const next = {} as Record<ConfigSection, Record<string, unknown>>;
@@ -1610,7 +1827,21 @@ export default function ConfigPage() {
               ) : section === 'memory' ? (
                 <MemorySectionForm data={currentData} onChange={handleFieldChange} />
               ) : section === 'sessions' ? (
-                <SessionsSectionForm data={currentData} onChange={handleFieldChange} />
+                <SessionsSectionForm
+                  data={currentData}
+                  onChange={handleFieldChange}
+                  onRunCleanup={() => cleanupSessions.mutate()}
+                  cleanupPending={cleanupSessions.isPending}
+                />
+              ) : section === 'webui' ? (
+                <WebUISectionForm
+                  data={currentData}
+                  onChange={handleFieldChange}
+                  onCleanupToolSessionEvents={() => cleanupToolSessionEvents.mutate()}
+                  cleanupEventsPending={cleanupToolSessionEvents.isPending}
+                  onCleanupSkillVersions={() => cleanupSkillVersions.mutate()}
+                  cleanupSkillVersionsPending={cleanupSkillVersions.isPending}
+                />
               ) : filteredFields.length === 0 ? (
                 <div className="py-16 text-center">
                   <div className="text-sm font-medium text-[hsl(var(--gray-900))]">{t('configNoMatchingFields')}</div>

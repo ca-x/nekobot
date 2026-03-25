@@ -11,6 +11,7 @@ import (
 	"time"
 
 	promptmemory "nekobot/pkg/memory/prompt"
+	"nekobot/pkg/prompts"
 	"nekobot/pkg/skills"
 )
 
@@ -240,6 +241,19 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 	return staticBlock + "\n\n---\n\n" + dynamicBlock
 }
 
+// BuildSystemPromptWithInjected appends resolved system prompts to the base system prompt.
+func (cb *ContextBuilder) BuildSystemPromptWithInjected(extra prompts.ResolvedPromptSet) string {
+	base := cb.BuildSystemPrompt()
+	injected := strings.TrimSpace(extra.SystemText)
+	if injected == "" {
+		return base
+	}
+	if strings.TrimSpace(base) == "" {
+		return injected
+	}
+	return base + "\n\n---\n\n# Managed Prompts\n\n" + injected
+}
+
 func (cb *ContextBuilder) buildStaticPromptBlock() string {
 	if cb.staticPromptCacheFresh() {
 		cb.cacheMu.RLock()
@@ -437,6 +451,26 @@ func (cb *ContextBuilder) BuildMessages(history []Message, currentMessage string
 		Content: currentMessage,
 	})
 
+	return messages
+}
+
+// BuildMessagesWithPromptSet builds messages using injected prompt overlays.
+func (cb *ContextBuilder) BuildMessagesWithPromptSet(
+	history []Message,
+	currentMessage string,
+	resolved prompts.ResolvedPromptSet,
+) []Message {
+	messages := []Message{{
+		Role:    "system",
+		Content: cb.BuildSystemPromptWithInjected(resolved),
+	}}
+
+	normalizedHistory := trimTrailingCurrentUserMessage(history, currentMessage)
+	messages = append(messages, sanitizeHistory(normalizedHistory)...)
+	messages = append(messages, Message{
+		Role:    "user",
+		Content: prompts.ComposeUserMessage(resolved.UserText, currentMessage),
+	})
 	return messages
 }
 

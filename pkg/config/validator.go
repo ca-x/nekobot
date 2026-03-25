@@ -81,6 +81,9 @@ func (v *Validator) Validate(cfg *Config) error {
 	// Validate session persistence configuration
 	v.validateSessions(&cfg.Sessions)
 
+	// Validate web UI configuration.
+	v.validateWebUI(&cfg.WebUI)
+
 	if len(v.errors) > 0 {
 		return v.errors
 	}
@@ -466,6 +469,21 @@ func (v *Validator) validateSessions(cfg *SessionsConfig) {
 		if cfg.Cleanup.MaxAgeDays < 1 {
 			v.addError("sessions.cleanup.max_age_days", "max_age_days must be at least 1 when cleanup is enabled")
 		}
+	}
+}
+
+func (v *Validator) validateWebUI(cfg *WebUIConfig) {
+	if cfg.ToolSessionOTPTTLSeconds < 0 {
+		v.addError("webui.tool_session_otp_ttl_seconds", "tool_session_otp_ttl_seconds cannot be negative")
+	}
+	if cfg.ToolSessionEvents.Enabled && cfg.ToolSessionEvents.RetentionDays < 1 {
+		v.addError("webui.tool_session_events.retention_days", "retention_days must be at least 1 when tool session events are enabled")
+	}
+	if cfg.SkillSnapshots.AutoPrune && cfg.SkillSnapshots.MaxCount < 1 {
+		v.addError("webui.skill_snapshots.max_count", "max_count must be at least 1 when skill snapshot auto prune is enabled")
+	}
+	if cfg.SkillVersions.Enabled && cfg.SkillVersions.MaxCount < 1 {
+		v.addError("webui.skill_versions.max_count", "max_count must be at least 1 when skill version history is enabled")
 	}
 }
 

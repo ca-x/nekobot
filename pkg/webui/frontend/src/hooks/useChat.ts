@@ -15,10 +15,21 @@ export interface ChatRouteSettings {
   fallback: string[];
 }
 
+export interface ChatRouteResult {
+  requested_provider: string;
+  requested_model: string;
+  requested_fallback: string[];
+  resolved_order: string[];
+  actual_provider: string;
+  actual_model: string;
+}
+
 interface SendOptions {
   provider: string;
   model: string;
   fallbackProviders: string[];
+  systemPromptIDs?: string[];
+  userPromptIDs?: string[];
 }
 
 interface UseChatReturn {
@@ -28,6 +39,7 @@ interface UseChatReturn {
   connectionStatus: ConnectionStatus;
   reconnect: () => void;
   routeSettings: ChatRouteSettings;
+  routeResult: ChatRouteResult | null;
   isAwaitingReply: boolean;
 }
 
@@ -39,6 +51,7 @@ export function useChat(): UseChatReturn {
     model: '',
     fallback: [],
   });
+  const [routeResult, setRouteResult] = useState<ChatRouteResult | null>(null);
   const [isAwaitingReply, setIsAwaitingReply] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,7 +109,7 @@ export function useChat(): UseChatReturn {
     };
 
     ws.onmessage = (ev: MessageEvent) => {
-      let msg: { type?: string; content?: string };
+      let msg: { type?: string; content?: string; route?: ChatRouteResult };
       try {
         msg = JSON.parse(ev.data);
       } catch {
@@ -133,6 +146,8 @@ export function useChat(): UseChatReturn {
           ...prev,
           { role: 'error', content: msg.content || 'Unknown error', timestamp: now },
         ]);
+      } else if (msg.type === 'route_result' && msg.route) {
+        setRouteResult(msg.route);
       } else {
         setMessages((prev) => [
           ...prev,
@@ -162,6 +177,8 @@ export function useChat(): UseChatReturn {
         model: options.model,
         provider: options.provider,
         fallback: options.fallbackProviders,
+        system_prompt_ids: options.systemPromptIDs ?? [],
+        user_prompt_ids: options.userPromptIDs ?? [],
       }),
     );
     setRouteSettings({
@@ -169,6 +186,7 @@ export function useChat(): UseChatReturn {
       model: options.model,
       fallback: options.fallbackProviders,
     });
+    setRouteResult(null);
     setIsAwaitingReply(true);
 
     setMessages((prev) => [
@@ -183,6 +201,7 @@ export function useChat(): UseChatReturn {
       ws.send(JSON.stringify({ type: 'clear' }));
     }
     setIsAwaitingReply(false);
+    setRouteResult(null);
     setMessages([]);
   }, []);
 
@@ -199,6 +218,7 @@ export function useChat(): UseChatReturn {
     connectionStatus,
     reconnect,
     routeSettings,
+    routeResult,
     isAwaitingReply,
   };
 }

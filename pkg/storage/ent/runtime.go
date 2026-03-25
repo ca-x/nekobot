@@ -7,6 +7,8 @@ import (
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
+	"nekobot/pkg/storage/ent/prompt"
+	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/schema"
 	"nekobot/pkg/storage/ent/tenant"
@@ -148,6 +150,78 @@ func init() {
 	membershipDescID := membershipFields[0].Descriptor()
 	// membership.DefaultID holds the default value on creation for the id field.
 	membership.DefaultID = membershipDescID.Default.(func() string)
+	promptFields := schema.Prompt{}.Fields()
+	_ = promptFields
+	// promptDescPromptKey is the schema descriptor for prompt_key field.
+	promptDescPromptKey := promptFields[1].Descriptor()
+	// prompt.PromptKeyValidator is a validator for the "prompt_key" field. It is called by the builders before save.
+	prompt.PromptKeyValidator = promptDescPromptKey.Validators[0].(func(string) error)
+	// promptDescName is the schema descriptor for name field.
+	promptDescName := promptFields[2].Descriptor()
+	// prompt.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	prompt.NameValidator = promptDescName.Validators[0].(func(string) error)
+	// promptDescDescription is the schema descriptor for description field.
+	promptDescDescription := promptFields[3].Descriptor()
+	// prompt.DefaultDescription holds the default value on creation for the description field.
+	prompt.DefaultDescription = promptDescDescription.Default.(string)
+	// promptDescTemplate is the schema descriptor for template field.
+	promptDescTemplate := promptFields[5].Descriptor()
+	// prompt.TemplateValidator is a validator for the "template" field. It is called by the builders before save.
+	prompt.TemplateValidator = promptDescTemplate.Validators[0].(func(string) error)
+	// promptDescEnabled is the schema descriptor for enabled field.
+	promptDescEnabled := promptFields[6].Descriptor()
+	// prompt.DefaultEnabled holds the default value on creation for the enabled field.
+	prompt.DefaultEnabled = promptDescEnabled.Default.(bool)
+	// promptDescTagsJSON is the schema descriptor for tags_json field.
+	promptDescTagsJSON := promptFields[7].Descriptor()
+	// prompt.DefaultTagsJSON holds the default value on creation for the tags_json field.
+	prompt.DefaultTagsJSON = promptDescTagsJSON.Default.(string)
+	// promptDescCreatedAt is the schema descriptor for created_at field.
+	promptDescCreatedAt := promptFields[8].Descriptor()
+	// prompt.DefaultCreatedAt holds the default value on creation for the created_at field.
+	prompt.DefaultCreatedAt = promptDescCreatedAt.Default.(func() time.Time)
+	// promptDescUpdatedAt is the schema descriptor for updated_at field.
+	promptDescUpdatedAt := promptFields[9].Descriptor()
+	// prompt.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	prompt.DefaultUpdatedAt = promptDescUpdatedAt.Default.(func() time.Time)
+	// prompt.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	prompt.UpdateDefaultUpdatedAt = promptDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// promptDescID is the schema descriptor for id field.
+	promptDescID := promptFields[0].Descriptor()
+	// prompt.DefaultID holds the default value on creation for the id field.
+	prompt.DefaultID = promptDescID.Default.(func() string)
+	promptbindingFields := schema.PromptBinding{}.Fields()
+	_ = promptbindingFields
+	// promptbindingDescTarget is the schema descriptor for target field.
+	promptbindingDescTarget := promptbindingFields[2].Descriptor()
+	// promptbinding.DefaultTarget holds the default value on creation for the target field.
+	promptbinding.DefaultTarget = promptbindingDescTarget.Default.(string)
+	// promptbindingDescPromptID is the schema descriptor for prompt_id field.
+	promptbindingDescPromptID := promptbindingFields[3].Descriptor()
+	// promptbinding.PromptIDValidator is a validator for the "prompt_id" field. It is called by the builders before save.
+	promptbinding.PromptIDValidator = promptbindingDescPromptID.Validators[0].(func(string) error)
+	// promptbindingDescEnabled is the schema descriptor for enabled field.
+	promptbindingDescEnabled := promptbindingFields[4].Descriptor()
+	// promptbinding.DefaultEnabled holds the default value on creation for the enabled field.
+	promptbinding.DefaultEnabled = promptbindingDescEnabled.Default.(bool)
+	// promptbindingDescPriority is the schema descriptor for priority field.
+	promptbindingDescPriority := promptbindingFields[5].Descriptor()
+	// promptbinding.DefaultPriority holds the default value on creation for the priority field.
+	promptbinding.DefaultPriority = promptbindingDescPriority.Default.(int)
+	// promptbindingDescCreatedAt is the schema descriptor for created_at field.
+	promptbindingDescCreatedAt := promptbindingFields[6].Descriptor()
+	// promptbinding.DefaultCreatedAt holds the default value on creation for the created_at field.
+	promptbinding.DefaultCreatedAt = promptbindingDescCreatedAt.Default.(func() time.Time)
+	// promptbindingDescUpdatedAt is the schema descriptor for updated_at field.
+	promptbindingDescUpdatedAt := promptbindingFields[7].Descriptor()
+	// promptbinding.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	promptbinding.DefaultUpdatedAt = promptbindingDescUpdatedAt.Default.(func() time.Time)
+	// promptbinding.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	promptbinding.UpdateDefaultUpdatedAt = promptbindingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// promptbindingDescID is the schema descriptor for id field.
+	promptbindingDescID := promptbindingFields[0].Descriptor()
+	// promptbinding.DefaultID holds the default value on creation for the id field.
+	promptbinding.DefaultID = promptbindingDescID.Default.(func() string)
 	providerFields := schema.Provider{}.Fields()
 	_ = providerFields
 	// providerDescName is the schema descriptor for name field.

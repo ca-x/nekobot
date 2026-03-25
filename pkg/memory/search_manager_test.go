@@ -2,10 +2,13 @@ package memory
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-kratos/blades"
+	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	qmdmemory "nekobot/pkg/memory/qmd"
 )
 
 func TestQMDSearchManagerFallsBackToBuiltin(t *testing.T) {
@@ -62,6 +65,40 @@ func TestBladesMemoryStoreAdapterSearchMemory(t *testing.T) {
 		t.Fatalf("expected score metadata, got %+v", memories[0].Metadata)
 	}
 	_ = blades.AssistantMessage
+}
+
+func TestConfigFromConfigWithWorkspaceResolvesSessionExportDir(t *testing.T) {
+	workspaceDir := t.TempDir()
+	resolved := qmdmemory.ConfigFromConfigWithWorkspace(config.QMDConfig{
+		Enabled: true,
+		Sessions: config.QMDSessionsConfig{
+			Enabled:       true,
+			ExportDir:     "${WORKSPACE}/memory/sessions",
+			RetentionDays: 7,
+		},
+	}, workspaceDir)
+
+	if resolved.Sessions.SessionsDir != filepath.Join(workspaceDir, "sessions") {
+		t.Fatalf("unexpected sessions dir: %q", resolved.Sessions.SessionsDir)
+	}
+	if resolved.Sessions.ExportDir != filepath.Join(workspaceDir, "memory", "sessions") {
+		t.Fatalf("unexpected export dir: %q", resolved.Sessions.ExportDir)
+	}
+}
+
+func TestConfigFromConfigWithWorkspaceUsesDefaultSessionExportDir(t *testing.T) {
+	workspaceDir := t.TempDir()
+	resolved := qmdmemory.ConfigFromConfigWithWorkspace(config.QMDConfig{
+		Enabled: true,
+		Sessions: config.QMDSessionsConfig{
+			Enabled:       true,
+			RetentionDays: 7,
+		},
+	}, workspaceDir)
+
+	if resolved.Sessions.ExportDir != filepath.Join(workspaceDir, "memory", "sessions") {
+		t.Fatalf("unexpected default export dir: %q", resolved.Sessions.ExportDir)
+	}
 }
 
 func newSearchMgrTestLogger(t *testing.T) *logger.Logger {

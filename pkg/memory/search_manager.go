@@ -3,7 +3,6 @@ package memory
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -46,8 +45,7 @@ func NewSearchManagerFromConfig(log *logger.Logger, cfg *config.Config) (SearchM
 		return builtin, nil
 	}
 
-	qmdCfg := qmdmemory.ConfigFromConfig(cfg.Memory.QMD)
-	qmdCfg.Sessions.SessionsDir = filepath.Join(cfg.WorkspacePath(), "sessions")
+	qmdCfg := qmdmemory.ConfigFromConfigWithWorkspace(cfg.Memory.QMD, cfg.WorkspacePath())
 	qmdMgr := qmdmemory.NewManager(log, qmdCfg)
 
 	searchMgr := &QMDSearchManager{

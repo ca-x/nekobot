@@ -16,38 +16,45 @@ import (
 
 // SkillVersion represents a version of a skill at a point in time.
 type SkillVersion struct {
-	SkillID      string    `json:"skill_id"`
-	Version      string    `json:"version"`
-	Timestamp    time.Time `json:"timestamp"`
-	ContentHash  string    `json:"content_hash"`
-	ChangeType   string    `json:"change_type"` // created, modified, deleted
-	ChangeSummary string   `json:"change_summary,omitempty"`
+	SkillID       string    `json:"skill_id"`
+	Version       string    `json:"version"`
+	Timestamp     time.Time `json:"timestamp"`
+	ContentHash   string    `json:"content_hash"`
+	ChangeType    string    `json:"change_type"` // created, modified, deleted
+	ChangeSummary string    `json:"change_summary,omitempty"`
 }
 
 // VersionHistory holds the version history for a skill.
 type VersionHistory struct {
-	SkillID  string          `json:"skill_id"`
-	Versions []SkillVersion  `json:"versions"`
+	SkillID  string         `json:"skill_id"`
+	Versions []SkillVersion `json:"versions"`
 }
 
 // VersionManager tracks skill versions over time.
 type VersionManager struct {
-	log        *logger.Logger
+	log         *logger.Logger
 	versionsDir string
 	histories   map[string]*VersionHistory // skillID -> history
+	enabled     bool
 }
 
 // NewVersionManager creates a new version manager.
-func NewVersionManager(log *logger.Logger, versionsDir string) *VersionManager {
+func NewVersionManager(log *logger.Logger, versionsDir string, enabled bool) *VersionManager {
 	return &VersionManager{
-		log:        log,
+		log:         log,
 		versionsDir: versionsDir,
 		histories:   make(map[string]*VersionHistory),
+		enabled:     enabled,
 	}
 }
 
 // Initialize loads existing version histories from disk.
 func (vm *VersionManager) Initialize() error {
+	if !vm.enabled {
+		vm.histories = make(map[string]*VersionHistory)
+		return nil
+	}
+
 	if err := os.MkdirAll(vm.versionsDir, 0755); err != nil {
 		return fmt.Errorf("creating versions directory: %w", err)
 	}
@@ -82,6 +89,10 @@ func (vm *VersionManager) Initialize() error {
 
 // TrackChange records a change to a skill.
 func (vm *VersionManager) TrackChange(skill *Skill, changeType, changeSummary string) error {
+	if !vm.enabled {
+		return nil
+	}
+
 	history, exists := vm.histories[skill.ID]
 	if !exists {
 		history = &VersionHistory{
@@ -116,6 +127,10 @@ func (vm *VersionManager) TrackChange(skill *Skill, changeType, changeSummary st
 
 // GetHistory returns the version history for a skill.
 func (vm *VersionManager) GetHistory(skillID string) (*VersionHistory, error) {
+	if !vm.enabled {
+		return nil, fmt.Errorf("skill version history is disabled")
+	}
+
 	history, exists := vm.histories[skillID]
 	if !exists {
 		return nil, fmt.Errorf("no version history for skill: %s", skillID)
@@ -140,6 +155,10 @@ func (vm *VersionManager) GetLatestVersion(skillID string) (*SkillVersion, error
 
 // DetectChanges compares current skills with their last known versions.
 func (vm *VersionManager) DetectChanges(skills map[string]*Skill) map[string]string {
+	if !vm.enabled {
+		return map[string]string{}
+	}
+
 	changes := make(map[string]string)
 
 	for id, skill := range skills {
@@ -169,6 +188,10 @@ func (vm *VersionManager) DetectChanges(skills map[string]*Skill) map[string]str
 
 // ListVersions returns all versions of a skill, sorted by timestamp.
 func (vm *VersionManager) ListVersions(skillID string) ([]SkillVersion, error) {
+	if !vm.enabled {
+		return nil, fmt.Errorf("skill version history is disabled")
+	}
+
 	history, err := vm.GetHistory(skillID)
 	if err != nil {
 		return nil, err
@@ -187,6 +210,10 @@ func (vm *VersionManager) ListVersions(skillID string) ([]SkillVersion, error) {
 
 // GetChangesSince returns all changes since a specific timestamp.
 func (vm *VersionManager) GetChangesSince(since time.Time) map[string][]SkillVersion {
+	if !vm.enabled {
+		return map[string][]SkillVersion{}
+	}
+
 	changes := make(map[string][]SkillVersion)
 
 	for skillID, history := range vm.histories {
@@ -207,6 +234,10 @@ func (vm *VersionManager) GetChangesSince(since time.Time) map[string][]SkillVer
 
 // Prune removes old version entries, keeping only the most recent N versions per skill.
 func (vm *VersionManager) Prune(keepCount int) error {
+	if !vm.enabled || keepCount < 1 {
+		return nil
+	}
+
 	for _, history := range vm.histories {
 		if len(history.Versions) <= keepCount {
 			continue
@@ -231,6 +262,51 @@ func (vm *VersionManager) Prune(keepCount int) error {
 	}
 
 	return nil
+}
+
+// DeleteAll removes all persisted version histories and clears in-memory state.
+func (vm *VersionManager) DeleteAll() (int, error) {
+	vm.histories = make(map[string]*VersionHistory)
+
+	entries, err := os.ReadDir(vm.versionsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("reading versions directory: %w", err)
+	}
+
+	deleted := 0
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(vm.versionsDir, entry.Name())
+		if err := os.Remove(path); err != nil {
+			return deleted, fmt.Errorf("removing history file %s: %w", entry.Name(), err)
+		}
+		deleted++
+	}
+
+	return deleted, nil
+}
+
+// Enabled reports whether version history persistence is active.
+func (vm *VersionManager) Enabled() bool {
+	return vm.enabled
+}
+
+// Stats reports current version history file and entry counts.
+func (vm *VersionManager) Stats() map[string]int {
+	stats := map[string]int{
+		"skill_count":   0,
+		"version_count": 0,
+	}
+	for _, history := range vm.histories {
+		stats["skill_count"]++
+		stats["version_count"] += len(history.Versions)
+	}
+	return stats
 }
 
 // saveHistory saves a version history to disk.

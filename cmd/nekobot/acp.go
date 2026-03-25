@@ -18,6 +18,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
+	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/session"
@@ -60,6 +61,7 @@ func runACP(cmd *cobra.Command, args []string) {
 		process.Module,
 		approval.Module,
 		toolsessions.Module,
+		prompts.Module,
 		providerstore.Module,
 		agent.Module,
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, ag *agent.Agent) {

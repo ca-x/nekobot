@@ -22,6 +22,10 @@ export interface QMDStatusResponse {
   error: string;
   last_update: string;
   collections: QMDCollection[];
+  sessions_enabled: boolean;
+  session_export_dir: string;
+  session_retention_days: number;
+  session_export_file_count: number;
 }
 
 export interface QMDInstallResponse {
@@ -37,6 +41,13 @@ export interface QMDInstallResponse {
   version: string;
   error: string;
   output: string;
+}
+
+export interface QMDCleanupExportsResponse {
+  deleted: number;
+  remaining: number;
+  session_export_dir: string;
+  session_retention_days: number;
 }
 
 const qmdKeys = {
@@ -71,6 +82,18 @@ export function useInstallQMD() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qmdKeys.all });
       toast.success('QMD installed');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useCleanupQMDExports() {
+  const qc = useQueryClient();
+  return useMutation<QMDCleanupExportsResponse, Error, void>({
+    mutationFn: () => api.post<QMDCleanupExportsResponse>('/api/memory/qmd/sessions/cleanup', {}),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: qmdKeys.all });
+      toast.success(`Cleaned ${result.deleted} QMD exports`);
     },
     onError: (err) => toast.error(err.message),
   });

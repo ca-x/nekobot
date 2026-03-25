@@ -137,7 +137,7 @@ func (p *ProcessExecutor) execute(ctx context.Context, args ...string) ([]byte, 
 
 		// Check if QMD is not found
 		if strings.Contains(err.Error(), "executable file not found") {
-			return nil, fmt.Errorf("qmd command not found (install from: https://github.com/username/qmd)")
+			return nil, fmt.Errorf("qmd command not found (install from: https://github.com/tobi/qmd)")
 		}
 
 		return nil, fmt.Errorf("qmd command failed: %s", errMsg)

@@ -101,6 +101,12 @@ export interface MarketplaceInventoryResponse {
   source_count: number;
   enabled_count: number;
   always_count: number;
+  version_history: {
+    enabled: boolean;
+    max_count: number;
+    skill_count: number;
+    version_count: number;
+  };
   sources: MarketplaceSkillSource[];
 }
 
@@ -115,6 +121,14 @@ export interface MarketplaceSnapshot {
 export interface MarketplaceSnapshotListResponse {
   total: number;
   snapshots: MarketplaceSnapshot[];
+  auto_prune: boolean;
+  max_count: number;
+}
+
+export interface MarketplaceSnapshotPruneResponse {
+  deleted: number;
+  max_count: number;
+  auto_prune: boolean;
 }
 
 export interface WorkspaceStatus {
@@ -322,6 +336,19 @@ export function useDeleteMarketplaceSnapshot() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.snapshots() });
       toast.success('Snapshot deleted');
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function usePruneMarketplaceSnapshots() {
+  const qc = useQueryClient();
+  return useMutation<MarketplaceSnapshotPruneResponse, Error, void>({
+    mutationFn: () =>
+      api.post<MarketplaceSnapshotPruneResponse>('/api/marketplace/skills/snapshots/prune', {}),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: marketplaceKeys.snapshots() });
+      toast.success(`Pruned ${data.deleted} old snapshots`);
     },
     onError: (err) => toast.error(err.message),
   });

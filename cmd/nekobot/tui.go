@@ -21,6 +21,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
+	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/session"
@@ -174,6 +175,7 @@ func runTUI(cmd *cobra.Command, args []string) {
 		skills.Module,
 		state.Module,
 		process.Module,
+		prompts.Module,
 		providerstore.Module,
 		agent.Module,
 

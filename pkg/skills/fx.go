@@ -41,7 +41,20 @@ func ProvideManager(log *logger.Logger, cfg *config.Config) (*Manager, error) {
 	}
 
 	autoReload := cfg.Agents.Defaults.SkillsAutoReload
-	manager := NewManagerWithOptions(log, skillsDir, autoReload, cfg.Agents.Defaults.SkillsProxy)
+	manager := NewManagerWithRuntimeOptions(
+		log,
+		skillsDir,
+		autoReload,
+		cfg.Agents.Defaults.SkillsProxy,
+		SnapshotRetentionConfig{
+			AutoPrune: cfg.WebUI.SkillSnapshots.AutoPrune,
+			MaxCount:  cfg.WebUI.SkillSnapshots.MaxCount,
+		},
+		VersionRetentionConfig{
+			Enabled:  cfg.WebUI.SkillVersions.Enabled,
+			MaxCount: cfg.WebUI.SkillVersions.MaxCount,
+		},
+	)
 	manager.eligibilityCheck.SetConfigPathExists(func(path string) bool {
 		return hasConfigPath(cfg, path)
 	})

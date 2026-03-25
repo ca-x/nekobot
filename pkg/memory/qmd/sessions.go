@@ -187,9 +187,15 @@ func sanitizeText(text string) string {
 
 // CleanupOldExports removes exported sessions older than retention period.
 func (se *SessionExporter) CleanupOldExports(ctx context.Context) error {
+	_, err := se.CleanupOldExportsCount(ctx)
+	return err
+}
+
+// CleanupOldExportsCount removes exported sessions older than retention period and returns the deleted count.
+func (se *SessionExporter) CleanupOldExportsCount(ctx context.Context) (int, error) {
 	if se.retention <= 0 {
 		// No retention limit
-		return nil
+		return 0, nil
 	}
 
 	cutoff := time.Now().AddDate(0, 0, -se.retention)
@@ -197,9 +203,9 @@ func (se *SessionExporter) CleanupOldExports(ctx context.Context) error {
 	entries, err := os.ReadDir(se.exportDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return 0, nil
 		}
-		return fmt.Errorf("reading export directory: %w", err)
+		return 0, fmt.Errorf("reading export directory: %w", err)
 	}
 
 	removed := 0
@@ -231,5 +237,5 @@ func (se *SessionExporter) CleanupOldExports(ctx context.Context) error {
 			zap.Int("retention_days", se.retention))
 	}
 
-	return nil
+	return removed, nil
 }

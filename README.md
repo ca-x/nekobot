@@ -1,32 +1,29 @@
 # nekobot 🤖
 
-A lightweight, extensible AI assistant built with Go. nekobot provides a clean architecture for LLM-powered agents with tool orchestration, session management, and multi-provider support.
+An AI assistant platform built with Go, centered around a Web-first operating model:
+start from CLI, then complete provider, channel, agent, memory, and tool configuration in the dashboard.
 
 ## Features
 
-✅ **Unified Provider System** - Support for OpenAI, Claude, Gemini, and 10+ providers
+✅ **Web-first runtime management** - bootstrap from CLI, then configure providers / agents / channels / cron / tools in WebUI
 
-✅ **Tool System** - Extensible tools for file operations, command execution, and more
+✅ **Unified provider system** - OpenAI, Claude, Gemini, OpenRouter-compatible endpoints, provider pools, routing defaults, and fallback chains
 
-✅ **Session Management** - Persistent conversation history
+✅ **Multi-channel messaging** - Telegram, Discord, WhatsApp, Feishu, QQ, DingTalk, Slack, WeChat, and more
 
-✅ **Memory System** - Long-term memory and daily notes
+✅ **Persistent runtime config** - bootstrap file for startup settings plus runtime database for Web-managed configuration
 
-✅ **Configuration Management** - Flexible config with hot-reload
+✅ **Skills system** - multi-path loading, requirement gating, remote search / install, snapshots, and runtime inspection
 
-✅ **Structured Logging** - High-performance logging with rotation
+✅ **Memory system** - built-in memory, QMD integration, workspace notes, session export, and configurable persistence
 
-✅ **Dependency Injection** - Clean architecture with Uber FX
+✅ **Workspace automation** - auto-bootstrap workspace files, daily logs, and runtime directories
 
-✅ **Message Bus** - Multi-channel message routing
+✅ **Cron and automation** - scheduled tasks with per-task provider / model / fallback routing overrides
 
-✅ **State Management** - File or Redis backend for KV storage
+✅ **Tool sessions** - browser-accessible long-running tools with access control and process management
 
-✅ **Heartbeat System** - Periodic autonomous tasks
-
-✅ **Cron Jobs** - Scheduled task execution
-
-✅ **System Service** - Run gateway as a native system service
+✅ **Docker and service deployment** - containerized runtime plus native gateway service mode
 
 ## Quick Start
 
@@ -104,6 +101,20 @@ This persists all runtime state in `./data`:
 
 After startup, open `http://127.0.0.1:18791` and finish configuration in WebUI.
 
+The default Docker image now preinstalls `QMD`. If you do not want QMD in the image,
+build with:
+
+```bash
+docker build --build-arg INSTALL_QMD=false -t nekobot:no-qmd .
+```
+
+For non-preinstalled environments, WebUI can also install QMD into the persistent
+workspace runtime directory under `./data/workspace/.nekobot/runtime/qmd`.
+
+If QMD session export is enabled and `memory.qmd.sessions.export_dir` is left empty,
+nekobot defaults it to `${WORKSPACE}/memory/sessions`, and the WebUI now shows the
+resolved path, export count, retention policy, and a manual cleanup action.
+
 ## Usage
 
 ### One-Shot Mode
@@ -119,7 +130,7 @@ nekobot agent -m "Create a file called hello.txt with 'Hello World'"
 nekobot agent -m "Run 'ls -la' and show me the results"
 ```
 
-### Interactive Mode (Coming Soon)
+### Interactive Mode
 
 ```bash
 nekobot agent
@@ -244,29 +255,10 @@ func init() {
 }
 ```
 
-## Progress
-
-- ✅ Phase 1: Provider Architecture (13 files, ~2.7k lines)
-- ✅ Phase 2: Configuration Management (5 files, ~1k lines)
-- ✅ Phase 3: Logging + DI (6 files, ~800 lines)
-- ✅ Phase 4: Agent Core + Tools (8 files, ~1.2k lines)
-- ✅ Phase 5: Session + CLI (3 files, ~400 lines)
-- ✅ Phase 6: Advanced Features (15 files, ~3k lines)
-  - Message Bus (local + Redis implementations)
-  - State Management (file + Redis backends)
-  - Heartbeat system for autonomous tasks
-  - Cron job scheduling
-  - System service management
-  - Channel system framework
-  - Web tools (search + fetch)
-- 🚧 Phase 7: Channel Implementations
-  - ✅ Telegram (basic implementation)
-  - ⏳ Discord, WhatsApp, Feishu, etc.
-
-**Total**: 50+ files, ~10,000 lines of code
-
 ## Documentation
 
+- [Configuration](docs/CONFIG.md)
+- [QMD Integration](docs/QMD_INTEGRATION.md)
 - [Provider Architecture](docs/PROVIDERS.md)
 - [Logging System](docs/LOGGING.md)
 - [Gateway Service Management](docs/GATEWAY_SERVICE.md)
@@ -278,14 +270,10 @@ func init() {
 
 MIT
 
-## Credits
-
-Inspired by picoclaw and nanobot projects.
-
-Built with ❤️ using Go, zap, fx, viper, and cobra.
-
 ## References
 
 This project references and learns from:
 - https://github.com/smallnest/goclaw
 - https://github.com/sipeed/picoclaw
+- /home/czyt/code/go/nextclaw
+- /home/czyt/code/go/weclaw

@@ -255,6 +255,28 @@ func TestSessionHandlers_NotFoundBehavior(t *testing.T) {
 	assertErrorPayload(t, deleteRec.Body.Bytes())
 }
 
+func TestHandleCleanupSessions(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Sessions.Enabled = true
+	cfg.Sessions.Cleanup.Enabled = true
+	cfg.Sessions.Cleanup.MaxAgeDays = 1
+	sm := session.NewManager(t.TempDir(), cfg.Sessions)
+	s := &Server{sessionMgr: sm, config: cfg}
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/cleanup", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleCleanupSessions(c); err != nil {
+		t.Fatalf("cleanup handler failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	assertStatusPayload(t, rec.Body.Bytes(), "cleaned")
+}
+
 func assertSessionSummaryShape(t *testing.T, payload map[string]json.RawMessage, wantID string, wantSummary string, wantCount int) {
 	t.Helper()
 

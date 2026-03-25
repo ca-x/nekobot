@@ -28,6 +28,19 @@ type cooldownEntry struct {
 	LastFailure    time.Time
 }
 
+// CooldownSnapshot captures the current runtime state of a provider cooldown entry.
+type CooldownSnapshot struct {
+	Available                bool
+	InCooldown               bool
+	ErrorCount               int
+	FailureCounts            map[FailoverReason]int
+	CooldownRemaining        time.Duration
+	CooldownEnd              time.Time
+	DisabledUntil            time.Time
+	DisabledReason           FailoverReason
+	LastFailure              time.Time
+}
+
 // NewCooldownTracker creates a tracker with default 24h failure window.
 func NewCooldownTracker() *CooldownTracker {
 	return &CooldownTracker{
@@ -160,6 +173,49 @@ func (ct *CooldownTracker) FailureCount(provider string, reason FailoverReason) 
 		return 0
 	}
 	return entry.FailureCounts[reason]
+}
+
+// Snapshot returns the current cooldown state for a provider.
+func (ct *CooldownTracker) Snapshot(provider string) CooldownSnapshot {
+	ct.mu.RLock()
+	defer ct.mu.RUnlock()
+
+	now := ct.nowFunc()
+	entry := ct.entries[provider]
+	if entry == nil {
+		return CooldownSnapshot{
+			Available:     true,
+			FailureCounts: map[FailoverReason]int{},
+		}
+	}
+
+	failureCounts := make(map[FailoverReason]int, len(entry.FailureCounts))
+	for reason, count := range entry.FailureCounts {
+		failureCounts[reason] = count
+	}
+
+	remaining := time.Duration(0)
+	if !entry.DisabledUntil.IsZero() && now.Before(entry.DisabledUntil) {
+		remaining = entry.DisabledUntil.Sub(now)
+	}
+	if !entry.CooldownEnd.IsZero() && now.Before(entry.CooldownEnd) {
+		standardRemaining := entry.CooldownEnd.Sub(now)
+		if standardRemaining > remaining {
+			remaining = standardRemaining
+		}
+	}
+
+	return CooldownSnapshot{
+		Available:         remaining <= 0,
+		InCooldown:        remaining > 0,
+		ErrorCount:        entry.ErrorCount,
+		FailureCounts:     failureCounts,
+		CooldownRemaining: remaining,
+		CooldownEnd:       entry.CooldownEnd,
+		DisabledUntil:     entry.DisabledUntil,
+		DisabledReason:    entry.DisabledReason,
+		LastFailure:       entry.LastFailure,
+	}
 }
 
 func (ct *CooldownTracker) getOrCreate(provider string) *cooldownEntry {

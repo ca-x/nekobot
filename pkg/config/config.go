@@ -568,6 +568,18 @@ func DefaultConfig() *Config {
 			Port:                     0, // 0 means gateway port + 1
 			PublicBaseURL:            "",
 			ToolSessionOTPTTLSeconds: 180,
+			ToolSessionEvents: ToolSessionEventsConfig{
+				Enabled:       true,
+				RetentionDays: 14,
+			},
+			SkillSnapshots: SkillSnapshotsConfig{
+				AutoPrune: true,
+				MaxCount:  20,
+			},
+			SkillVersions: SkillVersionsConfig{
+				Enabled:  true,
+				MaxCount: 20,
+			},
 		},
 	}
 }
@@ -791,10 +803,31 @@ type ApprovalConfig struct {
 
 // WebUIConfig for the web dashboard.
 type WebUIConfig struct {
-	Enabled                  bool   `mapstructure:"enabled" json:"enabled"`                                           // Enable WebUI (default true in daemon mode)
-	Port                     int    `mapstructure:"port" json:"port"`                                                 // WebUI port (default: gateway port + 1)
-	PublicBaseURL            string `mapstructure:"public_base_url" json:"public_base_url"`                           // Preferred external base URL for share links
-	ToolSessionOTPTTLSeconds int    `mapstructure:"tool_session_otp_ttl_seconds" json:"tool_session_otp_ttl_seconds"` // One-time password TTL for tool sessions (seconds)
+	Enabled                  bool                    `mapstructure:"enabled" json:"enabled"`                                           // Enable WebUI (default true in daemon mode)
+	Port                     int                     `mapstructure:"port" json:"port"`                                                 // WebUI port (default: gateway port + 1)
+	PublicBaseURL            string                  `mapstructure:"public_base_url" json:"public_base_url"`                           // Preferred external base URL for share links
+	ToolSessionOTPTTLSeconds int                     `mapstructure:"tool_session_otp_ttl_seconds" json:"tool_session_otp_ttl_seconds"` // One-time password TTL for tool sessions (seconds)
+	ToolSessionEvents        ToolSessionEventsConfig `mapstructure:"tool_session_events" json:"tool_session_events"`
+	SkillSnapshots           SkillSnapshotsConfig    `mapstructure:"skill_snapshots" json:"skill_snapshots"`
+	SkillVersions            SkillVersionsConfig     `mapstructure:"skill_versions" json:"skill_versions"`
+}
+
+// ToolSessionEventsConfig controls persistence and cleanup of tool-session events.
+type ToolSessionEventsConfig struct {
+	Enabled       bool `mapstructure:"enabled" json:"enabled"`
+	RetentionDays int  `mapstructure:"retention_days" json:"retention_days"`
+}
+
+// SkillSnapshotsConfig controls marketplace skill snapshot retention.
+type SkillSnapshotsConfig struct {
+	AutoPrune bool `mapstructure:"auto_prune" json:"auto_prune"`
+	MaxCount  int  `mapstructure:"max_count" json:"max_count"`
+}
+
+// SkillVersionsConfig controls skill version history persistence.
+type SkillVersionsConfig struct {
+	Enabled  bool `mapstructure:"enabled" json:"enabled"`
+	MaxCount int  `mapstructure:"max_count" json:"max_count"`
 }
 
 // ApplyFrom copies runtime-reloadable fields from another Config into this one.

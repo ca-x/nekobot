@@ -15,6 +15,8 @@ import (
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
+	"nekobot/pkg/storage/ent/prompt"
+	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
 	"nekobot/pkg/storage/ent/tenant"
 	"nekobot/pkg/storage/ent/toolevent"
@@ -40,6 +42,10 @@ type Client struct {
 	CronJob *CronJobClient
 	// Membership is the client for interacting with the Membership builders.
 	Membership *MembershipClient
+	// Prompt is the client for interacting with the Prompt builders.
+	Prompt *PromptClient
+	// PromptBinding is the client for interacting with the PromptBinding builders.
+	PromptBinding *PromptBindingClient
 	// Provider is the client for interacting with the Provider builders.
 	Provider *ProviderClient
 	// Tenant is the client for interacting with the Tenant builders.
@@ -65,6 +71,8 @@ func (c *Client) init() {
 	c.ConfigSection = NewConfigSectionClient(c.config)
 	c.CronJob = NewCronJobClient(c.config)
 	c.Membership = NewMembershipClient(c.config)
+	c.Prompt = NewPromptClient(c.config)
+	c.PromptBinding = NewPromptBindingClient(c.config)
 	c.Provider = NewProviderClient(c.config)
 	c.Tenant = NewTenantClient(c.config)
 	c.ToolEvent = NewToolEventClient(c.config)
@@ -166,6 +174,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ConfigSection: NewConfigSectionClient(cfg),
 		CronJob:       NewCronJobClient(cfg),
 		Membership:    NewMembershipClient(cfg),
+		Prompt:        NewPromptClient(cfg),
+		PromptBinding: NewPromptBindingClient(cfg),
 		Provider:      NewProviderClient(cfg),
 		Tenant:        NewTenantClient(cfg),
 		ToolEvent:     NewToolEventClient(cfg),
@@ -194,6 +204,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ConfigSection: NewConfigSectionClient(cfg),
 		CronJob:       NewCronJobClient(cfg),
 		Membership:    NewMembershipClient(cfg),
+		Prompt:        NewPromptClient(cfg),
+		PromptBinding: NewPromptBindingClient(cfg),
 		Provider:      NewProviderClient(cfg),
 		Tenant:        NewTenantClient(cfg),
 		ToolEvent:     NewToolEventClient(cfg),
@@ -228,8 +240,8 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.AttachToken, c.ConfigSection, c.CronJob, c.Membership, c.Provider, c.Tenant,
-		c.ToolEvent, c.ToolSession, c.User,
+		c.AttachToken, c.ConfigSection, c.CronJob, c.Membership, c.Prompt,
+		c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -239,8 +251,8 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.AttachToken, c.ConfigSection, c.CronJob, c.Membership, c.Provider, c.Tenant,
-		c.ToolEvent, c.ToolSession, c.User,
+		c.AttachToken, c.ConfigSection, c.CronJob, c.Membership, c.Prompt,
+		c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -257,6 +269,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.CronJob.mutate(ctx, m)
 	case *MembershipMutation:
 		return c.Membership.mutate(ctx, m)
+	case *PromptMutation:
+		return c.Prompt.mutate(ctx, m)
+	case *PromptBindingMutation:
+		return c.PromptBinding.mutate(ctx, m)
 	case *ProviderMutation:
 		return c.Provider.mutate(ctx, m)
 	case *TenantMutation:
@@ -833,6 +849,272 @@ func (c *MembershipClient) mutate(ctx context.Context, m *MembershipMutation) (V
 		return (&MembershipDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Membership mutation op: %q", m.Op())
+	}
+}
+
+// PromptClient is a client for the Prompt schema.
+type PromptClient struct {
+	config
+}
+
+// NewPromptClient returns a client for the Prompt from the given config.
+func NewPromptClient(c config) *PromptClient {
+	return &PromptClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `prompt.Hooks(f(g(h())))`.
+func (c *PromptClient) Use(hooks ...Hook) {
+	c.hooks.Prompt = append(c.hooks.Prompt, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `prompt.Intercept(f(g(h())))`.
+func (c *PromptClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Prompt = append(c.inters.Prompt, interceptors...)
+}
+
+// Create returns a builder for creating a Prompt entity.
+func (c *PromptClient) Create() *PromptCreate {
+	mutation := newPromptMutation(c.config, OpCreate)
+	return &PromptCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Prompt entities.
+func (c *PromptClient) CreateBulk(builders ...*PromptCreate) *PromptCreateBulk {
+	return &PromptCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PromptClient) MapCreateBulk(slice any, setFunc func(*PromptCreate, int)) *PromptCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PromptCreateBulk{err: fmt.Errorf("calling to PromptClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PromptCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PromptCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Prompt.
+func (c *PromptClient) Update() *PromptUpdate {
+	mutation := newPromptMutation(c.config, OpUpdate)
+	return &PromptUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PromptClient) UpdateOne(_m *Prompt) *PromptUpdateOne {
+	mutation := newPromptMutation(c.config, OpUpdateOne, withPrompt(_m))
+	return &PromptUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PromptClient) UpdateOneID(id string) *PromptUpdateOne {
+	mutation := newPromptMutation(c.config, OpUpdateOne, withPromptID(id))
+	return &PromptUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Prompt.
+func (c *PromptClient) Delete() *PromptDelete {
+	mutation := newPromptMutation(c.config, OpDelete)
+	return &PromptDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PromptClient) DeleteOne(_m *Prompt) *PromptDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PromptClient) DeleteOneID(id string) *PromptDeleteOne {
+	builder := c.Delete().Where(prompt.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PromptDeleteOne{builder}
+}
+
+// Query returns a query builder for Prompt.
+func (c *PromptClient) Query() *PromptQuery {
+	return &PromptQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePrompt},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Prompt entity by its id.
+func (c *PromptClient) Get(ctx context.Context, id string) (*Prompt, error) {
+	return c.Query().Where(prompt.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PromptClient) GetX(ctx context.Context, id string) *Prompt {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PromptClient) Hooks() []Hook {
+	return c.hooks.Prompt
+}
+
+// Interceptors returns the client interceptors.
+func (c *PromptClient) Interceptors() []Interceptor {
+	return c.inters.Prompt
+}
+
+func (c *PromptClient) mutate(ctx context.Context, m *PromptMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PromptCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PromptUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PromptUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PromptDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Prompt mutation op: %q", m.Op())
+	}
+}
+
+// PromptBindingClient is a client for the PromptBinding schema.
+type PromptBindingClient struct {
+	config
+}
+
+// NewPromptBindingClient returns a client for the PromptBinding from the given config.
+func NewPromptBindingClient(c config) *PromptBindingClient {
+	return &PromptBindingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `promptbinding.Hooks(f(g(h())))`.
+func (c *PromptBindingClient) Use(hooks ...Hook) {
+	c.hooks.PromptBinding = append(c.hooks.PromptBinding, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `promptbinding.Intercept(f(g(h())))`.
+func (c *PromptBindingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PromptBinding = append(c.inters.PromptBinding, interceptors...)
+}
+
+// Create returns a builder for creating a PromptBinding entity.
+func (c *PromptBindingClient) Create() *PromptBindingCreate {
+	mutation := newPromptBindingMutation(c.config, OpCreate)
+	return &PromptBindingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PromptBinding entities.
+func (c *PromptBindingClient) CreateBulk(builders ...*PromptBindingCreate) *PromptBindingCreateBulk {
+	return &PromptBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PromptBindingClient) MapCreateBulk(slice any, setFunc func(*PromptBindingCreate, int)) *PromptBindingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PromptBindingCreateBulk{err: fmt.Errorf("calling to PromptBindingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PromptBindingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PromptBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PromptBinding.
+func (c *PromptBindingClient) Update() *PromptBindingUpdate {
+	mutation := newPromptBindingMutation(c.config, OpUpdate)
+	return &PromptBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PromptBindingClient) UpdateOne(_m *PromptBinding) *PromptBindingUpdateOne {
+	mutation := newPromptBindingMutation(c.config, OpUpdateOne, withPromptBinding(_m))
+	return &PromptBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PromptBindingClient) UpdateOneID(id string) *PromptBindingUpdateOne {
+	mutation := newPromptBindingMutation(c.config, OpUpdateOne, withPromptBindingID(id))
+	return &PromptBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PromptBinding.
+func (c *PromptBindingClient) Delete() *PromptBindingDelete {
+	mutation := newPromptBindingMutation(c.config, OpDelete)
+	return &PromptBindingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PromptBindingClient) DeleteOne(_m *PromptBinding) *PromptBindingDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PromptBindingClient) DeleteOneID(id string) *PromptBindingDeleteOne {
+	builder := c.Delete().Where(promptbinding.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PromptBindingDeleteOne{builder}
+}
+
+// Query returns a query builder for PromptBinding.
+func (c *PromptBindingClient) Query() *PromptBindingQuery {
+	return &PromptBindingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePromptBinding},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PromptBinding entity by its id.
+func (c *PromptBindingClient) Get(ctx context.Context, id string) (*PromptBinding, error) {
+	return c.Query().Where(promptbinding.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PromptBindingClient) GetX(ctx context.Context, id string) *PromptBinding {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PromptBindingClient) Hooks() []Hook {
+	return c.hooks.PromptBinding
+}
+
+// Interceptors returns the client interceptors.
+func (c *PromptBindingClient) Interceptors() []Interceptor {
+	return c.inters.PromptBinding
+}
+
+func (c *PromptBindingClient) mutate(ctx context.Context, m *PromptBindingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PromptBindingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PromptBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PromptBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PromptBindingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PromptBinding mutation op: %q", m.Op())
 	}
 }
 
@@ -1536,11 +1818,11 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AttachToken, ConfigSection, CronJob, Membership, Provider, Tenant, ToolEvent,
-		ToolSession, User []ent.Hook
+		AttachToken, ConfigSection, CronJob, Membership, Prompt, PromptBinding,
+		Provider, Tenant, ToolEvent, ToolSession, User []ent.Hook
 	}
 	inters struct {
-		AttachToken, ConfigSection, CronJob, Membership, Provider, Tenant, ToolEvent,
-		ToolSession, User []ent.Interceptor
+		AttachToken, ConfigSection, CronJob, Membership, Prompt, PromptBinding,
+		Provider, Tenant, ToolEvent, ToolSession, User []ent.Interceptor
 	}
 )

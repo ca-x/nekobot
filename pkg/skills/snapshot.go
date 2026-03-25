@@ -95,6 +95,30 @@ func (sm *SnapshotManager) Create(skills map[string]*Skill, metadata map[string]
 	return snapshot, nil
 }
 
+// PruneOldest keeps only the most recent snapshots up to maxCount.
+func (sm *SnapshotManager) PruneOldest(maxCount int) (int, error) {
+	if maxCount < 1 {
+		return 0, nil
+	}
+
+	snapshots, err := sm.List()
+	if err != nil {
+		return 0, err
+	}
+	if len(snapshots) <= maxCount {
+		return 0, nil
+	}
+
+	removed := 0
+	for _, snapshot := range snapshots[maxCount:] {
+		if err := sm.Delete(snapshot.ID); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
+}
+
 // List returns all available snapshots.
 func (sm *SnapshotManager) List() ([]*Snapshot, error) {
 	entries, err := os.ReadDir(sm.snapshotsDir)
@@ -267,7 +291,7 @@ func (sm *SnapshotManager) load(path string) (*Snapshot, error) {
 
 // generateSnapshotID generates a unique snapshot ID.
 func generateSnapshotID() string {
-	return fmt.Sprintf("snapshot-%d", time.Now().Unix())
+	return fmt.Sprintf("snapshot-%d", time.Now().UnixNano())
 }
 
 // computeContentHash computes SHA-256 hash of content.
