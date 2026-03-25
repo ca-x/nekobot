@@ -1,5 +1,21 @@
 # Progress Log
 
+## 2026-03-25
+
+- Added runtime-backed prompt management with Ent schemas for `prompt` and `prompt_binding`, including CRUD, binding resolution, and render helpers in `pkg/prompts`.
+- Wired prompt manager into FX/runtime startup and exposed WebUI prompt APIs with server-side tests in `pkg/webui/server_prompts_test.go`.
+- Added frontend Prompts page and `usePrompts` hook, plus supporting textarea component and i18n entries.
+- Expanded runtime admin flows around tool sessions, config, providers, marketplace, QMD inspection, and status endpoints to support the web-first dashboard model.
+- Added workspace-aware QMD path resolution and improved session export defaults/visibility, including resolved export directory and cleanup support.
+- Improved skills runtime metadata handling with snapshot/version coverage and added regression tests for snapshot/version behavior.
+- Added provider cooldown tests and related runtime integration updates.
+- Updated README and QMD docs to reflect the current Web-first setup and Docker/QMD behavior.
+- Created and pushed commit `58877a5` (`feat(runtime): add web-managed prompts and tool session controls`).
+- Follow-up needed on next device/session:
+  - Run `go test -count=1 ./...`
+  - Run `npm --prefix pkg/webui/frontend run build`
+  - Manually smoke test Prompts page, tool session controls, and QMD admin flow in WebUI
+
 ## 2026-02-15
 
 - Initialized planning artifacts for provider DB migration task.

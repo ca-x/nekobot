@@ -1,6 +1,6 @@
 # Task Plan: nanoclaw / nextclaw 设计迁移与收口
 
-> Last Updated: 2026-02-28
+> Last Updated: 2026-03-25
 
 ## Goal
 在保持 `nekobot` 现有稳定性的前提下，分批迁移并落地 `nanoclaw` / `nextclaw` / `picoclaw` 的高价值能力，优先保证：
@@ -14,9 +14,11 @@
   - [x] Feature Batch #1：多用户认证基础迁移（User/Tenant/Membership + JWT 统一存储）。
   - [x] Feature Batch #2：`chatWithBladesOrchestrator` 由真实 blades runtime 接管，保留 legacy 可切换。
   - [x] Prompt 构建优化：静态块缓存 + 动态时间占位替换，避免时间冻结。
+  - [x] Feature Batch #3：Web-first runtime 管理扩展（Prompts 存储/绑定、Tool Session 控制、QMD 运行态检查、Skills 版本/快照可视化）。
 - **最近验证**:
   - [x] `go test -count=1 ./pkg/agent`
   - [x] `go test -count=1 ./...`
+  - [ ] 2026-03-25 这一批 runtime 管理改动尚未在当前会话重新跑全量测试；换设备后优先补 `go test -count=1 ./...`
 
 ## Completed Milestones
 
@@ -36,6 +38,14 @@
 - [x] Ent runtime schema 并发初始化竞态修复。
 - [x] BuildMessages 尾部用户消息去重。
 - [x] 工具描述确定性排序（提升 cache 稳定性）。
+
+### D. Web-first Runtime 管理增强
+- [x] Prompt 定义与绑定改为共享 Ent runtime DB 持久化。
+- [x] WebUI 新增 Prompts 管理页、后端 API 与测试。
+- [x] Tool Sessions 管理补齐访问控制/运行态管理测试。
+- [x] QMD 路径解析、session export 信息与手动清理入口增强。
+- [x] Skills snapshot/version 与 provider cooldown 的运行态展示能力增强。
+- [x] README 与 QMD 文档更新为当前 Web-first 操作模型。
 
 ## Active Backlog（含进度）
 
@@ -70,6 +80,10 @@
   - 现状：工具/语言版本比较为 TODO。
   - 目标：支持最小可用版本比较并返回可读原因。
   - 位置：`pkg/skills/eligibility.go`。
+- [ ] **Runtime Prompts 执行链路回归验证**
+  - 现状：Prompts 存储、绑定和 WebUI 已落地，但本轮提交后尚未做一次完整端到端回归。
+  - 目标：验证 CRUD、绑定、生效渲染、升级迁移、WebUI 交互。
+  - 位置：`pkg/prompts/*`、`pkg/webui/*`、`pkg/agent/*`。
 
 ### P2（次优先级）
 - [ ] **MaixCAM 命令响应回设备端**
@@ -100,6 +114,12 @@
 - [ ] skills version comparison
 - **验收**: 单测覆盖新分支，`go test ./...` 通过。
 
+### Batch 6（Runtime Admin 收口）
+- [ ] prompts CRUD / binding / render 手工回归
+- [ ] tool sessions 与 QMD 管理页 smoke test
+- [ ] frontend build 与后端全量测试补跑
+- **验收**: `go test -count=1 ./...` 与 `npm --prefix pkg/webui/frontend run build` 通过。
+
 ## Phase 状态（聚合）
 - [x] Phase 1-8（前端主链路）
 - [x] Phase 10（Cron）
@@ -110,3 +130,4 @@
 ## Notes
 - 执行策略保持：**最小改动、完成一项继续下一项、每批次可独立回归**。
 - 进度细节（逐次提交级）继续记录在 `progress.md`，本文件作为任务和里程碑主视图。
+- 跨设备续写建议起点：先拉取 `origin/main` 到 `58877a5`，然后优先执行 Batch 6 验证，再继续未完成 backlog。
