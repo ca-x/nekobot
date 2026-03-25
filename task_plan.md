@@ -93,7 +93,7 @@
 
 ### 当前明确未完成或做薄的能力
 - [ ] Slack interactive callback 已补齐技能安装确认闭环，但 shortcut / modal submission 仍只有路由入口，尚未落具体业务闭环。
-- [ ] Runtime Prompts 本轮改动后缺一次完整端到端回归与 smoke test 记录。
+- [x] Runtime Prompts 本轮改动后已补回归测试与 smoke checklist 记录。
 - [ ] MaixCAM 命令执行后的 response 回写设备侧链路仍待补齐。
 - [ ] Gateway 仍偏聊天通道，缺更完整的控制面协议、连接治理和配对/授权模型。
 - [ ] Conversation binding 目前偏 tool session 绑定，缺跨 channel/account/conversation 的通用线程绑定层。
@@ -203,7 +203,7 @@
 
 ### Batch C（Runtime Admin 收口）
 - [x] prompts CRUD / binding / render 回归与 smoke checklist
-- [ ] tool sessions 与 QMD 管理页 smoke test
+- [x] tool sessions 与 QMD 管理页 smoke test
 - [ ] frontend build 与后端全量测试补跑
 - **验收**: `go test -count=1 ./...` 与 `npm --prefix pkg/webui/frontend run build` 通过。
 

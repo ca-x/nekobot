@@ -2,6 +2,13 @@
 
 ## 2026-03-26
 
+- Completed Tool Sessions / QMD runtime admin smoke pack:
+  - added `pkg/webui/server_toolsessions_test.go` as a dedicated WebUI regression pack for tool sessions.
+  - covered owner isolation, attach-token create/consume flow, OTP generation + access login, one-time password consumption, process status/input/output/kill flow, terminated-session archival, and tool-event cleanup.
+  - re-used existing QMD handler coverage in `pkg/webui/server_status_test.go` as the backend smoke baseline for status/update/install/cleanup behavior, so Batch C now has both prompts and runtime-admin smoke coverage recorded.
+- Verification run:
+  - `go test -count=1 ./pkg/webui -run 'ToolSession|QMD|Status|Session'` passed.
+
 - Completed Runtime Prompts regression pack and checklist:
   - added `pkg/prompts/manager_test.go` to cover scope override semantics, disabled prompt/binding filtering, session binding replacement, and render-context separation between `system_text` and `user_text`.
   - found and fixed a real bug in `pkg/prompts/manager.go`: when the same prompt was bound in multiple scopes, `Resolve` previously let earlier query order win, so `global` could incorrectly override `channel` or `session`; resolution now explicitly prefers narrower scope, then lower priority.
