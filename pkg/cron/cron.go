@@ -3,6 +3,7 @@ package cron
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -54,6 +55,9 @@ type Job struct {
 	AtTime         *time.Time   `json:"at_time,omitempty"`          // Target time (for "at" kind).
 	EveryDuration  string       `json:"every_duration,omitempty"`   // Duration string (for "every" kind, e.g. "5m", "1h").
 	Prompt         string       `json:"prompt"`                     // Task prompt for agent.
+	Provider       string       `json:"provider,omitempty"`         // Optional provider/provider-group route override.
+	Model          string       `json:"model,omitempty"`            // Optional model override.
+	Fallback       []string     `json:"fallback,omitempty"`         // Optional fallback route targets.
 	Enabled        bool         `json:"enabled"`                    // Whether job is enabled.
 	DeleteAfterRun bool         `json:"delete_after_run,omitempty"` // Auto-delete after execution (for "at" jobs).
 	CreatedAt      time.Time    `json:"created_at"`                 // Creation timestamp.
@@ -79,6 +83,13 @@ type Manager struct {
 	// Lifecycle.
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+// RouteOptions defines optional routing overrides for a scheduled job.
+type RouteOptions struct {
+	Provider string
+	Model    string
+	Fallback []string
 }
 
 const (
@@ -157,6 +168,11 @@ func (m *Manager) AddJob(name, schedule, prompt string) (*Job, error) {
 
 // AddCronJob adds a new job with a cron expression schedule.
 func (m *Manager) AddCronJob(name, schedule, prompt string) (*Job, error) {
+	return m.AddCronJobWithRoute(name, schedule, prompt, RouteOptions{})
+}
+
+// AddCronJobWithRoute adds a new job with a cron schedule and explicit routing overrides.
+func (m *Manager) AddCronJobWithRoute(name, schedule, prompt string, route RouteOptions) (*Job, error) {
 	if _, err := cron.ParseStandard(schedule); err != nil {
 		return nil, fmt.Errorf("invalid cron schedule: %w", err)
 	}
@@ -167,6 +183,9 @@ func (m *Manager) AddCronJob(name, schedule, prompt string) (*Job, error) {
 		ScheduleKind: ScheduleCron,
 		Schedule:     schedule,
 		Prompt:       prompt,
+		Provider:     route.Provider,
+		Model:        route.Model,
+		Fallback:     append([]string(nil), route.Fallback...),
 		Enabled:      true,
 		CreatedAt:    time.Now(),
 	}
@@ -176,6 +195,11 @@ func (m *Manager) AddCronJob(name, schedule, prompt string) (*Job, error) {
 
 // AddAtJob adds a one-time job that runs at a specific time.
 func (m *Manager) AddAtJob(name string, at time.Time, prompt string, deleteAfterRun bool) (*Job, error) {
+	return m.AddAtJobWithRoute(name, at, prompt, deleteAfterRun, RouteOptions{})
+}
+
+// AddAtJobWithRoute adds a one-time job with explicit routing overrides.
+func (m *Manager) AddAtJobWithRoute(name string, at time.Time, prompt string, deleteAfterRun bool, route RouteOptions) (*Job, error) {
 	if at.Before(time.Now()) {
 		return nil, fmt.Errorf("scheduled time %s is in the past", at.Format(time.RFC3339))
 	}
@@ -186,6 +210,9 @@ func (m *Manager) AddAtJob(name string, at time.Time, prompt string, deleteAfter
 		ScheduleKind:   ScheduleAt,
 		AtTime:         new(at),
 		Prompt:         prompt,
+		Provider:       route.Provider,
+		Model:          route.Model,
+		Fallback:       append([]string(nil), route.Fallback...),
 		Enabled:        true,
 		DeleteAfterRun: deleteAfterRun,
 		CreatedAt:      time.Now(),
@@ -197,6 +224,11 @@ func (m *Manager) AddAtJob(name string, at time.Time, prompt string, deleteAfter
 
 // AddEveryJob adds a recurring job that runs at fixed intervals.
 func (m *Manager) AddEveryJob(name, every, prompt string) (*Job, error) {
+	return m.AddEveryJobWithRoute(name, every, prompt, RouteOptions{})
+}
+
+// AddEveryJobWithRoute adds a recurring job with explicit routing overrides.
+func (m *Manager) AddEveryJobWithRoute(name, every, prompt string, route RouteOptions) (*Job, error) {
 	duration, err := time.ParseDuration(every)
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration %q: %w", every, err)
@@ -211,6 +243,9 @@ func (m *Manager) AddEveryJob(name, every, prompt string) (*Job, error) {
 		ScheduleKind:  ScheduleEvery,
 		EveryDuration: every,
 		Prompt:        prompt,
+		Provider:      route.Provider,
+		Model:         route.Model,
+		Fallback:      append([]string(nil), route.Fallback...),
 		Enabled:       true,
 		CreatedAt:     time.Now(),
 		NextRun:       time.Now().Add(duration),
@@ -515,7 +550,7 @@ Scheduled task execution at %s:
 		prompt)
 
 	sess := &simpleSession{messages: make([]agent.Message, 0)}
-	response, chatErr := m.chatAgent(ctx, sess, fullPrompt)
+	response, chatErr := m.chatAgent(ctx, sess, fullPrompt, job.Provider, job.Model, job.Fallback)
 
 	finishedAt := time.Now()
 	var (
@@ -600,7 +635,7 @@ Scheduled task execution at %s:
 	}
 }
 
-func (m *Manager) chatAgent(ctx context.Context, sess agent.SessionInterface, prompt string) (response string, err error) {
+func (m *Manager) chatAgent(ctx context.Context, sess agent.SessionInterface, prompt, provider, model string, fallback []string) (response string, err error) {
 	if m.agent == nil {
 		return "", fmt.Errorf("agent is nil")
 	}
@@ -611,6 +646,9 @@ func (m *Manager) chatAgent(ctx context.Context, sess agent.SessionInterface, pr
 		}
 	}()
 
+	if provider != "" || model != "" || len(fallback) > 0 {
+		return m.agent.ChatWithProviderModelAndFallback(ctx, sess, prompt, provider, model, fallback)
+	}
 	return m.agent.Chat(ctx, sess, prompt)
 }
 
@@ -636,6 +674,11 @@ func (m *Manager) loadJobs(ctx context.Context) error {
 }
 
 func (m *Manager) createJob(ctx context.Context, job *Job) error {
+	fallbackJSON, err := marshalFallback(job.Fallback)
+	if err != nil {
+		return fmt.Errorf("marshal fallback: %w", err)
+	}
+
 	create := m.client.CronJob.Create().
 		SetID(job.ID).
 		SetName(job.Name).
@@ -643,6 +686,9 @@ func (m *Manager) createJob(ctx context.Context, job *Job) error {
 		SetSchedule(job.Schedule).
 		SetEveryDuration(job.EveryDuration).
 		SetPrompt(job.Prompt).
+		SetProvider(job.Provider).
+		SetModel(job.Model).
+		SetFallbackJSON(fallbackJSON).
 		SetEnabled(job.Enabled).
 		SetDeleteAfterRun(job.DeleteAfterRun).
 		SetRunCount(job.RunCount).
@@ -669,12 +715,20 @@ func (m *Manager) createJob(ctx context.Context, job *Job) error {
 }
 
 func (m *Manager) updateJobState(ctx context.Context, job *Job) error {
+	fallbackJSON, err := marshalFallback(job.Fallback)
+	if err != nil {
+		return fmt.Errorf("marshal fallback: %w", err)
+	}
+
 	update := m.client.CronJob.UpdateOneID(job.ID).
 		SetName(job.Name).
 		SetScheduleKind(string(normalizeScheduleKind(job.ScheduleKind))).
 		SetSchedule(job.Schedule).
 		SetEveryDuration(job.EveryDuration).
 		SetPrompt(job.Prompt).
+		SetProvider(job.Provider).
+		SetModel(job.Model).
+		SetFallbackJSON(fallbackJSON).
 		SetEnabled(job.Enabled).
 		SetDeleteAfterRun(job.DeleteAfterRun).
 		SetRunCount(job.RunCount).
@@ -715,6 +769,7 @@ func (m *Manager) deleteJob(ctx context.Context, jobID string) error {
 }
 
 func jobFromEntity(entity *ent.CronJob) *Job {
+	fallback, _ := unmarshalFallback(entity.FallbackJSON)
 	job := &Job{
 		ID:             entity.ID,
 		Name:           entity.Name,
@@ -722,6 +777,9 @@ func jobFromEntity(entity *ent.CronJob) *Job {
 		Schedule:       entity.Schedule,
 		EveryDuration:  entity.EveryDuration,
 		Prompt:         entity.Prompt,
+		Provider:       entity.Provider,
+		Model:          entity.Model,
+		Fallback:       fallback,
 		Enabled:        entity.Enabled,
 		DeleteAfterRun: entity.DeleteAfterRun,
 		CreatedAt:      entity.CreatedAt,
@@ -758,4 +816,27 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func marshalFallback(fallback []string) (string, error) {
+	if len(fallback) == 0 {
+		return "[]", nil
+	}
+	data, err := json.Marshal(fallback)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func unmarshalFallback(raw string) ([]string, error) {
+	trimmed := raw
+	if trimmed == "" {
+		return nil, nil
+	}
+	var fallback []string
+	if err := json.Unmarshal([]byte(trimmed), &fallback); err != nil {
+		return nil, err
+	}
+	return fallback, nil
 }

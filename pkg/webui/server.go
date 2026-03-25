@@ -776,6 +776,9 @@ type createCronJobRequest struct {
 	AtTime         string `json:"at_time"`
 	EveryDuration  string `json:"every_duration"`
 	Prompt         string `json:"prompt"`
+	Provider       string `json:"provider"`
+	Model          string `json:"model"`
+	Fallback       []string `json:"fallback"`
 	DeleteAfterRun bool   `json:"delete_after_run"`
 }
 
@@ -798,11 +801,27 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 
 	name := strings.TrimSpace(body.Name)
 	prompt := strings.TrimSpace(body.Prompt)
+	provider := strings.TrimSpace(body.Provider)
+	model := strings.TrimSpace(body.Model)
+	fallback := normalizeProviderNames(body.Fallback)
 	if name == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
 	}
 	if prompt == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "prompt is required"})
+	}
+	if provider != "" && !s.hasRoutingTarget(provider) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("routing target not found: %s", provider)})
+	}
+	for _, item := range fallback {
+		if !s.hasRoutingTarget(item) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("fallback routing target not found: %s", item)})
+		}
+	}
+	route := cron.RouteOptions{
+		Provider: provider,
+		Model:    model,
+		Fallback: fallback,
 	}
 
 	kind := cron.ScheduleKind(strings.ToLower(strings.TrimSpace(body.ScheduleKind)))
@@ -821,7 +840,7 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 		if schedule == "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "schedule is required for cron jobs"})
 		}
-		job, err = s.cronMgr.AddCronJob(name, schedule, prompt)
+		job, err = s.cronMgr.AddCronJobWithRoute(name, schedule, prompt, route)
 	case cron.ScheduleAt:
 		atRaw := strings.TrimSpace(body.AtTime)
 		if atRaw == "" {
@@ -831,13 +850,13 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 		if parseErr != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid at_time, must be RFC3339"})
 		}
-		job, err = s.cronMgr.AddAtJob(name, at, prompt, body.DeleteAfterRun)
+		job, err = s.cronMgr.AddAtJobWithRoute(name, at, prompt, body.DeleteAfterRun, route)
 	case cron.ScheduleEvery:
 		every := strings.TrimSpace(body.EveryDuration)
 		if every == "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "every_duration is required for every jobs"})
 		}
-		job, err = s.cronMgr.AddEveryJob(name, every, prompt)
+		job, err = s.cronMgr.AddEveryJobWithRoute(name, every, prompt, route)
 	default:
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid schedule_kind"})
 	}

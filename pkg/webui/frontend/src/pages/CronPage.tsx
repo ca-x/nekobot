@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import Header from '@/components/layout/Header';
+import { useConfig } from '@/hooks/useConfig';
+import { useProviders } from '@/hooks/useProviders';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -27,6 +29,20 @@ import {
 } from '@/hooks/useCron';
 import { Plus, Play, RefreshCw, Trash2 } from 'lucide-react';
 
+interface ProviderGroupInfo {
+  name: string;
+}
+
+interface RouteTarget {
+  name: string;
+  type: 'provider' | 'group';
+}
+
+interface ModelEntry {
+  provider: string;
+  model: string;
+}
+
 interface CronFormState {
   name: string;
   schedule_kind: CronScheduleKind;
@@ -34,6 +50,9 @@ interface CronFormState {
   at_time: string;
   every_duration: string;
   prompt: string;
+  provider: string;
+  model: string;
+  fallback: string[];
   delete_after_run: boolean;
 }
 
@@ -56,6 +75,9 @@ const DEFAULT_FORM: CronFormState = {
   at_time: '',
   every_duration: '5m',
   prompt: '',
+  provider: '',
+  model: '',
+  fallback: [],
   delete_after_run: true,
 };
 
@@ -78,6 +100,8 @@ function renderLastResult(job: CronJob): string {
 
 export default function CronPage() {
   const [form, setForm] = useState<CronFormState>(DEFAULT_FORM);
+  const { data: providers = [] } = useProviders();
+  const { data: config } = useConfig();
 
   const { data: jobs = [], isLoading, isFetching, refetch } = useCronJobs();
   const createJob = useCreateCronJob();
@@ -93,6 +117,76 @@ export default function CronPage() {
     [jobs],
   );
 
+  const routeTargets = useMemo(() => {
+    const targets: RouteTarget[] = [];
+    const seen = new Set<string>();
+    for (const provider of providers) {
+      const name = provider.name.trim();
+      if (!name || seen.has(name)) {
+        continue;
+      }
+      seen.add(name);
+      targets.push({ name, type: 'provider' });
+    }
+    const groups = ((config?.agents as { defaults?: { provider_groups?: ProviderGroupInfo[] } } | undefined)?.defaults?.provider_groups) ?? [];
+    for (const group of groups) {
+      const name = group?.name?.trim();
+      if (!name || seen.has(name)) {
+        continue;
+      }
+      seen.add(name);
+      targets.push({ name, type: 'group' });
+    }
+    return targets;
+  }, [config, providers]);
+
+  const routeTargetMap = useMemo(
+    () => new Map(routeTargets.map((target) => [target.name, target])),
+    [routeTargets],
+  );
+
+  const modelOptions = useMemo(() => {
+    const result: ModelEntry[] = [];
+    const seen = new Set<string>();
+    for (const provider of providers) {
+      const providerName = provider.name.trim();
+      if (!providerName) {
+        continue;
+      }
+      const addModel = (model: string) => {
+        const normalized = model.trim();
+        if (!normalized) {
+          return;
+        }
+        const key = `${providerName}::${normalized}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        result.push({ provider: providerName, model: normalized });
+      };
+      if (provider.default_model) {
+        addModel(provider.default_model);
+      }
+      for (const model of provider.models ?? []) {
+        addModel(model);
+      }
+    }
+    return result;
+  }, [providers]);
+
+  const filteredModels = useMemo(() => {
+    if (!form.provider || routeTargetMap.get(form.provider)?.type === 'group') {
+      return modelOptions;
+    }
+    return modelOptions.filter((entry) => entry.provider === form.provider);
+  }, [form.provider, modelOptions, routeTargetMap]);
+
+  const fallbackTargets = useMemo(
+    () => routeTargets.filter((target) => target.name !== form.provider),
+    [form.provider, routeTargets],
+  );
+
   const setField = <K extends keyof CronFormState>(key: K, value: CronFormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -106,6 +200,9 @@ export default function CronPage() {
       name: form.name,
       schedule_kind: form.schedule_kind,
       prompt: form.prompt,
+      provider: form.provider,
+      model: form.model,
+      fallback: form.fallback,
       delete_after_run: form.delete_after_run,
     };
 
@@ -127,6 +224,24 @@ export default function CronPage() {
         resetForm();
       },
     });
+  };
+
+  const handleProviderChange = (value: string) => {
+    const provider = value === '__default__' ? '' : value;
+    setForm((prev) => ({
+      ...prev,
+      provider,
+      fallback: prev.fallback.filter((item) => item !== provider),
+    }));
+  };
+
+  const handleToggleFallback = (target: string) => {
+    setForm((prev) => ({
+      ...prev,
+      fallback: prev.fallback.includes(target)
+        ? prev.fallback.filter((item) => item !== target)
+        : [...prev.fallback, target],
+    }));
   };
 
   return (
@@ -199,6 +314,96 @@ export default function CronPage() {
               />
             </div>
 
+            <div className="space-y-1.5">
+              <Label>{t('cronProvider')}</Label>
+              <Select value={form.provider || '__default__'} onValueChange={handleProviderChange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">{t('cronRouteAuto')}</SelectItem>
+                  {routeTargets.map((target) => (
+                    <SelectItem key={target.name} value={target.name}>
+                      {target.type === 'group'
+                        ? `${target.name} (${t('cronRouteTargetGroup')})`
+                        : target.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>{t('cronModel')}</Label>
+              <Select
+                value={form.model || '__default__'}
+                onValueChange={(value) => setField('model', value === '__default__' ? '' : value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">{t('cronModelDefault')}</SelectItem>
+                  {filteredModels.map((entry) => (
+                    <SelectItem key={`${entry.provider}::${entry.model}`} value={entry.model}>
+                      {form.provider && routeTargetMap.get(form.provider)?.type !== 'group'
+                        ? entry.model
+                        : `${entry.model} (${entry.provider})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label>{t('cronFallback')}</Label>
+              <div className="rounded-md border border-input bg-background px-3 py-3">
+                <div className="mb-3 text-xs text-muted-foreground">{t('cronFallbackHint')}</div>
+                {form.fallback.length > 0 ? (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {form.fallback.map((target, index) => (
+                      <button
+                        key={target}
+                        type="button"
+                        onClick={() => handleToggleFallback(target)}
+                        className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
+                      >
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] text-[hsl(var(--brand-700))]">
+                          {index + 1}
+                        </span>
+                        {target}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mb-3 rounded-md border border-dashed border-input px-3 py-3 text-sm text-muted-foreground">
+                    {t('cronFallbackEmpty')}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {fallbackTargets.map((target) => {
+                    const selected = form.fallback.includes(target.name);
+                    return (
+                      <button
+                        key={target.name}
+                        type="button"
+                        onClick={() => handleToggleFallback(target.name)}
+                        className={
+                          selected
+                            ? 'rounded-full border border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]'
+                            : 'rounded-full border border-input bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground'
+                        }
+                      >
+                        {target.type === 'group'
+                          ? `${target.name} (${t('cronRouteTargetGroup')})`
+                          : target.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
             {form.schedule_kind === 'at' && (
               <div className="flex items-center justify-between border rounded-md px-3 py-2 md:col-span-2">
                 <Label>{t('cronDeleteAfterRun')}</Label>
@@ -251,6 +456,9 @@ export default function CronPage() {
                   <div className="text-xs text-muted-foreground space-y-1">
                     <div>{t('cronKind')}: {job.schedule_kind}</div>
                     <div>{t('cronSchedule')}: {renderSchedule(job)}</div>
+                    <div>{t('cronProvider')}: {job.provider || t('cronRouteAuto')}</div>
+                    <div>{t('cronModel')}: {job.model || t('cronModelDefault')}</div>
+                    <div>{t('cronFallback')}: {job.fallback && job.fallback.length > 0 ? job.fallback.join(' -> ') : t('cronFallbackEmpty')}</div>
                     <div>{t('cronNextRun')}: {job.next_run || '-'}</div>
                     <div>{t('cronLastRun')}: {job.last_run || '-'}</div>
                     <div>{t('cronRunCount')}: {job.run_count}</div>

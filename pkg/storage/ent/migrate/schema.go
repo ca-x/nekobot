@@ -76,6 +76,9 @@ var (
 		{Name: "at_time", Type: field.TypeTime, Nullable: true},
 		{Name: "every_duration", Type: field.TypeString, Default: ""},
 		{Name: "prompt", Type: field.TypeString},
+		{Name: "provider", Type: field.TypeString, Default: ""},
+		{Name: "model", Type: field.TypeString, Default: ""},
+		{Name: "fallback_json", Type: field.TypeString, Default: "[]"},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "delete_after_run", Type: field.TypeBool, Default: false},
 		{Name: "created_at", Type: field.TypeTime},
@@ -94,7 +97,7 @@ var (
 			{
 				Name:    "cronjob_enabled_next_run",
 				Unique:  false,
-				Columns: []*schema.Column{CronJobsColumns[7], CronJobsColumns[11]},
+				Columns: []*schema.Column{CronJobsColumns[10], CronJobsColumns[14]},
 			},
 			{
 				Name:    "cronjob_schedule_kind",
@@ -104,7 +107,7 @@ var (
 			{
 				Name:    "cronjob_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{CronJobsColumns[9]},
+				Columns: []*schema.Column{CronJobsColumns[12]},
 			},
 		},
 	}

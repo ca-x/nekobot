@@ -65,6 +65,37 @@ func TestManagerPersistsJobsInDatabase(t *testing.T) {
 	}
 }
 
+func TestManagerPersistsRouteOverridesInDatabase(t *testing.T) {
+	t.Parallel()
+
+	manager, cleanup := newTestManager(t)
+	defer cleanup()
+
+	ctx := t.Context()
+	job, err := manager.AddCronJobWithRoute("db-cron", "0 0 * * *", "ping", RouteOptions{
+		Provider: "pool-a",
+		Model:    "claude-sonnet",
+		Fallback: []string{"backup", "pool-b"},
+	})
+	if err != nil {
+		t.Fatalf("add cron job with route: %v", err)
+	}
+
+	stored, err := manager.client.CronJob.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("get stored cron job: %v", err)
+	}
+	if stored.Provider != "pool-a" {
+		t.Fatalf("expected provider pool-a, got %q", stored.Provider)
+	}
+	if stored.Model != "claude-sonnet" {
+		t.Fatalf("expected model claude-sonnet, got %q", stored.Model)
+	}
+	if stored.FallbackJSON != "[\"backup\",\"pool-b\"]" {
+		t.Fatalf("unexpected fallback json: %q", stored.FallbackJSON)
+	}
+}
+
 func TestManagerLoadJobsFromDatabase(t *testing.T) {
 	t.Parallel()
 
@@ -114,6 +145,9 @@ func TestManagerLoadJobsFromDatabase(t *testing.T) {
 	}
 	if loaded.RunCount != 3 {
 		t.Fatalf("expected run_count 3, got %d", loaded.RunCount)
+	}
+	if loaded.Provider != "" || loaded.Model != "" || len(loaded.Fallback) != 0 {
+		t.Fatalf("expected empty route fields for legacy row, got provider=%q model=%q fallback=%v", loaded.Provider, loaded.Model, loaded.Fallback)
 	}
 }
 

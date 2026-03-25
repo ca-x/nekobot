@@ -131,6 +131,9 @@ func TestCronHandlers_Flow(t *testing.T) {
 		t.Fatalf("expected created status, got %q", createdResp.Status)
 	}
 	jobID := createdResp.Job.ID
+	if createdResp.Job.Provider != "" || createdResp.Job.Model != "" || len(createdResp.Job.Fallback) != 0 {
+		t.Fatalf("expected empty route overrides by default, got %+v", createdResp.Job)
+	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/cron/jobs", nil)
 	listRec := httptest.NewRecorder()
@@ -226,6 +229,67 @@ func TestCronHandlers_Flow(t *testing.T) {
 
 	if _, err := manager.GetJob(jobID); err == nil || !strings.Contains(err.Error(), "job not found") {
 		t.Fatalf("expected removed job error, got %v", err)
+	}
+}
+
+func TestHandleCreateCronJob_AcceptsRouteOverrides(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Providers = []config.ProviderProfile{
+		{Name: "primary", ProviderKind: "openai"},
+		{Name: "backup", ProviderKind: "openai"},
+	}
+	cfg.Agents.Defaults.ProviderGroups = []config.ProviderGroupConfig{
+		{
+			Name:     "pool-a",
+			Strategy: "round_robin",
+			Members:  []string{"primary", "backup"},
+		},
+	}
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	defer client.Close()
+
+	manager := cron.New(log, nil, client)
+	s := &Server{
+		config:  cfg,
+		logger:  log,
+		cronMgr: manager,
+	}
+	e := echo.New()
+
+	body := `{"name":"cron-route","schedule_kind":"cron","schedule":"*/5 * * * *","prompt":"hello cron","provider":"pool-a","model":"gpt-4.1","fallback":["backup","pool-a"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/cron/jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	if err := s.handleCreateCronJob(ctx); err != nil {
+		t.Fatalf("handleCreateCronJob failed: %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+
+	var createdResp struct {
+		Status string    `json:"status"`
+		Job    *cron.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &createdResp); err != nil {
+		t.Fatalf("unmarshal create response: %v", err)
+	}
+	if createdResp.Job == nil {
+		t.Fatalf("expected created job in response")
+	}
+	if createdResp.Job.Provider != "pool-a" {
+		t.Fatalf("expected provider pool-a, got %q", createdResp.Job.Provider)
+	}
+	if createdResp.Job.Model != "gpt-4.1" {
+		t.Fatalf("expected model gpt-4.1, got %q", createdResp.Job.Model)
+	}
+	if !strings.Contains(strings.Join(createdResp.Job.Fallback, ","), "pool-a") {
+		t.Fatalf("expected fallback to include route targets, got %v", createdResp.Job.Fallback)
 	}
 }
 

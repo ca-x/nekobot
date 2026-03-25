@@ -29,6 +29,12 @@ type CronJob struct {
 	EveryDuration string `json:"every_duration,omitempty"`
 	// Prompt holds the value of the "prompt" field.
 	Prompt string `json:"prompt,omitempty"`
+	// Provider holds the value of the "provider" field.
+	Provider string `json:"provider,omitempty"`
+	// Model holds the value of the "model" field.
+	Model string `json:"model,omitempty"`
+	// FallbackJSON holds the value of the "fallback_json" field.
+	FallbackJSON string `json:"fallback_json,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
 	// DeleteAfterRun holds the value of the "delete_after_run" field.
@@ -57,7 +63,7 @@ func (*CronJob) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case cronjob.FieldRunCount:
 			values[i] = new(sql.NullInt64)
-		case cronjob.FieldID, cronjob.FieldName, cronjob.FieldScheduleKind, cronjob.FieldSchedule, cronjob.FieldEveryDuration, cronjob.FieldPrompt, cronjob.FieldLastError:
+		case cronjob.FieldID, cronjob.FieldName, cronjob.FieldScheduleKind, cronjob.FieldSchedule, cronjob.FieldEveryDuration, cronjob.FieldPrompt, cronjob.FieldProvider, cronjob.FieldModel, cronjob.FieldFallbackJSON, cronjob.FieldLastError:
 			values[i] = new(sql.NullString)
 		case cronjob.FieldAtTime, cronjob.FieldCreatedAt, cronjob.FieldLastRun, cronjob.FieldNextRun:
 			values[i] = new(sql.NullTime)
@@ -118,6 +124,24 @@ func (_m *CronJob) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field prompt", values[i])
 			} else if value.Valid {
 				_m.Prompt = value.String
+			}
+		case cronjob.FieldProvider:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field provider", values[i])
+			} else if value.Valid {
+				_m.Provider = value.String
+			}
+		case cronjob.FieldModel:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field model", values[i])
+			} else if value.Valid {
+				_m.Model = value.String
+			}
+		case cronjob.FieldFallbackJSON:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field fallback_json", values[i])
+			} else if value.Valid {
+				_m.FallbackJSON = value.String
 			}
 		case cronjob.FieldEnabled:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -224,6 +248,15 @@ func (_m *CronJob) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("prompt=")
 	builder.WriteString(_m.Prompt)
+	builder.WriteString(", ")
+	builder.WriteString("provider=")
+	builder.WriteString(_m.Provider)
+	builder.WriteString(", ")
+	builder.WriteString("model=")
+	builder.WriteString(_m.Model)
+	builder.WriteString(", ")
+	builder.WriteString("fallback_json=")
+	builder.WriteString(_m.FallbackJSON)
 	builder.WriteString(", ")
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))

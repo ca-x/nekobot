@@ -13,6 +13,9 @@ export interface CronJob {
   at_time?: string;
   every_duration?: string;
   prompt: string;
+  provider?: string;
+  model?: string;
+  fallback?: string[];
   enabled: boolean;
   delete_after_run?: boolean;
   created_at: string;
@@ -30,6 +33,9 @@ export interface CreateCronJobInput {
   at_time?: string;
   every_duration?: string;
   prompt: string;
+  provider?: string;
+  model?: string;
+  fallback?: string[];
   delete_after_run?: boolean;
 }
 

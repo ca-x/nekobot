@@ -94,6 +94,21 @@ func Prompt(v string) predicate.CronJob {
 	return predicate.CronJob(sql.FieldEQ(FieldPrompt, v))
 }
 
+// Provider applies equality check predicate on the "provider" field. It's identical to ProviderEQ.
+func Provider(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEQ(FieldProvider, v))
+}
+
+// Model applies equality check predicate on the "model" field. It's identical to ModelEQ.
+func Model(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEQ(FieldModel, v))
+}
+
+// FallbackJSON applies equality check predicate on the "fallback_json" field. It's identical to FallbackJSONEQ.
+func FallbackJSON(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEQ(FieldFallbackJSON, v))
+}
+
 // Enabled applies equality check predicate on the "enabled" field. It's identical to EnabledEQ.
 func Enabled(v bool) predicate.CronJob {
 	return predicate.CronJob(sql.FieldEQ(FieldEnabled, v))
@@ -507,6 +522,201 @@ func PromptEqualFold(v string) predicate.CronJob {
 // PromptContainsFold applies the ContainsFold predicate on the "prompt" field.
 func PromptContainsFold(v string) predicate.CronJob {
 	return predicate.CronJob(sql.FieldContainsFold(FieldPrompt, v))
+}
+
+// ProviderEQ applies the EQ predicate on the "provider" field.
+func ProviderEQ(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEQ(FieldProvider, v))
+}
+
+// ProviderNEQ applies the NEQ predicate on the "provider" field.
+func ProviderNEQ(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldNEQ(FieldProvider, v))
+}
+
+// ProviderIn applies the In predicate on the "provider" field.
+func ProviderIn(vs ...string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldIn(FieldProvider, vs...))
+}
+
+// ProviderNotIn applies the NotIn predicate on the "provider" field.
+func ProviderNotIn(vs ...string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldNotIn(FieldProvider, vs...))
+}
+
+// ProviderGT applies the GT predicate on the "provider" field.
+func ProviderGT(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldGT(FieldProvider, v))
+}
+
+// ProviderGTE applies the GTE predicate on the "provider" field.
+func ProviderGTE(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldGTE(FieldProvider, v))
+}
+
+// ProviderLT applies the LT predicate on the "provider" field.
+func ProviderLT(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldLT(FieldProvider, v))
+}
+
+// ProviderLTE applies the LTE predicate on the "provider" field.
+func ProviderLTE(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldLTE(FieldProvider, v))
+}
+
+// ProviderContains applies the Contains predicate on the "provider" field.
+func ProviderContains(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldContains(FieldProvider, v))
+}
+
+// ProviderHasPrefix applies the HasPrefix predicate on the "provider" field.
+func ProviderHasPrefix(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldHasPrefix(FieldProvider, v))
+}
+
+// ProviderHasSuffix applies the HasSuffix predicate on the "provider" field.
+func ProviderHasSuffix(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldHasSuffix(FieldProvider, v))
+}
+
+// ProviderEqualFold applies the EqualFold predicate on the "provider" field.
+func ProviderEqualFold(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEqualFold(FieldProvider, v))
+}
+
+// ProviderContainsFold applies the ContainsFold predicate on the "provider" field.
+func ProviderContainsFold(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldContainsFold(FieldProvider, v))
+}
+
+// ModelEQ applies the EQ predicate on the "model" field.
+func ModelEQ(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEQ(FieldModel, v))
+}
+
+// ModelNEQ applies the NEQ predicate on the "model" field.
+func ModelNEQ(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldNEQ(FieldModel, v))
+}
+
+// ModelIn applies the In predicate on the "model" field.
+func ModelIn(vs ...string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldIn(FieldModel, vs...))
+}
+
+// ModelNotIn applies the NotIn predicate on the "model" field.
+func ModelNotIn(vs ...string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldNotIn(FieldModel, vs...))
+}
+
+// ModelGT applies the GT predicate on the "model" field.
+func ModelGT(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldGT(FieldModel, v))
+}
+
+// ModelGTE applies the GTE predicate on the "model" field.
+func ModelGTE(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldGTE(FieldModel, v))
+}
+
+// ModelLT applies the LT predicate on the "model" field.
+func ModelLT(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldLT(FieldModel, v))
+}
+
+// ModelLTE applies the LTE predicate on the "model" field.
+func ModelLTE(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldLTE(FieldModel, v))
+}
+
+// ModelContains applies the Contains predicate on the "model" field.
+func ModelContains(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldContains(FieldModel, v))
+}
+
+// ModelHasPrefix applies the HasPrefix predicate on the "model" field.
+func ModelHasPrefix(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldHasPrefix(FieldModel, v))
+}
+
+// ModelHasSuffix applies the HasSuffix predicate on the "model" field.
+func ModelHasSuffix(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldHasSuffix(FieldModel, v))
+}
+
+// ModelEqualFold applies the EqualFold predicate on the "model" field.
+func ModelEqualFold(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEqualFold(FieldModel, v))
+}
+
+// ModelContainsFold applies the ContainsFold predicate on the "model" field.
+func ModelContainsFold(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldContainsFold(FieldModel, v))
+}
+
+// FallbackJSONEQ applies the EQ predicate on the "fallback_json" field.
+func FallbackJSONEQ(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEQ(FieldFallbackJSON, v))
+}
+
+// FallbackJSONNEQ applies the NEQ predicate on the "fallback_json" field.
+func FallbackJSONNEQ(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldNEQ(FieldFallbackJSON, v))
+}
+
+// FallbackJSONIn applies the In predicate on the "fallback_json" field.
+func FallbackJSONIn(vs ...string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldIn(FieldFallbackJSON, vs...))
+}
+
+// FallbackJSONNotIn applies the NotIn predicate on the "fallback_json" field.
+func FallbackJSONNotIn(vs ...string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldNotIn(FieldFallbackJSON, vs...))
+}
+
+// FallbackJSONGT applies the GT predicate on the "fallback_json" field.
+func FallbackJSONGT(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldGT(FieldFallbackJSON, v))
+}
+
+// FallbackJSONGTE applies the GTE predicate on the "fallback_json" field.
+func FallbackJSONGTE(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldGTE(FieldFallbackJSON, v))
+}
+
+// FallbackJSONLT applies the LT predicate on the "fallback_json" field.
+func FallbackJSONLT(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldLT(FieldFallbackJSON, v))
+}
+
+// FallbackJSONLTE applies the LTE predicate on the "fallback_json" field.
+func FallbackJSONLTE(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldLTE(FieldFallbackJSON, v))
+}
+
+// FallbackJSONContains applies the Contains predicate on the "fallback_json" field.
+func FallbackJSONContains(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldContains(FieldFallbackJSON, v))
+}
+
+// FallbackJSONHasPrefix applies the HasPrefix predicate on the "fallback_json" field.
+func FallbackJSONHasPrefix(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldHasPrefix(FieldFallbackJSON, v))
+}
+
+// FallbackJSONHasSuffix applies the HasSuffix predicate on the "fallback_json" field.
+func FallbackJSONHasSuffix(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldHasSuffix(FieldFallbackJSON, v))
+}
+
+// FallbackJSONEqualFold applies the EqualFold predicate on the "fallback_json" field.
+func FallbackJSONEqualFold(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEqualFold(FieldFallbackJSON, v))
+}
+
+// FallbackJSONContainsFold applies the ContainsFold predicate on the "fallback_json" field.
+func FallbackJSONContainsFold(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldContainsFold(FieldFallbackJSON, v))
 }
 
 // EnabledEQ applies the EQ predicate on the "enabled" field.

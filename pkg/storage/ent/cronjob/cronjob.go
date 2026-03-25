@@ -25,6 +25,12 @@ const (
 	FieldEveryDuration = "every_duration"
 	// FieldPrompt holds the string denoting the prompt field in the database.
 	FieldPrompt = "prompt"
+	// FieldProvider holds the string denoting the provider field in the database.
+	FieldProvider = "provider"
+	// FieldModel holds the string denoting the model field in the database.
+	FieldModel = "model"
+	// FieldFallbackJSON holds the string denoting the fallback_json field in the database.
+	FieldFallbackJSON = "fallback_json"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
 	// FieldDeleteAfterRun holds the string denoting the delete_after_run field in the database.
@@ -54,6 +60,9 @@ var Columns = []string{
 	FieldAtTime,
 	FieldEveryDuration,
 	FieldPrompt,
+	FieldProvider,
+	FieldModel,
+	FieldFallbackJSON,
 	FieldEnabled,
 	FieldDeleteAfterRun,
 	FieldCreatedAt,
@@ -85,6 +94,12 @@ var (
 	DefaultEveryDuration string
 	// PromptValidator is a validator for the "prompt" field. It is called by the builders before save.
 	PromptValidator func(string) error
+	// DefaultProvider holds the default value on creation for the "provider" field.
+	DefaultProvider string
+	// DefaultModel holds the default value on creation for the "model" field.
+	DefaultModel string
+	// DefaultFallbackJSON holds the default value on creation for the "fallback_json" field.
+	DefaultFallbackJSON string
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
 	// DefaultDeleteAfterRun holds the default value on creation for the "delete_after_run" field.
@@ -137,6 +152,21 @@ func ByEveryDuration(opts ...sql.OrderTermOption) OrderOption {
 // ByPrompt orders the results by the prompt field.
 func ByPrompt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPrompt, opts...).ToFunc()
+}
+
+// ByProvider orders the results by the provider field.
+func ByProvider(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProvider, opts...).ToFunc()
+}
+
+// ByModel orders the results by the model field.
+func ByModel(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldModel, opts...).ToFunc()
+}
+
+// ByFallbackJSON orders the results by the fallback_json field.
+func ByFallbackJSON(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFallbackJSON, opts...).ToFunc()
 }
 
 // ByEnabled orders the results by the enabled field.

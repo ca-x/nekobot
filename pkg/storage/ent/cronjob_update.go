@@ -118,6 +118,48 @@ func (_u *CronJobUpdate) SetNillablePrompt(v *string) *CronJobUpdate {
 	return _u
 }
 
+// SetProvider sets the "provider" field.
+func (_u *CronJobUpdate) SetProvider(v string) *CronJobUpdate {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *CronJobUpdate) SetNillableProvider(v *string) *CronJobUpdate {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// SetModel sets the "model" field.
+func (_u *CronJobUpdate) SetModel(v string) *CronJobUpdate {
+	_u.mutation.SetModel(v)
+	return _u
+}
+
+// SetNillableModel sets the "model" field if the given value is not nil.
+func (_u *CronJobUpdate) SetNillableModel(v *string) *CronJobUpdate {
+	if v != nil {
+		_u.SetModel(*v)
+	}
+	return _u
+}
+
+// SetFallbackJSON sets the "fallback_json" field.
+func (_u *CronJobUpdate) SetFallbackJSON(v string) *CronJobUpdate {
+	_u.mutation.SetFallbackJSON(v)
+	return _u
+}
+
+// SetNillableFallbackJSON sets the "fallback_json" field if the given value is not nil.
+func (_u *CronJobUpdate) SetNillableFallbackJSON(v *string) *CronJobUpdate {
+	if v != nil {
+		_u.SetFallbackJSON(*v)
+	}
+	return _u
+}
+
 // SetEnabled sets the "enabled" field.
 func (_u *CronJobUpdate) SetEnabled(v bool) *CronJobUpdate {
 	_u.mutation.SetEnabled(v)
@@ -315,6 +357,15 @@ func (_u *CronJobUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Prompt(); ok {
 		_spec.SetField(cronjob.FieldPrompt, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(cronjob.FieldProvider, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Model(); ok {
+		_spec.SetField(cronjob.FieldModel, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.FallbackJSON(); ok {
+		_spec.SetField(cronjob.FieldFallbackJSON, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(cronjob.FieldEnabled, field.TypeBool, value)
 	}
@@ -451,6 +502,48 @@ func (_u *CronJobUpdateOne) SetPrompt(v string) *CronJobUpdateOne {
 func (_u *CronJobUpdateOne) SetNillablePrompt(v *string) *CronJobUpdateOne {
 	if v != nil {
 		_u.SetPrompt(*v)
+	}
+	return _u
+}
+
+// SetProvider sets the "provider" field.
+func (_u *CronJobUpdateOne) SetProvider(v string) *CronJobUpdateOne {
+	_u.mutation.SetProvider(v)
+	return _u
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_u *CronJobUpdateOne) SetNillableProvider(v *string) *CronJobUpdateOne {
+	if v != nil {
+		_u.SetProvider(*v)
+	}
+	return _u
+}
+
+// SetModel sets the "model" field.
+func (_u *CronJobUpdateOne) SetModel(v string) *CronJobUpdateOne {
+	_u.mutation.SetModel(v)
+	return _u
+}
+
+// SetNillableModel sets the "model" field if the given value is not nil.
+func (_u *CronJobUpdateOne) SetNillableModel(v *string) *CronJobUpdateOne {
+	if v != nil {
+		_u.SetModel(*v)
+	}
+	return _u
+}
+
+// SetFallbackJSON sets the "fallback_json" field.
+func (_u *CronJobUpdateOne) SetFallbackJSON(v string) *CronJobUpdateOne {
+	_u.mutation.SetFallbackJSON(v)
+	return _u
+}
+
+// SetNillableFallbackJSON sets the "fallback_json" field if the given value is not nil.
+func (_u *CronJobUpdateOne) SetNillableFallbackJSON(v *string) *CronJobUpdateOne {
+	if v != nil {
+		_u.SetFallbackJSON(*v)
 	}
 	return _u
 }
@@ -681,6 +774,15 @@ func (_u *CronJobUpdateOne) sqlSave(ctx context.Context) (_node *CronJob, err er
 	}
 	if value, ok := _u.mutation.Prompt(); ok {
 		_spec.SetField(cronjob.FieldPrompt, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Provider(); ok {
+		_spec.SetField(cronjob.FieldProvider, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Model(); ok {
+		_spec.SetField(cronjob.FieldModel, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.FallbackJSON(); ok {
+		_spec.SetField(cronjob.FieldFallbackJSON, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(cronjob.FieldEnabled, field.TypeBool, value)

@@ -88,6 +88,48 @@ func (_c *CronJobCreate) SetPrompt(v string) *CronJobCreate {
 	return _c
 }
 
+// SetProvider sets the "provider" field.
+func (_c *CronJobCreate) SetProvider(v string) *CronJobCreate {
+	_c.mutation.SetProvider(v)
+	return _c
+}
+
+// SetNillableProvider sets the "provider" field if the given value is not nil.
+func (_c *CronJobCreate) SetNillableProvider(v *string) *CronJobCreate {
+	if v != nil {
+		_c.SetProvider(*v)
+	}
+	return _c
+}
+
+// SetModel sets the "model" field.
+func (_c *CronJobCreate) SetModel(v string) *CronJobCreate {
+	_c.mutation.SetModel(v)
+	return _c
+}
+
+// SetNillableModel sets the "model" field if the given value is not nil.
+func (_c *CronJobCreate) SetNillableModel(v *string) *CronJobCreate {
+	if v != nil {
+		_c.SetModel(*v)
+	}
+	return _c
+}
+
+// SetFallbackJSON sets the "fallback_json" field.
+func (_c *CronJobCreate) SetFallbackJSON(v string) *CronJobCreate {
+	_c.mutation.SetFallbackJSON(v)
+	return _c
+}
+
+// SetNillableFallbackJSON sets the "fallback_json" field if the given value is not nil.
+func (_c *CronJobCreate) SetNillableFallbackJSON(v *string) *CronJobCreate {
+	if v != nil {
+		_c.SetFallbackJSON(*v)
+	}
+	return _c
+}
+
 // SetEnabled sets the "enabled" field.
 func (_c *CronJobCreate) SetEnabled(v bool) *CronJobCreate {
 	_c.mutation.SetEnabled(v)
@@ -261,6 +303,18 @@ func (_c *CronJobCreate) defaults() {
 		v := cronjob.DefaultEveryDuration
 		_c.mutation.SetEveryDuration(v)
 	}
+	if _, ok := _c.mutation.Provider(); !ok {
+		v := cronjob.DefaultProvider
+		_c.mutation.SetProvider(v)
+	}
+	if _, ok := _c.mutation.Model(); !ok {
+		v := cronjob.DefaultModel
+		_c.mutation.SetModel(v)
+	}
+	if _, ok := _c.mutation.FallbackJSON(); !ok {
+		v := cronjob.DefaultFallbackJSON
+		_c.mutation.SetFallbackJSON(v)
+	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := cronjob.DefaultEnabled
 		_c.mutation.SetEnabled(v)
@@ -317,6 +371,15 @@ func (_c *CronJobCreate) check() error {
 		if err := cronjob.PromptValidator(v); err != nil {
 			return &ValidationError{Name: "prompt", err: fmt.Errorf(`ent: validator failed for field "CronJob.prompt": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.Provider(); !ok {
+		return &ValidationError{Name: "provider", err: errors.New(`ent: missing required field "CronJob.provider"`)}
+	}
+	if _, ok := _c.mutation.Model(); !ok {
+		return &ValidationError{Name: "model", err: errors.New(`ent: missing required field "CronJob.model"`)}
+	}
+	if _, ok := _c.mutation.FallbackJSON(); !ok {
+		return &ValidationError{Name: "fallback_json", err: errors.New(`ent: missing required field "CronJob.fallback_json"`)}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "CronJob.enabled"`)}
@@ -394,6 +457,18 @@ func (_c *CronJobCreate) createSpec() (*CronJob, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Prompt(); ok {
 		_spec.SetField(cronjob.FieldPrompt, field.TypeString, value)
 		_node.Prompt = value
+	}
+	if value, ok := _c.mutation.Provider(); ok {
+		_spec.SetField(cronjob.FieldProvider, field.TypeString, value)
+		_node.Provider = value
+	}
+	if value, ok := _c.mutation.Model(); ok {
+		_spec.SetField(cronjob.FieldModel, field.TypeString, value)
+		_node.Model = value
+	}
+	if value, ok := _c.mutation.FallbackJSON(); ok {
+		_spec.SetField(cronjob.FieldFallbackJSON, field.TypeString, value)
+		_node.FallbackJSON = value
 	}
 	if value, ok := _c.mutation.Enabled(); ok {
 		_spec.SetField(cronjob.FieldEnabled, field.TypeBool, value)
