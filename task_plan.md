@@ -73,6 +73,7 @@
 - [x] Subagent 完成通知回推 origin channel，并补齐 `spawn` 工具注册与 origin route 透传。
 - [x] `gua/libc/wechat` SDK 基线迁移到 `pkg/wechat`（types / client / auth / cdn / messaging / monitor / parse / typing / voice / bot）。
 - [x] WeChat 通道切换到共享 `pkg/wechat` SDK，并补齐本地文件路径附件发送。
+- [x] 删除 `pkg/channels/wechat/protocol.go` 本地重复协议层，微信通道仅保留 channel/store/runtime 胶水。
 
 ## 当前项目评估
 
@@ -98,6 +99,7 @@
 - [ ] 缺“按聊天用户长期驻留的外部 agent runtime”这一层，尚未形成类似 `gua` 的用户级外部代理会话编排。
 - [ ] `pkg/wechat` 目前仍缺 `gua/libc/wechat` 的完整 SDK 分层，微信通道能力还主要堆在 `pkg/channels/wechat/*` 中。
 - [x] WeChat 通道发送侧已补齐基于共享 SDK 的附件上传/发送链路，可将回复中的本地文件路径提升为平台附件消息。
+- [x] WeChat 通道本地协议/登录/client 重复实现已下线，WebUI 与 channel 已统一依赖共享 `pkg/wechat` SDK。
 
 ## Active Backlog（含进度）
 

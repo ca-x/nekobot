@@ -20,7 +20,6 @@ import (
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/transcription"
 	wechatbot "nekobot/pkg/wechat"
-	wxclient "nekobot/pkg/wechat/client"
 	wxmedia "nekobot/pkg/wechat/media"
 	wxmonitor "nekobot/pkg/wechat/monitor"
 	wxtypes "nekobot/pkg/wechat/types"
@@ -40,8 +39,6 @@ type Channel struct {
 
 	mu      sync.RWMutex
 	bot     *wechatbot.Bot
-	client  *wxclient.Client
-	creds   *Credentials
 	running bool
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -68,13 +65,9 @@ func NewChannel(
 	if err != nil {
 		return nil, fmt.Errorf("load credentials: %w", err)
 	}
-	var (
-		bot    *wechatbot.Bot
-		client *wxclient.Client
-	)
+	var bot *wechatbot.Bot
 	if creds != nil {
 		bot = newWeChatBot(creds, store)
-		client = bot.Client
 	}
 
 	var runtimeControl *ControlService
@@ -94,8 +87,6 @@ func NewChannel(
 		renderer: richtext.NewBrowserMarkdownRenderer(log, filepath.Join(rootCfg.WorkspacePath(), "screenshots", "wechat")),
 		inbound:  wxmedia.NewInboundProcessor(wxmedia.NewDownloader(filepath.Join(rootCfg.DatabaseDir(), "wechat", "media")), transcriber),
 		bot:      bot,
-		client:   client,
-		creds:    creds,
 		cursors:  map[string]int{},
 	}, nil
 }
@@ -124,11 +115,11 @@ func (c *Channel) Start(ctx context.Context) error {
 	}
 	c.ctx, c.cancel = context.WithCancel(ctx)
 	c.running = true
-	client := c.client
+	bot := c.bot
 	c.mu.Unlock()
 
-	c.log.Info("Starting WeChat channel", zap.Bool("bound", client != nil))
-	if client == nil {
+	c.log.Info("Starting WeChat channel", zap.Bool("bound", bot != nil))
+	if bot == nil {
 		c.log.Info("WeChat channel started without bound account")
 		return nil
 	}
@@ -608,18 +599,6 @@ func (c *Channel) currentBot() *wechatbot.Bot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.bot
-}
-
-func (c *Channel) currentClient() *wxclient.Client {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.client
-}
-
-func (c *Channel) currentCredentials() *Credentials {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.creds
 }
 
 func (c *Channel) isAllowed(userID string) bool {

@@ -2,6 +2,12 @@
 
 ## 2026-03-25
 
+- Removed the obsolete channel-local WeChat protocol layer:
+  - deleted `pkg/channels/wechat/protocol.go` after confirming channel runtime, send path, and WebUI QR bind flow all use shared `pkg/wechat` packages.
+  - simplified `pkg/channels/wechat/channel.go` to keep only bot-backed channel glue instead of duplicated client/credential protocol state.
+- Verification run:
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./pkg/channels/wechat ./pkg/wechat/... ./pkg/webui` passed.
+
 - Completed WeChat channel shared-SDK migration and attachment send pipeline:
   - switched `pkg/channels/wechat` runtime monitor, typing keepalive, outbound text/image/file/video sending, and QR binding helpers to shared `pkg/wechat` SDK primitives.
   - replaced rendered markdown image sending from channel-local inline payloads with shared uploader-based image sending.
