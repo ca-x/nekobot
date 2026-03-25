@@ -1,6 +1,6 @@
 # Task Plan: nekobot 功能评估、迁移与收口
 
-> Last Updated: 2026-03-25
+> Last Updated: 2026-03-26
 
 ## Goal
 在保持 `nekobot` 现有稳定性的前提下，基于 `~/code/goclaw` 与 `~/code/gua` 的成熟实践，完成：
@@ -125,9 +125,9 @@
   - 目标：继续在现有路由骨架上补具体 shortcut / modal submission 业务。
   - 来源：当前 `pkg/channels/slack/slack.go` 缺口 + `gua` Presenter/Action 思路。
   - 位置：`pkg/channels/slack/slack.go`。
-- [ ] **Runtime Prompts 执行链路做完整回归并固化检查清单**
-  - 现状：Prompts 存储、绑定和 WebUI 已落地，但本轮提交后尚未做一次完整端到端回归。
-  - 目标：验证 CRUD、绑定、生效渲染、升级迁移、WebUI 交互，并记录到进度文件。
+- [x] **Runtime Prompts 执行链路做完整回归并固化检查清单**
+  - 已完成：补齐 manager / webui 回归测试，覆盖 CRUD、session replace/cleanup、模板上下文渲染、disabled 忽略、同一 prompt 的多作用域覆盖优先级。
+  - 已完成：新增 `docs/RUNTIME_PROMPTS.md`，固化 smoke checklist 与行为说明。
   - 位置：`pkg/prompts/*`、`pkg/webui/*`、`pkg/agent/*`。
 
 ### P1（高价值缺口）
@@ -202,7 +202,7 @@
 - **验收**: 各 channel 回归测试通过，关键交互可手工验证。
 
 ### Batch C（Runtime Admin 收口）
-- [ ] prompts CRUD / binding / render 手工回归
+- [x] prompts CRUD / binding / render 回归与 smoke checklist
 - [ ] tool sessions 与 QMD 管理页 smoke test
 - [ ] frontend build 与后端全量测试补跑
 - **验收**: `go test -count=1 ./...` 与 `npm --prefix pkg/webui/frontend run build` 通过。

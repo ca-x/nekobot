@@ -1,5 +1,16 @@
 # Progress Log
 
+## 2026-03-26
+
+- Completed Runtime Prompts regression pack and checklist:
+  - added `pkg/prompts/manager_test.go` to cover scope override semantics, disabled prompt/binding filtering, session binding replacement, and render-context separation between `system_text` and `user_text`.
+  - found and fixed a real bug in `pkg/prompts/manager.go`: when the same prompt was bound in multiple scopes, `Resolve` previously let earlier query order win, so `global` could incorrectly override `channel` or `session`; resolution now explicitly prefers narrower scope, then lower priority.
+  - added WebUI regression coverage in `pkg/webui/server_prompts_test.go` for scope override plus render-context fields (`channel`, `route`, `workspace`, `custom`).
+  - added `docs/RUNTIME_PROMPTS.md` with behavior notes and a reusable smoke checklist, and linked it from `README.md`.
+- Verification run:
+  - `go test -count=1 ./pkg/prompts` passed.
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./pkg/prompts ./pkg/webui` passed.
+
 ## 2026-03-25
 
 - Completed Slack interactive flow phase 1:

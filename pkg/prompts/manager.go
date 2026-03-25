@@ -285,7 +285,9 @@ func (m *Manager) Resolve(ctx context.Context, input ResolveInput) (*ResolvedPro
 			Content:   rendered,
 		}
 		if existingIndex, exists := indexByPromptID[item.ID]; exists {
-			selected[existingIndex] = applied
+			if shouldReplaceAppliedPrompt(selected[existingIndex], applied) {
+				selected[existingIndex] = applied
+			}
 			continue
 		}
 		indexByPromptID[item.ID] = len(selected)
@@ -527,6 +529,19 @@ func scopeRank(scope string) int {
 	default:
 		return 99
 	}
+}
+
+func shouldReplaceAppliedPrompt(current, candidate AppliedPrompt) bool {
+	if scopeRank(candidate.Scope) != scopeRank(current.Scope) {
+		return scopeRank(candidate.Scope) > scopeRank(current.Scope)
+	}
+	if candidate.Priority != current.Priority {
+		return candidate.Priority < current.Priority
+	}
+	if candidate.Target != current.Target {
+		return candidate.Target > current.Target
+	}
+	return candidate.BindingID > current.BindingID
 }
 
 func toPrompt(rec *ent.Prompt) Prompt {

@@ -283,3 +283,82 @@ func TestResolveWebUIChatSessionAlias_UsesServerGeneratedToken(t *testing.T) {
 		t.Fatalf("expected alias to resolve to %q, got %q", webUIChatSessionID("alice"), sessionID)
 	}
 }
+
+func TestPromptHandlers_ResolveHonorsScopeOverrideAndTemplateContext(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	defer client.Close()
+
+	promptMgr, err := prompts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new prompt manager: %v", err)
+	}
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		prompts:   promptMgr,
+		entClient: client,
+	}
+	e := echo.New()
+
+	promptItem, err := promptMgr.CreatePrompt(context.Background(), prompts.Prompt{
+		Key:      "ops",
+		Name:     "Ops",
+		Mode:     prompts.ModeSystem,
+		Template: "scope={{channel.id}} provider={{route.provider}} custom={{custom.role}} workspace={{workspace.path}}",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("create prompt: %v", err)
+	}
+
+	for _, binding := range []prompts.Binding{
+		{Scope: prompts.ScopeGlobal, PromptID: promptItem.ID, Enabled: true, Priority: 100},
+		{Scope: prompts.ScopeChannel, Target: "wechat", PromptID: promptItem.ID, Enabled: true, Priority: 50},
+	} {
+		if _, err := promptMgr.CreateBinding(context.Background(), binding); err != nil {
+			t.Fatalf("create binding %+v: %v", binding, err)
+		}
+	}
+
+	resolveReq := httptest.NewRequest(http.MethodPost, "/api/prompts/resolve", strings.NewReader(`{
+		"channel":"wechat",
+		"session_id":"s-1",
+		"user_id":"u-1",
+		"username":"alice",
+		"requested_provider":"openai",
+		"workspace":"`+cfg.WorkspacePath()+`",
+		"custom":{"role":"ops"}
+	}`))
+	resolveReq.Header.Set("Content-Type", "application/json")
+	resolveRec := httptest.NewRecorder()
+	resolveCtx := e.NewContext(resolveReq, resolveRec)
+	if err := s.handleResolvePrompts(resolveCtx); err != nil {
+		t.Fatalf("handleResolvePrompts failed: %v", err)
+	}
+	if resolveRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, resolveRec.Code, resolveRec.Body.String())
+	}
+
+	var resolved prompts.ResolvedPromptSet
+	if err := json.Unmarshal(resolveRec.Body.Bytes(), &resolved); err != nil {
+		t.Fatalf("unmarshal resolved prompts: %v", err)
+	}
+	if len(resolved.Applied) != 1 {
+		t.Fatalf("expected one applied prompt after scope override, got %+v", resolved.Applied)
+	}
+	if resolved.Applied[0].Scope != prompts.ScopeChannel {
+		t.Fatalf("expected channel scope to win, got %+v", resolved.Applied[0])
+	}
+	if !strings.Contains(resolved.SystemText, "scope=wechat") ||
+		!strings.Contains(resolved.SystemText, "provider=openai") ||
+		!strings.Contains(resolved.SystemText, "custom=ops") ||
+		!strings.Contains(resolved.SystemText, "workspace="+cfg.WorkspacePath()) {
+		t.Fatalf("unexpected resolved system text: %q", resolved.SystemText)
+	}
+}

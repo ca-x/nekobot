@@ -23,6 +23,8 @@ start from CLI, then complete provider, channel, agent, memory, and tool configu
 
 ✅ **Tool sessions** - browser-accessible long-running tools with access control and process management
 
+✅ **Runtime prompts** - Web-managed prompt templates with global / channel / session bindings and render-time context resolution
+
 ✅ **Docker and service deployment** - containerized runtime plus native gateway service mode
 
 ## Quick Start
@@ -86,6 +88,7 @@ export NEKOBOT_LOGGER_LEVEL="debug"
 ```
 
 See [docs/CONFIG.md](docs/CONFIG.md) for the current configuration model.
+See [docs/RUNTIME_PROMPTS.md](docs/RUNTIME_PROMPTS.md) for prompt binding behavior and the regression checklist.
 
 ### Docker
 
