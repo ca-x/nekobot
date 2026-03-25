@@ -33,6 +33,7 @@
   - [x] `go test -count=1 ./pkg/agent`
   - [x] `go test -count=1 ./...`
   - [x] `GOPROXY=https://goproxy.cn,direct go test -count=1 ./...`
+  - [x] `GOPROXY=https://goproxy.cn,direct go test -count=1 ./pkg/channels/wechat ./pkg/wechat/... ./pkg/webui`
 
 ## Completed Milestones
 
@@ -76,6 +77,7 @@
 - [x] 删除 `pkg/channels/wechat/protocol.go` 本地重复协议层，微信通道仅保留 channel/store/runtime 胶水。
 - [x] WeChat 弱交互协议首批落地：技能安装确认支持 `/yes` `/no` `/cancel`。
 - [x] WeChat presenter 输出规则注入 agent 输入，补齐“纯文本/本地文件路径附件”引导。
+- [x] WeChat 阶段性收口：共享 SDK、发送链路、登录绑定、首批弱交互与 presenter guidance 已完成并推送，后续只保留通用 presenter/interaction 泛化为次级事项。
 
 ## 当前项目评估
 
@@ -90,7 +92,7 @@
 - [x] Agent 稳定性：session history sanitize、safe history window、tool-call 保真、context force compression。
 
 ### 当前明确未完成或做薄的能力
-- [ ] Slack interactive callback 仅覆盖 skill install confirm/cancel，shortcut 与 modal submission 仍未落业务闭环。
+- [ ] Slack interactive callback 已补齐技能安装确认闭环，但 shortcut / modal submission 仍只有路由入口，尚未落具体业务闭环。
 - [ ] Runtime Prompts 本轮改动后缺一次完整端到端回归与 smoke test 记录。
 - [ ] MaixCAM 命令执行后的 response 回写设备侧链路仍待补齐。
 - [ ] Gateway 仍偏聊天通道，缺更完整的控制面协议、连接治理和配对/授权模型。
@@ -118,8 +120,9 @@
   - 来源：`gua/server/formatter.go`、`gua/channel/wechat/wechat.go`。
   - 位置：`pkg/channels/wechat/*`、`pkg/wechat/*`。
 - [ ] **Slack interactive callback 扩展为完整交互闭环**
-  - 现状：仅有 block actions 中的 skill install confirm/cancel，shortcut / modal submission 仍未处理。
-  - 目标：至少补齐关键交互流，形成统一 action routing。
+  - 现状：仅有 block actions 中的 skill install confirm/cancel，而且确认流没有像 Telegram / Discord 一样的 pending state、expiry、原消息更新和统一执行路径；shortcut / modal submission 也仍未处理。
+  - 进度：已补齐技能安装确认的完整闭环（pending state / expiry / 原消息更新 / 统一执行路径），并加上 shortcut / modal submission 的可扩展路由入口；后续只剩更具体的 modal/shortcut 业务。
+  - 目标：继续在现有路由骨架上补具体 shortcut / modal submission 业务。
   - 来源：当前 `pkg/channels/slack/slack.go` 缺口 + `gua` Presenter/Action 思路。
   - 位置：`pkg/channels/slack/slack.go`。
 - [ ] **Runtime Prompts 执行链路做完整回归并固化检查清单**
@@ -193,7 +196,7 @@
 ### Batch B（Channel 交互补齐）
 - [x] WeChat SDK baseline migration
 - [x] WeChat attachment send pipeline
-- [ ] Slack interactive handlers 扩展
+- [x] Slack interactive handlers 第一阶段扩展（skill install confirm 完整闭环 + shortcut/modal 路由入口）
 - [x] Subagent origin notify 接线
 - [ ] MaixCAM command response
 - **验收**: 各 channel 回归测试通过，关键交互可手工验证。
@@ -232,4 +235,4 @@
 - 进度细节（逐次提交级）继续记录在 `progress.md`，本文件作为任务和里程碑主视图。
 - 开发要求：**功能完成一项就提交和推送代码**；非功能性的评估、计划整理不单独算功能交付。
 - 本轮并行评估已吸收 `goclaw` 与 `gua` 的分析结论，后续实现时继续由主 agent 审批每个子任务结论。
-- 跨设备续写建议起点：先优先执行 Batch A 验证，再进入 Batch B/C，随后开始 `goclaw` / `gua` 迁移批次。
+- 跨设备续写建议起点：微信阶段已完成并推送，优先继续 Batch B 的 Slack 交互闭环，再补 Batch C 的 runtime prompts 回归，随后开始 `goclaw` / `gua` 迁移批次。

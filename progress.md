@@ -2,6 +2,21 @@
 
 ## 2026-03-25
 
+- Completed Slack interactive flow phase 1:
+  - added Slack-side pending interaction state for skill install confirmations, aligned with Telegram/Discord semantics.
+  - changed Slack slash-command skill install confirmation from “send a pseudo inbound message” to “store pending interaction, require same-user confirm/cancel, expire after 15 minutes, re-run the original command with confirmation metadata, and update the original Slack message with the result”.
+  - introduced a narrow Slack API interface to make the channel logic testable without live Slack I/O.
+  - added placeholder shortcut / view-submission routing hooks so later modal/shortcut flows have a stable entry point instead of being hard-coded into the event switch.
+  - added regression tests for pending-state storage, confirm execution path, cancel path, and expiry cleanup in `pkg/channels/slack/slack_test.go`.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/slack` passed.
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./pkg/channels/slack ./pkg/commands` passed.
+
+- Re-baselined the post-WeChat migration plan:
+  - confirmed the latest WeChat migration commits are already pushed to `origin/main`.
+  - updated `task_plan.md` to mark the WeChat workstream as stage-complete for now and narrowed the next execution target to Slack interactive flow completion.
+  - rewrote the Slack backlog item to reflect the real gap: missing pending state, expiry cleanup, message update path, and extensible shortcut/modal routing rather than only “callback exists / not exists”.
+
 - Added WeChat presenter-style output guidance for agent turns:
   - prepended WeChat-specific output rules before user messages so the agent is explicitly told to avoid Markdown and prefer local absolute file paths for rich content.
   - included workspace-root hints in the injected WeChat instructions so generated attachment files have a stable preferred location.

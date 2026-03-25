@@ -23,21 +23,42 @@ import (
 	"nekobot/pkg/transcription"
 )
 
+type slackAPI interface {
+	AuthTest() (*slack.AuthTestResponse, error)
+	PostEphemeral(channelID, userID string, options ...slack.MsgOption) (string, error)
+	PostMessage(channelID string, options ...slack.MsgOption) (string, string, error)
+	PostMessageContext(ctx context.Context, channelID string, options ...slack.MsgOption) (string, string, error)
+	UpdateMessage(channelID, timestamp string, options ...slack.MsgOption) (string, string, string, error)
+}
+
 // Channel implements Slack channel using Socket Mode.
 type Channel struct {
-	log          *logger.Logger
-	config       config.SlackConfig
-	bus          bus.Bus
-	commands     *commands.Registry
-	api          *slack.Client
-	socketClient *socketmode.Client
-	botUserID    string
-	running      bool
-	ctx          context.Context
-	cancel       context.CancelFunc
-	pendingAcks  sync.Map // chat_id -> message reference
-	transcriber  transcription.Transcriber
-	httpClient   *http.Client
+	log                  *logger.Logger
+	config               config.SlackConfig
+	bus                  bus.Bus
+	commands             *commands.Registry
+	api                  slackAPI
+	socketClient         *socketmode.Client
+	botUserID            string
+	running              bool
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	pendingAcks          sync.Map // chat_id -> message reference
+	transcriber          transcription.Transcriber
+	httpClient           *http.Client
+	pendingSkillMu       sync.Mutex
+	pendingSkillInstalls map[string]pendingSkillInstall
+}
+
+type pendingSkillInstall struct {
+	UserID      string
+	ChannelID   string
+	ThreadTS    string
+	MessageTS   string
+	Command     string
+	Repo        string
+	CreatedAt   time.Time
+	ResponseURL string
 }
 
 // NewChannel creates a new Slack channel.
@@ -73,6 +94,7 @@ func NewChannel(
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,
 		},
+		pendingSkillInstalls: map[string]pendingSkillInstall{},
 	}, nil
 }
 
@@ -334,6 +356,15 @@ func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 		return
 	}
 
+	if resp.Interaction != nil && resp.Interaction.Type == commands.InteractionTypeSkillInstallConfirm {
+		if err := c.sendSkillInstallConfirmation(cmd, cmdName, resp); err != nil {
+			c.log.Error("Failed to send skill install confirmation", zap.Error(err))
+			c.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+				slack.MsgOptionText("Failed to create install confirmation: "+err.Error(), false))
+		}
+		return
+	}
+
 	// Send response
 	opts := []slack.MsgOption{
 		slack.MsgOptionText(resp.Content, false),
@@ -365,9 +396,9 @@ func (c *Channel) handleInteractive(evt socketmode.Event) {
 	case slack.InteractionTypeBlockActions:
 		c.handleBlockActions(callback)
 	case slack.InteractionTypeShortcut:
-		c.log.Debug("Shortcut interaction received (not handled)")
+		c.handleShortcut(callback)
 	case slack.InteractionTypeViewSubmission:
-		c.log.Debug("View submission received (not handled)")
+		c.handleViewSubmission(callback)
 	default:
 		c.log.Debug("Unhandled interaction type", zap.String("type", string(callback.Type)))
 	}
@@ -385,8 +416,7 @@ func (c *Channel) handleBlockActions(callback slack.InteractionCallback) {
 			repo := strings.TrimPrefix(action.ActionID, "skill_install_confirm:")
 			c.handleSkillInstallConfirm(callback, repo)
 		case action.ActionID == "skill_install_cancel":
-			c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
-				slack.MsgOptionText("Installation cancelled.", false))
+			c.handleSkillInstallCancel(callback)
 		default:
 			c.log.Debug("Unknown action", zap.String("action_id", action.ActionID))
 		}
@@ -398,28 +428,216 @@ func (c *Channel) handleSkillInstallConfirm(callback slack.InteractionCallback, 
 	if repo == "" {
 		return
 	}
-
-	// Re-invoke the find-skills command with the confirmed repo
-	content := fmt.Sprintf("/find-skills __confirm_install__%s", repo)
-
-	sessionID := fmt.Sprintf("slack:%s", callback.Channel.ID)
-
-	msg := &bus.Message{
-		ID:        fmt.Sprintf("slack:interaction:%s", callback.TriggerID),
-		ChannelID: "slack",
-		SessionID: sessionID,
-		UserID:    callback.User.ID,
-		Username:  callback.User.Name,
-		Type:      bus.MessageTypeText,
-		Content:   content,
-		Timestamp: time.Now(),
-	}
-
-	if err := c.bus.SendInbound(msg); err != nil {
-		c.log.Error("Failed to send skill install confirmation", zap.Error(err))
+	messageTS := c.interactionMessageTS(callback)
+	pending, ok := c.getPendingSkillInstall(messageTS)
+	if !ok {
 		c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
-			slack.MsgOptionText("Failed to process confirmation.", false))
+			slack.MsgOptionText("This install request has expired. Please run the command again.", false))
+		return
 	}
+	if callback.User.ID != pending.UserID {
+		c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
+			slack.MsgOptionText("Only the requester can confirm this installation.", false))
+		return
+	}
+	if repo != pending.Repo {
+		c.log.Warn("Skill install repo mismatch",
+			zap.String("expected_repo", pending.Repo),
+			zap.String("received_repo", repo),
+		)
+	}
+
+	result := c.executeConfirmedSkillInstall(callback, pending)
+	c.clearPendingSkillInstall(messageTS)
+	c.updateInteractionMessage(pending, result)
+}
+
+func (c *Channel) handleSkillInstallCancel(callback slack.InteractionCallback) {
+	messageTS := c.interactionMessageTS(callback)
+	pending, ok := c.getPendingSkillInstall(messageTS)
+	if !ok {
+		c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
+			slack.MsgOptionText("This install request has expired. Please run the command again.", false))
+		return
+	}
+	if callback.User.ID != pending.UserID {
+		c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
+			slack.MsgOptionText("Only the requester can cancel this installation.", false))
+		return
+	}
+
+	c.clearPendingSkillInstall(messageTS)
+	c.updateInteractionMessage(pending, "Installation cancelled.")
+}
+
+func (c *Channel) handleShortcut(callback slack.InteractionCallback) {
+	c.log.Debug("Shortcut interaction received",
+		zap.String("callback_id", callback.CallbackID),
+		zap.String("user_id", callback.User.ID))
+}
+
+func (c *Channel) handleViewSubmission(callback slack.InteractionCallback) {
+	c.log.Debug("View submission received",
+		zap.String("callback_id", callback.View.CallbackID),
+		zap.String("user_id", callback.User.ID))
+}
+
+func (c *Channel) sendSkillInstallConfirmation(
+	cmd slack.SlashCommand,
+	cmdName string,
+	resp commands.CommandResponse,
+) error {
+	if resp.Interaction == nil {
+		return fmt.Errorf("missing interaction payload")
+	}
+	repo := strings.TrimSpace(resp.Interaction.Repo)
+	if repo == "" {
+		return fmt.Errorf("missing interaction repo")
+	}
+
+	content := strings.TrimSpace(resp.Interaction.Message)
+	if content == "" {
+		content = strings.TrimSpace(resp.Content)
+	}
+	if content == "" {
+		content = fmt.Sprintf("Found candidate skill `%s`. Confirm install?", repo)
+	}
+	if reason := strings.TrimSpace(resp.Interaction.Reason); reason != "" {
+		content += "\n\nReason: " + reason
+	}
+
+	commandName := cmdName
+	if custom := strings.TrimSpace(resp.Interaction.Command); custom != "" {
+		commandName = custom
+	}
+
+	confirmButton := slack.NewButtonBlockElement(
+		"skill_install_confirm:"+repo,
+		repo,
+		slack.NewTextBlockObject(slack.PlainTextType, "Confirm Install", false, false),
+	)
+	cancelButton := slack.NewButtonBlockElement(
+		"skill_install_cancel",
+		"cancel",
+		slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+	)
+	blocks := []slack.Block{
+		slack.NewSectionBlock(
+			slack.NewTextBlockObject(slack.MarkdownType, content, false, false),
+			nil,
+			nil,
+		),
+		slack.NewActionBlock("skill_install_actions", confirmButton, cancelButton),
+	}
+
+	_, ts, err := c.api.PostMessage(
+		cmd.ChannelID,
+		slack.MsgOptionText(content, false),
+		slack.MsgOptionBlocks(blocks...),
+	)
+	if err != nil {
+		return err
+	}
+
+	c.setPendingSkillInstall(ts, pendingSkillInstall{
+		UserID:      cmd.UserID,
+		ChannelID:   cmd.ChannelID,
+		MessageTS:   ts,
+		Command:     commandName,
+		Repo:        repo,
+		CreatedAt:   time.Now(),
+		ResponseURL: cmd.ResponseURL,
+	})
+
+	return nil
+}
+
+func (c *Channel) executeConfirmedSkillInstall(
+	callback slack.InteractionCallback,
+	pending pendingSkillInstall,
+) string {
+	cmd, exists := c.commands.Get(pending.Command)
+	if !exists {
+		return "❌ Install failed: command not found."
+	}
+
+	req := commands.CommandRequest{
+		Channel:  "slack",
+		ChatID:   pending.ChannelID,
+		UserID:   pending.UserID,
+		Username: callback.User.Name,
+		Command:  pending.Command,
+		Args:     "__confirm_install__ " + pending.Repo,
+		Metadata: map[string]string{
+			"trigger_id":                   callback.TriggerID,
+			"team_id":                      callback.Team.ID,
+			"channel_id":                   pending.ChannelID,
+			"message_ts":                   pending.MessageTS,
+			"skill_install_confirmed_repo": pending.Repo,
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		return "❌ Install failed: " + err.Error()
+	}
+	if strings.TrimSpace(resp.Content) == "" {
+		return "✅ Installation flow executed."
+	}
+	return resp.Content
+}
+
+func (c *Channel) updateInteractionMessage(pending pendingSkillInstall, text string) {
+	opts := []slack.MsgOption{
+		slack.MsgOptionText(text, false),
+	}
+	if _, _, _, err := c.api.UpdateMessage(pending.ChannelID, pending.MessageTS, opts...); err != nil {
+		c.log.Warn("Failed to update Slack interaction message",
+			zap.String("channel_id", pending.ChannelID),
+			zap.String("message_ts", pending.MessageTS),
+			zap.Error(err),
+		)
+	}
+}
+
+func (c *Channel) interactionMessageTS(callback slack.InteractionCallback) string {
+	if ts := strings.TrimSpace(callback.Message.Timestamp); ts != "" {
+		return ts
+	}
+	if ts := strings.TrimSpace(callback.MessageTs); ts != "" {
+		return ts
+	}
+	return strings.TrimSpace(callback.Container.MessageTs)
+}
+
+func (c *Channel) setPendingSkillInstall(messageTS string, pending pendingSkillInstall) {
+	c.pendingSkillMu.Lock()
+	defer c.pendingSkillMu.Unlock()
+	c.pendingSkillInstalls[messageTS] = pending
+}
+
+func (c *Channel) getPendingSkillInstall(messageTS string) (pendingSkillInstall, bool) {
+	c.pendingSkillMu.Lock()
+	defer c.pendingSkillMu.Unlock()
+
+	pending, ok := c.pendingSkillInstalls[messageTS]
+	if !ok {
+		return pendingSkillInstall{}, false
+	}
+	if time.Since(pending.CreatedAt) > 15*time.Minute {
+		delete(c.pendingSkillInstalls, messageTS)
+		return pendingSkillInstall{}, false
+	}
+	return pending, true
+}
+
+func (c *Channel) clearPendingSkillInstall(messageTS string) {
+	c.pendingSkillMu.Lock()
+	defer c.pendingSkillMu.Unlock()
+	delete(c.pendingSkillInstalls, messageTS)
 }
 
 // handleOutbound handles outbound messages from the bus.
