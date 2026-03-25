@@ -78,6 +78,7 @@
 - [x] WeChat 弱交互协议首批落地：技能安装确认支持 `/yes` `/no` `/cancel`。
 - [x] WeChat presenter 输出规则注入 agent 输入，补齐“纯文本/本地文件路径附件”引导。
 - [x] WeChat 阶段性收口：共享 SDK、发送链路、登录绑定、首批弱交互与 presenter guidance 已完成并推送，后续只保留通用 presenter/interaction 泛化为次级事项。
+- [x] Conversation/thread binding 首批迁移：在 `pkg/conversationbindings` 上补齐绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理，并保持与 WeChat runtime binding 兼容。
 
 ## 当前项目评估
 
@@ -96,7 +97,7 @@
 - [x] Runtime Prompts 本轮改动后已补回归测试与 smoke checklist 记录。
 - [ ] MaixCAM 命令执行后的 response 回写设备侧链路仍待补齐。
 - [ ] Gateway 仍偏聊天通道，缺更完整的控制面协议、连接治理和配对/授权模型。
-- [ ] Conversation binding 目前偏 tool session 绑定，缺跨 channel/account/conversation 的通用线程绑定层。
+- [x] Conversation binding 已补首批通用基础层：支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；更完整的跨 account/独立存储层仍待继续迁移。
 - [ ] Browser session 仍是单例固定端口 CDP，缺 relay/direct/auto 模式与高级提取动作。
 - [ ] Memory 检索后处理仍偏轻量，缺 MMR、多样性、时间衰减、引用格式、缓存等质量件。
 - [ ] 现有 channel 能力缺统一 capability 矩阵，平台差异还分散在各 channel 私实现里。
@@ -133,6 +134,7 @@
 ### P1（高价值缺口）
 - [ ] **通用 conversation/thread binding 层**
   - 现状：`pkg/conversationbindings/service.go` 只是在 tool session 之上做 source/channel/conversation 绑定，缺跨 account/conversation/session 的通用记录、清理与路由抽象。
+  - 进度：已完成首批基础层增强，支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；当前仍复用 `tool sessions` 持久化，尚未抽出独立存储与跨 account 统一模型。
   - 目标：抽出可复用于 channels / gateway / external agent runtime 的统一绑定层。
   - 来源：`goclaw/channels/thread_bindings.go`、`thread_binding_storage.go`。
   - 位置：新建 `pkg/conversationbindings/*` 或扩展现有模块。
