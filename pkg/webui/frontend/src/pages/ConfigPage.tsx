@@ -3,6 +3,7 @@ import { t } from '@/lib/i18n';
 import { toast } from 'sonner';
 import Header from '@/components/layout/Header';
 import { useConfig, useExportConfig, useImportConfig, useSaveConfig } from '@/hooks/useConfig';
+import { useProviders } from '@/hooks/useProviders';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,6 +27,7 @@ import {
   FolderKanban,
   Layers3,
   LibraryBig,
+  Route,
   RotateCcw,
   Save,
   Search,
@@ -57,6 +59,23 @@ interface FieldDef {
   type: 'text' | 'secret' | 'bool' | 'number' | 'tags' | 'json';
   value: unknown;
 }
+
+interface RouteTargetOption {
+  name: string;
+  type: 'provider' | 'group';
+}
+
+interface ModelEntry {
+  provider: string;
+  model: string;
+}
+
+const MANAGED_AGENT_FIELDS = new Set([
+  'defaults.provider',
+  'defaults.model',
+  'defaults.fallback',
+  'defaults.provider_groups',
+]);
 
 const SECTION_DESCRIPTIONS: Record<ConfigSection, string> = {
   agents: t('configSectionDescAgents'),
@@ -341,6 +360,297 @@ function MemoryField({
         {hint ? <div className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</div> : null}
       </div>
       {children}
+    </div>
+  );
+}
+
+function AgentsSectionForm({
+  data,
+  onChange,
+}: {
+  data: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+}) {
+  const { data: providers = [] } = useProviders();
+
+  const readString = (path: string) => {
+    const value = getNestedValue(data, path);
+    return typeof value === 'string' ? value : '';
+  };
+  const readNumber = (path: string) => {
+    const value = getNestedValue(data, path);
+    return typeof value === 'number' ? value : 0;
+  };
+  const readBool = (path: string) => Boolean(getNestedValue(data, path));
+  const readStringArray = (path: string) => {
+    const value = getNestedValue(data, path);
+    return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [];
+  };
+  const readProviderGroups = (): Array<Record<string, unknown>> => {
+    const value = getNestedValue(data, 'defaults.provider_groups');
+    return Array.isArray(value)
+      ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+      : [];
+  };
+
+  const routeTargets = useMemo(() => {
+    const options: RouteTargetOption[] = [];
+    const seen = new Set<string>();
+
+    for (const provider of providers) {
+      const name = provider.name.trim();
+      if (!name || seen.has(name)) {
+        continue;
+      }
+      seen.add(name);
+      options.push({ name, type: 'provider' });
+    }
+
+    for (const group of readProviderGroups()) {
+      const name = typeof group.name === 'string' ? group.name.trim() : '';
+      if (!name || seen.has(name)) {
+        continue;
+      }
+      seen.add(name);
+      options.push({ name, type: 'group' });
+    }
+
+    return options;
+  }, [providers, data]);
+
+  const routeTargetMap = useMemo(
+    () => new Map(routeTargets.map((target) => [target.name, target])),
+    [routeTargets],
+  );
+
+  const models = useMemo(() => {
+    const result: ModelEntry[] = [];
+    const seen = new Set<string>();
+    for (const provider of providers) {
+      const providerName = provider.name.trim();
+      if (!providerName) {
+        continue;
+      }
+      const addModel = (model: string) => {
+        const normalizedModel = model.trim();
+        if (!normalizedModel) {
+          return;
+        }
+        const key = `${providerName}::${normalizedModel}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        result.push({ provider: providerName, model: normalizedModel });
+      };
+      if (provider.default_model) {
+        addModel(provider.default_model);
+      }
+      for (const model of provider.models ?? []) {
+        addModel(model);
+      }
+    }
+    return result;
+  }, [providers]);
+
+  const selectedProvider = readString('defaults.provider');
+  const selectedFallback = readStringArray('defaults.fallback');
+  const selectedModel = readString('defaults.model');
+  const selectedProviderKind = routeTargetMap.get(selectedProvider)?.type ?? null;
+  const filteredModels = selectedProvider && selectedProviderKind !== 'group'
+    ? models.filter((entry) => entry.provider === selectedProvider)
+    : models;
+  const fallbackOptions = routeTargets.filter((target) => target.name !== selectedProvider);
+
+  const handleToggleFallback = (name: string) => {
+    if (selectedFallback.includes(name)) {
+      onChange('defaults.fallback', selectedFallback.filter((item) => item !== name));
+      return;
+    }
+    onChange('defaults.fallback', [...selectedFallback, name]);
+  };
+
+  const handleProviderChange = (value: string) => {
+    const nextProvider = value === '__default__' ? '' : value;
+    onChange('defaults.provider', nextProvider);
+    onChange(
+      'defaults.fallback',
+      selectedFallback.filter((item) => item !== nextProvider),
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(255,250,247,0.95),rgba(255,244,248,0.9))] shadow-[0_24px_60px_-42px_rgba(120,55,75,0.45)]">
+        <CardHeader className="pb-4">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
+            <Route className="h-3.5 w-3.5" />
+            {t('agentsRoutingTitle')}
+          </div>
+          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('agentsRoutingHeadline')}</CardTitle>
+          <CardDescription>{t('agentsRoutingDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-2">
+            <MemoryField label={t('agentsDefaultProvider')} hint={t('agentsDefaultProviderHint')}>
+              <Select value={selectedProvider || '__default__'} onValueChange={handleProviderChange}>
+                <SelectTrigger className="h-11 rounded-xl bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">{t('agentsRouteAuto')}</SelectItem>
+                  {routeTargets.map((target) => (
+                    <SelectItem key={target.name} value={target.name}>
+                      {target.type === 'group'
+                        ? `${target.name} (${t('agentsRouteTargetGroup')})`
+                        : target.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </MemoryField>
+
+            <MemoryField label={t('agentsDefaultModel')} hint={t('agentsDefaultModelHint')}>
+              <Select
+                value={selectedModel || '__default__'}
+                onValueChange={(value) => onChange('defaults.model', value === '__default__' ? '' : value)}
+              >
+                <SelectTrigger className="h-11 rounded-xl bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">{t('agentsModelDefault')}</SelectItem>
+                  {filteredModels.map((entry) => (
+                    <SelectItem key={`${entry.provider}::${entry.model}`} value={entry.model}>
+                      {selectedProvider && selectedProviderKind !== 'group'
+                        ? entry.model
+                        : `${entry.model} (${entry.provider})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </MemoryField>
+          </div>
+
+          <MemoryField label={t('agentsFallbackProviders')} hint={t('agentsFallbackProvidersHint')}>
+            <div className="space-y-3">
+              {selectedFallback.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {selectedFallback.map((name, index) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => handleToggleFallback(name)}
+                      className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
+                    >
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] text-[hsl(var(--brand-700))]">
+                        {index + 1}
+                      </span>
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
+                  {t('agentsFallbackEmpty')}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {fallbackOptions.map((target) => {
+                  const selected = selectedFallback.includes(target.name);
+                  return (
+                    <button
+                      key={target.name}
+                      type="button"
+                      onClick={() => handleToggleFallback(target.name)}
+                      className={
+                        selected
+                          ? 'rounded-full border border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]'
+                          : 'rounded-full border border-[hsl(var(--gray-200))] bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]'
+                      }
+                    >
+                      {target.type === 'group'
+                        ? `${target.name} (${t('agentsRouteTargetGroup')})`
+                        : target.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </MemoryField>
+        </CardContent>
+      </Card>
+
+      <Card className="border-white/70 bg-white/80 shadow-none">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">{t('agentsRuntimeTitle')}</CardTitle>
+          <CardDescription>{t('agentsRuntimeDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 xl:grid-cols-2">
+          <MemoryField label={t('agentsWorkspace')}>
+            <Input
+              className="h-11 rounded-xl bg-white"
+              value={readString('defaults.workspace')}
+              onChange={(event) => onChange('defaults.workspace', event.target.value)}
+            />
+          </MemoryField>
+          <MemoryField label={t('agentsOrchestrator')}>
+            <Select value={readString('defaults.orchestrator') || 'blades'} onValueChange={(value) => onChange('defaults.orchestrator', value)}>
+              <SelectTrigger className="h-11 rounded-xl bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="blades">blades</SelectItem>
+                <SelectItem value="legacy">legacy</SelectItem>
+              </SelectContent>
+            </Select>
+          </MemoryField>
+          <MemoryField label={t('agentsMaxTokens')}>
+            <Input
+              type="number"
+              className="h-11 rounded-xl bg-white"
+              value={String(readNumber('defaults.max_tokens'))}
+              onChange={(event) => onChange('defaults.max_tokens', Number(event.target.value || 0))}
+            />
+          </MemoryField>
+          <MemoryField label={t('agentsTemperature')}>
+            <Input
+              type="number"
+              step="0.1"
+              className="h-11 rounded-xl bg-white"
+              value={String(readNumber('defaults.temperature'))}
+              onChange={(event) => onChange('defaults.temperature', Number(event.target.value || 0))}
+            />
+          </MemoryField>
+          <MemoryField label={t('agentsMaxToolIterations')}>
+            <Input
+              type="number"
+              className="h-11 rounded-xl bg-white"
+              value={String(readNumber('defaults.max_tool_iterations'))}
+              onChange={(event) => onChange('defaults.max_tool_iterations', Number(event.target.value || 0))}
+            />
+          </MemoryField>
+          <MemoryField label={t('agentsSkillsProxy')}>
+            <Input
+              className="h-11 rounded-xl bg-white"
+              value={readString('defaults.skills_proxy')}
+              onChange={(event) => onChange('defaults.skills_proxy', event.target.value)}
+            />
+          </MemoryField>
+          <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+            <div>
+              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('agentsRestrictWorkspace')}</Label>
+            </div>
+            <Switch checked={readBool('defaults.restrict_to_workspace')} onCheckedChange={(next) => onChange('defaults.restrict_to_workspace', next)} />
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+            <div>
+              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('agentsSkillsAutoReload')}</Label>
+            </div>
+            <Switch checked={readBool('defaults.skills_auto_reload')} onCheckedChange={(next) => onChange('defaults.skills_auto_reload', next)} />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -883,7 +1193,13 @@ export default function ConfigPage() {
   const currentDraft = drafts[section];
   const currentData = currentDraft ?? persistedSections[section];
   const currentJSON = jsonDrafts[section] ?? stableStringify(currentData);
-  const fields = useMemo(() => inferFields(currentData), [currentData]);
+  const fields = useMemo(() => {
+    const inferred = inferFields(currentData);
+    if (section !== 'agents') {
+      return inferred;
+    }
+    return inferred.filter((field) => !MANAGED_AGENT_FIELDS.has(field.key));
+  }, [currentData, section]);
   const filteredFields = useMemo(() => filterFields(fields, search), [fields, search]);
 
   const sectionDirty = useMemo(() => {
@@ -1157,6 +1473,8 @@ export default function ConfigPage() {
                     spellCheck={false}
                   />
                 </div>
+              ) : section === 'agents' ? (
+                <AgentsSectionForm data={currentData} onChange={handleFieldChange} />
               ) : section === 'memory' ? (
                 <MemorySectionForm data={currentData} onChange={handleFieldChange} />
               ) : section === 'sessions' ? (
