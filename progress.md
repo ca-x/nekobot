@@ -2,6 +2,15 @@
 
 ## 2026-03-25
 
+- Completed WeChat channel shared-SDK migration and attachment send pipeline:
+  - switched `pkg/channels/wechat` runtime monitor, typing keepalive, outbound text/image/file/video sending, and QR binding helpers to shared `pkg/wechat` SDK primitives.
+  - replaced rendered markdown image sending from channel-local inline payloads with shared uploader-based image sending.
+  - added outbound file-path extraction/cleanup so reply text can promote local absolute paths into WeChat image/video/file attachments while removing those paths from the final text body.
+  - aligned credential storage with shared `pkg/wechat/types.Credentials`.
+  - added regression tests for file-path extraction and attachment classification in `pkg/channels/wechat/attachments_test.go`.
+- Verification run:
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./pkg/channels/wechat ./pkg/wechat/... ./pkg/webui` passed.
+
 - Completed `gua/libc/wechat` SDK baseline migration into `nekobot/pkg/wechat`:
   - added shared `types / client / auth / cdn / messaging / monitor / parse / typing / voice / bot` packages under `pkg/wechat`.
   - kept existing `pkg/channels/wechat` working while introducing the new shared SDK layer, so follow-up channel enhancements can build on stable primitives instead of channel-local protocol code.

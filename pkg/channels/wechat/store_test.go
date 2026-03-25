@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"nekobot/pkg/config"
+	wxtypes "nekobot/pkg/wechat/types"
 )
 
 func TestCredentialStoreReplaceCredentialsRemovesOldFiles(t *testing.T) {
@@ -16,7 +17,7 @@ func TestCredentialStoreReplaceCredentialsRemovesOldFiles(t *testing.T) {
 		t.Fatalf("NewCredentialStore failed: %v", err)
 	}
 
-	first := &Credentials{
+	first := &wxtypes.Credentials{
 		BotToken:    "token-1",
 		ILinkBotID:  "bot-1@im.wechat",
 		BaseURL:     "https://ilinkai.weixin.qq.com",
@@ -30,7 +31,7 @@ func TestCredentialStoreReplaceCredentialsRemovesOldFiles(t *testing.T) {
 		t.Fatalf("LoadCredentials after first replace failed: %v", err)
 	}
 
-	second := &Credentials{
+	second := &wxtypes.Credentials{
 		BotToken:    "token-2",
 		ILinkBotID:  "bot-2@im.wechat",
 		BaseURL:     "https://ilinkai.weixin.qq.com",

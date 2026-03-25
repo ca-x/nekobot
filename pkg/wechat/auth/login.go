@@ -31,6 +31,19 @@ func FetchQRCode(ctx context.Context, opts ...client.ClientOption) (*types.QRCod
 	return resp, nil
 }
 
+// CheckQRStatus fetches the current QR code scan status once.
+func CheckQRStatus(ctx context.Context, qrcode string, opts ...client.ClientOption) (*types.QRStatusResponse, error) {
+	c := client.NewUnauthenticatedClient(opts...)
+
+	statusURL := qrStatusURLFmt + url.QueryEscape(qrcode)
+	resp := &types.QRStatusResponse{}
+	if err := c.DoGet(ctx, statusURL, resp); err != nil {
+		return nil, fmt.Errorf("check QR status: %w", err)
+	}
+
+	return resp, nil
+}
+
 // PollQRStatus long-polls for QR code scan confirmation.
 func PollQRStatus(
 	ctx context.Context,
@@ -38,8 +51,6 @@ func PollQRStatus(
 	onStatus func(status string),
 	opts ...client.ClientOption,
 ) (*types.Credentials, error) {
-	c := client.NewUnauthenticatedClient(opts...)
-
 	ctx, cancel := context.WithTimeout(ctx, pollTimeout)
 	defer cancel()
 
@@ -53,10 +64,8 @@ func PollQRStatus(
 		default:
 		}
 
-		statusURL := qrStatusURLFmt + url.QueryEscape(qrcode)
-
-		var resp types.QRStatusResponse
-		if err := c.DoGet(ctx, statusURL, &resp); err != nil {
+		resp, err := CheckQRStatus(ctx, qrcode, opts...)
+		if err != nil {
 			select {
 			case <-ctx.Done():
 				return nil, fmt.Errorf("QR login timed out: %w", ctx.Err())

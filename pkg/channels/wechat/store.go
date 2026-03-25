@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"nekobot/pkg/config"
+	wxtypes "nekobot/pkg/wechat/types"
 )
 
 const (
@@ -40,12 +41,7 @@ type BindState struct {
 }
 
 // Credentials stores WeChat login session data.
-type Credentials struct {
-	BotToken    string `json:"bot_token"`
-	ILinkBotID  string `json:"ilink_bot_id"`
-	BaseURL     string `json:"baseurl"`
-	ILinkUserID string `json:"ilink_user_id"`
-}
+type Credentials = wxtypes.Credentials
 
 // CredentialStore manages single-account WeChat credentials and bind state.
 type CredentialStore struct {

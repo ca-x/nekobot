@@ -53,6 +53,8 @@ import (
 	"nekobot/pkg/userprefs"
 	"nekobot/pkg/version"
 	"nekobot/pkg/webui/frontend"
+	wxauth "nekobot/pkg/wechat/auth"
+	wxtypes "nekobot/pkg/wechat/types"
 	"nekobot/pkg/workspace"
 	rscqr "rsc.io/qr"
 )
@@ -3365,7 +3367,7 @@ func (s *Server) handleStartWechatBinding(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	qrResp, err := channelwechat.FetchQRCode(c.Request().Context())
+	qrResp, err := wxauth.FetchQRCode(c.Request().Context())
 	if err != nil {
 		return c.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
 	}
@@ -3400,7 +3402,7 @@ func (s *Server) handlePollWechatBinding(c *echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "no active wechat binding"})
 	}
 
-	statusResp, err := channelwechat.CheckQRStatus(c.Request().Context(), state.QRCode)
+	statusResp, err := wxauth.CheckQRStatus(c.Request().Context(), state.QRCode)
 	if err != nil {
 		state.Status = channelwechat.BindStatusFailed
 		state.Error = err.Error()
@@ -3409,12 +3411,12 @@ func (s *Server) handlePollWechatBinding(c *echo.Context) error {
 	}
 
 	switch statusResp.Status {
-	case "confirmed":
+	case wxtypes.QRStatusConfirmed:
 		state.Status = channelwechat.BindStatusConfirmed
 		state.BotID = statusResp.ILinkBotID
 		state.UserID = statusResp.ILinkUserID
 		state.Error = ""
-		if err := store.ReplaceCredentials(&channelwechat.Credentials{
+		if err := store.ReplaceCredentials(&wxtypes.Credentials{
 			BotToken:    statusResp.BotToken,
 			ILinkBotID:  statusResp.ILinkBotID,
 			BaseURL:     statusResp.BaseURL,
@@ -3431,13 +3433,13 @@ func (s *Server) handlePollWechatBinding(c *echo.Context) error {
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			}
 		}
-	case "scaned":
+	case wxtypes.QRStatusScanned:
 		state.Status = channelwechat.BindStatusScanned
 		state.Error = ""
 		if err := store.SaveBindState(*state); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
-	case "expired":
+	case wxtypes.QRStatusExpired:
 		state.Status = channelwechat.BindStatusExpired
 		state.Error = ""
 		if err := store.SaveBindState(*state); err != nil {
