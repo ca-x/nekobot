@@ -74,6 +74,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
 					"wait", "scroll", "go_back", "go_forward",
+					"print_pdf",
 					"reload", "close",
 				},
 				"description": "Browser action to perform",
@@ -111,6 +112,34 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum":        []string{"auto", "direct"},
 				"description": "Browser session startup mode. auto reuses existing Chrome before launching; direct only uses direct CDP attach/launch.",
 			},
+			"landscape": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Render PDF in landscape orientation (for print_pdf action).",
+			},
+			"display_header_footer": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Include header and footer in generated PDF (for print_pdf action).",
+			},
+			"print_background": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Include CSS backgrounds in generated PDF (for print_pdf action).",
+			},
+			"margin_top": map[string]interface{}{
+				"type":        "number",
+				"description": "Top PDF margin in inches (for print_pdf action).",
+			},
+			"margin_bottom": map[string]interface{}{
+				"type":        "number",
+				"description": "Bottom PDF margin in inches (for print_pdf action).",
+			},
+			"margin_left": map[string]interface{}{
+				"type":        "number",
+				"description": "Left PDF margin in inches (for print_pdf action).",
+			},
+			"margin_right": map[string]interface{}{
+				"type":        "number",
+				"description": "Right PDF margin in inches (for print_pdf action).",
+			},
 		},
 		"required": []string{"action"},
 	}
@@ -144,6 +173,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.goBack(ctx)
 	case "go_forward":
 		return b.goForward(ctx)
+	case "print_pdf":
+		return b.printPDF(ctx, params)
 	case "reload":
 		return b.reload(ctx)
 	case "close":
@@ -213,6 +244,37 @@ func (b *BrowserTool) startMode(params map[string]interface{}) (BrowserConnectio
 	return mode, nil
 }
 
+func (b *BrowserTool) buildPrintToPDFArgs(params map[string]interface{}) *page.PrintToPDFArgs {
+	pdfArgs := page.NewPrintToPDFArgs().
+		SetPreferCSSPageSize(true).
+		SetPaperWidth(8.27).
+		SetPaperHeight(11.69)
+
+	if landscape, ok := params["landscape"].(bool); ok {
+		pdfArgs.SetLandscape(landscape)
+	}
+	if displayHeaderFooter, ok := params["display_header_footer"].(bool); ok {
+		pdfArgs.SetDisplayHeaderFooter(displayHeaderFooter)
+	}
+	if printBackground, ok := params["print_background"].(bool); ok {
+		pdfArgs.SetPrintBackground(printBackground)
+	}
+	if marginTop, ok := params["margin_top"].(float64); ok {
+		pdfArgs.SetMarginTop(marginTop)
+	}
+	if marginBottom, ok := params["margin_bottom"].(float64); ok {
+		pdfArgs.SetMarginBottom(marginBottom)
+	}
+	if marginLeft, ok := params["margin_left"].(float64); ok {
+		pdfArgs.SetMarginLeft(marginLeft)
+	}
+	if marginRight, ok := params["margin_right"].(float64); ok {
+		pdfArgs.SetMarginRight(marginRight)
+	}
+
+	return pdfArgs
+}
+
 // screenshot takes a screenshot of the current page.
 func (b *BrowserTool) screenshot(ctx context.Context, params map[string]interface{}) (string, error) {
 	width := 1920
@@ -276,6 +338,44 @@ func (b *BrowserTool) screenshot(ctx context.Context, params map[string]interfac
 
 	return fmt.Sprintf("Screenshot saved to: %s\nURL: %s\nSize: %d bytes\nBase64 length: %d",
 		filepath, currentURL, len(screenshot.Data), len(base64Str)), nil
+}
+
+func (b *BrowserTool) printPDF(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		mode, err := b.startMode(params)
+		if err != nil {
+			return "", err
+		}
+		if err := sessionMgr.StartWithMode(b.timeout, mode); err != nil {
+			return "", fmt.Errorf("failed to start browser: %w", err)
+		}
+	}
+
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	pdfResult, err := client.Page.PrintToPDF(ctx, b.buildPrintToPDFArgs(params))
+	if err != nil {
+		return "", fmt.Errorf("failed to generate PDF: %w", err)
+	}
+
+	filename := fmt.Sprintf("page_%d.pdf", time.Now().Unix())
+	path := filepath.Join(b.outputDir, filename)
+	if err := os.WriteFile(path, pdfResult.Data, 0644); err != nil {
+		return "", fmt.Errorf("failed to save PDF: %w", err)
+	}
+
+	return fmt.Sprintf("PDF saved to: %s\nSize: %d bytes", path, len(pdfResult.Data)), nil
 }
 
 // executeScript executes JavaScript in the browser.

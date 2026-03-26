@@ -2,6 +2,14 @@
 
 ## 2026-03-26
 
+- Completed browser advanced extraction phase 3 (`print_pdf`):
+  - extended `pkg/tools/browser.go` so the `browser` tool now exposes a `print_pdf` action plus PDF-specific parameters for orientation, header/footer, background rendering, and margins.
+  - imported the `goclaw` `BrowserPrintToPDF` slice in a `nekobot`-native form by reusing the existing session manager and output directory instead of adding a separate CDP tool type.
+  - added regression coverage in `pkg/tools/browser_test.go` for `print_pdf` action exposure and PDF argument construction defaults/overrides.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'BrowserTool(ParametersIncludePrintPDF|BuildPrintToPDFArgs)'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
+
 - Completed MaixCAM outbound response routing:
   - re-audited `pkg/channels/maixcam/maixcam.go` and found slash-command responses were already written back to the active device connection, so the real remaining gap was outbound bus replies being broadcast to every connected device.
   - updated `SendMessage` to parse `maixcam:<device>` session IDs and route outbound replies only to the targeted device connection while preserving broadcast behavior when no device target is present.
