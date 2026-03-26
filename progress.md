@@ -2,6 +2,14 @@
 
 ## 2026-03-26
 
+- Completed channel capability matrix phase 1:
+  - added `pkg/channels/capabilities.go` to import the core `goclaw` capability model: capability types, scope parsing, enablement checks, merge behavior, and per-channel default matrices.
+  - kept this slice intentionally low risk by landing the shared declaration/evaluation layer first without forcing all channel runtimes to consume it in the same commit.
+  - added regression coverage in `pkg/channels/capabilities_test.go` for default matrices, scope-based enablement, and override merge behavior.
+- Verification run:
+  - `go test -count=1 ./pkg/channels -run 'GetDefaultCapabilitiesForChannel|IsCapabilityEnabled|MergeCapabilities'` passed.
+  - `go test -count=1 ./pkg/channels` passed.
+
 - Completed browser advanced extraction phase 5 (`get_text`):
   - extended `pkg/tools/browser.go` so the `browser` tool now exposes a `get_text` action for plain-text extraction on top of the existing `get_html` path.
   - imported the lightweight `goclaw` HTML-to-text slice as a local helper instead of adding a new browser tool type or extra dependency surface.

@@ -101,7 +101,7 @@
 - [ ] Browser session 仍是单例固定端口 CDP，缺 relay 模式与更完整的高级控制动作。
   - 进展补充：`auto/direct` 已完成，`print_pdf`、`extract_structured_data`、`get_text` 已落地；relay 与更多 CDP 高级动作仍待继续迁移。
 - [x] Memory 检索后处理首轮质量增强已完成：MMR、多样性、时间衰减、引用格式、embedding cache 已落地；后续如继续扩展，以更高阶排序/多源融合为新事项单列。
-- [ ] 现有 channel 能力缺统一 capability 矩阵，平台差异还分散在各 channel 私实现里。
+- [ ] 现有 channel 能力已补基础 capability 矩阵，但平台差异仍未全面接入各 channel 运行时消费路径。
 - [ ] 缺“按聊天用户长期驻留的外部 agent runtime”这一层，尚未形成类似 `gua` 的用户级外部代理会话编排。
 - [ ] `pkg/wechat` 目前仍缺 `gua/libc/wechat` 的完整 SDK 分层，微信通道能力还主要堆在 `pkg/channels/wechat/*` 中。
 - [x] WeChat 通道发送侧已补齐基于共享 SDK 的附件上传/发送链路，可将回复中的本地文件路径提升为平台附件消息。
@@ -168,8 +168,8 @@
   - 目标：保持设备命令和 agent 出站链路都能稳定回到对应设备。
   - 位置：`pkg/channels/maixcam/maixcam.go`。
 - [ ] **Channel capability 矩阵**
-  - 现状：平台差异主要分散在各 channel 私实现中。
-  - 目标：统一 reactions / buttons / threads / polls / streaming / native commands 等能力声明。
+  - 现状：基础 capability 矩阵、scope 和默认平台映射已迁入，但各 channel/runtime 尚未全面消费这层声明。
+  - 目标：统一 reactions / buttons / threads / polls / streaming / native commands 等能力声明，并逐步用于运行时决策。
   - 来源：`goclaw/channels/capabilities.go`。
   - 位置：`pkg/channels/*`。
 - [ ] **按用户隔离的外部 agent runtime**
