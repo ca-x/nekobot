@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-kratos/blades"
@@ -98,6 +99,69 @@ func TestConfigFromConfigWithWorkspaceUsesDefaultSessionExportDir(t *testing.T) 
 
 	if resolved.Sessions.ExportDir != filepath.Join(workspaceDir, "memory", "sessions") {
 		t.Fatalf("unexpected default export dir: %q", resolved.Sessions.ExportDir)
+	}
+}
+
+func TestManagerSearchDecoratesCitations(t *testing.T) {
+	builtin, err := NewManager(t.TempDir()+"/embeddings.json", NewSimpleEmbeddingProvider(16))
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	if err := builtin.Add(
+		context.Background(),
+		"release checklist",
+		SourceLongTerm,
+		TypeContext,
+		Metadata{
+			FilePath:      "/workspace/memory/release.md",
+			LineNumber:    10,
+			EndLineNumber: 14,
+		},
+	); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	results, err := builtin.Search(context.Background(), "release", SearchOptions{
+		Limit:    3,
+		MinScore: 0,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected search results")
+	}
+	if results[0].Citation != "/workspace/memory/release.md#L10-L14" {
+		t.Fatalf("expected citation, got %+v", results[0])
+	}
+}
+
+func TestManagerGetRelevantContextUsesCitation(t *testing.T) {
+	builtin, err := NewManager(t.TempDir()+"/embeddings.json", NewSimpleEmbeddingProvider(16))
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	if err := builtin.Add(
+		context.Background(),
+		"deploy checklist",
+		SourceLongTerm,
+		TypeContext,
+		Metadata{
+			FilePath:   "/workspace/memory/deploy.md",
+			LineNumber: 22,
+		},
+	); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	contextText, err := builtin.GetRelevantContext(context.Background(), "deploy", 3)
+	if err != nil {
+		t.Fatalf("GetRelevantContext failed: %v", err)
+	}
+	if !strings.Contains(contextText, "*Source: /workspace/memory/deploy.md#L22*") {
+		t.Fatalf("expected citation-formatted source, got %q", contextText)
 	}
 }
 

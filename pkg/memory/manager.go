@@ -105,6 +105,12 @@ func (m *Manager) Search(ctx context.Context, query string, opts SearchOptions) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to search: %w", err)
 	}
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		result.Citation = FormatCitation(result)
+	}
 
 	return results, nil
 }
@@ -186,7 +192,9 @@ func (m *Manager) GetRelevantContext(ctx context.Context, query string, maxResul
 		sb.WriteString("\n\n")
 
 		// Add metadata if available
-		if result.Metadata.FilePath != "" {
+		if citation := FormatCitation(result); citation != "" {
+			sb.WriteString(fmt.Sprintf("*Source: %s*\n\n", citation))
+		} else if result.Metadata.FilePath != "" {
 			sb.WriteString(fmt.Sprintf("*Source: %s*\n\n", result.Metadata.FilePath))
 		}
 

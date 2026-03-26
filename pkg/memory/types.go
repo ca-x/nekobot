@@ -47,6 +47,8 @@ type Metadata struct {
 	FilePath string `json:"file_path,omitempty"`
 	// LineNumber is the line in the source file
 	LineNumber int `json:"line_number,omitempty"`
+	// EndLineNumber is the end line for a multi-line snippet.
+	EndLineNumber int `json:"end_line_number,omitempty"`
 	// SessionKey is the session identifier (if from session)
 	SessionKey string `json:"session_key,omitempty"`
 	// Tags are user-defined tags
@@ -57,6 +59,8 @@ type Metadata struct {
 	AccessCount int `json:"access_count,omitempty"`
 	// LastAccessed is when this memory was last retrieved
 	LastAccessed time.Time `json:"last_accessed,omitempty"`
+	// Timestamp is the original timestamp for dated/session memories.
+	Timestamp *time.Time `json:"timestamp,omitempty"`
 }
 
 // SearchResult represents a memory search result with relevance score.
@@ -65,6 +69,8 @@ type SearchResult struct {
 	Score       float64 `json:"score"`
 	MatchedText string  `json:"matched_text"`
 	Highlight   string  `json:"highlight,omitempty"`
+	Citation    string  `json:"citation,omitempty"`
+	AgeInDays   float64 `json:"age_in_days,omitempty"`
 }
 
 // SearchOptions configures memory search behavior.

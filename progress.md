@@ -2,6 +2,14 @@
 
 ## 2026-03-26
 
+- Completed memory quality pack phase 1 (citations):
+  - added `pkg/memory/citations.go` to import the useful citation-formatting slice from `goclaw` in a way that fits `nekobot`'s existing memory types.
+  - extended `pkg/memory/types.go` with `EndLineNumber`, `Timestamp`, and result-level `Citation` / `AgeInDays` fields so later memory-quality slices have a compatible shape.
+  - updated `pkg/memory/manager.go` and `pkg/tools/memory.go` so both direct memory context rendering and the memory tool render unified citation strings like `path#Lx-Ly` instead of bare file paths.
+  - added regression coverage in `pkg/memory/search_manager_test.go` and `pkg/tools/memory_test.go` for citation decoration and display formatting.
+- Verification run:
+  - `go test -count=1 ./pkg/memory ./pkg/tools` passed.
+
 - Completed conversation/thread binding migration phase 1:
   - extended `pkg/conversationbindings/service.go` from a thin bind/resolve wrapper into a reusable binding layer with `BindWithOptions`, rich `BindingRecord` views, `GetBinding`, `ListBindings`, `GetBindingsBySession`, and `CleanupExpired`.
   - kept persistence on top of existing tool-session records to avoid schema churn while still importing the useful `goclaw` ideas: binding metadata, target kind/placement, conversation view, and expiry cleanup.

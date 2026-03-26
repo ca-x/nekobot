@@ -224,7 +224,9 @@ func formatMemorySearchResults(results []*memory.SearchResult, includeScores boo
 		}
 		sb.WriteString(result.Text)
 		sb.WriteString("\n\n")
-		if result.Metadata.FilePath != "" {
+		if citation := memory.FormatCitation(result); citation != "" {
+			sb.WriteString(fmt.Sprintf("*Source: %s*\n\n", citation))
+		} else if result.Metadata.FilePath != "" {
 			sb.WriteString(fmt.Sprintf("*Source: %s*\n\n", result.Metadata.FilePath))
 		}
 		sb.WriteString("---\n\n")

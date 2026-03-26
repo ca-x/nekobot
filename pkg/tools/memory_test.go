@@ -45,6 +45,45 @@ func TestMemoryToolSearchUsesConfiguredSemanticOptions(t *testing.T) {
 	}
 }
 
+func TestMemoryToolSearchFormatsCitationSource(t *testing.T) {
+	mgr, err := memory.NewManager(t.TempDir()+"/embeddings.json", memory.NewSimpleEmbeddingProvider(16))
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+	if err := mgr.Add(
+		context.Background(),
+		"release note",
+		memory.SourceLongTerm,
+		memory.TypeContext,
+		memory.Metadata{
+			FilePath:      "/workspace/memory/release.md",
+			LineNumber:    7,
+			EndLineNumber: 9,
+		},
+	); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	tool := NewMemoryTool(newToolsTestLogger(t), mgr, MemoryToolOptions{
+		DefaultTopK:   1,
+		MaxTopK:       1,
+		SearchPolicy:  "hybrid",
+		IncludeScores: false,
+	})
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action":    "search",
+		"query":     "release",
+		"min_score": float64(0),
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if !strings.Contains(out, "*Source: /workspace/memory/release.md#L7-L9*") {
+		t.Fatalf("expected citation-formatted source, got %q", out)
+	}
+}
+
 func newToolsTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()
