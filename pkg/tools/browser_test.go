@@ -114,3 +114,51 @@ func TestBrowserToolBuildPrintToPDFArgs(t *testing.T) {
 		t.Fatalf("expected A4 paper height, got %#v", args.PaperHeight)
 	}
 }
+
+func TestBrowserToolParametersIncludeExtractStructuredData(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+	found := false
+	for _, value := range enumValues {
+		if value == "extract_structured_data" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected extract_structured_data action in enum, got %#v", enumValues)
+	}
+}
+
+func TestBrowserToolBuildExtractionScript(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	jsonLD := tool.buildExtractionScript("json_ld")
+	if !strings.Contains(jsonLD, "application/ld+json") {
+		t.Fatalf("expected json_ld extractor script, got %q", jsonLD)
+	}
+	if strings.Contains(jsonLD, "open_graph") {
+		t.Fatalf("did not expect open_graph extraction in json_ld mode, got %q", jsonLD)
+	}
+
+	all := tool.buildExtractionScript("all")
+	if !strings.Contains(all, "schema_org") {
+		t.Fatalf("expected schema_org extraction in all mode, got %q", all)
+	}
+	if !strings.Contains(all, "open_graph") {
+		t.Fatalf("expected open_graph extraction in all mode, got %q", all)
+	}
+}

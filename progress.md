@@ -2,6 +2,14 @@
 
 ## 2026-03-26
 
+- Completed browser advanced extraction phase 4 (`extract_structured_data`):
+  - extended `pkg/tools/browser.go` so the `browser` tool now exposes an `extract_structured_data` action with `extract_type` modes for `all`, `schema_org`, `json_ld`, and `meta`.
+  - imported the `goclaw` structured-data extraction slice by adding reusable extraction-script builders and CDP result formatting directly into the existing `BrowserTool`.
+  - added regression coverage in `pkg/tools/browser_test.go` for action exposure and extractor script composition.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'BrowserTool(ParametersIncludeExtractStructuredData|BuildExtractionScript)'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
+
 - Completed browser advanced extraction phase 3 (`print_pdf`):
   - extended `pkg/tools/browser.go` so the `browser` tool now exposes a `print_pdf` action plus PDF-specific parameters for orientation, header/footer, background rendering, and margins.
   - imported the `goclaw` `BrowserPrintToPDF` slice in a `nekobot`-native form by reusing the existing session manager and output directory instead of adding a separate CDP tool type.

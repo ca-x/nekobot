@@ -74,7 +74,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
 					"wait", "scroll", "go_back", "go_forward",
-					"print_pdf",
+					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
 				"description": "Browser action to perform",
@@ -140,6 +140,11 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"type":        "number",
 				"description": "Right PDF margin in inches (for print_pdf action).",
 			},
+			"extract_type": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"all", "schema_org", "json_ld", "meta"},
+				"description": "Structured data extraction mode for extract_structured_data.",
+			},
 		},
 		"required": []string{"action"},
 	}
@@ -175,6 +180,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.goForward(ctx)
 	case "print_pdf":
 		return b.printPDF(ctx, params)
+	case "extract_structured_data":
+		return b.extractStructuredData(ctx, params)
 	case "reload":
 		return b.reload(ctx)
 	case "close":
@@ -273,6 +280,118 @@ func (b *BrowserTool) buildPrintToPDFArgs(params map[string]interface{}) *page.P
 	}
 
 	return pdfArgs
+}
+
+func (b *BrowserTool) buildExtractionScript(extractType string) string {
+	baseScript := `(function() {
+		const data = {};
+	`
+
+	switch extractType {
+	case "schema_org":
+		baseScript += `
+		const schemaOrg = [];
+		document.querySelectorAll('[itemscope]').forEach(item => {
+			const schema = {};
+			const itemType = item.getAttribute('itemtype');
+			if (itemType) schema['@type'] = itemType;
+			item.querySelectorAll('[itemprop]').forEach(prop => {
+				const propName = prop.getAttribute('itemprop');
+				schema[propName] = prop.textContent.trim() || prop.getAttribute('content') || prop.getAttribute('href');
+			});
+			if (Object.keys(schema).length > 0) schemaOrg.push(schema);
+		});
+		data.schema_org = schemaOrg;
+		`
+	case "json_ld":
+		baseScript += `
+		const jsonLd = [];
+		document.querySelectorAll('script[type="application/ld+json"]').forEach(script => {
+			try {
+				jsonLd.push(JSON.parse(script.textContent));
+			} catch (e) {}
+		});
+		data.json_ld = jsonLd;
+		`
+	case "meta":
+		baseScript += `
+		const meta = {};
+		document.querySelectorAll('meta').forEach(tag => {
+			const name = tag.getAttribute('name') || tag.getAttribute('property');
+			const content = tag.getAttribute('content');
+			if (name && content) meta[name] = content;
+		});
+		data.meta = meta;
+
+		const og = {};
+		document.querySelectorAll('meta[property^="og:"]').forEach(tag => {
+			const prop = tag.getAttribute('property').substring(3);
+			og[prop] = tag.getAttribute('content');
+		});
+		data.open_graph = og;
+
+		const twitter = {};
+		document.querySelectorAll('meta[name^="twitter:"]').forEach(tag => {
+			const prop = tag.getAttribute('name').substring(8);
+			twitter[prop] = tag.getAttribute('content');
+		});
+		data.twitter_card = twitter;
+		`
+	case "all":
+		baseScript = `(function() {
+		const data = {};
+		const schemaOrg = [];
+		document.querySelectorAll('[itemscope]').forEach(item => {
+			const schema = {};
+			const itemType = item.getAttribute('itemtype');
+			if (itemType) schema['@type'] = itemType;
+			item.querySelectorAll('[itemprop]').forEach(prop => {
+				const propName = prop.getAttribute('itemprop');
+				schema[propName] = prop.textContent.trim() || prop.getAttribute('content') || prop.getAttribute('href');
+			});
+			if (Object.keys(schema).length > 0) schemaOrg.push(schema);
+		});
+		data.schema_org = schemaOrg;
+
+		const jsonLd = [];
+		document.querySelectorAll('script[type="application/ld+json"]').forEach(script => {
+			try {
+				jsonLd.push(JSON.parse(script.textContent));
+			} catch (e) {}
+		});
+		data.json_ld = jsonLd;
+
+		const meta = {};
+		document.querySelectorAll('meta').forEach(tag => {
+			const name = tag.getAttribute('name') || tag.getAttribute('property');
+			const content = tag.getAttribute('content');
+			if (name && content) meta[name] = content;
+		});
+		data.meta = meta;
+
+		const og = {};
+		document.querySelectorAll('meta[property^="og:"]').forEach(tag => {
+			const prop = tag.getAttribute('property').substring(3);
+			og[prop] = tag.getAttribute('content');
+		});
+		data.open_graph = og;
+
+		const twitter = {};
+		document.querySelectorAll('meta[name^="twitter:"]').forEach(tag => {
+			const prop = tag.getAttribute('name').substring(8);
+			twitter[prop] = tag.getAttribute('content');
+		});
+		data.twitter_card = twitter;
+
+		return JSON.stringify(data, null, 2);
+	})();`
+		return baseScript
+	}
+
+	baseScript += `
+		return JSON.stringify(data, null, 2);
+	})();`
+	return baseScript
 }
 
 // screenshot takes a screenshot of the current page.
@@ -376,6 +495,46 @@ func (b *BrowserTool) printPDF(ctx context.Context, params map[string]interface{
 	}
 
 	return fmt.Sprintf("PDF saved to: %s\nSize: %d bytes", path, len(pdfResult.Data)), nil
+}
+
+func (b *BrowserTool) extractStructuredData(ctx context.Context, params map[string]interface{}) (string, error) {
+	urlStr, ok := params["url"].(string)
+	if !ok || strings.TrimSpace(urlStr) == "" {
+		return "", fmt.Errorf("url parameter is required")
+	}
+
+	extractType := "all"
+	if rawType, ok := params["extract_type"].(string); ok && strings.TrimSpace(rawType) != "" {
+		extractType = strings.TrimSpace(strings.ToLower(rawType))
+	}
+
+	switch extractType {
+	case "all", "schema_org", "json_ld", "meta":
+	default:
+		return "", fmt.Errorf("invalid extract_type: %s", extractType)
+	}
+
+	if _, err := b.navigate(ctx, params); err != nil {
+		return "", err
+	}
+
+	sessionMgr := GetBrowserSession(b.log)
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	evalArgs := runtime.NewEvaluateArgs(b.buildExtractionScript(extractType)).
+		SetReturnByValue(true)
+	result, err := client.Runtime.Evaluate(ctx, evalArgs)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute extraction script: %w", err)
+	}
+	if result.ExceptionDetails != nil {
+		return "", fmt.Errorf("extraction script error: %s", result.ExceptionDetails.Text)
+	}
+
+	return formatCDPResult(&result.Result)
 }
 
 // executeScript executes JavaScript in the browser.
@@ -609,4 +768,17 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func formatCDPResult(result *runtime.RemoteObject) (string, error) {
+	if result == nil {
+		return "null", nil
+	}
+	if result.Value != nil {
+		return string(result.Value), nil
+	}
+	if result.Description != nil {
+		return *result.Description, nil
+	}
+	return "", nil
 }
