@@ -73,7 +73,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"wait", "scroll", "go_back", "go_forward",
+					"get_text", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -170,6 +170,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.typeText(ctx, params)
 	case "get_html":
 		return b.getHTML(ctx, params)
+	case "get_text":
+		return b.getText(ctx, params)
 	case "wait":
 		return b.wait(ctx, params)
 	case "scroll":
@@ -705,6 +707,21 @@ func (b *BrowserTool) getHTML(ctx context.Context, params map[string]interface{}
 	return html.OuterHTML, nil
 }
 
+func (b *BrowserTool) getText(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	html, err := b.getHTML(ctx, params)
+	if err != nil {
+		return "", err
+	}
+
+	return htmlToText(html), nil
+}
+
 // wait waits for a specified duration.
 func (b *BrowserTool) wait(ctx context.Context, params map[string]interface{}) (string, error) {
 	duration := 1000 // default 1 second
@@ -768,6 +785,26 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func htmlToText(html string) string {
+	var text strings.Builder
+	inTag := false
+
+	for i := 0; i < len(html); i++ {
+		switch html[i] {
+		case '<':
+			inTag = true
+		case '>':
+			inTag = false
+		default:
+			if !inTag {
+				text.WriteByte(html[i])
+			}
+		}
+	}
+
+	return text.String()
 }
 
 func formatCDPResult(result *runtime.RemoteObject) (string, error) {

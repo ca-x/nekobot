@@ -2,6 +2,14 @@
 
 ## 2026-03-26
 
+- Completed browser advanced extraction phase 5 (`get_text`):
+  - extended `pkg/tools/browser.go` so the `browser` tool now exposes a `get_text` action for plain-text extraction on top of the existing `get_html` path.
+  - imported the lightweight `goclaw` HTML-to-text slice as a local helper instead of adding a new browser tool type or extra dependency surface.
+  - added regression coverage in `pkg/tools/browser_test.go` for action exposure and HTML tag stripping.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'BrowserToolParametersIncludeGetText|HTMLToTextStripsTags'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
+
 - Completed browser advanced extraction phase 4 (`extract_structured_data`):
   - extended `pkg/tools/browser.go` so the `browser` tool now exposes an `extract_structured_data` action with `extract_type` modes for `all`, `schema_org`, `json_ld`, and `meta`.
   - imported the `goclaw` structured-data extraction slice by adding reusable extraction-script builders and CDP result formatting directly into the existing `BrowserTool`.

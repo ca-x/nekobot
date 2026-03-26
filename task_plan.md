@@ -98,8 +98,8 @@
 - [x] MaixCAM 命令执行结果已支持直写设备连接，且出站链路已补齐按 `session/device` 定向回写；后续若继续增强，可单列 richer device protocol。
 - [ ] Gateway 仍偏聊天通道，缺更完整的控制面协议、连接治理和配对/授权模型。
 - [x] Conversation binding 已补首批通用基础层：支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；更完整的跨 account/独立存储层仍待继续迁移。
-- [ ] Browser session 仍是单例固定端口 CDP，缺 relay 模式与更完整的高级提取/控制动作。
-  - 进展补充：`auto/direct` 已完成，`print_pdf` 与 `extract_structured_data` 已落地；relay 与更多 CDP 高级动作仍待继续迁移。
+- [ ] Browser session 仍是单例固定端口 CDP，缺 relay 模式与更完整的高级控制动作。
+  - 进展补充：`auto/direct` 已完成，`print_pdf`、`extract_structured_data`、`get_text` 已落地；relay 与更多 CDP 高级动作仍待继续迁移。
 - [x] Memory 检索后处理首轮质量增强已完成：MMR、多样性、时间衰减、引用格式、embedding cache 已落地；后续如继续扩展，以更高阶排序/多源融合为新事项单列。
 - [ ] 现有 channel 能力缺统一 capability 矩阵，平台差异还分散在各 channel 私实现里。
 - [ ] 缺“按聊天用户长期驻留的外部 agent runtime”这一层，尚未形成类似 `gua` 的用户级外部代理会话编排。
@@ -152,7 +152,7 @@
   - 位置：`pkg/gateway/*`。
 - [ ] **Browser session 双模式与高级提取动作**
   - 现状：`pkg/tools/browser_session.go` 仍缺 relay 模式与更丰富的高级浏览器动作。
-  - 进度：已完成首批 session 层增强，支持 `auto/direct` 模式和优先复用已运行 Chrome 的连接策略；浏览器工具现已暴露 `mode` 参数并显式拒绝未支持的模式；高级提取动作已补 `print_pdf` 与 `extract_structured_data`；relay 模式与更多 CDP 高级动作仍待继续迁移。
+  - 进度：已完成首批 session 层增强，支持 `auto/direct` 模式和优先复用已运行 Chrome 的连接策略；浏览器工具现已暴露 `mode` 参数并显式拒绝未支持的模式；高级提取动作已补 `print_pdf`、`extract_structured_data`、`get_text`；relay 模式与更多 CDP 高级动作仍待继续迁移。
   - 目标：提升浏览器工具的可靠性和能力上限。
   - 来源：`goclaw/agent/tools/browser_session.go`、`browser_relay.go`、`browser_cdp.go`。
   - 位置：`pkg/tools/browser*.go`。
