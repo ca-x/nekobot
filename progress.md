@@ -2,6 +2,14 @@
 
 ## 2026-03-26
 
+- Completed browser session migration phase 1:
+  - extended `pkg/tools/browser_session.go` with explicit `auto/direct` connection modes instead of only a fixed single-path startup flow.
+  - added a reuse-first strategy so browser sessions now try to attach to existing Chrome debug ports before falling back to launching a new headless instance.
+  - added regression coverage in `pkg/tools/browser_session_test.go` for mode parsing, auto-mode fallback-to-launch, and direct-mode reuse of an existing browser instance.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'BrowserSession|ResolveBrowserMode'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
+
 - Completed memory quality pack phase 3 (temporal decay):
   - added `pkg/memory/temporal_decay.go` to import the core `goclaw` time-aware ranking slice for builtin memory search.
   - extended `pkg/memory/types.go` with `TemporalDecayConfig` and `SearchOptions.TemporalDecay`, then applied temporal decay inside `pkg/memory/manager.go` before MMR so age-adjusted scores feed later diversity re-ranking.

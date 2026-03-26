@@ -4,31 +4,44 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/mafredri/cdp"
 	"github.com/mafredri/cdp/devtool"
 	"github.com/mafredri/cdp/rpcc"
+	"go.uber.org/zap"
 	"nekobot/pkg/logger"
-	"go.uber.org/zap")
+)
 
 var (
 	browserSession     *BrowserSession
 	browserSessionOnce sync.Once
 )
 
+// BrowserConnectionMode controls how the browser session attaches to Chrome.
+type BrowserConnectionMode string
+
+const (
+	BrowserModeAuto   BrowserConnectionMode = "auto"
+	BrowserModeDirect BrowserConnectionMode = "direct"
+)
+
 // BrowserSession manages a persistent browser session.
 type BrowserSession struct {
-	client     *cdp.Client
-	conn       *rpcc.Conn
-	cancel     context.CancelFunc
-	cmd        *exec.Cmd
-	debugURL   string
-	timeout    time.Duration
-	mu         sync.RWMutex
-	ready      bool
-	log        *logger.Logger
+	client    *cdp.Client
+	conn      *rpcc.Conn
+	cancel    context.CancelFunc
+	cmd       *exec.Cmd
+	debugURL  string
+	timeout   time.Duration
+	mu        sync.RWMutex
+	ready     bool
+	log       *logger.Logger
+	mode      BrowserConnectionMode
+	connectFn func(port int, timeout time.Duration) error
+	launchFn  func(timeout time.Duration) error
 }
 
 // GetBrowserSession returns the singleton browser session.
@@ -38,12 +51,19 @@ func GetBrowserSession(log *logger.Logger) *BrowserSession {
 			timeout: 30 * time.Second,
 			log:     log,
 		}
+		browserSession.connectFn = browserSession.connect
+		browserSession.launchFn = browserSession.launch
 	})
 	return browserSession
 }
 
 // Start starts the browser session.
 func (s *BrowserSession) Start(timeout time.Duration) error {
+	return s.StartWithMode(timeout, BrowserModeAuto)
+}
+
+// StartWithMode starts the browser session with the requested connection mode.
+func (s *BrowserSession) StartWithMode(timeout time.Duration, mode BrowserConnectionMode) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -54,9 +74,35 @@ func (s *BrowserSession) Start(timeout time.Duration) error {
 	if timeout > 0 {
 		s.timeout = timeout
 	}
+	mode = resolveBrowserMode(string(mode))
+	if s.connectFn == nil {
+		s.connectFn = s.connect
+	}
+	if s.launchFn == nil {
+		s.launchFn = s.launch
+	}
 
+	switch mode {
+	case BrowserModeDirect:
+		if err := s.connectFn(9222, s.timeout); err == nil {
+			s.mode = BrowserModeDirect
+			return nil
+		}
+		return s.launchFn(s.timeout)
+	default:
+		for _, port := range []int{9222, 9223, 9224} {
+			if err := s.connectFn(port, s.timeout); err == nil {
+				s.mode = BrowserModeDirect
+				return nil
+			}
+		}
+		return s.launchFn(s.timeout)
+	}
+}
+
+func (s *BrowserSession) launch(timeout time.Duration) error {
 	// Launch Chrome with remote debugging
-	ctx, cancel := context.WithTimeout(context.Background(), s.timeout)
+	_, cancel := context.WithTimeout(context.Background(), s.timeout)
 	s.cancel = cancel
 
 	// Try to find Chrome executable
@@ -93,18 +139,30 @@ func (s *BrowserSession) Start(timeout time.Duration) error {
 	// Wait for Chrome to be ready
 	time.Sleep(2 * time.Second)
 
-	// Connect to Chrome DevTools
-	devt := devtool.New("http://127.0.0.1:9222")
+	if err := s.connect(9222, timeout); err != nil {
+		s.Stop()
+		return err
+	}
+	s.mode = BrowserModeDirect
 
+	s.log.Info("Browser session started",
+		zap.String("debug_url", s.debugURL))
+
+	return nil
+}
+
+func (s *BrowserSession) connect(port int, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	devt := devtool.New(fmt.Sprintf("http://127.0.0.1:%d", port))
 	pt, err := devt.Get(ctx, devtool.Page)
 	if err != nil {
-		s.Stop()
 		return fmt.Errorf("failed to get page target: %w", err)
 	}
 
 	conn, err := rpcc.DialContext(ctx, pt.WebSocketDebuggerURL)
 	if err != nil {
-		s.Stop()
 		return fmt.Errorf("failed to connect to chrome: %w", err)
 	}
 
@@ -112,10 +170,6 @@ func (s *BrowserSession) Start(timeout time.Duration) error {
 	s.client = cdp.NewClient(conn)
 	s.debugURL = pt.WebSocketDebuggerURL
 	s.ready = true
-
-	s.log.Info("Browser session started",
-		zap.String("debug_url", s.debugURL))
-
 	return nil
 }
 
@@ -146,6 +200,7 @@ func (s *BrowserSession) Stop() error {
 	s.ready = false
 	s.client = nil
 	s.conn = nil
+	s.mode = BrowserModeAuto
 
 	return nil
 }
@@ -167,6 +222,22 @@ func (s *BrowserSession) GetClient() (*cdp.Client, error) {
 	}
 
 	return s.client, nil
+}
+
+// ConnectionMode returns the active browser connection mode.
+func (s *BrowserSession) ConnectionMode() BrowserConnectionMode {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mode
+}
+
+func resolveBrowserMode(mode string) BrowserConnectionMode {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case string(BrowserModeDirect):
+		return BrowserModeDirect
+	default:
+		return BrowserModeAuto
+	}
 }
 
 // findChrome finds the Chrome executable in PATH.
