@@ -80,9 +80,24 @@ const (
 	acpPendingKindPermission acpPendingKind = "permission"
 )
 
+const (
+	wechatRuntimeEventInput       = "wechat_runtime_input"
+	wechatRuntimeEventPrompt      = "wechat_runtime_prompt"
+	wechatRuntimeEventReply       = "wechat_runtime_reply"
+	wechatRuntimeEventInteraction = "wechat_runtime_interaction"
+)
+
 type acpPendingPrompt struct {
-	Kind   acpPendingKind
-	Prompt string
+	Kind    acpPendingKind
+	Prompt  string
+	Options []acpPendingOption
+}
+
+type acpPendingOption struct {
+	ID    string
+	Name  string
+	Kind  string
+	Index int
 }
 
 type runtimePendingInteraction struct {
@@ -454,7 +469,7 @@ func (s *ControlService) GetRuntimeLogs(ctx context.Context, runtimeName string,
 		return "", err
 	}
 	if runtimeDriver(target) == "acp" {
-		return "ACP runtime logs are not buffered yet. Use the bound chat to observe live output.", nil
+		return s.renderACPLogs(ctx, target.ID, limit)
 	}
 	if limit <= 0 {
 		limit = 120
@@ -572,7 +587,7 @@ func (s *ControlService) SendToRuntime(
 	if err := s.sessions.TouchSession(ctx, target.ID, toolsessions.StateRunning); err != nil {
 		return "", fmt.Errorf("touch runtime session: %w", err)
 	}
-	_ = s.sessions.AppendEvent(ctx, target.ID, "wechat_runtime_input", map[string]interface{}{
+	_ = s.sessions.AppendEvent(ctx, target.ID, wechatRuntimeEventInput, map[string]interface{}{
 		"chat_id": chatID,
 		"bytes":   len(message),
 	})
@@ -594,6 +609,13 @@ func (s *ControlService) ReadRuntimeOutput(
 	}
 	if _, err := s.sessions.GetSession(ctx, id); err != nil {
 		return "", cursor, err
+	}
+	session, err := s.sessions.GetSession(ctx, id)
+	if err != nil {
+		return "", cursor, err
+	}
+	if runtimeDriver(session) == "acp" {
+		return s.readACPOutput(ctx, id, cursor)
 	}
 
 	chunks, total, err := s.process.GetOutput(id, cursor, 500)
@@ -617,6 +639,17 @@ func (s *ControlService) GetConversationRuntime(
 	}
 	if session == nil {
 		return nil, nil
+	}
+	if runtimeDriver(session) == "acp" {
+		_, total, err := s.readACPOutput(ctx, session.ID, 0)
+		if err != nil {
+			return nil, fmt.Errorf("get acp runtime cursor: %w", err)
+		}
+		return &ConversationRuntime{
+			ChatID:   strings.TrimSpace(chatID),
+			Session:  session,
+			NextRead: total,
+		}, nil
 	}
 	_, total, err := s.process.GetOutput(session.ID, 0, 0)
 	if err != nil {
@@ -662,7 +695,18 @@ func (s *ControlService) sendToACP(
 	if err != nil {
 		return "", fmt.Errorf("acp chat failed: %w", err)
 	}
+	s.appendACPEvent(ctx, target.ID, wechatRuntimeEventInput, map[string]interface{}{
+		"chat_id": chatID,
+		"driver":  "acp",
+		"text":    message,
+	})
 	if result.Pending != nil {
+		s.appendACPEvent(ctx, target.ID, wechatRuntimeEventPrompt, map[string]interface{}{
+			"chat_id": chatID,
+			"driver":  "acp",
+			"kind":    string(result.Pending.Kind),
+			"prompt":  result.Pending.Prompt,
+		})
 		s.setPendingInteraction(strings.TrimSpace(chatID), &runtimePendingInteraction{
 			SessionID: target.ID,
 			Prompt:    result.Pending,
@@ -677,10 +721,10 @@ func (s *ControlService) sendToACP(
 	if err := s.sessions.TouchSession(ctx, target.ID, toolsessions.StateRunning); err != nil {
 		return "", fmt.Errorf("touch runtime session: %w", err)
 	}
-	_ = s.sessions.AppendEvent(ctx, target.ID, "wechat_runtime_input", map[string]interface{}{
+	s.appendACPEvent(ctx, target.ID, wechatRuntimeEventReply, map[string]interface{}{
 		"chat_id": chatID,
-		"bytes":   len(message),
 		"driver":  "acp",
+		"reply":   strings.TrimSpace(result.Reply),
 	})
 	return strings.TrimSpace(result.Reply), nil
 }
@@ -746,7 +790,140 @@ func (s *ControlService) ResolvePendingInteraction(
 			reply = "已处理。"
 		}
 	}
+	s.appendACPEvent(ctx, target.ID, wechatRuntimeEventInteraction, map[string]interface{}{
+		"chat_id": chatID,
+		"driver":  "acp",
+		"action":  string(action.Type),
+	})
+	s.appendACPEvent(ctx, target.ID, wechatRuntimeEventReply, map[string]interface{}{
+		"chat_id": chatID,
+		"driver":  "acp",
+		"reply":   reply,
+	})
 	return reply, true, nil
+}
+
+func (s *ControlService) renderACPLogs(ctx context.Context, sessionID string, limit int) (string, error) {
+	if s == nil || s.sessions == nil {
+		return "", fmt.Errorf("tool session manager is required")
+	}
+	if limit <= 0 {
+		limit = 120
+	}
+	events, err := s.sessions.ListEvents(ctx, sessionID, limit*4)
+	if err != nil {
+		return "", fmt.Errorf("list acp runtime events: %w", err)
+	}
+
+	lines := make([]string, 0, len(events))
+	for i := len(events) - 1; i >= 0; i-- {
+		line := renderACPLogEvent(events[i])
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return "No runtime output yet.", nil
+	}
+	if len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func (s *ControlService) readACPOutput(ctx context.Context, sessionID string, cursor int) (string, int, error) {
+	if s == nil || s.sessions == nil {
+		return "", cursor, fmt.Errorf("tool session manager is required")
+	}
+	if cursor < 0 {
+		cursor = 0
+	}
+
+	events, err := s.sessions.ListEvents(ctx, sessionID, 1000)
+	if err != nil {
+		return "", cursor, fmt.Errorf("list acp runtime events: %w", err)
+	}
+	rendered := make([]string, 0, len(events))
+	for i := len(events) - 1; i >= 0; i-- {
+		line := renderACPLogEvent(events[i])
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		rendered = append(rendered, line)
+	}
+	total := len(rendered)
+	if cursor >= total {
+		return "", total, nil
+	}
+	return strings.TrimSpace(strings.Join(rendered[cursor:], "\n")), total, nil
+}
+
+func (s *ControlService) appendACPEvent(
+	ctx context.Context,
+	sessionID, eventType string,
+	payload map[string]interface{},
+) {
+	if s == nil || s.sessions == nil {
+		return
+	}
+	_ = s.sessions.AppendEvent(ctx, sessionID, eventType, payload)
+}
+
+func renderACPLogEvent(event *toolsessions.Event) string {
+	if event == nil {
+		return ""
+	}
+	switch strings.TrimSpace(event.Type) {
+	case wechatRuntimeEventInput:
+		text := payloadString(event.Payload, "text")
+		if text == "" {
+			return ""
+		}
+		return "User: " + text
+	case wechatRuntimeEventPrompt:
+		prompt := payloadString(event.Payload, "prompt")
+		if prompt == "" {
+			return ""
+		}
+		return "Assistant: " + prompt
+	case wechatRuntimeEventReply:
+		reply := payloadString(event.Payload, "reply")
+		if reply == "" {
+			return ""
+		}
+		return "Assistant: " + reply
+	case wechatRuntimeEventInteraction:
+		action := payloadString(event.Payload, "action")
+		if action == "" {
+			return ""
+		}
+		switch action {
+		case string(interactionActionConfirm):
+			return "User action: /yes"
+		case string(interactionActionDeny):
+			return "User action: /no"
+		default:
+			return "User action: " + action
+		}
+	default:
+		return ""
+	}
+}
+
+func payloadString(payload map[string]interface{}, key string) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	value, ok := payload[key]
+	if !ok || value == nil {
+		return ""
+	}
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
 }
 
 func (s *ControlService) setPendingInteraction(chatID string, pending *runtimePendingInteraction) {
@@ -953,6 +1130,7 @@ type acpPermissionRequest struct {
 	AllowOptionID string
 	DenyOptionID  string
 	Prompt        string
+	Options       []acpPendingOption
 }
 
 type acpActivePrompt struct {
@@ -1229,17 +1407,9 @@ func (a *acpConversationProcess) replyPermissionRequest(req *acpPermissionReques
 		return errNoPendingACPInteraction
 	}
 
-	var optionID string
-	switch action.Type {
-	case interactionActionConfirm:
-		optionID = strings.TrimSpace(req.AllowOptionID)
-	case interactionActionDeny:
-		optionID = strings.TrimSpace(req.DenyOptionID)
-	default:
-		return fmt.Errorf("unsupported interaction action: %s", action.Type)
-	}
-	if optionID == "" {
-		return fmt.Errorf("no matching permission option for action: %s", action.Type)
+	optionID, err := selectPermissionOption(req, action)
+	if err != nil {
+		return err
 	}
 
 	data, err := json.Marshal(rpcRequest{
@@ -1263,6 +1433,34 @@ func (a *acpConversationProcess) replyPermissionRequest(req *acpPermissionReques
 		return fmt.Errorf("write permission reply: %w", err)
 	}
 	return nil
+}
+
+func selectPermissionOption(req *acpPermissionRequest, action interactionAction) (string, error) {
+	if req == nil {
+		return "", errNoPendingACPInteraction
+	}
+
+	switch action.Type {
+	case interactionActionConfirm:
+		if optionID := strings.TrimSpace(req.AllowOptionID); optionID != "" {
+			return optionID, nil
+		}
+	case interactionActionDeny:
+		if optionID := strings.TrimSpace(req.DenyOptionID); optionID != "" {
+			return optionID, nil
+		}
+	case interactionActionSelect:
+		for _, option := range req.Options {
+			if option.Index > 0 && action.Value == fmt.Sprintf("%d", option.Index) {
+				return strings.TrimSpace(option.ID), nil
+			}
+		}
+		return "", fmt.Errorf("unknown permission selection: %s", action.Value)
+	default:
+		return "", fmt.Errorf("unsupported interaction action: %s", action.Type)
+	}
+
+	return "", fmt.Errorf("no matching permission option for action: %s", action.Type)
 }
 
 func (a *acpActivePrompt) appendText(text string) {
@@ -1447,25 +1645,35 @@ func (a *acpConversationProcess) handlePermissionRequest(msg *rpcResponse) {
 	req := &acpPermissionRequest{
 		SessionID: strings.TrimSpace(params.SessionID),
 		RequestID: *msg.ID,
-		Prompt: formatACPPermissionPrompt(
-			strings.TrimSpace(params.Message),
-			strings.TrimSpace(params.ToolName),
-			strings.TrimSpace(params.Description),
-			strings.TrimSpace(params.InputPreview),
-		),
 	}
+	options := make([]acpPendingOption, 0, len(params.Options))
 	for _, option := range params.Options {
 		if strings.TrimSpace(option.OptionID) == "" {
 			continue
 		}
-		switch strings.ToLower(strings.TrimSpace(option.Kind)) {
-		case "allow":
-			req.AllowOptionID = option.OptionID
-		case "deny":
-			req.DenyOptionID = option.OptionID
+		item := acpPendingOption{
+			ID:    strings.TrimSpace(option.OptionID),
+			Kind:  strings.TrimSpace(strings.ToLower(option.Kind)),
+			Index: len(options) + 1,
 		}
+		switch item.Kind {
+		case "allow", "allow_once", "allow_always":
+			req.AllowOptionID = item.ID
+		case "deny", "reject", "reject_once", "reject_always":
+			req.DenyOptionID = item.ID
+		}
+		item.Name = permissionOptionLabel(item.Kind, item.Index)
+		options = append(options, item)
 	}
-	if req.SessionID == "" || (req.AllowOptionID == "" && req.DenyOptionID == "") {
+	req.Options = options
+	req.Prompt = formatACPPermissionPrompt(
+		strings.TrimSpace(params.Message),
+		strings.TrimSpace(params.ToolName),
+		strings.TrimSpace(params.Description),
+		strings.TrimSpace(params.InputPreview),
+		req.Options,
+	)
+	if req.SessionID == "" || len(req.Options) == 0 {
 		return
 	}
 
@@ -1495,7 +1703,25 @@ func extractACPChunkText(update *acpSessionUpdate) string {
 	return ""
 }
 
-func formatACPPermissionPrompt(message, toolName, description, inputPreview string) string {
+func permissionOptionLabel(kind string, index int) string {
+	switch kind {
+	case "allow", "allow_once":
+		return "允许一次"
+	case "allow_always":
+		return "总是允许"
+	case "deny", "reject", "reject_once":
+		return "拒绝"
+	case "reject_always":
+		return "总是拒绝"
+	default:
+		return fmt.Sprintf("选项 %d", index)
+	}
+}
+
+func formatACPPermissionPrompt(
+	message, toolName, description, inputPreview string,
+	options []acpPendingOption,
+) string {
 	lines := make([]string, 0, 6)
 
 	head := "运行时需要确认操作。"
@@ -1513,8 +1739,25 @@ func formatACPPermissionPrompt(message, toolName, description, inputPreview stri
 	if strings.TrimSpace(inputPreview) != "" {
 		lines = append(lines, "输入: "+strings.TrimSpace(inputPreview))
 	}
-
-	lines = append(lines, "回复 /yes 允许，/no 或 /cancel 拒绝。")
+	if len(options) > 0 {
+		lines = append(lines, "")
+		for _, option := range options {
+			if option.Index <= 0 {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("%d. %s", option.Index, option.Name))
+		}
+	}
+	switch len(options) {
+	case 0:
+		lines = append(lines, "回复 /yes 允许，/no 或 /cancel 拒绝。")
+	case 1:
+		lines = append(lines, "回复 /select 1。")
+	case 2:
+		lines = append(lines, "回复 /yes 允许，/no 或 /cancel 拒绝，也可以用 /select 1 或 /select 2。")
+	default:
+		lines = append(lines, "回复 /select N 选择对应选项。")
+	}
 	return strings.TrimSpace(strings.Join(lines, "\n\n"))
 }
 

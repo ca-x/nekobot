@@ -375,6 +375,155 @@ func TestControlServiceGetRuntimeLogsReturnsRecentOutput(t *testing.T) {
 	t.Fatalf("expected logs to include runtime output, got %q", logs)
 }
 
+func TestControlServiceGetRuntimeLogsReturnsACPEvents(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	fake := &fakeACPInteractiveClient{
+		prompt: "Claude 需要确认:\n\n是否允许执行 ReadFile？\n\n/yes 允许，/no 拒绝。",
+		reply:  "继续执行后的最终回复",
+	}
+	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
+		return fake, nil
+	}
+	ctx := context.Background()
+
+	if _, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "claude1",
+		Driver: "acp",
+		Tool:   "claude",
+	}); err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+	if _, err := controlSvc.SendToRuntime(ctx, "chat-1", "", "hello acp"); err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+	if _, _, err := controlSvc.ResolvePendingInteraction(ctx, "chat-1", &interactionAction{Type: interactionActionConfirm}); err != nil {
+		t.Fatalf("ResolvePendingInteraction failed: %v", err)
+	}
+
+	logs, err := controlSvc.GetRuntimeLogs(ctx, "claude1", 20)
+	if err != nil {
+		t.Fatalf("GetRuntimeLogs failed: %v", err)
+	}
+	if !strings.Contains(logs, "hello acp") {
+		t.Fatalf("expected ACP logs to include input, got %q", logs)
+	}
+	if !strings.Contains(logs, "Claude 需要确认") {
+		t.Fatalf("expected ACP logs to include pending prompt, got %q", logs)
+	}
+	if !strings.Contains(logs, "继续执行后的最终回复") {
+		t.Fatalf("expected ACP logs to include final reply, got %q", logs)
+	}
+}
+
+func TestControlServiceReadRuntimeOutputReturnsACPEventsIncrementally(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	fake := &fakeACPInteractiveClient{
+		prompt: "Claude 需要确认:\n\n是否允许执行 ReadFile？\n\n/yes 允许，/no 拒绝。",
+		reply:  "继续执行后的最终回复",
+	}
+	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
+		return fake, nil
+	}
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "claude1",
+		Driver: "acp",
+		Tool:   "claude",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+
+	bound, err := controlSvc.GetConversationRuntime(ctx, "chat-1")
+	if err != nil {
+		t.Fatalf("GetConversationRuntime failed: %v", err)
+	}
+	if bound == nil || bound.Session == nil {
+		t.Fatal("expected bound runtime")
+	}
+	if bound.NextRead != 0 {
+		t.Fatalf("expected initial cursor 0, got %d", bound.NextRead)
+	}
+
+	reply, err := controlSvc.SendToRuntime(ctx, "chat-1", "", "hello acp")
+	if err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+	if !strings.Contains(reply, "Claude 需要确认") {
+		t.Fatalf("expected pending prompt, got %q", reply)
+	}
+
+	firstText, cursor, err := controlSvc.ReadRuntimeOutput(ctx, created.ID, 0)
+	if err != nil {
+		t.Fatalf("ReadRuntimeOutput(first) failed: %v", err)
+	}
+	if !strings.Contains(firstText, "User: hello acp") {
+		t.Fatalf("expected first output to include input, got %q", firstText)
+	}
+	if !strings.Contains(firstText, "Claude 需要确认") {
+		t.Fatalf("expected first output to include prompt, got %q", firstText)
+	}
+	if cursor != 2 {
+		t.Fatalf("expected first cursor 2, got %d", cursor)
+	}
+
+	reply, handled, err := controlSvc.ResolvePendingInteraction(ctx, "chat-1", &interactionAction{Type: interactionActionConfirm})
+	if err != nil {
+		t.Fatalf("ResolvePendingInteraction failed: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected pending interaction to be handled")
+	}
+	if reply != "继续执行后的最终回复" {
+		t.Fatalf("unexpected interaction reply: %q", reply)
+	}
+
+	secondText, next, err := controlSvc.ReadRuntimeOutput(ctx, created.ID, cursor)
+	if err != nil {
+		t.Fatalf("ReadRuntimeOutput(second) failed: %v", err)
+	}
+	if !strings.Contains(secondText, "User action: /yes") {
+		t.Fatalf("expected second output to include interaction, got %q", secondText)
+	}
+	if !strings.Contains(secondText, "继续执行后的最终回复") {
+		t.Fatalf("expected second output to include final reply, got %q", secondText)
+	}
+	if next != 4 {
+		t.Fatalf("expected next cursor 4, got %d", next)
+	}
+}
+
 func TestControlServiceRestartAndDeleteRuntime(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
@@ -476,19 +625,30 @@ type fakeACPInteractiveClient struct {
 	prompt  string
 	reply   string
 	actions []interactionActionType
+	options []acpPendingOption
+	last    interactionAction
 }
 
 func (f *fakeACPInteractiveClient) Chat(ctx context.Context, conversationID, message string) (acpChatResult, error) {
+	options := f.options
+	if len(options) == 0 {
+		options = []acpPendingOption{
+			{ID: "allow", Name: "允许一次", Kind: "allow_once", Index: 1},
+			{ID: "deny", Name: "拒绝", Kind: "reject_once", Index: 2},
+		}
+	}
 	return acpChatResult{
 		Pending: &acpPendingPrompt{
-			Kind:   acpPendingKindPermission,
-			Prompt: f.prompt,
+			Kind:    acpPendingKindPermission,
+			Prompt:  f.prompt,
+			Options: options,
 		},
 	}, nil
 }
 
 func (f *fakeACPInteractiveClient) Respond(ctx context.Context, conversationID string, action interactionAction) (acpChatResult, error) {
 	f.actions = append(f.actions, action.Type)
+	f.last = action
 	return acpChatResult{Reply: f.reply}, nil
 }
 
@@ -651,6 +811,106 @@ func TestControlServiceResolvePendingInteractionContinuesACPRuntime(t *testing.T
 	}
 	if len(fake.actions) != 1 || fake.actions[0] != interactionActionConfirm {
 		t.Fatalf("expected confirm action to be forwarded, got %#v", fake.actions)
+	}
+}
+
+func TestControlServiceResolvePendingInteractionSelectsACPOption(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	fake := &fakeACPInteractiveClient{
+		prompt: "运行时需要确认: WriteFile\n\n1. 允许一次\n2. 总是允许\n3. 拒绝\n\n回复 /select N 选择对应选项。",
+		reply:  "已按选择继续执行",
+		options: []acpPendingOption{
+			{ID: "allow-once", Name: "允许一次", Kind: "allow_once", Index: 1},
+			{ID: "allow-always", Name: "总是允许", Kind: "allow_always", Index: 2},
+			{ID: "reject-once", Name: "拒绝", Kind: "reject_once", Index: 3},
+		},
+	}
+	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
+		return fake, nil
+	}
+	ctx := context.Background()
+
+	if _, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "claude1",
+		Driver: "acp",
+		Tool:   "claude",
+	}); err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+	reply, err := controlSvc.SendToRuntime(ctx, "chat-1", "", "hello acp")
+	if err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+	if !strings.Contains(reply, "/select") {
+		t.Fatalf("expected select prompt, got %q", reply)
+	}
+
+	reply, handled, err := controlSvc.ResolvePendingInteraction(ctx, "chat-1", &interactionAction{
+		Type:  interactionActionSelect,
+		Value: "2",
+	})
+	if err != nil {
+		t.Fatalf("ResolvePendingInteraction failed: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected select interaction to be handled")
+	}
+	if reply != "已按选择继续执行" {
+		t.Fatalf("unexpected interaction reply: %q", reply)
+	}
+	if fake.last.Type != interactionActionSelect || fake.last.Value != "2" {
+		t.Fatalf("expected select action to be forwarded, got %#v", fake.last)
+	}
+}
+
+func TestSelectPermissionOption(t *testing.T) {
+	req := &acpPermissionRequest{
+		AllowOptionID: "allow-once",
+		DenyOptionID:  "reject-once",
+		Options: []acpPendingOption{
+			{ID: "allow-once", Kind: "allow_once", Index: 1},
+			{ID: "allow-always", Kind: "allow_always", Index: 2},
+			{ID: "reject-once", Kind: "reject_once", Index: 3},
+		},
+	}
+
+	got, err := selectPermissionOption(req, interactionAction{Type: interactionActionConfirm})
+	if err != nil {
+		t.Fatalf("selectPermissionOption(confirm): %v", err)
+	}
+	if got != "allow-once" {
+		t.Fatalf("expected allow-once, got %q", got)
+	}
+
+	got, err = selectPermissionOption(req, interactionAction{Type: interactionActionDeny})
+	if err != nil {
+		t.Fatalf("selectPermissionOption(deny): %v", err)
+	}
+	if got != "reject-once" {
+		t.Fatalf("expected reject-once, got %q", got)
+	}
+
+	got, err = selectPermissionOption(req, interactionAction{Type: interactionActionSelect, Value: "2"})
+	if err != nil {
+		t.Fatalf("selectPermissionOption(select): %v", err)
+	}
+	if got != "allow-always" {
+		t.Fatalf("expected allow-always, got %q", got)
 	}
 }
 
