@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -55,15 +56,42 @@ type ControlService struct {
 	bindings   *RuntimeBindingService
 	acpMu      sync.Mutex
 	acp        map[string]acpConversationClient
+	pendingMu  sync.Mutex
+	pending    map[string]*runtimePendingInteraction
 	acpFactory func(RuntimePreset) (acpConversationClient, error)
 }
 
 type acpConversationClient interface {
-	Chat(ctx context.Context, conversationID, message string) (string, error)
+	Chat(ctx context.Context, conversationID, message string) (acpChatResult, error)
+	Respond(ctx context.Context, conversationID string, action interactionAction) (acpChatResult, error)
 	SyncSessions(ctx context.Context, sessions map[string]string) error
 	SessionMap() map[string]string
 	Close() error
 }
+
+type acpChatResult struct {
+	Reply   string
+	Pending *acpPendingPrompt
+}
+
+type acpPendingKind string
+
+const (
+	acpPendingKindPermission acpPendingKind = "permission"
+)
+
+type acpPendingPrompt struct {
+	Kind   acpPendingKind
+	Prompt string
+}
+
+type runtimePendingInteraction struct {
+	SessionID string
+	Prompt    *acpPendingPrompt
+	CreatedAt time.Time
+}
+
+var errNoPendingACPInteraction = errors.New("no pending acp interaction")
 
 type runtimeStatusDetails struct {
 	Name       string
@@ -97,6 +125,7 @@ func NewControlService(
 		process:  processMgr,
 		bindings: bindingSvc,
 		acp:      map[string]acpConversationClient{},
+		pending:  map[string]*runtimePendingInteraction{},
 	}
 }
 
@@ -629,10 +658,19 @@ func (s *ControlService) sendToACP(
 	if err != nil {
 		return "", err
 	}
-	reply, err := client.Chat(ctx, strings.TrimSpace(chatID), message)
+	result, err := client.Chat(ctx, strings.TrimSpace(chatID), message)
 	if err != nil {
 		return "", fmt.Errorf("acp chat failed: %w", err)
 	}
+	if result.Pending != nil {
+		s.setPendingInteraction(strings.TrimSpace(chatID), &runtimePendingInteraction{
+			SessionID: target.ID,
+			Prompt:    result.Pending,
+			CreatedAt: time.Now(),
+		})
+		return strings.TrimSpace(result.Pending.Prompt), nil
+	}
+	s.clearPendingInteraction(strings.TrimSpace(chatID))
 	if err := s.persistACPSessionMap(ctx, target, client.SessionMap()); err != nil {
 		return "", err
 	}
@@ -644,7 +682,122 @@ func (s *ControlService) sendToACP(
 		"bytes":   len(message),
 		"driver":  "acp",
 	})
-	return reply, nil
+	return strings.TrimSpace(result.Reply), nil
+}
+
+// ResolvePendingInteraction resolves a pending ACP interaction for the bound WeChat chat.
+func (s *ControlService) ResolvePendingInteraction(
+	ctx context.Context,
+	chatID string,
+	action *interactionAction,
+) (string, bool, error) {
+	if s == nil || action == nil || s.bindings == nil {
+		return "", false, nil
+	}
+	if action.Type == interactionActionPassthrough {
+		return "", false, nil
+	}
+
+	chatID = strings.TrimSpace(chatID)
+	pending := s.getPendingInteraction(chatID)
+	if pending == nil {
+		return "", false, nil
+	}
+
+	target, err := s.bindings.ResolveConversation(ctx, chatID)
+	if err != nil {
+		return "", true, err
+	}
+	if target == nil || target.ID != pending.SessionID || runtimeDriver(target) != "acp" {
+		s.clearPendingInteraction(chatID)
+		return "", false, nil
+	}
+
+	client, err := s.getACPClient(ctx, target)
+	if err != nil {
+		return "", true, err
+	}
+
+	result, err := client.Respond(ctx, chatID, *action)
+	if err != nil {
+		if errors.Is(err, errNoPendingACPInteraction) {
+			s.clearPendingInteraction(chatID)
+			return "", false, nil
+		}
+		return "", true, fmt.Errorf("resolve acp interaction: %w", err)
+	}
+
+	s.clearPendingInteraction(chatID)
+	if err := s.persistACPSessionMap(ctx, target, client.SessionMap()); err != nil {
+		return "", true, err
+	}
+	if err := s.sessions.TouchSession(ctx, target.ID, toolsessions.StateRunning); err != nil {
+		return "", true, fmt.Errorf("touch runtime session: %w", err)
+	}
+
+	reply := strings.TrimSpace(result.Reply)
+	if reply == "" {
+		switch action.Type {
+		case interactionActionConfirm:
+			reply = "已允许，继续执行中。"
+		case interactionActionDeny:
+			reply = "已拒绝。"
+		default:
+			reply = "已处理。"
+		}
+	}
+	return reply, true, nil
+}
+
+func (s *ControlService) setPendingInteraction(chatID string, pending *runtimePendingInteraction) {
+	if s == nil {
+		return
+	}
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return
+	}
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	if pending == nil {
+		delete(s.pending, chatID)
+		return
+	}
+	s.pending[chatID] = pending
+}
+
+func (s *ControlService) getPendingInteraction(chatID string) *runtimePendingInteraction {
+	if s == nil {
+		return nil
+	}
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return nil
+	}
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	item := s.pending[chatID]
+	if item == nil {
+		return nil
+	}
+	if time.Since(item.CreatedAt) > 15*time.Minute {
+		delete(s.pending, chatID)
+		return nil
+	}
+	return item
+}
+
+func (s *ControlService) clearPendingInteraction(chatID string) {
+	if s == nil {
+		return
+	}
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return
+	}
+	s.pendingMu.Lock()
+	delete(s.pending, chatID)
+	s.pendingMu.Unlock()
 }
 
 func (s *ControlService) getACPClient(ctx context.Context, target *toolsessions.Session) (acpConversationClient, error) {
@@ -789,6 +942,32 @@ type acpSessionUpdate struct {
 	Text          string          `json:"text,omitempty"`
 }
 
+type acpSessionEvent struct {
+	Update     *acpSessionUpdate
+	Permission *acpPermissionRequest
+}
+
+type acpPermissionRequest struct {
+	SessionID     string
+	RequestID     int64
+	AllowOptionID string
+	DenyOptionID  string
+	Prompt        string
+}
+
+type acpActivePrompt struct {
+	sessionID string
+	events    chan acpSessionEvent
+	done      chan error
+	request   *acpPermissionRequest
+
+	mu        sync.Mutex
+	textParts []string
+	resultCh  chan struct{}
+	reply     string
+	err       error
+}
+
 type acpConversationProcess struct {
 	command   string
 	args      []string
@@ -800,9 +979,10 @@ type acpConversationProcess struct {
 	nextID    atomic.Int64
 	pending   map[int64]chan *rpcResponse
 	pendingMu sync.Mutex
-	notify    map[string]chan *acpSessionUpdate
+	notify    map[string]chan acpSessionEvent
 	notifyMu  sync.Mutex
 	sessions  map[string]string
+	active    map[string]*acpActivePrompt
 	mu        sync.Mutex
 }
 
@@ -844,8 +1024,9 @@ func newACPConversationClient(p RuntimePreset) (acpConversationClient, error) {
 		scanner:  bufio.NewScanner(stdout),
 		stderr:   stderr,
 		pending:  map[int64]chan *rpcResponse{},
-		notify:   map[string]chan *acpSessionUpdate{},
+		notify:   map[string]chan acpSessionEvent{},
 		sessions: map[string]string{},
+		active:   map[string]*acpActivePrompt{},
 	}
 	client.scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	go client.readLoop()
@@ -871,21 +1052,16 @@ func newACPConversationClient(p RuntimePreset) (acpConversationClient, error) {
 	return client, nil
 }
 
-func (a *acpConversationProcess) Chat(ctx context.Context, conversationID, message string) (string, error) {
+func (a *acpConversationProcess) Chat(ctx context.Context, conversationID, message string) (acpChatResult, error) {
 	sessionID, err := a.getOrCreateSession(ctx, conversationID)
 	if err != nil {
-		return "", err
+		return acpChatResult{}, err
 	}
 
-	updates := make(chan *acpSessionUpdate, 256)
+	events := make(chan acpSessionEvent, 256)
 	a.notifyMu.Lock()
-	a.notify[sessionID] = updates
+	a.notify[sessionID] = events
 	a.notifyMu.Unlock()
-	defer func() {
-		a.notifyMu.Lock()
-		delete(a.notify, sessionID)
-		a.notifyMu.Unlock()
-	}()
 
 	done := make(chan error, 1)
 	go func() {
@@ -896,23 +1072,74 @@ func (a *acpConversationProcess) Chat(ctx context.Context, conversationID, messa
 		done <- err
 	}()
 
-	var textParts []string
+	active := &acpActivePrompt{
+		sessionID: sessionID,
+		events:    events,
+		done:      done,
+		resultCh:  make(chan struct{}),
+	}
 	for {
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
-		case update := <-updates:
-			if update != nil && update.SessionUpdate == "agent_message_chunk" {
-				if text := extractACPChunkText(update); text != "" {
-					textParts = append(textParts, text)
+			a.unregisterNotify(sessionID)
+			return acpChatResult{}, ctx.Err()
+		case event := <-events:
+			switch {
+			case event.Update != nil && event.Update.SessionUpdate == "agent_message_chunk":
+				if text := extractACPChunkText(event.Update); text != "" {
+					active.appendText(text)
 				}
+			case event.Permission != nil:
+				active.request = event.Permission
+				a.storeActivePrompt(conversationID, active)
+				go a.awaitPromptCompletion(conversationID, active)
+				return acpChatResult{
+					Pending: &acpPendingPrompt{
+						Kind:   acpPendingKindPermission,
+						Prompt: strings.TrimSpace(event.Permission.Prompt),
+					},
+				}, nil
 			}
 		case err := <-done:
+			a.unregisterNotify(sessionID)
 			if err != nil {
-				return "", err
+				return acpChatResult{}, err
 			}
-			return strings.TrimSpace(strings.Join(textParts, "")), nil
+			return acpChatResult{Reply: active.replyText()}, nil
 		}
+	}
+}
+
+func (a *acpConversationProcess) Respond(
+	ctx context.Context,
+	conversationID string,
+	action interactionAction,
+) (acpChatResult, error) {
+	active := a.getActivePrompt(conversationID)
+	if active == nil {
+		return acpChatResult{}, errNoPendingACPInteraction
+	}
+
+	request := active.request
+	if request == nil {
+		a.clearActivePrompt(conversationID)
+		return acpChatResult{}, errNoPendingACPInteraction
+	}
+	if err := a.replyPermissionRequest(request, action); err != nil {
+		return acpChatResult{}, err
+	}
+	active.mu.Lock()
+	active.request = nil
+	active.mu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return acpChatResult{}, ctx.Err()
+	case <-active.resultCh:
+		if active.err != nil {
+			return acpChatResult{}, active.err
+		}
+		return acpChatResult{Reply: active.replyText()}, nil
 	}
 }
 
@@ -947,6 +1174,114 @@ func (a *acpConversationProcess) Close() error {
 		_, _ = a.cmd.Process.Wait()
 	}
 	return nil
+}
+
+func (a *acpConversationProcess) unregisterNotify(sessionID string) {
+	a.notifyMu.Lock()
+	delete(a.notify, sessionID)
+	a.notifyMu.Unlock()
+}
+
+func (a *acpConversationProcess) storeActivePrompt(conversationID string, active *acpActivePrompt) {
+	a.mu.Lock()
+	a.active[conversationID] = active
+	a.mu.Unlock()
+}
+
+func (a *acpConversationProcess) getActivePrompt(conversationID string) *acpActivePrompt {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.active[conversationID]
+}
+
+func (a *acpConversationProcess) clearActivePrompt(conversationID string) {
+	a.mu.Lock()
+	delete(a.active, conversationID)
+	a.mu.Unlock()
+}
+
+func (a *acpConversationProcess) awaitPromptCompletion(conversationID string, active *acpActivePrompt) {
+	defer close(active.resultCh)
+	defer a.unregisterNotify(active.sessionID)
+	defer a.clearActivePrompt(conversationID)
+
+	for {
+		select {
+		case event := <-active.events:
+			if event.Update != nil && event.Update.SessionUpdate == "agent_message_chunk" {
+				if text := extractACPChunkText(event.Update); text != "" {
+					active.appendText(text)
+				}
+			}
+		case err := <-active.done:
+			if err != nil {
+				active.setResult("", err)
+				return
+			}
+			active.setResult(active.replyText(), nil)
+			return
+		}
+	}
+}
+
+func (a *acpConversationProcess) replyPermissionRequest(req *acpPermissionRequest, action interactionAction) error {
+	if req == nil {
+		return errNoPendingACPInteraction
+	}
+
+	var optionID string
+	switch action.Type {
+	case interactionActionConfirm:
+		optionID = strings.TrimSpace(req.AllowOptionID)
+	case interactionActionDeny:
+		optionID = strings.TrimSpace(req.DenyOptionID)
+	default:
+		return fmt.Errorf("unsupported interaction action: %s", action.Type)
+	}
+	if optionID == "" {
+		return fmt.Errorf("no matching permission option for action: %s", action.Type)
+	}
+
+	data, err := json.Marshal(rpcRequest{
+		JSONRPC: "2.0",
+		ID:      req.RequestID,
+		Params: map[string]interface{}{
+			"outcome": map[string]interface{}{
+				"outcome":  "selected",
+				"optionId": optionID,
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal permission reply: %w", err)
+	}
+
+	a.mu.Lock()
+	_, err = fmt.Fprintf(a.stdin, "%s\n", data)
+	a.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("write permission reply: %w", err)
+	}
+	return nil
+}
+
+func (a *acpActivePrompt) appendText(text string) {
+	a.mu.Lock()
+	a.textParts = append(a.textParts, text)
+	a.mu.Unlock()
+}
+
+func (a *acpActivePrompt) replyText() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return strings.TrimSpace(strings.Join(a.textParts, ""))
+}
+
+func (a *acpActivePrompt) setResult(reply string, err error) {
+	a.mu.Lock()
+	a.reply = strings.TrimSpace(reply)
+	a.err = err
+	a.mu.Unlock()
 }
 
 func (a *acpConversationProcess) getOrCreateSession(ctx context.Context, conversationID string) (string, error) {
@@ -1084,7 +1419,7 @@ func (a *acpConversationProcess) readLoop() {
 		ch := a.notify[params.SessionID]
 		a.notifyMu.Unlock()
 		if ch != nil {
-			ch <- &params.Update
+			ch <- acpSessionEvent{Update: &params.Update}
 		}
 	}
 }
@@ -1095,7 +1430,12 @@ func (a *acpConversationProcess) handlePermissionRequest(msg *rpcResponse) {
 	}
 
 	var params struct {
-		Options []struct {
+		SessionID    string `json:"sessionId"`
+		ToolName     string `json:"toolName"`
+		Description  string `json:"description"`
+		Message      string `json:"message"`
+		InputPreview string `json:"inputPreview"`
+		Options      []struct {
 			OptionID string `json:"optionId"`
 			Kind     string `json:"kind"`
 		} `json:"options"`
@@ -1104,37 +1444,37 @@ func (a *acpConversationProcess) handlePermissionRequest(msg *rpcResponse) {
 		return
 	}
 
-	optionID := ""
+	req := &acpPermissionRequest{
+		SessionID: strings.TrimSpace(params.SessionID),
+		RequestID: *msg.ID,
+		Prompt: formatACPPermissionPrompt(
+			strings.TrimSpace(params.Message),
+			strings.TrimSpace(params.ToolName),
+			strings.TrimSpace(params.Description),
+			strings.TrimSpace(params.InputPreview),
+		),
+	}
 	for _, option := range params.Options {
 		if strings.TrimSpace(option.OptionID) == "" {
 			continue
 		}
-		optionID = option.OptionID
-		if strings.EqualFold(strings.TrimSpace(option.Kind), "allow") {
-			break
+		switch strings.ToLower(strings.TrimSpace(option.Kind)) {
+		case "allow":
+			req.AllowOptionID = option.OptionID
+		case "deny":
+			req.DenyOptionID = option.OptionID
 		}
 	}
-	if optionID == "" {
+	if req.SessionID == "" || (req.AllowOptionID == "" && req.DenyOptionID == "") {
 		return
 	}
 
-	data, err := json.Marshal(rpcRequest{
-		JSONRPC: "2.0",
-		ID:      *msg.ID,
-		Params: map[string]interface{}{
-			"outcome": map[string]interface{}{
-				"outcome":  "selected",
-				"optionId": optionID,
-			},
-		},
-	})
-	if err != nil {
-		return
+	a.notifyMu.Lock()
+	ch := a.notify[req.SessionID]
+	a.notifyMu.Unlock()
+	if ch != nil {
+		ch <- acpSessionEvent{Permission: req}
 	}
-
-	a.mu.Lock()
-	_, _ = fmt.Fprintf(a.stdin, "%s\n", data)
-	a.mu.Unlock()
 }
 
 func extractACPChunkText(update *acpSessionUpdate) string {
@@ -1153,6 +1493,29 @@ func extractACPChunkText(update *acpSessionUpdate) string {
 		return payload.Text
 	}
 	return ""
+}
+
+func formatACPPermissionPrompt(message, toolName, description, inputPreview string) string {
+	lines := make([]string, 0, 6)
+
+	head := "运行时需要确认操作。"
+	if strings.TrimSpace(toolName) != "" {
+		head = "运行时需要确认: " + strings.TrimSpace(toolName)
+	}
+	lines = append(lines, head)
+
+	if strings.TrimSpace(message) != "" {
+		lines = append(lines, strings.TrimSpace(message))
+	}
+	if strings.TrimSpace(description) != "" {
+		lines = append(lines, "说明: "+strings.TrimSpace(description))
+	}
+	if strings.TrimSpace(inputPreview) != "" {
+		lines = append(lines, "输入: "+strings.TrimSpace(inputPreview))
+	}
+
+	lines = append(lines, "回复 /yes 允许，/no 或 /cancel 拒绝。")
+	return strings.TrimSpace(strings.Join(lines, "\n\n"))
 }
 
 func (s *ControlService) closeACPClient(sessionID string) error {

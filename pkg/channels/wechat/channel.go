@@ -199,17 +199,6 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 		return
 	}
 
-	if c.runtime != nil {
-		if handled, err := c.handleRuntimeChat(msg, content); err != nil {
-			sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			_ = c.sendReply(sendCtx, msg.FromUserID, "❌ "+err.Error(), msg.ContextToken)
-			return
-		} else if handled {
-			return
-		}
-	}
-
 	if reply, handled, err := c.resolvePendingInteraction(msg, content); err != nil {
 		sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -222,6 +211,17 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 			c.log.Error("Failed to send WeChat interaction reply", zap.Error(err))
 		}
 		return
+	}
+
+	if c.runtime != nil {
+		if handled, err := c.handleRuntimeChat(msg, content); err != nil {
+			sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_ = c.sendReply(sendCtx, msg.FromUserID, "❌ "+err.Error(), msg.ContextToken)
+			return
+		} else if handled {
+			return
+		}
 	}
 
 	if c.agent == nil {

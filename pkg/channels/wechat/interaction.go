@@ -91,6 +91,16 @@ func (c *Channel) resolvePendingInteraction(msg wxtypes.WeixinMessage, content s
 		return "", false, nil
 	}
 
+	if c.runtime != nil {
+		reply, handled, err := c.runtime.ResolvePendingInteraction(context.Background(), msg.FromUserID, action)
+		if err != nil {
+			return "", true, err
+		}
+		if handled {
+			return reply, true, nil
+		}
+	}
+
 	pending, hasPending := c.getPendingSkillInstall(msg.FromUserID)
 	if !hasPending {
 		return "当前没有待确认的操作。", true, nil

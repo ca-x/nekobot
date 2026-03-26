@@ -436,14 +436,18 @@ type fakeACPClient struct {
 	synced   map[string]string
 }
 
-func (f *fakeACPClient) Chat(ctx context.Context, conversationID, message string) (string, error) {
+func (f *fakeACPClient) Chat(ctx context.Context, conversationID, message string) (acpChatResult, error) {
 	if f.sessions == nil {
 		f.sessions = map[string]string{}
 	}
 	if _, ok := f.sessions[conversationID]; !ok {
 		f.sessions[conversationID] = "sess-" + conversationID
 	}
-	return f.reply, nil
+	return acpChatResult{Reply: f.reply}, nil
+}
+
+func (f *fakeACPClient) Respond(ctx context.Context, conversationID string, action interactionAction) (acpChatResult, error) {
+	return acpChatResult{Reply: f.reply}, nil
 }
 
 func (f *fakeACPClient) SyncSessions(ctx context.Context, sessions map[string]string) error {
@@ -465,6 +469,38 @@ func (f *fakeACPClient) SessionMap() map[string]string {
 }
 
 func (f *fakeACPClient) Close() error {
+	return nil
+}
+
+type fakeACPInteractiveClient struct {
+	prompt  string
+	reply   string
+	actions []interactionActionType
+}
+
+func (f *fakeACPInteractiveClient) Chat(ctx context.Context, conversationID, message string) (acpChatResult, error) {
+	return acpChatResult{
+		Pending: &acpPendingPrompt{
+			Kind:   acpPendingKindPermission,
+			Prompt: f.prompt,
+		},
+	}, nil
+}
+
+func (f *fakeACPInteractiveClient) Respond(ctx context.Context, conversationID string, action interactionAction) (acpChatResult, error) {
+	f.actions = append(f.actions, action.Type)
+	return acpChatResult{Reply: f.reply}, nil
+}
+
+func (f *fakeACPInteractiveClient) SyncSessions(ctx context.Context, sessions map[string]string) error {
+	return nil
+}
+
+func (f *fakeACPInteractiveClient) SessionMap() map[string]string {
+	return map[string]string{}
+}
+
+func (f *fakeACPInteractiveClient) Close() error {
 	return nil
 }
 
@@ -520,6 +556,101 @@ func TestControlServiceSendToACPRuntimeReturnsDirectReply(t *testing.T) {
 	}
 	if acpSessions["chat-1"] != "sess-chat-1" {
 		t.Fatalf("expected persisted session mapping, got %#v", acpSessions)
+	}
+}
+
+func TestControlServiceSendToACPRuntimeReturnsPendingPrompt(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	fake := &fakeACPInteractiveClient{
+		prompt: "Claude 需要确认:\n\n是否允许执行 ReadFile？\n\n/yes 允许，/no 拒绝。",
+		reply:  "done",
+	}
+	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
+		return fake, nil
+	}
+	ctx := context.Background()
+
+	if _, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "claude1",
+		Driver: "acp",
+		Tool:   "claude",
+	}); err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+
+	reply, err := controlSvc.SendToRuntime(ctx, "chat-1", "", "hello acp")
+	if err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+	if !strings.Contains(reply, "Claude 需要确认") {
+		t.Fatalf("expected pending prompt reply, got %q", reply)
+	}
+}
+
+func TestControlServiceResolvePendingInteractionContinuesACPRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	defer client.Close()
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	fake := &fakeACPInteractiveClient{
+		prompt: "Claude 需要确认:\n\n是否允许执行 ReadFile？\n\n/yes 允许，/no 拒绝。",
+		reply:  "继续执行后的最终回复",
+	}
+	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
+		return fake, nil
+	}
+	ctx := context.Background()
+
+	if _, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "claude1",
+		Driver: "acp",
+		Tool:   "claude",
+	}); err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+	if _, err := controlSvc.SendToRuntime(ctx, "chat-1", "", "hello acp"); err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+
+	reply, handled, err := controlSvc.ResolvePendingInteraction(ctx, "chat-1", &interactionAction{Type: interactionActionConfirm})
+	if err != nil {
+		t.Fatalf("ResolvePendingInteraction failed: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected pending interaction to be handled")
+	}
+	if reply != "继续执行后的最终回复" {
+		t.Fatalf("unexpected interaction reply: %q", reply)
+	}
+	if len(fake.actions) != 1 || fake.actions[0] != interactionActionConfirm {
+		t.Fatalf("expected confirm action to be forwarded, got %#v", fake.actions)
 	}
 }
 
