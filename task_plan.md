@@ -95,7 +95,7 @@
 ### 当前明确未完成或做薄的能力
 - [ ] Slack interactive callback 已补齐技能安装确认闭环，但 shortcut / modal submission 仍只有路由入口，尚未落具体业务闭环。
 - [x] Runtime Prompts 本轮改动后已补回归测试与 smoke checklist 记录。
-- [ ] MaixCAM 命令执行后的 response 回写设备侧链路仍待补齐。
+- [x] MaixCAM 命令执行结果已支持直写设备连接，且出站链路已补齐按 `session/device` 定向回写；后续若继续增强，可单列 richer device protocol。
 - [ ] Gateway 仍偏聊天通道，缺更完整的控制面协议、连接治理和配对/授权模型。
 - [x] Conversation binding 已补首批通用基础层：支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；更完整的跨 account/独立存储层仍待继续迁移。
 - [ ] Browser session 仍是单例固定端口 CDP，缺 relay/direct/auto 模式与高级提取动作。
@@ -162,9 +162,9 @@
   - 位置：`pkg/auth/*` 或新建 `pkg/oauth/*`。
 
 ### P2（次优先级）
-- [ ] **MaixCAM 命令响应回设备端**
-  - 现状：命令执行后仅日志输出。
-  - 目标：将 command response 回写设备通道。
+- [x] **MaixCAM 命令响应回设备端**
+  - 现状：命令执行结果已直写回设备连接；本轮补齐了 bus 出站消息按 `session/device` 定向回写，避免设备侧回复被无差别广播到所有已连接终端。
+  - 目标：保持设备命令和 agent 出站链路都能稳定回到对应设备。
   - 位置：`pkg/channels/maixcam/maixcam.go`。
 - [ ] **Channel capability 矩阵**
   - 现状：平台差异主要分散在各 channel 私实现中。
@@ -202,7 +202,7 @@
 - [x] WeChat attachment send pipeline
 - [x] Slack interactive handlers 第一阶段扩展（skill install confirm 完整闭环 + shortcut/modal 路由入口）
 - [x] Subagent origin notify 接线
-- [ ] MaixCAM command response
+- [x] MaixCAM command response
 - **验收**: 各 channel 回归测试通过，关键交互可手工验证。
 
 ### Batch C（Runtime Admin 收口）

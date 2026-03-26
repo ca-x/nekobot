@@ -2,6 +2,14 @@
 
 ## 2026-03-26
 
+- Completed MaixCAM outbound response routing:
+  - re-audited `pkg/channels/maixcam/maixcam.go` and found slash-command responses were already written back to the active device connection, so the real remaining gap was outbound bus replies being broadcast to every connected device.
+  - updated `SendMessage` to parse `maixcam:<device>` session IDs and route outbound replies only to the targeted device connection while preserving broadcast behavior when no device target is present.
+  - added regression coverage in `pkg/channels/maixcam/maixcam_test.go` for device-targeted send, broadcast fallback, and session parsing.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/maixcam -run 'SendMessage(TargetsSessionDevice|BroadcastsWithoutTargetSession)|MaixcamDeviceIDFromSession'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/channels/maixcam` passed.
+
 - Completed memory quality pack phase 4 (embedding cache):
   - added `pkg/memory/embedding_cache.go` to import the useful `goclaw` LRU cache idea in a `nekobot`-appropriate form: caching embedding vectors by input text instead of redundantly caching objects already held by the in-memory store.
   - updated `pkg/memory/manager.go` so both `Add` and `Search` reuse cached embedding vectors for repeated text, reducing duplicate provider calls while keeping the store and search interface unchanged.

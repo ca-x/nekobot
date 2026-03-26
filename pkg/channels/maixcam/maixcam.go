@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -367,9 +368,6 @@ func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
 
 // SendMessage sends a message to MaixCAM device(s).
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
-	// Extract device ID from session ID (format: "maixcam:device_addr")
-	// For broadcast, send to all connected devices
-
 	response := map[string]interface{}{
 		"type":    "message",
 		"content": msg.Content,
@@ -381,20 +379,35 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		return fmt.Errorf("marshaling message: %w", err)
 	}
 
-	// Send to all connected devices
+	targetDeviceID := maixcamDeviceIDFromSession(msg.SessionID)
+	var sentCount int
+
 	c.clientsMux.RLock()
 	defer c.clientsMux.RUnlock()
 
 	for conn := range c.clients {
+		if targetDeviceID != "" && conn.RemoteAddr().String() != targetDeviceID {
+			continue
+		}
 		if _, err := conn.Write(append(data, '\n')); err != nil {
 			c.log.Error("Failed to send to device", zap.Error(err))
+			continue
 		}
+		sentCount++
 	}
 
 	c.log.Debug("Sent message to MaixCAM devices",
-		zap.Int("device_count", len(c.clients)))
+		zap.Int("device_count", sentCount),
+		zap.String("target_device", targetDeviceID))
 
 	return nil
+}
+
+func maixcamDeviceIDFromSession(sessionID string) string {
+	if !strings.HasPrefix(sessionID, "maixcam:") {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(sessionID, "maixcam:"))
 }
 
 // isAllowed checks if a device is allowed.
