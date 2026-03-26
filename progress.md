@@ -2,6 +2,13 @@
 
 ## 2026-03-26
 
+- Completed memory quality pack phase 3 (temporal decay):
+  - added `pkg/memory/temporal_decay.go` to import the core `goclaw` time-aware ranking slice for builtin memory search.
+  - extended `pkg/memory/types.go` with `TemporalDecayConfig` and `SearchOptions.TemporalDecay`, then applied temporal decay inside `pkg/memory/manager.go` before MMR so age-adjusted scores feed later diversity re-ranking.
+  - added regression coverage in `pkg/memory/search_manager_test.go` for pure decay ordering and manager-level search behavior with temporal decay enabled.
+- Verification run:
+  - `go test -count=1 ./pkg/memory` passed.
+
 - Completed memory quality pack phase 2 (MMR):
   - added `pkg/memory/mmr.go` to import the core `goclaw` MMR re-ranking slice for builtin memory search.
   - extended `pkg/memory/types.go` with `MMRConfig` and `SearchOptions.MMR`, then applied MMR inside `pkg/memory/manager.go` after raw store search so diversity re-ranking stays isolated from storage code.

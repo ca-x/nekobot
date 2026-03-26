@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kratos/blades"
 	"nekobot/pkg/config"
@@ -219,6 +220,91 @@ func TestManagerSearchAppliesMMR(t *testing.T) {
 	}
 	if !strings.Contains(results[1].Text, "incident response") {
 		t.Fatalf("expected diverse result second, got %+v", results[1])
+	}
+}
+
+func TestApplyTemporalDecayPrefersRecentMemories(t *testing.T) {
+	now := time.Date(2026, 3, 26, 12, 0, 0, 0, time.UTC)
+	recent := now.Add(-24 * time.Hour)
+	old := now.Add(-40 * 24 * time.Hour)
+
+	results := []*SearchResult{
+		{
+			Embedding: Embedding{
+				ID:        "old",
+				Text:      "deploy playbook",
+				CreatedAt: old,
+				Metadata:  Metadata{Timestamp: &old},
+			},
+			Score: 0.95,
+		},
+		{
+			Embedding: Embedding{
+				ID:        "recent",
+				Text:      "deploy playbook latest",
+				CreatedAt: recent,
+				Metadata:  Metadata{Timestamp: &recent},
+			},
+			Score: 0.90,
+		},
+	}
+
+	decayed := applyTemporalDecayToResults(results, TemporalDecayConfig{
+		Enabled:      true,
+		HalfLifeDays: 7,
+	}, now)
+	if len(decayed) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(decayed))
+	}
+	if decayed[0].ID != "recent" {
+		t.Fatalf("expected recent memory first after decay, got %q", decayed[0].ID)
+	}
+	if decayed[0].AgeInDays >= decayed[1].AgeInDays {
+		t.Fatalf("expected recent result to have lower age, got %+v %+v", decayed[0], decayed[1])
+	}
+}
+
+func TestManagerSearchAppliesTemporalDecay(t *testing.T) {
+	builtin, err := NewManager(t.TempDir()+"/embeddings.json", NewSimpleEmbeddingProvider(16))
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	oldTimestamp := time.Now().Add(-40 * 24 * time.Hour)
+	recentTimestamp := time.Now().Add(-24 * time.Hour)
+	for _, item := range []struct {
+		text      string
+		timestamp *time.Time
+	}{
+		{text: "deploy checklist old", timestamp: &oldTimestamp},
+		{text: "deploy checklist recent", timestamp: &recentTimestamp},
+	} {
+		if err := builtin.Add(context.Background(), item.text, SourceSession, TypeContext, Metadata{
+			Timestamp: item.timestamp,
+		}); err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	results, err := builtin.Search(context.Background(), "deploy checklist", SearchOptions{
+		Limit:    2,
+		MinScore: 0,
+		TemporalDecay: &TemporalDecayConfig{
+			Enabled:      true,
+			HalfLifeDays: 7,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if !strings.Contains(results[0].Text, "recent") {
+		t.Fatalf("expected recent memory first, got %+v", results[0])
+	}
+	if results[0].AgeInDays >= results[1].AgeInDays {
+		t.Fatalf("expected recent result to have lower age, got %+v %+v", results[0], results[1])
 	}
 }
 

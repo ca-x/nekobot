@@ -93,6 +93,8 @@ type SearchOptions struct {
 	QueryText string `json:"query_text,omitempty"`
 	// MMR enables Maximal Marginal Relevance re-ranking for diversity.
 	MMR *MMRConfig `json:"mmr,omitempty"`
+	// TemporalDecay enables time-aware score decay.
+	TemporalDecay *TemporalDecayConfig `json:"temporal_decay,omitempty"`
 }
 
 // DefaultSearchOptions returns sensible default search options.
@@ -119,6 +121,20 @@ func DefaultMMRConfig() MMRConfig {
 	return MMRConfig{
 		Enabled: false,
 		Lambda:  0.7,
+	}
+}
+
+// TemporalDecayConfig configures time-aware score decay.
+type TemporalDecayConfig struct {
+	Enabled      bool    `json:"enabled"`
+	HalfLifeDays float64 `json:"half_life_days"`
+}
+
+// DefaultTemporalDecayConfig returns the default temporal decay configuration.
+func DefaultTemporalDecayConfig() TemporalDecayConfig {
+	return TemporalDecayConfig{
+		Enabled:      false,
+		HalfLifeDays: 30,
 	}
 }
 
