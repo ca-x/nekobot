@@ -13,9 +13,10 @@ import (
 
 // Manager manages the memory system including embeddings and storage.
 type Manager struct {
-	store    Store
-	provider EmbeddingProvider
-	enabled  bool
+	store          Store
+	provider       EmbeddingProvider
+	embeddingCache *embeddingCache
+	enabled        bool
 }
 
 // Status returns a lightweight runtime status snapshot.
@@ -46,9 +47,10 @@ func NewManager(storePath string, provider EmbeddingProvider) (*Manager, error) 
 	}
 
 	return &Manager{
-		store:    store,
-		provider: provider,
-		enabled:  true,
+		store:          store,
+		provider:       provider,
+		embeddingCache: newEmbeddingCache(defaultEmbeddingCacheSize),
+		enabled:        true,
 	}, nil
 }
 
@@ -59,7 +61,7 @@ func (m *Manager) Add(ctx context.Context, text string, source Source, typ Type,
 	}
 
 	// Generate embedding
-	vector, err := m.provider.Embed(text)
+	vector, err := m.embedText(text)
 	if err != nil {
 		return fmt.Errorf("failed to generate embedding: %w", err)
 	}
@@ -92,7 +94,7 @@ func (m *Manager) Search(ctx context.Context, query string, opts SearchOptions) 
 	}
 
 	// Generate query embedding
-	queryVector, err := m.provider.Embed(query)
+	queryVector, err := m.embedText(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate query embedding: %w", err)
 	}
@@ -212,6 +214,9 @@ func (m *Manager) GetRelevantContext(ctx context.Context, query string, maxResul
 
 // Close closes the memory manager and saves any pending data.
 func (m *Manager) Close() error {
+	if m.embeddingCache != nil {
+		m.embeddingCache.Clear()
+	}
 	if m.store != nil {
 		return m.store.Close()
 	}
@@ -231,4 +236,23 @@ func (m *Manager) Disable() {
 // IsEnabled returns whether the memory system is enabled.
 func (m *Manager) IsEnabled() bool {
 	return m.enabled
+}
+
+func (m *Manager) embedText(text string) ([]float32, error) {
+	if m.embeddingCache != nil {
+		if cached, ok := m.embeddingCache.Get(text); ok {
+			return cached, nil
+		}
+	}
+
+	vector, err := m.provider.Embed(text)
+	if err != nil {
+		return nil, err
+	}
+
+	if m.embeddingCache != nil {
+		m.embeddingCache.Put(text, vector)
+	}
+
+	return vector, nil
 }

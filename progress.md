@@ -2,6 +2,14 @@
 
 ## 2026-03-26
 
+- Completed memory quality pack phase 4 (embedding cache):
+  - added `pkg/memory/embedding_cache.go` to import the useful `goclaw` LRU cache idea in a `nekobot`-appropriate form: caching embedding vectors by input text instead of redundantly caching objects already held by the in-memory store.
+  - updated `pkg/memory/manager.go` so both `Add` and `Search` reuse cached embedding vectors for repeated text, reducing duplicate provider calls while keeping the store and search interface unchanged.
+  - added regression coverage in `pkg/memory/manager_cache_test.go` to prove repeated `Add` and repeated `Search` on the same text only invoke the embedding provider once.
+- Verification run:
+  - `go test -count=1 ./pkg/memory -run 'Manager(SearchCachesQueryEmbeddings|AddCachesEmbeddingsForRepeatedText)'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/memory` passed.
+
 - Completed browser session migration phase 2:
   - extended `pkg/tools/browser.go` so the `browser` tool schema now exposes a `mode` parameter with `auto/direct` options instead of hiding session startup strategy inside tool internals.
   - wired `navigate` to pass the resolved startup mode into `BrowserSession.StartWithMode`, so callers can explicitly request direct attach semantics while keeping auto-mode reuse as the default.

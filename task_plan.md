@@ -99,7 +99,7 @@
 - [ ] Gateway 仍偏聊天通道，缺更完整的控制面协议、连接治理和配对/授权模型。
 - [x] Conversation binding 已补首批通用基础层：支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；更完整的跨 account/独立存储层仍待继续迁移。
 - [ ] Browser session 仍是单例固定端口 CDP，缺 relay/direct/auto 模式与高级提取动作。
-- [ ] Memory 检索后处理仍偏轻量，缺 MMR、多样性、时间衰减、引用格式、缓存等质量件。
+- [x] Memory 检索后处理首轮质量增强已完成：MMR、多样性、时间衰减、引用格式、embedding cache 已落地；后续如继续扩展，以更高阶排序/多源融合为新事项单列。
 - [ ] 现有 channel 能力缺统一 capability 矩阵，平台差异还分散在各 channel 私实现里。
 - [ ] 缺“按聊天用户长期驻留的外部 agent runtime”这一层，尚未形成类似 `gua` 的用户级外部代理会话编排。
 - [ ] `pkg/wechat` 目前仍缺 `gua/libc/wechat` 的完整 SDK 分层，微信通道能力还主要堆在 `pkg/channels/wechat/*` 中。
@@ -138,9 +138,9 @@
   - 目标：抽出可复用于 channels / gateway / external agent runtime 的统一绑定层。
   - 来源：`goclaw/channels/thread_bindings.go`、`thread_binding_storage.go`。
   - 位置：新建 `pkg/conversationbindings/*` 或扩展现有模块。
-- [ ] **Memory 检索质量增强包**
-  - 现状：已有 hybrid search 与 QMD fallback，但缺 MMR、多样性、时间衰减、引用格式与缓存。
-  - 进度：已完成引用格式切片、首批 MMR 重排接入和时间衰减接入，补齐统一 citation 生成、builtin memory 搜索后的多样性重排与时间感知排序；缓存层仍待继续迁移。
+- [x] **Memory 检索质量增强包**
+  - 现状：已有 hybrid search 与 QMD fallback；首轮质量增强项已全部补齐。
+  - 进度：已完成引用格式切片、首批 MMR 重排接入、时间衰减接入与 embedding LRU cache，补齐统一 citation 生成、builtin memory 搜索后的多样性重排、时间感知排序以及重复文本的 embedding 复用。
   - 目标：提升长上下文/多来源检索质量，同时保持现有接口稳定。
   - 来源：`goclaw/memory/mmr.go`、`temporal_decay.go`、`citations.go`、`lru_cache.go`。
   - 位置：`pkg/memory/*`。
@@ -213,7 +213,7 @@
 
 ### Batch D（goclaw 高价值迁移）
 - [ ] conversation/thread binding 层
-- [ ] memory quality pack（MMR / temporal decay / citations / cache）
+- [x] memory quality pack（MMR / temporal decay / citations / cache）
 - [ ] gateway control plane hardening
 - [ ] browser session dual-mode / advanced extraction
 - **验收**: 每项独立测试通过，按功能独立提交与推送。
