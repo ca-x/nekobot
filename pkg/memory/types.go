@@ -91,6 +91,8 @@ type SearchOptions struct {
 	TextWeight float64 `json:"text_weight"`
 	// QueryText is the original text query used for keyword matching in hybrid search
 	QueryText string `json:"query_text,omitempty"`
+	// MMR enables Maximal Marginal Relevance re-ranking for diversity.
+	MMR *MMRConfig `json:"mmr,omitempty"`
 }
 
 // DefaultSearchOptions returns sensible default search options.
@@ -103,6 +105,20 @@ func DefaultSearchOptions() SearchOptions {
 		Hybrid:       true,
 		VectorWeight: 0.7,
 		TextWeight:   0.3,
+	}
+}
+
+// MMRConfig configures Maximal Marginal Relevance re-ranking.
+type MMRConfig struct {
+	Enabled bool    `json:"enabled"`
+	Lambda  float64 `json:"lambda"`
+}
+
+// DefaultMMRConfig returns the default MMR configuration.
+func DefaultMMRConfig() MMRConfig {
+	return MMRConfig{
+		Enabled: false,
+		Lambda:  0.7,
 	}
 }
 

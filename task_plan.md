@@ -140,7 +140,7 @@
   - 位置：新建 `pkg/conversationbindings/*` 或扩展现有模块。
 - [ ] **Memory 检索质量增强包**
   - 现状：已有 hybrid search 与 QMD fallback，但缺 MMR、多样性、时间衰减、引用格式与缓存。
-  - 进度：已完成首批引用格式切片，补齐统一 citation 生成与 memory/memory tool 输出格式；MMR、时间衰减与缓存仍待继续迁移。
+  - 进度：已完成引用格式切片与首批 MMR 重排接入，补齐统一 citation 生成、memory/memory tool 输出格式，以及 builtin memory 搜索后的多样性重排；时间衰减与缓存仍待继续迁移。
   - 目标：提升长上下文/多来源检索质量，同时保持现有接口稳定。
   - 来源：`goclaw/memory/mmr.go`、`temporal_decay.go`、`citations.go`、`lru_cache.go`。
   - 位置：`pkg/memory/*`。

@@ -105,6 +105,9 @@ func (m *Manager) Search(ctx context.Context, query string, opts SearchOptions) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to search: %w", err)
 	}
+	if opts.MMR != nil && opts.MMR.Enabled {
+		results = ApplyMMR(results, *opts.MMR)
+	}
 	for _, result := range results {
 		if result == nil {
 			continue

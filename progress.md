@@ -2,6 +2,13 @@
 
 ## 2026-03-26
 
+- Completed memory quality pack phase 2 (MMR):
+  - added `pkg/memory/mmr.go` to import the core `goclaw` MMR re-ranking slice for builtin memory search.
+  - extended `pkg/memory/types.go` with `MMRConfig` and `SearchOptions.MMR`, then applied MMR inside `pkg/memory/manager.go` after raw store search so diversity re-ranking stays isolated from storage code.
+  - added regression coverage in `pkg/memory/search_manager_test.go` for direct MMR ordering and manager-level search behavior with MMR enabled.
+- Verification run:
+  - `go test -count=1 ./pkg/memory` passed.
+
 - Completed memory quality pack phase 1 (citations):
   - added `pkg/memory/citations.go` to import the useful citation-formatting slice from `goclaw` in a way that fits `nekobot`'s existing memory types.
   - extended `pkg/memory/types.go` with `EndLineNumber`, `Timestamp`, and result-level `Citation` / `AgeInDays` fields so later memory-quality slices have a compatible shape.

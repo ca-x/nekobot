@@ -165,6 +165,63 @@ func TestManagerGetRelevantContextUsesCitation(t *testing.T) {
 	}
 }
 
+func TestApplyMMRPromotesDiversity(t *testing.T) {
+	results := []*SearchResult{
+		{Embedding: Embedding{ID: "a", Text: "deploy release checklist"}, Score: 0.99},
+		{Embedding: Embedding{ID: "b", Text: "deploy release checklist again"}, Score: 0.98},
+		{Embedding: Embedding{ID: "c", Text: "incident response handbook"}, Score: 0.80},
+	}
+
+	reordered := ApplyMMR(results, MMRConfig{Enabled: true, Lambda: 0.4})
+	if len(reordered) != 3 {
+		t.Fatalf("expected 3 reordered results, got %d", len(reordered))
+	}
+	if reordered[0].ID != "a" {
+		t.Fatalf("expected highest relevance first, got %q", reordered[0].ID)
+	}
+	if reordered[1].ID != "c" {
+		t.Fatalf("expected diverse result second, got %q", reordered[1].ID)
+	}
+}
+
+func TestManagerSearchAppliesMMR(t *testing.T) {
+	builtin, err := NewManager(t.TempDir()+"/embeddings.json", NewSimpleEmbeddingProvider(16))
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	for _, item := range []string{
+		"deploy release checklist",
+		"deploy release checklist again",
+		"incident response handbook",
+	} {
+		if err := builtin.Add(context.Background(), item, SourceLongTerm, TypeContext, Metadata{}); err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	results, err := builtin.Search(context.Background(), "deploy", SearchOptions{
+		Limit:    3,
+		MinScore: 0,
+		MMR: &MMRConfig{
+			Enabled: true,
+			Lambda:  0.4,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	if !strings.Contains(results[0].Text, "deploy") {
+		t.Fatalf("expected deploy result first, got %+v", results[0])
+	}
+	if !strings.Contains(results[1].Text, "incident response") {
+		t.Fatalf("expected diverse result second, got %+v", results[1])
+	}
+}
+
 func newSearchMgrTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()
