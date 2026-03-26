@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mafredri/cdp/protocol/dom"
@@ -105,6 +106,11 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"type":        "integer",
 				"description": "Wait duration in milliseconds (for wait action)",
 			},
+			"mode": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"auto", "direct"},
+				"description": "Browser session startup mode. auto reuses existing Chrome before launching; direct only uses direct CDP attach/launch.",
+			},
 		},
 		"required": []string{"action"},
 	}
@@ -162,8 +168,12 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 		zap.String("url", urlStr))
 
 	sessionMgr := GetBrowserSession(b.log)
+	mode, err := b.startMode(params)
+	if err != nil {
+		return "", err
+	}
 	if !sessionMgr.IsReady() {
-		if err := sessionMgr.Start(b.timeout); err != nil {
+		if err := sessionMgr.StartWithMode(b.timeout, mode); err != nil {
 			return "", fmt.Errorf("failed to start browser: %w", err)
 		}
 	}
@@ -189,6 +199,18 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 	}
 
 	return fmt.Sprintf("Navigated to: %s\nFrame ID: %s", urlStr, nav.FrameID), nil
+}
+
+func (b *BrowserTool) startMode(params map[string]interface{}) (BrowserConnectionMode, error) {
+	rawMode, _ := params["mode"].(string)
+	if strings.TrimSpace(rawMode) == "" {
+		return BrowserModeAuto, nil
+	}
+	mode := resolveBrowserMode(rawMode)
+	if mode == BrowserModeAuto && strings.TrimSpace(strings.ToLower(rawMode)) != string(BrowserModeAuto) {
+		return "", fmt.Errorf("invalid browser mode: %s", rawMode)
+	}
+	return mode, nil
 }
 
 // screenshot takes a screenshot of the current page.

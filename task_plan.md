@@ -150,8 +150,8 @@
   - 来源：`goclaw/gateway/openclaw/*`。
   - 位置：`pkg/gateway/*`。
 - [ ] **Browser session 双模式与高级提取动作**
-  - 现状：`pkg/tools/browser_session.go` 为单例 + 固定 `9222` 端口，缺复用外部 Chrome、relay/direct/auto 模式、PDF/结构化抽取。
-  - 进度：已完成首批 session 层增强，支持 `auto/direct` 模式和优先复用已运行 Chrome 的连接策略；relay 模式与高级提取动作仍待继续迁移。
+  - 现状：`pkg/tools/browser_session.go` 仍缺 relay 模式、PDF/结构化抽取等更完整的浏览器能力。
+  - 进度：已完成首批 session 层增强，支持 `auto/direct` 模式和优先复用已运行 Chrome 的连接策略；浏览器工具现已暴露 `mode` 参数并显式拒绝未支持的模式；relay 模式与高级提取动作仍待继续迁移。
   - 目标：提升浏览器工具的可靠性和能力上限。
   - 来源：`goclaw/agent/tools/browser_session.go`、`browser_relay.go`、`browser_cdp.go`。
   - 位置：`pkg/tools/browser*.go`。

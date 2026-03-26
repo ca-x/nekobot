@@ -2,6 +2,14 @@
 
 ## 2026-03-26
 
+- Completed browser session migration phase 2:
+  - extended `pkg/tools/browser.go` so the `browser` tool schema now exposes a `mode` parameter with `auto/direct` options instead of hiding session startup strategy inside tool internals.
+  - wired `navigate` to pass the resolved startup mode into `BrowserSession.StartWithMode`, so callers can explicitly request direct attach semantics while keeping auto-mode reuse as the default.
+  - added regression coverage in `pkg/tools/browser_test.go` for default/direct mode parsing and explicit rejection of unsupported modes like `relay` before any browser startup happens.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'BrowserToolStartMode|BrowserToolExecuteRejectsInvalidMode|BrowserSession|ResolveBrowserMode'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
+
 - Completed browser session migration phase 1:
   - extended `pkg/tools/browser_session.go` with explicit `auto/direct` connection modes instead of only a fixed single-path startup flow.
   - added a reuse-first strategy so browser sessions now try to attach to existing Chrome debug ports before falling back to launching a new headless instance.
