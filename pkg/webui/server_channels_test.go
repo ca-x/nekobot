@@ -8,7 +8,9 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	channelwechat "nekobot/pkg/channels/wechat"
 	"nekobot/pkg/config"
+	wxtypes "nekobot/pkg/wechat/types"
 )
 
 func TestHandleGetChannelsIncludesWechat(t *testing.T) {
@@ -81,5 +83,48 @@ func TestHandleGetChannelsIncludesGotify(t *testing.T) {
 	}
 	if !gotifyCfg.Enabled || gotifyCfg.ServerURL != "https://gotify.example.com" || gotifyCfg.Priority != 8 {
 		t.Fatalf("unexpected gotify config: %+v", gotifyCfg)
+	}
+}
+
+func TestBuildWechatBindingPayloadIncludesAccounts(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+
+	store, err := channelwechat.NewCredentialStore(cfg)
+	if err != nil {
+		t.Fatalf("NewCredentialStore failed: %v", err)
+	}
+	if err := store.SaveCredentials(&wxtypes.Credentials{
+		BotToken:    "token-1",
+		ILinkBotID:  "bot-1@im.wechat",
+		BaseURL:     "https://ilinkai.weixin.qq.com",
+		ILinkUserID: "user-1",
+	}, true); err != nil {
+		t.Fatalf("SaveCredentials(first) failed: %v", err)
+	}
+	if err := store.SaveCredentials(&wxtypes.Credentials{
+		BotToken:    "token-2",
+		ILinkBotID:  "bot-2@im.wechat",
+		BaseURL:     "https://ilinkai.weixin.qq.com",
+		ILinkUserID: "user-2",
+	}, false); err != nil {
+		t.Fatalf("SaveCredentials(second) failed: %v", err)
+	}
+
+	s := &Server{config: cfg}
+	payload, err := s.buildWechatBindingPayload(store)
+	if err != nil {
+		t.Fatalf("buildWechatBindingPayload failed: %v", err)
+	}
+
+	if payload["active_account_id"] != "bot-1@im.wechat" {
+		t.Fatalf("unexpected active account: %#v", payload["active_account_id"])
+	}
+	accounts, ok := payload["accounts"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("expected accounts list, got %#v", payload["accounts"])
+	}
+	if len(accounts) != 2 {
+		t.Fatalf("expected 2 accounts, got %d", len(accounts))
 	}
 }

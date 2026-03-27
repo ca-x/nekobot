@@ -11,10 +11,17 @@ export type ChannelsMap = Record<string, ChannelConfig>;
 
 export interface WechatBindingStatus {
   bound: boolean;
+  active_account_id?: string;
   account?: {
     bot_id?: string;
     user_id?: string;
   };
+  accounts?: Array<{
+    account_id?: string;
+    bot_id?: string;
+    user_id?: string;
+    active?: boolean;
+  }>;
   binding?: {
     status?: string;
     qrcode_content?: string;
@@ -110,6 +117,36 @@ export function useDeleteWechatBinding() {
       qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
       qc.invalidateQueries({ queryKey: ['channels'] });
       toast.success(t('wechatBindingDeleted'));
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useActivateWechatBinding() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api.post<WechatBindingStatus>('/api/channels/wechat/binding/activate', {
+        account_id: accountId,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
+      qc.invalidateQueries({ queryKey: ['channels'] });
+      toast.success(t('wechatAccountActivated'));
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useDeleteWechatBindingAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api.delete(`/api/channels/wechat/binding/accounts/${encodeURIComponent(accountId)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
+      qc.invalidateQueries({ queryKey: ['channels'] });
+      toast.success(t('wechatAccountDeleted'));
     },
     onError: (err: Error) => toast.error(err.message),
   });

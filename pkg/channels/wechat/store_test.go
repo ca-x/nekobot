@@ -8,7 +8,7 @@ import (
 	wxtypes "nekobot/pkg/wechat/types"
 )
 
-func TestCredentialStoreReplaceCredentialsRemovesOldFiles(t *testing.T) {
+func TestCredentialStoreReplaceCredentialsKeepsAccountsAndSwitchesActive(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
 
@@ -51,19 +51,49 @@ func TestCredentialStoreReplaceCredentialsRemovesOldFiles(t *testing.T) {
 	if loaded.ILinkBotID != second.ILinkBotID {
 		t.Fatalf("expected bot id %q, got %q", second.ILinkBotID, loaded.ILinkBotID)
 	}
-	if _, err := store.fs.Stat(firstPath); err == nil {
-		t.Fatalf("expected old credential file %s to be removed", firstPath)
+	if _, err := store.fs.Stat(firstPath[1:]); err != nil {
+		t.Fatalf("expected first credential file to remain, got %v", err)
 	}
 
 	syncPath := store.SyncStatePath(second.ILinkBotID)
 	if err := store.WriteSyncState(second.ILinkBotID, "cursor-1"); err != nil {
 		t.Fatalf("WriteSyncState failed: %v", err)
 	}
-	if err := store.ReplaceCredentials(first); err != nil {
-		t.Fatalf("ReplaceCredentials(third) failed: %v", err)
+
+	accounts, err := store.ListCredentials()
+	if err != nil {
+		t.Fatalf("ListCredentials failed: %v", err)
 	}
-	if _, err := store.fs.Stat(syncPath); err == nil {
+	if len(accounts) != 2 {
+		t.Fatalf("expected 2 stored accounts, got %d", len(accounts))
+	}
+
+	if err := store.SetActiveAccount(first.ILinkBotID); err != nil {
+		t.Fatalf("SetActiveAccount failed: %v", err)
+	}
+	loaded, err = store.LoadCredentials()
+	if err != nil {
+		t.Fatalf("LoadCredentials after SetActiveAccount failed: %v", err)
+	}
+	if loaded == nil || loaded.ILinkBotID != first.ILinkBotID {
+		t.Fatalf("expected active account %q, got %+v", first.ILinkBotID, loaded)
+	}
+
+	if err := store.DeleteCredentials(second.ILinkBotID); err != nil {
+		t.Fatalf("DeleteCredentials failed: %v", err)
+	}
+	if _, err := store.fs.Stat(syncPath[1:]); err == nil {
 		t.Fatalf("expected sync state file %s to be removed", syncPath)
+	}
+	accounts, err = store.ListCredentials()
+	if err != nil {
+		t.Fatalf("ListCredentials after delete failed: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 stored account after delete, got %d", len(accounts))
+	}
+	if accounts[0].AccountID != first.ILinkBotID || !accounts[0].Active {
+		t.Fatalf("unexpected remaining account state: %+v", accounts[0])
 	}
 }
 

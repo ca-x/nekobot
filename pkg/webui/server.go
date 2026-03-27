@@ -194,6 +194,8 @@ func (s *Server) setup() {
 	api.GET("/channels/wechat/binding", s.handleGetWechatBindingStatus)
 	api.POST("/channels/wechat/binding/start", s.handleStartWechatBinding)
 	api.POST("/channels/wechat/binding/poll", s.handlePollWechatBinding)
+	api.POST("/channels/wechat/binding/activate", s.handleActivateWechatBinding)
+	api.DELETE("/channels/wechat/binding/accounts/:accountId", s.handleDeleteWechatBindingAccount)
 	api.DELETE("/channels/wechat/binding", s.handleDeleteWechatBinding)
 
 	// Config routes
@@ -3483,10 +3485,72 @@ func (s *Server) handleDeleteWechatBinding(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+func (s *Server) handleActivateWechatBinding(c *echo.Context) error {
+	store, err := s.wechatStore()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	var req struct {
+		AccountID string `json:"account_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	if err := store.SetActiveAccount(req.AccountID); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	if s.config.Channels.WeChat.Enabled {
+		if err := s.reloadChannel("wechat"); err != nil {
+			s.logger.Error("Failed to reload WeChat after activating account", zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	payload, err := s.buildWechatBindingPayload(store)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, payload)
+}
+
+func (s *Server) handleDeleteWechatBindingAccount(c *echo.Context) error {
+	store, err := s.wechatStore()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	accountID, err := url.PathUnescape(c.Param("accountId"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	if err := store.DeleteCredentials(accountID); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	if s.config.Channels.WeChat.Enabled {
+		if err := s.reloadChannel("wechat"); err != nil {
+			s.logger.Error("Failed to reload WeChat after deleting account", zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	payload, err := s.buildWechatBindingPayload(store)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, payload)
+}
+
 func (s *Server) buildWechatBindingPayload(store *channelwechat.CredentialStore) (map[string]interface{}, error) {
 	creds, err := store.LoadCredentials()
 	if err != nil {
 		return nil, fmt.Errorf("load wechat credentials: %w", err)
+	}
+	accounts, err := store.ListCredentials()
+	if err != nil {
+		return nil, fmt.Errorf("list wechat credentials: %w", err)
 	}
 	state, err := store.LoadBindState()
 	if err != nil {
@@ -3495,6 +3559,26 @@ func (s *Server) buildWechatBindingPayload(store *channelwechat.CredentialStore)
 
 	payload := map[string]interface{}{
 		"bound": creds != nil,
+	}
+	if len(accounts) > 0 {
+		items := make([]map[string]interface{}, 0, len(accounts))
+		activeAccountID := ""
+		for _, account := range accounts {
+			if account == nil || account.Creds == nil {
+				continue
+			}
+			if account.Active {
+				activeAccountID = account.AccountID
+			}
+			items = append(items, map[string]interface{}{
+				"account_id": account.AccountID,
+				"bot_id":     account.Creds.ILinkBotID,
+				"user_id":    account.Creds.ILinkUserID,
+				"active":     account.Active,
+			})
+		}
+		payload["accounts"] = items
+		payload["active_account_id"] = activeAccountID
 	}
 	if creds != nil {
 		payload["account"] = map[string]interface{}{

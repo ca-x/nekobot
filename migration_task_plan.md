@@ -24,11 +24,13 @@ Identify which features from the legacy `goclaw` and `gua` projects have not yet
 - Execute the first migration slice as WeChat ACP permission routing before larger `gua` parity items such as `/share` and multi-account support.
 - Treat ACP event buffering as the next migration slice because it unblocks `/logs`, incremental runtime reads, and later elicitation/select parity work.
 - Treat ACP permission option selection as the next concrete parity slice: ACP itself exposes `session/request_permission`, so WeChat should support multi-option prompts and `/select N` instead of pretending ACP has a separate elicitation method.
+- Treat WeChat multi-account management as the next platform-level gap after ACP parity, because current storage already persists accounts per file but runtime and WebUI still assume a single active account.
 
 ## Errors Encountered
 - `codeagent-wrapper` was not found in `PATH`; use built-in agent orchestration instead.
 - The repository already had tracked `task_plan.md` and `notes.md`; restore them and move this task to `migration_task_plan.md` and `migration_notes.md`.
 - ACP incremental-read implementation initially counted non-rendered session events in the cursor; fixed by counting only renderable ACP log entries.
+- Frontend build initially failed because `pkg/webui/frontend` dependencies were not installed in the local environment; resolved by running `npm --prefix pkg/webui/frontend ci` before rebuilding.
 
 ## Status
-**Currently in Phase 5** - ACP multi-option permission selection implemented and WeChat runtime tests re-verified.
+**Currently in Phase 5** - WeChat multi-account management implemented across store, WebUI API, and binding page, with Go tests and frontend build re-verified.

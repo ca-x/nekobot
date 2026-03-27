@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  useActivateWechatBinding,
   useChannels,
+  useDeleteWechatBindingAccount,
   useDeleteWechatBinding,
   usePollWechatBinding,
   useStartWechatBinding,
@@ -63,6 +65,8 @@ export default function ChannelsPage() {
   const startWechatBinding = useStartWechatBinding();
   const pollWechatBinding = usePollWechatBinding();
   const deleteWechatBinding = useDeleteWechatBinding();
+  const activateWechatBinding = useActivateWechatBinding();
+  const deleteWechatBindingAccount = useDeleteWechatBindingAccount();
 
   const [activeTab, setActiveTab] = useState<string>('all');
   const [editingChannel, setEditingChannel] = useState<string | null>(null);
@@ -134,9 +138,13 @@ export default function ChannelsPage() {
               starting={startWechatBinding.isPending}
               polling={pollWechatBinding.isPending}
               deleting={deleteWechatBinding.isPending}
+              activating={activateWechatBinding.isPending}
+              deletingAccount={deleteWechatBindingAccount.isPending}
               onStart={() => startWechatBinding.mutate()}
               onPoll={() => pollWechatBinding.mutate()}
               onDelete={() => deleteWechatBinding.mutate()}
+              onActivateAccount={(accountId) => activateWechatBinding.mutate(accountId)}
+              onDeleteAccount={(accountId) => deleteWechatBindingAccount.mutate(accountId)}
               onEdit={() => setEditingChannel('wechat')}
             />
           )}
@@ -257,10 +265,17 @@ interface WechatBindingCardProps {
   enabled: boolean;
   binding?: {
     bound: boolean;
+    active_account_id?: string;
     account?: {
       bot_id?: string;
       user_id?: string;
     };
+    accounts?: Array<{
+      account_id?: string;
+      bot_id?: string;
+      user_id?: string;
+      active?: boolean;
+    }>;
     binding?: {
       status?: string;
       qrcode_content?: string;
@@ -274,9 +289,13 @@ interface WechatBindingCardProps {
   starting: boolean;
   polling: boolean;
   deleting: boolean;
+  activating: boolean;
+  deletingAccount: boolean;
   onStart: () => void;
   onPoll: () => void;
   onDelete: () => void;
+  onActivateAccount: (accountId: string) => void;
+  onDeleteAccount: (accountId: string) => void;
   onEdit: () => void;
 }
 
@@ -286,14 +305,19 @@ function WechatBindingCard({
   starting,
   polling,
   deleting,
+  activating,
+  deletingAccount,
   onStart,
   onPoll,
   onDelete,
+  onActivateAccount,
+  onDeleteAccount,
   onEdit,
 }: WechatBindingCardProps) {
   const status = binding?.binding?.status ?? 'idle';
   const qrImage = binding?.binding?.qr_png_data_url;
   const canPoll = status === 'pending' || status === 'scanned';
+  const accounts = binding?.accounts ?? [];
 
   return (
     <Card className="border-emerald-500/20 bg-gradient-to-br from-emerald-50/80 via-background to-background dark:from-emerald-950/20">
@@ -356,6 +380,55 @@ function WechatBindingCard({
             )}
           </div>
 
+          {accounts.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium">{t('wechatAccountsTitle')}</div>
+              <div className="space-y-2">
+                {accounts.map((account) => {
+                  const accountId = account.account_id ?? '';
+                  const active = Boolean(account.active);
+                  return (
+                    <div
+                      key={accountId}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card/60 px-3 py-2 text-sm"
+                    >
+                      <div className="space-y-1">
+                        <div className="font-medium">{account.bot_id ?? accountId}</div>
+                        {account.user_id ? (
+                          <div className="text-muted-foreground">{account.user_id}</div>
+                        ) : null}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {active ? (
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                            {t('wechatAccountActive')}
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={activating || !accountId}
+                            onClick={() => onActivateAccount(accountId)}
+                          >
+                            {t('wechatActivateAccount')}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={deletingAccount || !accountId}
+                          onClick={() => onDeleteAccount(accountId)}
+                        >
+                          {t('wechatDeleteAccount')}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-2">
             <Button onClick={onStart} disabled={starting}>
               {starting ? t('wechatStartingBind') : t('wechatStartBind')}
@@ -368,7 +441,7 @@ function WechatBindingCard({
             </Button>
           </div>
 
-          <p className="text-xs text-muted-foreground">{t('wechatSingleAccountHint')}</p>
+          <p className="text-xs text-muted-foreground">{t('wechatMultiAccountHint')}</p>
         </div>
       </CardContent>
     </Card>

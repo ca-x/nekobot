@@ -10,7 +10,8 @@ Compare current `nekobot` against local `goclaw` and `gua`, remove already-migra
 - [x] Extend WeChat interaction handling to support generic runtime approvals and selections, not just skill-install confirmation.
 - [x] Add ACP interaction/event buffering so runtime status, `/logs`, and incremental runtime reads are inspectable.
 - [x] Add ACP multi-option permission selection so `/select N` resolves to concrete ACP permission options.
-- [ ] Evaluate follow-up `gua` parity tasks: `/share`, multi-account WeChat account management, session management UX.
+- [x] Add WeChat multi-account account management and active-account switching.
+- [ ] Evaluate follow-up `gua` parity tasks: `/share`, session management UX.
 
 ## Execution Log
 - Research complete enough to start Phase 1 execution on the highest-priority `gua` gap.
@@ -38,3 +39,11 @@ Compare current `nekobot` against local `goclaw` and `gua`, remove already-migra
   - `/yes` and `/no` still work when ACP provides canonical allow/deny options.
   - Added regression tests for prompt rendering, option mapping, and runtime-side `/select`.
 - Verified with `go test -count=1 ./pkg/channels/wechat`.
+- Implemented WeChat multi-account management:
+  - `CredentialStore` now preserves multiple accounts, tracks the active account, supports listing, activating, and deleting a single account.
+  - WebUI `/api/channels/wechat/binding` payload now exposes `accounts` and `active_account_id`.
+  - Added WebUI actions to activate or delete one stored account without clearing all credentials.
+  - Updated the WeChat binding page to show stored accounts and switch the active one.
+- Verified with `go test -count=1 ./pkg/channels/wechat ./pkg/webui`.
+- Verified with `npm --prefix pkg/webui/frontend ci`.
+- Verified with `npm --prefix pkg/webui/frontend run build`.
