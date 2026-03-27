@@ -8,7 +8,7 @@ Break the remaining non-migrated product gaps into executable slices and impleme
 - [x] Phase 2: Define executable closure slices
 - [x] Phase 3: Implement Web bootstrap config coverage
 - [x] Phase 4: Re-assess remaining product closure gaps
-- [ ] Phase 5: Verify and deliver
+- [ ] Phase 5: Verify, commit, and deliver
 
 ## Key Questions
 1. Which missing capabilities are concrete implementation gaps versus broader product/process gaps?
@@ -23,8 +23,10 @@ Break the remaining non-migrated product gaps into executable slices and impleme
 - Preserve explicit `storage.db_dir` values when loading a config file; only workspace should stay colocated with the config path by default.
 - Do not allow first-run Web setup to change `storage.db_dir` yet, because admin credentials are persisted through the already-open runtime DB handle and would otherwise be written to the wrong database before restart.
 - Expand the first-run Web flow with safe bootstrap sections (`logger`, `gateway`, `webui`) and explicit restart guidance instead of pretending storage migration is already closed-loop.
+- Keep bootstrap semantics consistent across both first-run setup and normal Config/import flows: startup-setting changes must save to `config.json` and report restart requirements explicitly.
+- When `storage.db_dir` changes from Web, migrate the unified runtime DB to the new location before restart so auth/runtime state does not split across old and new databases.
 
 ## Errors Encountered
 
 ## Status
-**Currently in Phase 5** - First-run Web setup now covers admin creation plus safe bootstrap settings; running full verification and preparing delivery with remaining gaps called out.
+**Currently in Phase 5** - Restart-control UX is implemented; running final verification, then committing and pushing the closure slice.

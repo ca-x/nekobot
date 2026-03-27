@@ -7,6 +7,30 @@ export interface ConfigData {
   [section: string]: Record<string, unknown>;
 }
 
+export interface ConfigMutationResult {
+  status?: string;
+  sections_saved?: number;
+  providers_imported?: number;
+  restart_required?: boolean;
+  restart_sections?: string[];
+}
+
+export interface ServiceStatusData {
+  name: string;
+  platform: string;
+  config_path: string;
+  arguments: string[];
+  installed: boolean;
+  status: string;
+}
+
+function formatRestartNotice(result: ConfigMutationResult): string | null {
+  if (!result.restart_required || !result.restart_sections || result.restart_sections.length === 0) {
+    return null;
+  }
+  return t('configRestartRequired', result.restart_sections.join(', '));
+}
+
 export function useConfig() {
   return useQuery<ConfigData>({
     queryKey: ['config'],
@@ -18,10 +42,14 @@ export function useConfig() {
 export function useSaveConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: ConfigData) => api.put('/api/config', data),
-    onSuccess: () => {
+    mutationFn: (data: ConfigData) => api.put<ConfigMutationResult>('/api/config', data),
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['config'] });
       toast.success(t('configSaved'));
+      const restartNotice = formatRestartNotice(result ?? {});
+      if (restartNotice) {
+        toast.info(restartNotice);
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -47,11 +75,15 @@ export function useExportConfig() {
 export function useImportConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: ConfigData) => api.post<{ sections_saved: number; providers_imported: number }>('/api/config/import', data),
+    mutationFn: (data: ConfigData) => api.post<ConfigMutationResult>('/api/config/import', data),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['config'] });
       if (result) {
         toast.success(t('imported', String(result.sections_saved ?? 0), String(result.providers_imported ?? 0)));
+        const restartNotice = formatRestartNotice(result);
+        if (restartNotice) {
+          toast.info(restartNotice);
+        }
       }
     },
     onError: () => toast.error(t('importFailed')),
@@ -63,6 +95,27 @@ export function useStatus() {
     queryKey: ['status'],
     queryFn: () => api.get('/api/status'),
     staleTime: 10_000,
+  });
+}
+
+export function useServiceStatus() {
+  return useQuery<ServiceStatusData>({
+    queryKey: ['service-status'],
+    queryFn: () => api.get('/api/service'),
+    staleTime: 10_000,
+  });
+}
+
+export function useRestartService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ status: string }>('/api/service/restart', {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['service-status'] });
+      qc.invalidateQueries({ queryKey: ['status'] });
+      toast.success(t('systemServiceRestartQueued'));
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 }
 

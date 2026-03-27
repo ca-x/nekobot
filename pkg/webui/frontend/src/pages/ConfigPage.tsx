@@ -128,6 +128,19 @@ function sectionLabel(section: ConfigSection): string {
   return labels[section];
 }
 
+function sectionPersistenceHint(section: ConfigSection): string {
+  switch (section) {
+    case 'storage':
+      return t('configSectionHintStorage');
+    case 'gateway':
+    case 'logger':
+    case 'webui':
+      return t('configSectionHintBootstrap', sectionLabel(section));
+    default:
+      return t('configSectionHint', sectionLabel(section));
+  }
+}
+
 function cloneSection(value: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(value ?? {})) as Record<string, unknown>;
 }
@@ -1358,6 +1371,51 @@ function SessionsSectionForm({
   );
 }
 
+function StorageSectionForm({
+  data,
+  onChange,
+}: {
+  data: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+}) {
+  const readString = (path: string) => String(getNestedValue(data, path) ?? '');
+
+  return (
+    <div className="space-y-5">
+      <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(246,249,255,0.95),rgba(242,247,255,0.9))] shadow-[0_24px_60px_-42px_rgba(71,85,132,0.32)]">
+        <CardHeader className="pb-4">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700">
+            <FolderKanban className="h-3.5 w-3.5" />
+            {t('storageRuntimeTitle')}
+          </div>
+          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('storageRuntimeHeadline')}</CardTitle>
+          <CardDescription>{t('storageRuntimeDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+            <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('storageDatabaseDir')}</Label>
+            <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('storageDatabaseDirDesc')}</div>
+            <Input
+              value={readString('db_dir')}
+              onChange={(event) => onChange('db_dir', event.target.value)}
+              placeholder="/var/lib/nekobot"
+              spellCheck={false}
+            />
+          </div>
+
+          <div className="rounded-2xl border border-amber-300/80 bg-amber-50 px-4 py-3 text-xs leading-6 text-amber-900">
+            {t('storageMigrationHint')}
+          </div>
+
+          <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] bg-white/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
+            {t('storageMigrationDetail')}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function WebUISectionForm({
   data,
   onChange,
@@ -1811,7 +1869,7 @@ export default function ConfigPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-              <span>{t('configSectionHint', sectionLabel(section))}</span>
+              <span>{sectionPersistenceHint(section)}</span>
               <span className="rounded-full bg-[hsl(var(--gray-100))] px-2.5 py-1">
                 {dirtyCount > 0 ? t('configDraftSections', String(dirtyCount)) : t('configNoUnsavedDrafts')}
               </span>
@@ -1834,6 +1892,8 @@ export default function ConfigPage() {
                     spellCheck={false}
                   />
                 </div>
+              ) : section === 'storage' ? (
+                <StorageSectionForm data={currentData} onChange={handleFieldChange} />
               ) : section === 'agents' ? (
                 <AgentsSectionForm data={currentData} onChange={handleFieldChange} />
               ) : section === 'memory' ? (

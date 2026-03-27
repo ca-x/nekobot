@@ -47,6 +47,7 @@ import (
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/session"
+	"nekobot/pkg/servicecontrol"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/toolsessions"
@@ -81,8 +82,37 @@ type Server struct {
 	skillsMgr  *skills.Manager
 	workspace  *workspace.Manager
 	entClient  *ent.Client
+	serviceCtrl serviceController
 	port       int
 	startedAt  time.Time
+}
+
+type serviceController interface {
+	Status() (map[string]interface{}, error)
+	Restart() error
+}
+
+type gatewayServiceController struct {
+	configPath string
+}
+
+func (c *gatewayServiceController) Status() (map[string]interface{}, error) {
+	status, err := servicecontrol.InspectGatewayService(c.configPath)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"name":        status.Name,
+		"platform":    status.Platform,
+		"config_path": status.ConfigPath,
+		"arguments":   status.Arguments,
+		"installed":   status.Installed,
+		"status":      status.Status,
+	}, nil
+}
+
+func (c *gatewayServiceController) Restart() error {
+	return servicecontrol.RestartGatewayService(c.configPath)
 }
 
 const defaultQMDNPMPackage = "@tobilu/qmd"
@@ -139,6 +169,14 @@ func NewServer(
 		skillsMgr:  skillsManager,
 		workspace:  workspaceManager,
 		entClient:  entClient,
+		serviceCtrl: &gatewayServiceController{
+			configPath: func() string {
+				if loader == nil {
+					return ""
+				}
+				return loader.GetConfigPath()
+			}(),
+		},
 		port:       port,
 		startedAt:  time.Now(),
 	}
@@ -224,6 +262,8 @@ func (s *Server) setup() {
 
 	// Status
 	api.GET("/status", s.handleStatus)
+	api.GET("/service", s.handleServiceStatus)
+	api.POST("/service/restart", s.handleServiceRestart)
 
 	// Cron routes
 	api.GET("/cron/jobs", s.handleListCronJobs)
@@ -3685,6 +3725,12 @@ func (s *Server) handleGetConfig(c *echo.Context) error {
 }
 
 func (s *Server) handleSaveConfig(c *echo.Context) error {
+	previousStorage := s.config.Storage
+	oldRuntimeDBPath := ""
+	if currentPath, err := config.RuntimeDBPath(s.config); err == nil {
+		oldRuntimeDBPath = currentPath
+	}
+
 	var body struct {
 		Storage       *config.StorageConfig       `json:"storage"`
 		Agents        *config.AgentsConfig        `json:"agents"`
@@ -3764,12 +3810,38 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 
 	// Validate
 	if err := config.ValidateConfig(s.config); err != nil {
+		s.config.Storage = previousStorage
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	if body.Storage != nil {
+	restartSections := make([]string, 0, 4)
+	if body.Storage != nil || body.Logger != nil || body.Gateway != nil || body.WebUI != nil {
+		if body.Storage != nil {
+			newRuntimeDBPath, err := config.RuntimeDBPath(s.config)
+			if err != nil {
+				s.config.Storage = previousStorage
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+			if err := config.MigrateRuntimeDB(oldRuntimeDBPath, newRuntimeDBPath); err != nil {
+				s.config.Storage = previousStorage
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+		}
 		if err := s.saveBootstrapConfig(); err != nil {
+			s.config.Storage = previousStorage
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		if body.Storage != nil {
+			restartSections = append(restartSections, "storage")
+		}
+		if body.Logger != nil {
+			restartSections = append(restartSections, "logger")
+		}
+		if body.Gateway != nil {
+			restartSections = append(restartSections, "gateway")
+		}
+		if body.WebUI != nil {
+			restartSections = append(restartSections, "webui")
 		}
 	}
 
@@ -3822,7 +3894,11 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"status": "saved"})
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":           "saved",
+		"restart_required": len(restartSections) > 0,
+		"restart_sections": restartSections,
+	})
 }
 
 func (s *Server) handleExportConfig(c *echo.Context) error {
@@ -3860,6 +3936,12 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 }
 
 func (s *Server) handleImportConfig(c *echo.Context) error {
+	previousStorage := s.config.Storage
+	oldRuntimeDBPath := ""
+	if currentPath, err := config.RuntimeDBPath(s.config); err == nil {
+		oldRuntimeDBPath = currentPath
+	}
+
 	var body struct {
 		Storage       *config.StorageConfig       `json:"storage"`
 		Agents        *config.AgentsConfig        `json:"agents"`
@@ -3940,12 +4022,38 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 
 	// Validate
 	if err := config.ValidateConfig(s.config); err != nil {
+		s.config.Storage = previousStorage
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	if body.Storage != nil {
+	restartSections := make([]string, 0, 4)
+	if body.Storage != nil || body.Logger != nil || body.Gateway != nil || body.WebUI != nil {
+		if body.Storage != nil {
+			newRuntimeDBPath, err := config.RuntimeDBPath(s.config)
+			if err != nil {
+				s.config.Storage = previousStorage
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+			if err := config.MigrateRuntimeDB(oldRuntimeDBPath, newRuntimeDBPath); err != nil {
+				s.config.Storage = previousStorage
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+		}
 		if err := s.saveBootstrapConfig(); err != nil {
+			s.config.Storage = previousStorage
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		if body.Storage != nil {
+			restartSections = append(restartSections, "storage")
+		}
+		if body.Logger != nil {
+			restartSections = append(restartSections, "logger")
+		}
+		if body.Gateway != nil {
+			restartSections = append(restartSections, "gateway")
+		}
+		if body.WebUI != nil {
+			restartSections = append(restartSections, "webui")
 		}
 	}
 
@@ -4022,6 +4130,8 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		"status":             "imported",
 		"sections_saved":     len(sections),
 		"providers_imported": importedProviders,
+		"restart_required":   len(restartSections) > 0,
+		"restart_sections":   restartSections,
 	})
 }
 
@@ -4259,6 +4369,14 @@ func (s *Server) handleStatus(c *echo.Context) error {
 	runtime.ReadMemStats(&mem)
 
 	uptime := time.Since(s.startedAt)
+	configPath, err := s.resolveBootstrapConfigPath()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	runtimeDBPath, err := config.RuntimeDBPath(s.config)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"version":            version.GetVersion(),
@@ -4273,6 +4391,10 @@ func (s *Server) handleStatus(c *echo.Context) error {
 		"memory_alloc_bytes": mem.Alloc,
 		"memory_sys_bytes":   mem.Sys,
 		"provider_count":     len(s.config.Providers),
+		"config_path":        configPath,
+		"database_dir":       s.config.Storage.DBDir,
+		"runtime_db_path":    runtimeDBPath,
+		"workspace_path":     s.config.Agents.Defaults.Workspace,
 		"gateway_host":       s.config.Gateway.Host,
 		"gateway_port":       s.config.Gateway.Port,
 		"gateway": map[string]interface{}{
@@ -4280,6 +4402,29 @@ func (s *Server) handleStatus(c *echo.Context) error {
 			"port": s.config.Gateway.Port,
 		},
 	})
+}
+
+func (s *Server) handleServiceStatus(c *echo.Context) error {
+	if s.serviceCtrl == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "service control not available"})
+	}
+
+	status, err := s.serviceCtrl.Status()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, status)
+}
+
+func (s *Server) handleServiceRestart(c *echo.Context) error {
+	if s.serviceCtrl == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "service control not available"})
+	}
+
+	if err := s.serviceCtrl.Restart(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "restarting"})
 }
 
 // --- Chat WebSocket Playground ---

@@ -56,3 +56,32 @@
 - Add an explicit storage-path migration/rebind flow so `storage.db_dir` can be safely changed from Web without splitting bootstrap state and auth state across different runtime databases.
 - Clarify restart/reload UX after startup-setting changes made from Config or Init pages.
 - Re-evaluate whether broader operational recovery paths (fresh bootstrap, DB move, restore, restart health) now satisfy the project’s “closed loop” bar.
+
+### Slice 3 Outcome
+- Normal Config saves and config imports now follow the same bootstrap semantics as first-run setup for `storage`, `logger`, `gateway`, and `webui`.
+- Web responses now explicitly declare when a restart is required, instead of silently succeeding while the live process still runs with old startup state.
+- Frontend toasts now surface restart-needed feedback after Config save/import, closing the most obvious user-facing loop around startup-setting changes.
+
+### Remaining Closure Work After Slice 3
+- Add an explicit storage-path migration/rebind flow so `storage.db_dir` can be safely changed from Web without splitting bootstrap state and auth state across different runtime databases.
+- Decide whether restart-required startup changes need a dedicated restart action or system-service control surface in WebUI.
+- Re-evaluate broader recovery flows (fresh bootstrap, DB move, restore, restart health) against the “all startup config from Web” and “complete closed loop” bars.
+
+### Slice 4 Outcome
+- `storage.db_dir` changes triggered from Config/import now migrate the unified runtime DB file to the new directory before restart.
+- Admin auth data and runtime-managed config sections now remain aligned with the future DB location, avoiding the most serious split-brain failure mode in Web-managed storage moves.
+- This still does not hot-swap the running process onto the new DB; restart remains required, but the post-restart state is now coherent.
+
+### Remaining Closure Work After Slice 4
+- Add an explicit restart/rebind UX or service-control surface so users can finish startup-setting changes from Web instead of switching back to CLI/system service controls.
+- Consider adding storage-move affordances such as conflict detection, backup labeling, and post-migration status reporting in the UI.
+- Re-evaluate broader recovery flows (fresh bootstrap, DB move, restore, restart health) against the “all startup config from Web” and “complete closed loop” bars.
+
+### Slice 5 Outcome
+- WebUI now exposes gateway service installation and runtime state through a dedicated `/api/service` endpoint.
+- Users can trigger a service restart directly from the System page after changing bootstrap-backed settings, instead of returning to CLI-only service commands.
+- The System page also surfaces the service config path and startup arguments, making the active service binding visible from Web.
+
+### Remaining Closure Work After Slice 5
+- Startup configuration and restart control are now substantially Web-led, but initial service installation is still a host-level concern outside the current dashboard.
+- Broader “complete closed loop” work, if pursued, now shifts from migration parity into operational product scope: backup/restore UX, install/bootstrap automation, and recovery workflows.

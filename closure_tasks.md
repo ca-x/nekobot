@@ -12,7 +12,10 @@ Convert the remaining high-confidence product closure gaps into discrete impleme
 - [x] Add first-run Web bootstrap summary endpoint data.
 - [x] Allow first-run Web setup to save safe bootstrap sections (`logger`, `gateway`, `webui`).
 - [x] Show restart-required guidance in the first-run Web flow.
-- [ ] Revisit storage-path migration and restart/rebind UX for a fully closed-loop bootstrap story.
+- [x] Make Config/import flows persist bootstrap sections (`storage`, `logger`, `gateway`, `webui`) consistently.
+- [x] Show restart-required guidance after Config/import changes that only take effect on restart.
+- [x] Revisit storage-path migration so `storage.db_dir` changes no longer strand runtime/auth data in the old DB.
+- [x] Add explicit restart/rebind UX for a fully closed-loop bootstrap story.
 
 ## Execution Log
 - Closure audit started from the post-migration state.
@@ -32,3 +35,14 @@ Convert the remaining high-confidence product closure gaps into discrete impleme
   - Init response now reports `restart_required` and the affected bootstrap sections.
   - `InitPage` now displays bootstrap path/runtime-location summary, editable safe startup settings, and restart guidance.
   - Storage/database/workspace paths remain read-only during first-run because changing them still requires an explicit migration/restart path.
+- Implemented third closure slice:
+  - `PUT /api/config` and `POST /api/config/import` now save bootstrap-backed sections (`storage`, `logger`, `gateway`, `webui`) back to `config.json`.
+  - Config save/import responses now report `restart_required` and `restart_sections`.
+  - Frontend save/import toasts now surface restart guidance when startup-setting changes are persisted.
+- Implemented fourth closure slice:
+  - Changing `storage.db_dir` from Config/import now copies the unified runtime DB to the new directory before bootstrap config is rewritten.
+  - This keeps admin auth and runtime-managed config sections aligned with the new storage target after restart, instead of leaving them behind in the previous DB directory.
+- Implemented fifth closure slice:
+  - Added reusable gateway service inspection/restart helpers in `pkg/servicecontrol`.
+  - Exposed `GET /api/service` and `POST /api/service/restart` in WebUI.
+  - System page now shows service install/run state, config path, arguments, and a restart action for startup-setting changes.

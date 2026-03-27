@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providerstore"
+	"nekobot/pkg/servicecontrol"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
@@ -130,24 +130,7 @@ func (s *GatewayService) run() {
 
 // ServiceConfig returns the service configuration.
 func ServiceConfig() *service.Config {
-	args := []string{"gateway", "run"}
-	configFile := strings.TrimSpace(configPath)
-	if configFile == "" {
-		configFile = strings.TrimSpace(os.Getenv(config.ConfigPathEnv))
-	}
-	if configFile != "" {
-		if absPath, err := filepath.Abs(configFile); err == nil {
-			configFile = absPath
-		}
-		args = append([]string{"-c", configFile}, args...)
-	}
-
-	return &service.Config{
-		Name:        "nekobot-gateway",
-		DisplayName: "Nekobot Gateway",
-		Description: "Nekobot AI assistant gateway for multi-channel support",
-		Arguments:   args, // Will call "nekobot [-c config] gateway run" when service starts
-	}
+	return servicecontrol.ServiceConfig(configPath)
 }
 
 // InstallService installs the gateway as a system service.
@@ -236,51 +219,20 @@ func StopService() error {
 
 // RestartService restarts the gateway service.
 func RestartService() error {
-	svcConfig := ServiceConfig()
-	prg := NewGatewayService()
-
-	s, err := service.New(prg, svcConfig)
-	if err != nil {
-		return fmt.Errorf("creating service: %w", err)
+	if err := servicecontrol.RestartGatewayService(configPath); err != nil {
+		return err
 	}
-
-	// Restart
-	if err := s.Restart(); err != nil {
-		return fmt.Errorf("restarting service: %w", err)
-	}
-
 	fmt.Println("Service restarted successfully!")
 	return nil
 }
 
 // StatusService checks the status of the gateway service.
 func StatusService() error {
-	svcConfig := ServiceConfig()
-	prg := NewGatewayService()
-
-	s, err := service.New(prg, svcConfig)
+	status, err := servicecontrol.InspectGatewayService(configPath)
 	if err != nil {
-		return fmt.Errorf("creating service: %w", err)
+		return err
 	}
-
-	// Get status
-	status, err := s.Status()
-	if err != nil {
-		return fmt.Errorf("getting service status: %w", err)
-	}
-
-	// Print status
-	statusStr := "Unknown"
-	switch status {
-	case service.StatusRunning:
-		statusStr = "Running"
-	case service.StatusStopped:
-		statusStr = "Stopped"
-	case service.StatusUnknown:
-		statusStr = "Unknown"
-	}
-
-	fmt.Printf("Service Status: %s\n", statusStr)
+	fmt.Printf("Service Status: %s\n", strings.Title(status.Status))
 	return nil
 }
 

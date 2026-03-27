@@ -106,7 +106,8 @@ func TestHandleSaveConfigPersistsStartupSections(t *testing.T) {
 		providers: providers,
 	}
 
-	body := `{"storage":{"db_dir":"/tmp/nekobot-db"},"redis":{"addr":"127.0.0.1:6380","password":"pw","db":9},"state":{"backend":"redis","file_path":"/tmp/state.json","prefix":"state:"},"bus":{"type":"redis","prefix":"bus:"}}`
+	newDBDir := filepath.Join(t.TempDir(), "migrated-db")
+	body := `{"storage":{"db_dir":"` + newDBDir + `"},"logger":{"level":"debug","output_path":"","max_size":0,"max_backups":0,"max_age":0,"compress":false},"gateway":{"host":"0.0.0.0","port":19090},"webui":{"enabled":true,"port":19191,"public_base_url":"https://bot.example.com","tool_session_otp_ttl_seconds":180,"tool_session_events":{"enabled":true,"retention_days":14},"skill_snapshots":{"auto_prune":true,"max_count":10},"skill_versions":{"enabled":true,"max_count":20}},"redis":{"addr":"127.0.0.1:6380","password":"pw","db":9},"state":{"backend":"redis","file_path":"/tmp/state.json","prefix":"state:"},"bus":{"type":"redis","prefix":"bus:"}}`
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(body))
@@ -121,8 +122,37 @@ func TestHandleSaveConfigPersistsStartupSections(t *testing.T) {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
 	}
 
-	if s.config.Storage.DBDir != "/tmp/nekobot-db" {
+	var payload struct {
+		Status          string   `json:"status"`
+		RestartRequired bool     `json:"restart_required"`
+		RestartSections []string `json:"restart_sections"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if payload.Status != "saved" {
+		t.Fatalf("unexpected response payload: %+v", payload)
+	}
+	if !payload.RestartRequired {
+		t.Fatalf("expected restart_required=true, got %+v", payload)
+	}
+	for _, section := range []string{"storage", "logger", "gateway", "webui"} {
+		if !containsString(payload.RestartSections, section) {
+			t.Fatalf("expected restart section %q, got %+v", section, payload.RestartSections)
+		}
+	}
+
+	if s.config.Storage.DBDir != newDBDir {
 		t.Fatalf("storage not applied: %+v", s.config.Storage)
+	}
+	if s.config.Logger.Level != "debug" {
+		t.Fatalf("logger not applied: %+v", s.config.Logger)
+	}
+	if s.config.Gateway.Host != "0.0.0.0" || s.config.Gateway.Port != 19090 {
+		t.Fatalf("gateway not applied: %+v", s.config.Gateway)
+	}
+	if s.config.WebUI.Port != 19191 || s.config.WebUI.PublicBaseURL != "https://bot.example.com" {
+		t.Fatalf("webui not applied: %+v", s.config.WebUI)
 	}
 	if s.config.Redis.Addr != "127.0.0.1:6380" || s.config.Redis.DB != 9 {
 		t.Fatalf("redis not applied: %+v", s.config.Redis)
@@ -138,8 +168,17 @@ func TestHandleSaveConfigPersistsStartupSections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload bootstrap config failed: %v", err)
 	}
-	if bootstrapReloaded.Storage.DBDir != "/tmp/nekobot-db" {
+	if bootstrapReloaded.Storage.DBDir != newDBDir {
 		t.Fatalf("storage not persisted to bootstrap config: %+v", bootstrapReloaded.Storage)
+	}
+	if bootstrapReloaded.Logger.Level != "debug" {
+		t.Fatalf("logger not persisted to bootstrap config: %+v", bootstrapReloaded.Logger)
+	}
+	if bootstrapReloaded.Gateway.Host != "0.0.0.0" || bootstrapReloaded.Gateway.Port != 19090 {
+		t.Fatalf("gateway not persisted to bootstrap config: %+v", bootstrapReloaded.Gateway)
+	}
+	if bootstrapReloaded.WebUI.Port != 19191 || bootstrapReloaded.WebUI.PublicBaseURL != "https://bot.example.com" {
+		t.Fatalf("webui not persisted to bootstrap config: %+v", bootstrapReloaded.WebUI)
 	}
 
 	reloaded := config.DefaultConfig()
@@ -314,6 +353,257 @@ func TestHandleImportConfigPersistsMemorySection(t *testing.T) {
 	}
 	if reloaded.Memory.Semantic.SearchPolicy != "hybrid" || reloaded.Memory.ShortTerm.RawHistoryLimit != 123 {
 		t.Fatalf("memory section not persisted by import: %+v", reloaded.Memory)
+	}
+}
+
+func TestHandleImportConfigPersistsBootstrapSectionsAndReportsRestart(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("SaveToFile failed: %v", err)
+	}
+
+	loader := config.NewLoader()
+	if _, err := loader.LoadFromFile(configPath); err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	defer client.Close()
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	defer providers.Close()
+
+	s := &Server{
+		config:    cfg,
+		loader:    loader,
+		logger:    log,
+		providers: providers,
+	}
+
+	newDBDir := filepath.Join(t.TempDir(), "imported-db")
+	body := `{"storage":{"db_dir":"` + newDBDir + `"},"logger":{"level":"warn","output_path":"","max_size":0,"max_backups":0,"max_age":0,"compress":false},"gateway":{"host":"127.0.0.1","port":28080},"webui":{"enabled":true,"port":28081,"public_base_url":"https://import.example.com","tool_session_otp_ttl_seconds":120,"tool_session_events":{"enabled":true,"retention_days":7},"skill_snapshots":{"auto_prune":true,"max_count":8},"skill_versions":{"enabled":true,"max_count":12}}}`
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/config/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleImportConfig(c); err != nil {
+		t.Fatalf("handleImportConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Status            string   `json:"status"`
+		SectionsSaved     int      `json:"sections_saved"`
+		RestartRequired   bool     `json:"restart_required"`
+		RestartSections   []string `json:"restart_sections"`
+		ProvidersImported int      `json:"providers_imported"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if payload.Status != "imported" || payload.SectionsSaved != 3 || payload.ProvidersImported != 0 {
+		t.Fatalf("unexpected import response: %+v", payload)
+	}
+	if !payload.RestartRequired {
+		t.Fatalf("expected restart_required=true, got %+v", payload)
+	}
+	for _, section := range []string{"storage", "logger", "gateway", "webui"} {
+		if !containsString(payload.RestartSections, section) {
+			t.Fatalf("expected restart section %q, got %+v", section, payload.RestartSections)
+		}
+	}
+
+	bootstrapReloaded, err := config.NewLoader().LoadFromFile(configPath)
+	if err != nil {
+		t.Fatalf("reload bootstrap config failed: %v", err)
+	}
+	if bootstrapReloaded.Storage.DBDir != newDBDir {
+		t.Fatalf("storage not persisted to bootstrap config: %+v", bootstrapReloaded.Storage)
+	}
+	if bootstrapReloaded.Logger.Level != "warn" {
+		t.Fatalf("logger not persisted to bootstrap config: %+v", bootstrapReloaded.Logger)
+	}
+	if bootstrapReloaded.Gateway.Host != "127.0.0.1" || bootstrapReloaded.Gateway.Port != 28080 {
+		t.Fatalf("gateway not persisted to bootstrap config: %+v", bootstrapReloaded.Gateway)
+	}
+	if bootstrapReloaded.WebUI.Port != 28081 || bootstrapReloaded.WebUI.PublicBaseURL != "https://import.example.com" {
+		t.Fatalf("webui not persisted to bootstrap config: %+v", bootstrapReloaded.WebUI)
+	}
+}
+
+func TestHandleSaveConfigMigratesRuntimeDBWhenStorageChanges(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = filepath.Join(t.TempDir(), "db-old")
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Memory.Semantic.SearchPolicy = "vector"
+	cfg.Memory.ShortTerm.RawHistoryLimit = 88
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("SaveToFile failed: %v", err)
+	}
+	loader := config.NewLoader()
+	if _, err := loader.LoadFromFile(configPath); err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	defer client.Close()
+
+	adminCred := &config.AdminCredential{
+		Username:     "admin",
+		Nickname:     "Owner",
+		PasswordHash: "$2a$10$examplehash",
+		JWTSecret:    "jwt-secret",
+	}
+	if err := config.SaveAdminCredential(client, adminCred); err != nil {
+		t.Fatalf("SaveAdminCredential failed: %v", err)
+	}
+	if err := config.SaveDatabaseSections(cfg, "memory"); err != nil {
+		t.Fatalf("SaveDatabaseSections failed: %v", err)
+	}
+
+	s := &Server{
+		config:    cfg,
+		loader:    loader,
+		logger:    log,
+		entClient: client,
+	}
+
+	newDBDir := filepath.Join(t.TempDir(), "db-new")
+	body := `{"storage":{"db_dir":"` + newDBDir + `"}}`
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleSaveConfig(c); err != nil {
+		t.Fatalf("handleSaveConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	reloaded := config.DefaultConfig()
+	reloaded.Storage.DBDir = newDBDir
+	reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
+
+	newClient := newTestEntClient(t, reloaded)
+	defer newClient.Close()
+
+	migratedCred, err := config.LoadAdminCredential(newClient)
+	if err != nil {
+		t.Fatalf("LoadAdminCredential on migrated DB failed: %v", err)
+	}
+	if migratedCred == nil || migratedCred.Username != "admin" || migratedCred.JWTSecret != "jwt-secret" {
+		t.Fatalf("expected migrated admin credential, got %+v", migratedCred)
+	}
+
+	if err := config.ApplyDatabaseOverrides(reloaded); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides failed: %v", err)
+	}
+	if reloaded.Memory.Semantic.SearchPolicy != "vector" || reloaded.Memory.ShortTerm.RawHistoryLimit != 88 {
+		t.Fatalf("expected migrated runtime sections, got %+v", reloaded.Memory)
+	}
+}
+
+func TestHandleImportConfigMigratesRuntimeDBWhenStorageChanges(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = filepath.Join(t.TempDir(), "db-old")
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Memory.Semantic.SearchPolicy = "hybrid"
+	cfg.Memory.ShortTerm.RawHistoryLimit = 64
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("SaveToFile failed: %v", err)
+	}
+	loader := config.NewLoader()
+	if _, err := loader.LoadFromFile(configPath); err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	defer client.Close()
+
+	adminCred := &config.AdminCredential{
+		Username:     "owner",
+		Nickname:     "Owner",
+		PasswordHash: "$2a$10$examplehash",
+		JWTSecret:    "import-jwt-secret",
+	}
+	if err := config.SaveAdminCredential(client, adminCred); err != nil {
+		t.Fatalf("SaveAdminCredential failed: %v", err)
+	}
+	if err := config.SaveDatabaseSections(cfg, "memory"); err != nil {
+		t.Fatalf("SaveDatabaseSections failed: %v", err)
+	}
+
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	defer providers.Close()
+
+	s := &Server{
+		config:    cfg,
+		loader:    loader,
+		logger:    log,
+		entClient: client,
+		providers: providers,
+	}
+
+	newDBDir := filepath.Join(t.TempDir(), "db-imported")
+	body := `{"storage":{"db_dir":"` + newDBDir + `"}}`
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/config/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleImportConfig(c); err != nil {
+		t.Fatalf("handleImportConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	reloaded := config.DefaultConfig()
+	reloaded.Storage.DBDir = newDBDir
+	reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
+
+	newClient := newTestEntClient(t, reloaded)
+	defer newClient.Close()
+
+	migratedCred, err := config.LoadAdminCredential(newClient)
+	if err != nil {
+		t.Fatalf("LoadAdminCredential on migrated DB failed: %v", err)
+	}
+	if migratedCred == nil || migratedCred.Username != "owner" || migratedCred.JWTSecret != "import-jwt-secret" {
+		t.Fatalf("expected migrated admin credential, got %+v", migratedCred)
+	}
+
+	if err := config.ApplyDatabaseOverrides(reloaded); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides failed: %v", err)
+	}
+	if reloaded.Memory.Semantic.SearchPolicy != "hybrid" || reloaded.Memory.ShortTerm.RawHistoryLimit != 64 {
+		t.Fatalf("expected migrated runtime sections, got %+v", reloaded.Memory)
 	}
 }
 

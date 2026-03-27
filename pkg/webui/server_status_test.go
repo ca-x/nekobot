@@ -2,6 +2,7 @@ package webui
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,16 +18,52 @@ import (
 	"nekobot/pkg/workspace"
 )
 
+type stubGatewayServiceController struct {
+	status       map[string]interface{}
+	statusErr    error
+	restartErr   error
+	restartCalls int
+}
+
+func (s *stubGatewayServiceController) Status() (map[string]interface{}, error) {
+	if s.statusErr != nil {
+		return nil, s.statusErr
+	}
+	return s.status, nil
+}
+
+func (s *stubGatewayServiceController) Restart() error {
+	s.restartCalls++
+	return s.restartErr
+}
+
 func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Gateway.Host = "127.0.0.1"
 	cfg.Gateway.Port = 18790
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
 	cfg.Providers = []config.ProviderProfile{
 		{Name: "anthropic", ProviderKind: "anthropic"},
 	}
 
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("SaveToFile failed: %v", err)
+	}
+	loader := config.NewLoader()
+	if _, err := loader.LoadFromFile(configPath); err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+
+	runtimeDBPath, err := config.RuntimeDBPath(cfg)
+	if err != nil {
+		t.Fatalf("RuntimeDBPath failed: %v", err)
+	}
+
 	s := &Server{
 		config:    cfg,
+		loader:    loader,
 		startedAt: time.Now().Add(-3 * time.Second),
 	}
 
@@ -60,6 +97,10 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 		"memory_alloc_bytes",
 		"memory_sys_bytes",
 		"provider_count",
+		"config_path",
+		"database_dir",
+		"runtime_db_path",
+		"workspace_path",
 		"gateway_host",
 		"gateway_port",
 	}
@@ -67,6 +108,143 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 		if _, ok := payload[key]; !ok {
 			t.Fatalf("expected key %q in payload, got: %v", key, payload)
 		}
+	}
+	if payload["config_path"] != configPath {
+		t.Fatalf("unexpected config_path: %+v", payload["config_path"])
+	}
+	if payload["database_dir"] != cfg.Storage.DBDir {
+		t.Fatalf("unexpected database_dir: %+v", payload["database_dir"])
+	}
+	if payload["runtime_db_path"] != runtimeDBPath {
+		t.Fatalf("unexpected runtime_db_path: %+v", payload["runtime_db_path"])
+	}
+	if payload["workspace_path"] != cfg.Agents.Defaults.Workspace {
+		t.Fatalf("unexpected workspace_path: %+v", payload["workspace_path"])
+	}
+}
+
+func TestNewServer_AllowsNilLoader(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	var recovered interface{}
+	func() {
+		defer func() {
+			recovered = recover()
+		}()
+
+		server := NewServer(
+			cfg,
+			nil,
+			newTestLogger(t),
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+		)
+		if server == nil {
+			t.Fatalf("expected server")
+		}
+		if server.serviceCtrl == nil {
+			t.Fatalf("expected service controller")
+		}
+		ctrl, ok := server.serviceCtrl.(*gatewayServiceController)
+		if !ok {
+			t.Fatalf("expected gateway service controller, got %T", server.serviceCtrl)
+		}
+		if ctrl.configPath != "" {
+			t.Fatalf("expected empty config path when loader is nil, got %q", ctrl.configPath)
+		}
+	}()
+
+	if recovered != nil {
+		t.Fatalf("expected NewServer not to panic, got %v", recovered)
+	}
+}
+
+func TestHandleServiceStatus(t *testing.T) {
+	controller := &stubGatewayServiceController{
+		status: map[string]interface{}{
+			"name":        "nekobot-gateway",
+			"installed":   true,
+			"status":      "running",
+			"config_path": "/tmp/nekobot/config.json",
+		},
+	}
+
+	s := &Server{
+		serviceCtrl: controller,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/service", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleServiceStatus(ctx); err != nil {
+		t.Fatalf("handleServiceStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload failed: %v", err)
+	}
+	if payload["status"] != "running" || payload["installed"] != true {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+}
+
+func TestHandleServiceRestart(t *testing.T) {
+	controller := &stubGatewayServiceController{}
+	s := &Server{
+		serviceCtrl: controller,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/service/restart", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleServiceRestart(ctx); err != nil {
+		t.Fatalf("handleServiceRestart failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if controller.restartCalls != 1 {
+		t.Fatalf("expected restart to be called once, got %d", controller.restartCalls)
+	}
+}
+
+func TestHandleServiceRestartReturnsError(t *testing.T) {
+	controller := &stubGatewayServiceController{restartErr: errors.New("permission denied")}
+	s := &Server{
+		serviceCtrl: controller,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/service/restart", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleServiceRestart(ctx); err != nil {
+		t.Fatalf("handleServiceRestart failed: %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusInternalServerError, rec.Code, rec.Body.String())
 	}
 }
 
