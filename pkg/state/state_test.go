@@ -33,7 +33,7 @@ func TestFileStore(t *testing.T) {
 	}
 	defer store.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Test Set/Get string
 	store.Set(ctx, "key1", "value1")
@@ -164,7 +164,7 @@ func TestFileStoreAutoSave(t *testing.T) {
 	}
 	defer store.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set value
 	store.Set(ctx, "test", "auto-save")
@@ -208,7 +208,7 @@ func TestFileStoreUpdateFunc(t *testing.T) {
 	}
 	defer store.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Set initial value
 	store.Set(ctx, "counter", 0)
@@ -259,7 +259,7 @@ func TestFileStoreClear(t *testing.T) {
 	}
 	defer store.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Add some data
 	store.Set(ctx, "key1", "value1")
@@ -292,11 +292,9 @@ func BenchmarkFileStoreSet(b *testing.B) {
 	})
 	defer store.Close()
 
-	ctx := context.Background()
-
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		store.Set(ctx, "benchmark", i)
+	for i := 0; b.Loop(); i++ {
+		store.Set(context.Background(), "benchmark", i)
 	}
 }
 
@@ -311,11 +309,10 @@ func BenchmarkFileStoreGet(b *testing.B) {
 	})
 	defer store.Close()
 
-	ctx := context.Background()
-	store.Set(ctx, "benchmark", 42)
+	store.Set(context.Background(), "benchmark", 42)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		store.GetInt(ctx, "benchmark")
+	for b.Loop() {
+		store.GetInt(context.Background(), "benchmark")
 	}
 }

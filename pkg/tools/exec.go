@@ -174,8 +174,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 		if err == nil {
 			return result, nil
 		}
-		var unavailableErr *sandboxUnavailableError
-		if errors.As(err, &unavailableErr) {
+		if unavailableErr, ok := errors.AsType[*sandboxUnavailableError](err); ok {
 			t.disableSandbox(unavailableErr.Error())
 		}
 		fallbackFn := t.executeStandard

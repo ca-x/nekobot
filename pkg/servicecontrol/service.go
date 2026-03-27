@@ -1,6 +1,7 @@
 package servicecontrol
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,10 +34,7 @@ func (noopProgram) Stop(service.Service) error  { return nil }
 // ServiceConfig returns the gateway service manager configuration.
 func ServiceConfig(configPath string) *service.Config {
 	args := []string{"gateway", "run"}
-	configFile := strings.TrimSpace(configPath)
-	if configFile == "" {
-		configFile = strings.TrimSpace(os.Getenv(config.ConfigPathEnv))
-	}
+	configFile := cmp.Or(strings.TrimSpace(configPath), strings.TrimSpace(os.Getenv(config.ConfigPathEnv)))
 	if configFile != "" {
 		if absPath, err := filepath.Abs(configFile); err == nil {
 			configFile = absPath
@@ -117,7 +115,10 @@ func normalizeStatus(status service.Status) string {
 }
 
 func resolvedConfigPath(args []string) string {
-	for i := 0; i < len(args)-1; i++ {
+	if len(args) < 2 {
+		return ""
+	}
+	for i := range len(args) - 1 {
 		if args[i] == "-c" {
 			return args[i+1]
 		}

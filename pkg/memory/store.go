@@ -1,10 +1,12 @@
 package memory
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -129,14 +131,10 @@ func (s *FileStore) Search(query []float32, opts SearchOptions) ([]*SearchResult
 		})
 	}
 
-	// Sort by score descending
-	for i := 0; i < len(results)-1; i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].Score > results[i].Score {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
+	// Sort by score descending.
+	slices.SortFunc(results, func(a, b *SearchResult) int {
+		return cmp.Compare(b.Score, a.Score)
+	})
 
 	// Apply limit
 	if opts.Limit > 0 && len(results) > opts.Limit {

@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -161,11 +163,7 @@ func (s *FileStore) Keys(ctx context.Context) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	keys := make([]string, 0, len(s.data))
-	for k := range s.data {
-		keys = append(keys, k)
-	}
-	return keys, nil
+	return slices.Sorted(maps.Keys(s.data)), nil
 }
 
 // Exists checks if a key exists.

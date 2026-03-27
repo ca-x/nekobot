@@ -24,8 +24,7 @@ func (e *APIError) Error() string {
 
 // IsSessionExpired returns true if the error indicates a session expiration.
 func IsSessionExpired(err error) bool {
-	var apiErr *APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*APIError](err); ok {
 		return apiErr.ErrCode == errCodeSessionExpired
 	}
 	return false

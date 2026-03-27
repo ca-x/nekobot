@@ -1,9 +1,11 @@
 package memory
 
 import (
+	"cmp"
 	"math"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -45,13 +47,18 @@ func applyTemporalDecayToResults(results []*SearchResult, config TemporalDecayCo
 		result.Score = applyDecayScore(result.Score, ageInDays, halfLifeDays)
 	}
 
-	for i := 0; i < len(results)-1; i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j] != nil && results[i] != nil && results[j].Score > results[i].Score {
-				results[i], results[j] = results[j], results[i]
-			}
+	slices.SortFunc(results, func(a, b *SearchResult) int {
+		switch {
+		case a == nil && b == nil:
+			return 0
+		case a == nil:
+			return 1
+		case b == nil:
+			return -1
+		default:
+			return cmp.Compare(b.Score, a.Score)
 		}
-	}
+	})
 
 	return results
 }

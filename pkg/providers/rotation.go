@@ -4,6 +4,7 @@ package providers
 import (
 	"fmt"
 	"math/rand"
+	"slices"
 	"sync"
 	"time"
 
@@ -27,12 +28,12 @@ const (
 
 // Profile represents an API key profile.
 type Profile struct {
-	Name         string
-	APIKey       string
-	Priority     int
-	RequestCount int64
+	Name          string
+	APIKey        string
+	Priority      int
+	RequestCount  int64
 	CooldownUntil time.Time
-	LastError    *ErrorClassification
+	LastError     *ErrorClassification
 }
 
 // IsAvailable checks if the profile is not on cooldown.
@@ -53,19 +54,19 @@ func (p *Profile) IncrementRequests() {
 
 // RotationConfig holds rotation configuration.
 type RotationConfig struct {
-	Enabled         bool
-	Strategy        RotationStrategy
-	CooldownPeriod  time.Duration
+	Enabled        bool
+	Strategy       RotationStrategy
+	CooldownPeriod time.Duration
 }
 
 // RotationManager manages API key rotation and failover.
 type RotationManager struct {
-	log             *logger.Logger
-	config          RotationConfig
-	profiles        []*Profile
-	currentIndex    int
-	mu              sync.RWMutex
-	rand            *rand.Rand
+	log          *logger.Logger
+	config       RotationConfig
+	profiles     []*Profile
+	currentIndex int
+	mu           sync.RWMutex
+	rand         *rand.Rand
 }
 
 // NewRotationManager creates a new rotation manager.
@@ -167,11 +168,11 @@ func (rm *RotationManager) GetStatus() []ProfileStatus {
 	statuses := make([]ProfileStatus, len(rm.profiles))
 	for i, p := range rm.profiles {
 		statuses[i] = ProfileStatus{
-			Name:         p.Name,
-			Available:    p.IsAvailable(),
-			RequestCount: p.RequestCount,
+			Name:          p.Name,
+			Available:     p.IsAvailable(),
+			RequestCount:  p.RequestCount,
 			CooldownUntil: p.CooldownUntil,
-			LastError:    p.LastError,
+			LastError:     p.LastError,
 		}
 	}
 
@@ -180,11 +181,11 @@ func (rm *RotationManager) GetStatus() []ProfileStatus {
 
 // ProfileStatus holds the status of a profile.
 type ProfileStatus struct {
-	Name         string
-	Available    bool
-	RequestCount int64
+	Name          string
+	Available     bool
+	RequestCount  int64
 	CooldownUntil time.Time
-	LastError    *ErrorClassification
+	LastError     *ErrorClassification
 }
 
 // getAvailableProfiles returns all profiles not on cooldown.
@@ -205,16 +206,15 @@ func (rm *RotationManager) selectRoundRobin(available []*Profile) *Profile {
 	}
 
 	// Find the next profile after currentIndex
-	for i := 0; i < len(rm.profiles); i++ {
+	for i := range len(rm.profiles) {
 		idx := (rm.currentIndex + i) % len(rm.profiles)
 		profile := rm.profiles[idx]
 
-		// Check if this profile is in available list
-		for _, avail := range available {
-			if profile.Name == avail.Name {
-				rm.currentIndex = (idx + 1) % len(rm.profiles)
-				return profile
-			}
+		if slices.ContainsFunc(available, func(availableProfile *Profile) bool {
+			return availableProfile != nil && profile.Name == availableProfile.Name
+		}) {
+			rm.currentIndex = (idx + 1) % len(rm.profiles)
+			return profile
 		}
 	}
 

@@ -273,7 +273,7 @@ func TestACPAdapterPromptCancelled_ReturnsCancelledStopReason(t *testing.T) {
 		t.Fatalf("NewSession failed: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	promptResp, promptErr := adapter.Prompt(ctx, acp.PromptRequest{

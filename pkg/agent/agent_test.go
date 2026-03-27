@@ -731,8 +731,8 @@ func TestCallLLMWithFallback_NonRetriableErrorStopsFallback(t *testing.T) {
 		t.Fatalf("expected callLLMWithFallback error")
 	}
 
-	var failoverErr *providers.FailoverError
-	if !errors.As(err, &failoverErr) {
+	failoverErr, ok := errors.AsType[*providers.FailoverError](err)
+	if !ok {
 		t.Fatalf("expected failover error, got %T: %v", err, err)
 	}
 	if failoverErr.Reason != providers.FailoverReasonFormat {

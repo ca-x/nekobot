@@ -148,8 +148,8 @@ func TestLoadBalancerChatStopsOnNonRetriableError(t *testing.T) {
 		t.Fatalf("expected chat error")
 	}
 
-	var failErr *FailoverError
-	if !errors.As(err, &failErr) {
+	failErr, ok := errors.AsType[*FailoverError](err)
+	if !ok {
 		t.Fatalf("expected FailoverError, got %T: %v", err, err)
 	}
 	if failErr.Reason != FailoverReasonFormat {
@@ -228,8 +228,8 @@ func TestLoadBalancerChatAllProvidersInCooldown(t *testing.T) {
 		t.Fatalf("expected error when all providers are in cooldown")
 	}
 
-	var exhaustedErr *FallbackExhaustedError
-	if !errors.As(err, &exhaustedErr) {
+	exhaustedErr, ok := errors.AsType[*FallbackExhaustedError](err)
+	if !ok {
 		t.Fatalf("expected FallbackExhaustedError, got %T: %v", err, err)
 	}
 	if len(exhaustedErr.Attempts) != 2 {
