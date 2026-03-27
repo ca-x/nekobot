@@ -5,7 +5,7 @@ start from CLI, then complete provider, channel, agent, memory, and tool configu
 
 ## Features
 
-✅ **Web-first runtime management** - bootstrap from CLI, then configure providers / agents / channels / cron / tools in WebUI
+✅ **Web-led setup and runtime management** - first-run WebUI now creates the admin account and can save safe startup settings before you continue with providers / agents / channels / cron / tools
 
 ✅ **Unified provider system** - OpenAI, Claude, Gemini, OpenRouter-compatible endpoints, provider pools, routing defaults, and fallback chains
 
@@ -52,12 +52,16 @@ go build -o nekobot ./cmd/nekobot
 
 On first start, nekobot will auto-create bootstrap config at `~/.nekobot/config.json`,
 initialize `~/.nekobot/nekobot.db`, and expose the WebUI on `http://127.0.0.1:18791`
-by default. Providers / agents / channels / tools are intended to be configured in WebUI.
+by default. The first-run Web page now creates the initial admin account and can persist
+safe startup settings such as `logger`, `gateway`, and `webui`. Providers / agents / channels /
+tools are intended to be configured in WebUI.
 
 ### Configuration
 
 Bootstrap config lives in `~/.nekobot/config.json` and mainly keeps startup settings
-such as logger, gateway, storage, and WebUI. A minimal file looks like this:
+such as logger, gateway, storage, and WebUI. WebUI can now manage `logger`, `gateway`,
+`webui`, and `storage` bootstrap state, but changing storage/database location still
+requires an explicit migration/restart workflow. A minimal file looks like this:
 
 ```json
 {

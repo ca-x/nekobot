@@ -352,7 +352,23 @@ func (s *Server) handleInitStatus(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load auth status"})
 	}
 	initialized := cred != nil && strings.TrimSpace(cred.PasswordHash) != ""
-	return c.JSON(http.StatusOK, map[string]bool{"initialized": initialized})
+
+	configPath, err := s.resolveBootstrapConfigPath()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to resolve config path"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"initialized": initialized,
+		"bootstrap": map[string]interface{}{
+			"config_path": configPath,
+			"db_dir":      s.config.Storage.DBDir,
+			"workspace":   s.config.Agents.Defaults.Workspace,
+			"logger":      s.config.Logger,
+			"gateway":     s.config.Gateway,
+			"webui":       s.config.WebUI,
+		},
+	})
 }
 
 func (s *Server) handleInitPassword(c *echo.Context) error {
@@ -366,8 +382,13 @@ func (s *Server) handleInitPassword(c *echo.Context) error {
 	}
 
 	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+		Username  string `json:"username"`
+		Password  string `json:"password"`
+		Bootstrap *struct {
+			Logger  *config.LoggerConfig  `json:"logger"`
+			Gateway *config.GatewayConfig `json:"gateway"`
+			WebUI   *config.WebUIConfig   `json:"webui"`
+		} `json:"bootstrap"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -385,6 +406,30 @@ func (s *Server) handleInitPassword(c *echo.Context) error {
 	username := strings.TrimSpace(body.Username)
 	if username == "" {
 		username = "admin"
+	}
+
+	restartSections := make([]string, 0, 3)
+	if body.Bootstrap != nil {
+		if body.Bootstrap.Logger != nil {
+			s.config.Logger = *body.Bootstrap.Logger
+			restartSections = append(restartSections, "logger")
+		}
+		if body.Bootstrap.Gateway != nil {
+			s.config.Gateway = *body.Bootstrap.Gateway
+			restartSections = append(restartSections, "gateway")
+		}
+		if body.Bootstrap.WebUI != nil {
+			s.config.WebUI = *body.Bootstrap.WebUI
+			restartSections = append(restartSections, "webui")
+		}
+		if err := config.ValidateConfig(s.config); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+		if len(restartSections) > 0 {
+			if err := s.saveBootstrapConfig(); err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+		}
 	}
 
 	newCred := &config.AdminCredential{
@@ -413,8 +458,10 @@ func (s *Server) handleInitPassword(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"token": token,
-		"user":  s.authProfileResponse(profile),
+		"token":            token,
+		"user":             s.authProfileResponse(profile),
+		"restart_required": len(restartSections) > 0,
+		"restart_sections": restartSections,
 	})
 }
 
@@ -3620,10 +3667,14 @@ func encodeQRCodeDataURL(content string) (string, error) {
 func (s *Server) handleGetConfig(c *echo.Context) error {
 	// Return sanitized config (no secrets)
 	return c.JSON(http.StatusOK, map[string]interface{}{
+		"storage":       s.config.Storage,
 		"agents":        s.config.Agents,
 		"gateway":       s.config.Gateway,
 		"tools":         s.config.Tools,
 		"heartbeat":     s.config.Heartbeat,
+		"redis":         s.config.Redis,
+		"state":         s.config.State,
+		"bus":           s.config.Bus,
 		"approval":      s.config.Approval,
 		"logger":        s.config.Logger,
 		"memory":        s.config.Memory,
@@ -3635,10 +3686,14 @@ func (s *Server) handleGetConfig(c *echo.Context) error {
 
 func (s *Server) handleSaveConfig(c *echo.Context) error {
 	var body struct {
+		Storage       *config.StorageConfig       `json:"storage"`
 		Agents        *config.AgentsConfig        `json:"agents"`
 		Gateway       *config.GatewayConfig       `json:"gateway"`
 		Tools         *config.ToolsConfig         `json:"tools"`
 		Heartbeat     *config.HeartbeatConfig     `json:"heartbeat"`
+		Redis         *config.RedisConfig         `json:"redis"`
+		State         *config.StateConfig         `json:"state"`
+		Bus           *config.BusConfig           `json:"bus"`
 		Approval      *config.ApprovalConfig      `json:"approval"`
 		Logger        *config.LoggerConfig        `json:"logger"`
 		Memory        *config.MemoryConfig        `json:"memory"`
@@ -3651,6 +3706,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 
 	// Apply partial updates
+	if body.Storage != nil {
+		s.config.Storage = *body.Storage
+	}
 	if body.Agents != nil {
 		s.config.Agents = *body.Agents
 	}
@@ -3662,6 +3720,15 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.Heartbeat != nil {
 		s.config.Heartbeat = *body.Heartbeat
+	}
+	if body.Redis != nil {
+		s.config.Redis = *body.Redis
+	}
+	if body.State != nil {
+		s.config.State = *body.State
+	}
+	if body.Bus != nil {
+		s.config.Bus = *body.Bus
 	}
 	if body.Approval != nil {
 		s.config.Approval = *body.Approval
@@ -3700,7 +3767,13 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	sections := make([]string, 0, 10)
+	if body.Storage != nil {
+		if err := s.saveBootstrapConfig(); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	sections := make([]string, 0, 14)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -3712,6 +3785,15 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.Heartbeat != nil {
 		sections = append(sections, "heartbeat")
+	}
+	if body.Redis != nil {
+		sections = append(sections, "redis")
+	}
+	if body.State != nil {
+		sections = append(sections, "state")
+	}
+	if body.Bus != nil {
+		sections = append(sections, "bus")
 	}
 	if body.Approval != nil {
 		sections = append(sections, "approval")
@@ -3756,10 +3838,14 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 	}
 
 	export := map[string]interface{}{
+		"storage":       s.config.Storage,
 		"agents":        s.config.Agents,
 		"gateway":       s.config.Gateway,
 		"tools":         s.config.Tools,
 		"heartbeat":     s.config.Heartbeat,
+		"redis":         s.config.Redis,
+		"state":         s.config.State,
+		"bus":           s.config.Bus,
 		"approval":      s.config.Approval,
 		"logger":        s.config.Logger,
 		"memory":        s.config.Memory,
@@ -3775,10 +3861,14 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 
 func (s *Server) handleImportConfig(c *echo.Context) error {
 	var body struct {
+		Storage       *config.StorageConfig       `json:"storage"`
 		Agents        *config.AgentsConfig        `json:"agents"`
 		Gateway       *config.GatewayConfig       `json:"gateway"`
 		Tools         *config.ToolsConfig         `json:"tools"`
 		Heartbeat     *config.HeartbeatConfig     `json:"heartbeat"`
+		Redis         *config.RedisConfig         `json:"redis"`
+		State         *config.StateConfig         `json:"state"`
+		Bus           *config.BusConfig           `json:"bus"`
 		Approval      *config.ApprovalConfig      `json:"approval"`
 		Logger        *config.LoggerConfig        `json:"logger"`
 		Memory        *config.MemoryConfig        `json:"memory"`
@@ -3792,6 +3882,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 
 	// Apply config sections
+	if body.Storage != nil {
+		s.config.Storage = *body.Storage
+	}
 	if body.Agents != nil {
 		s.config.Agents = *body.Agents
 	}
@@ -3803,6 +3896,15 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 	if body.Heartbeat != nil {
 		s.config.Heartbeat = *body.Heartbeat
+	}
+	if body.Redis != nil {
+		s.config.Redis = *body.Redis
+	}
+	if body.State != nil {
+		s.config.State = *body.State
+	}
+	if body.Bus != nil {
+		s.config.Bus = *body.Bus
 	}
 	if body.Approval != nil {
 		s.config.Approval = *body.Approval
@@ -3841,8 +3943,14 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
+	if body.Storage != nil {
+		if err := s.saveBootstrapConfig(); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
 	// Persist runtime sections to database
-	sections := make([]string, 0, 10)
+	sections := make([]string, 0, 14)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -3854,6 +3962,15 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 	if body.Heartbeat != nil {
 		sections = append(sections, "heartbeat")
+	}
+	if body.Redis != nil {
+		sections = append(sections, "redis")
+	}
+	if body.State != nil {
+		sections = append(sections, "state")
+	}
+	if body.Bus != nil {
+		sections = append(sections, "bus")
 	}
 	if body.Approval != nil {
 		sections = append(sections, "approval")
@@ -3906,6 +4023,40 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		"sections_saved":     len(sections),
 		"providers_imported": importedProviders,
 	})
+}
+
+func (s *Server) saveBootstrapConfig() error {
+	if s == nil || s.config == nil {
+		return fmt.Errorf("config is unavailable")
+	}
+
+	configPath, err := s.resolveBootstrapConfigPath()
+	if err != nil {
+		return err
+	}
+
+	if err := config.SaveToFile(s.config, configPath); err != nil {
+		return fmt.Errorf("save bootstrap config: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) resolveBootstrapConfigPath() (string, error) {
+	configPath := ""
+	if s != nil && s.loader != nil {
+		configPath = strings.TrimSpace(s.loader.GetConfigPath())
+	}
+	if configPath == "" {
+		configPath = strings.TrimSpace(os.Getenv(config.ConfigPathEnv))
+	}
+	if configPath == "" {
+		home, err := config.GetConfigHome()
+		if err != nil {
+			return "", fmt.Errorf("resolve config home: %w", err)
+		}
+		configPath = filepath.Join(home, "config.json")
+	}
+	return configPath, nil
 }
 
 // --- Session Handlers ---

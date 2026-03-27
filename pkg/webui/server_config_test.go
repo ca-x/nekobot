@@ -63,6 +63,101 @@ func TestHandleGetConfigIncludesMemorySection(t *testing.T) {
 	if agents.Defaults.SkillsProxy != "http://127.0.0.1:9000" {
 		t.Fatalf("unexpected skills proxy payload: %+v", agents.Defaults)
 	}
+	if _, ok := payload["storage"]; !ok {
+		t.Fatalf("expected storage section in response: %s", rec.Body.String())
+	}
+	if _, ok := payload["redis"]; !ok {
+		t.Fatalf("expected redis section in response: %s", rec.Body.String())
+	}
+	if _, ok := payload["state"]; !ok {
+		t.Fatalf("expected state section in response: %s", rec.Body.String())
+	}
+	if _, ok := payload["bus"]; !ok {
+		t.Fatalf("expected bus section in response: %s", rec.Body.String())
+	}
+}
+
+func TestHandleSaveConfigPersistsStartupSections(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("SaveToFile failed: %v", err)
+	}
+	loader := config.NewLoader()
+	if _, err := loader.LoadFromFile(configPath); err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	defer client.Close()
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	defer providers.Close()
+
+	s := &Server{
+		config:    cfg,
+		loader:    loader,
+		logger:    log,
+		providers: providers,
+	}
+
+	body := `{"storage":{"db_dir":"/tmp/nekobot-db"},"redis":{"addr":"127.0.0.1:6380","password":"pw","db":9},"state":{"backend":"redis","file_path":"/tmp/state.json","prefix":"state:"},"bus":{"type":"redis","prefix":"bus:"}}`
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleSaveConfig(c); err != nil {
+		t.Fatalf("handleSaveConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	if s.config.Storage.DBDir != "/tmp/nekobot-db" {
+		t.Fatalf("storage not applied: %+v", s.config.Storage)
+	}
+	if s.config.Redis.Addr != "127.0.0.1:6380" || s.config.Redis.DB != 9 {
+		t.Fatalf("redis not applied: %+v", s.config.Redis)
+	}
+	if s.config.State.Backend != "redis" || s.config.State.Prefix != "state:" {
+		t.Fatalf("state not applied: %+v", s.config.State)
+	}
+	if s.config.Bus.Type != "redis" || s.config.Bus.Prefix != "bus:" {
+		t.Fatalf("bus not applied: %+v", s.config.Bus)
+	}
+
+	bootstrapReloaded, err := config.NewLoader().LoadFromFile(configPath)
+	if err != nil {
+		t.Fatalf("reload bootstrap config failed: %v", err)
+	}
+	if bootstrapReloaded.Storage.DBDir != "/tmp/nekobot-db" {
+		t.Fatalf("storage not persisted to bootstrap config: %+v", bootstrapReloaded.Storage)
+	}
+
+	reloaded := config.DefaultConfig()
+	reloaded.Storage.DBDir = cfg.Storage.DBDir
+	reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
+	if err := config.ApplyDatabaseOverrides(reloaded); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides failed: %v", err)
+	}
+
+	if reloaded.Redis.Addr != "127.0.0.1:6380" || reloaded.Redis.DB != 9 {
+		t.Fatalf("redis not persisted: %+v", reloaded.Redis)
+	}
+	if reloaded.State.Backend != "redis" || reloaded.State.Prefix != "state:" {
+		t.Fatalf("state not persisted: %+v", reloaded.State)
+	}
+	if reloaded.Bus.Type != "redis" || reloaded.Bus.Prefix != "bus:" {
+		t.Fatalf("bus not persisted: %+v", reloaded.Bus)
+	}
 }
 
 func TestHandleSaveConfigPersistsMemorySection(t *testing.T) {

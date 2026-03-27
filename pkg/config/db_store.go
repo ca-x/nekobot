@@ -17,6 +17,9 @@ var runtimeConfigSections = []string{
 	"tools",
 	"transcription",
 	"heartbeat",
+	"redis",
+	"state",
+	"bus",
 	"approval",
 	"logger",
 	"memory",
@@ -162,6 +165,12 @@ func marshalSection(cfg *Config, section string) ([]byte, error) {
 		return json.Marshal(cfg.Transcription)
 	case "heartbeat":
 		return json.Marshal(cfg.Heartbeat)
+	case "redis":
+		return json.Marshal(cfg.Redis)
+	case "state":
+		return json.Marshal(cfg.State)
+	case "bus":
+		return json.Marshal(cfg.Bus)
 	case "approval":
 		return json.Marshal(cfg.Approval)
 	case "logger":
@@ -218,6 +227,24 @@ func applySection(cfg *Config, section string, payload []byte) error {
 			return fmt.Errorf("decode heartbeat config: %w", err)
 		}
 		cfg.Heartbeat = v
+	case "redis":
+		var v RedisConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode redis config: %w", err)
+		}
+		cfg.Redis = v
+	case "state":
+		var v StateConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode state config: %w", err)
+		}
+		cfg.State = v
+	case "bus":
+		var v BusConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode bus config: %w", err)
+		}
+		cfg.Bus = v
 	case "approval":
 		var v ApprovalConfig
 		if err := json.Unmarshal(payload, &v); err != nil {

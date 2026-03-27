@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 
 const CONFIG_SECTIONS = [
+  'storage',
   'agents',
   'gateway',
   'tools',
@@ -52,6 +53,9 @@ const CONFIG_SECTIONS = [
   'memory',
   'sessions',
   'heartbeat',
+  'redis',
+  'state',
+  'bus',
   'approval',
   'logger',
   'webui',
@@ -88,6 +92,7 @@ const MANAGED_AGENT_FIELDS = new Set([
 ]);
 
 const SECTION_DESCRIPTIONS: Record<ConfigSection, string> = {
+  storage: t('configSectionDescStorage'),
   agents: t('configSectionDescAgents'),
   gateway: t('configSectionDescGateway'),
   tools: t('configSectionDescTools'),
@@ -95,6 +100,9 @@ const SECTION_DESCRIPTIONS: Record<ConfigSection, string> = {
   memory: t('configSectionDescMemory'),
   sessions: t('configSectionDescSessions'),
   heartbeat: t('configSectionDescHeartbeat'),
+  redis: t('configSectionDescRedis'),
+  state: t('configSectionDescState'),
+  bus: t('configSectionDescBus'),
   approval: t('configSectionDescApproval'),
   logger: t('configSectionDescLogger'),
   webui: t('configSectionDescWebUI'),
@@ -102,6 +110,7 @@ const SECTION_DESCRIPTIONS: Record<ConfigSection, string> = {
 
 function sectionLabel(section: ConfigSection): string {
   const labels: Record<ConfigSection, string> = {
+    storage: t('configSectionStorage'),
     agents: t('configSectionAgents'),
     gateway: t('configSectionGateway'),
     tools: t('configSectionTools'),
@@ -109,6 +118,9 @@ function sectionLabel(section: ConfigSection): string {
     memory: t('configSectionMemory'),
     sessions: t('configSectionSessions'),
     heartbeat: t('configSectionHeartbeat'),
+    redis: t('configSectionRedis'),
+    state: t('configSectionState'),
+    bus: t('configSectionBus'),
     approval: t('configSectionApproval'),
     logger: t('configSectionLogger'),
     webui: t('configSectionWebUI'),

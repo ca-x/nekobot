@@ -140,3 +140,24 @@ func TestInitDefaultConfig_UsesConfigEnvAndSyncsWorkspace(t *testing.T) {
 		t.Fatalf("expected runtime database file to exist: %v", err)
 	}
 }
+
+func TestLoadFromFilePreservesCustomDBDirForExplicitConfigPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "tenant", "config.json")
+
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = filepath.Join(tmpDir, "tenant", "workspace")
+	cfg.Storage.DBDir = filepath.Join(tmpDir, "custom-db")
+	if err := SaveToFile(cfg, cfgPath); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	loaded, err := NewLoader().LoadFromFile(cfgPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	if loaded.Storage.DBDir != cfg.Storage.DBDir {
+		t.Fatalf("expected db dir %q, got %q", cfg.Storage.DBDir, loaded.Storage.DBDir)
+	}
+}

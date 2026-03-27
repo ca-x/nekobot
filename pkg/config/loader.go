@@ -100,14 +100,9 @@ func (l *Loader) Load(configPath string) (*Config, error) {
 		}
 	} else {
 		desiredWorkspace := defaultWorkspaceForConfigPath(resolvedPath)
-		desiredDBDir := filepath.Dir(resolvedPath)
 		changed := false
 		if strings.TrimSpace(cfg.Agents.Defaults.Workspace) != desiredWorkspace {
 			cfg.Agents.Defaults.Workspace = desiredWorkspace
-			changed = true
-		}
-		if strings.TrimSpace(cfg.Storage.DBDir) != desiredDBDir {
-			cfg.Storage.DBDir = desiredDBDir
 			changed = true
 		}
 		if changed {
@@ -188,7 +183,6 @@ func (l *Loader) GetConfigPath() string {
 	return l.viper.ConfigFileUsed()
 }
 
-
 // InitDefaultConfig creates a default config file if it doesn't exist.
 // Returns the path to the config file and whether it was newly created.
 func InitDefaultConfig() (configPath string, created bool, err error) {
@@ -206,14 +200,9 @@ func InitDefaultConfig() (configPath string, created bool, err error) {
 			cfg, loadErr := loader.LoadFromFile(configPath)
 			if loadErr == nil {
 				desiredWorkspace := defaultWorkspaceForConfigPath(configPath)
-				desiredDBDir := filepath.Dir(configPath)
 				changed := false
 				if strings.TrimSpace(cfg.Agents.Defaults.Workspace) != desiredWorkspace {
 					cfg.Agents.Defaults.Workspace = desiredWorkspace
-					changed = true
-				}
-				if strings.TrimSpace(cfg.Storage.DBDir) != desiredDBDir {
-					cfg.Storage.DBDir = desiredDBDir
 					changed = true
 				}
 				if changed {
