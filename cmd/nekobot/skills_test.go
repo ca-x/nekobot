@@ -91,8 +91,8 @@ func TestRunSkillsValidateReportsMissingRequirements(t *testing.T) {
 		"Skill: Demo Skill",
 		"Eligible: no",
 		"missing config paths: channels.discord",
-		"missing python packages: requests",
-		"missing node packages: typescript",
+		"missing python packages: nekobot_missing_python_pkg",
+		"missing node packages: nekobot-missing-node-pkg",
 	} {
 		if !strings.Contains(output, fragment) {
 			t.Fatalf("expected output to contain %q, got:\n%s", fragment, output)
@@ -177,9 +177,9 @@ requirements:
   config_paths:
     - channels.discord
   python_packages:
-    - requests
+    - nekobot_missing_python_pkg
   node_packages:
-    - typescript
+    - nekobot-missing-node-pkg
   custom:
     install:
       - method: command
