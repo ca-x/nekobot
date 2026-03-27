@@ -36,18 +36,18 @@ import (
 	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channels"
-	channelwechat "nekobot/pkg/channels/wechat"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
+	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/logger"
 	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
-	"nekobot/pkg/session"
 	"nekobot/pkg/servicecontrol"
+	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/toolsessions"
@@ -62,29 +62,30 @@ import (
 
 // Server is the WebUI HTTP server.
 type Server struct {
-	echo       *echo.Echo
-	httpServer *http.Server
-	config     *config.Config
-	loader     *config.Loader
-	logger     *logger.Logger
-	agent      *agent.Agent
-	approval   *approval.Manager
-	channels   *channels.Manager
-	bus        bus.Bus
-	commands   *commands.Registry
-	prefs      *userprefs.Manager
-	toolSess   *toolsessions.Manager
-	sessionMgr *session.Manager
-	processMgr *process.Manager
-	prompts    *prompts.Manager
-	providers  *providerstore.Manager
-	cronMgr    *cron.Manager
-	skillsMgr  *skills.Manager
-	workspace  *workspace.Manager
-	entClient  *ent.Client
+	echo        *echo.Echo
+	httpServer  *http.Server
+	config      *config.Config
+	loader      *config.Loader
+	logger      *logger.Logger
+	agent       *agent.Agent
+	approval    *approval.Manager
+	channels    *channels.Manager
+	bus         bus.Bus
+	commands    *commands.Registry
+	prefs       *userprefs.Manager
+	toolSess    *toolsessions.Manager
+	sessionMgr  *session.Manager
+	processMgr  *process.Manager
+	prompts     *prompts.Manager
+	providers   *providerstore.Manager
+	cronMgr     *cron.Manager
+	skillsMgr   *skills.Manager
+	workspace   *workspace.Manager
+	entClient   *ent.Client
+	ilinkAuth   *ilinkauth.Service
 	serviceCtrl serviceController
-	port       int
-	startedAt  time.Time
+	port        int
+	startedAt   time.Time
 }
 
 type serviceController interface {
@@ -177,8 +178,15 @@ func NewServer(
 				return loader.GetConfigPath()
 			}(),
 		},
-		port:       port,
-		startedAt:  time.Now(),
+		port:      port,
+		startedAt: time.Now(),
+	}
+
+	ilinkStore, err := ilinkauth.NewStore(cfg)
+	if err != nil {
+		log.Warn("Failed to create iLink auth store", zap.Error(err))
+	} else {
+		s.ilinkAuth = ilinkauth.NewService(ilinkStore, webWechatLoginClient{})
 	}
 
 	s.setup()
@@ -3429,21 +3437,59 @@ func (s *Server) handleTestChannel(c *echo.Context) error {
 	return c.JSON(http.StatusOK, result)
 }
 
-func (s *Server) wechatStore() (*channelwechat.CredentialStore, error) {
-	store, err := channelwechat.NewCredentialStore(s.config)
-	if err != nil {
-		return nil, fmt.Errorf("create wechat store: %w", err)
+type webWechatLoginClient struct{}
+
+func (webWechatLoginClient) FetchQRCode(ctx context.Context) (*wxtypes.QRCodeResponse, error) {
+	return wxauth.FetchQRCode(ctx)
+}
+
+func (webWechatLoginClient) CheckQRStatus(ctx context.Context, qrcode string) (*wxtypes.QRStatusResponse, error) {
+	return wxauth.CheckQRStatus(ctx, qrcode)
+}
+
+func (s *Server) ilinkAuthService() (*ilinkauth.Service, error) {
+	if s.ilinkAuth != nil {
+		return s.ilinkAuth, nil
 	}
-	return store, nil
+
+	store, err := ilinkauth.NewStore(s.config)
+	if err != nil {
+		return nil, fmt.Errorf("create ilink auth store: %w", err)
+	}
+	s.ilinkAuth = ilinkauth.NewService(store, webWechatLoginClient{})
+	return s.ilinkAuth, nil
+}
+
+func (s *Server) currentAuthUser(c *echo.Context) (*config.AuthProfile, error) {
+	profile, err := s.authProfileFromContext(c)
+	if err == nil {
+		return profile, nil
+	}
+
+	userID := strings.TrimSpace(s.currentUserID(c))
+	username := strings.TrimSpace(s.currentUsername(c))
+	if userID == "" && username == "" {
+		return nil, err
+	}
+
+	return &config.AuthProfile{
+		UserID:   userID,
+		Username: username,
+		Role:     "member",
+	}, nil
 }
 
 func (s *Server) handleGetWechatBindingStatus(c *echo.Context) error {
-	store, err := s.wechatStore()
+	authSvc, err := s.ilinkAuthService()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	profile, err := s.currentAuthUser(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	}
 
-	payload, err := s.buildWechatBindingPayload(store)
+	payload, err := s.buildWechatBindingPayload(authSvc, profile.UserID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -3451,26 +3497,20 @@ func (s *Server) handleGetWechatBindingStatus(c *echo.Context) error {
 }
 
 func (s *Server) handleStartWechatBinding(c *echo.Context) error {
-	store, err := s.wechatStore()
+	authSvc, err := s.ilinkAuthService()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-
-	qrResp, err := wxauth.FetchQRCode(c.Request().Context())
+	profile, err := s.currentAuthUser(c)
 	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	}
+
+	if _, err := authSvc.StartBinding(c.Request().Context(), profile.UserID); err != nil {
 		return c.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
 	}
 
-	state := channelwechat.BindState{
-		QRCode:        qrResp.QRCode,
-		QRCodeContent: qrResp.QRCodeImgContent,
-		Status:        channelwechat.BindStatusPending,
-	}
-	if err := store.SaveBindState(state); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-
-	payload, err := s.buildWechatBindingPayload(store)
+	payload, err := s.buildWechatBindingPayload(authSvc, profile.UserID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -3478,71 +3518,30 @@ func (s *Server) handleStartWechatBinding(c *echo.Context) error {
 }
 
 func (s *Server) handlePollWechatBinding(c *echo.Context) error {
-	store, err := s.wechatStore()
+	authSvc, err := s.ilinkAuthService()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-
-	state, err := store.LoadBindState()
+	profile, err := s.currentAuthUser(c)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	if state == nil || strings.TrimSpace(state.QRCode) == "" {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "no active wechat binding"})
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
 	}
 
-	statusResp, err := wxauth.CheckQRStatus(c.Request().Context(), state.QRCode)
-	if err != nil {
-		state.Status = channelwechat.BindStatusFailed
-		state.Error = err.Error()
-		_ = store.SaveBindState(*state)
+	if _, err := authSvc.PollBinding(c.Request().Context(), profile.UserID); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no active ilink binding") {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "no active wechat binding"})
+		}
 		return c.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
 	}
 
-	switch statusResp.Status {
-	case wxtypes.QRStatusConfirmed:
-		state.Status = channelwechat.BindStatusConfirmed
-		state.BotID = statusResp.ILinkBotID
-		state.UserID = statusResp.ILinkUserID
-		state.Error = ""
-		if err := store.ReplaceCredentials(&wxtypes.Credentials{
-			BotToken:    statusResp.BotToken,
-			ILinkBotID:  statusResp.ILinkBotID,
-			BaseURL:     statusResp.BaseURL,
-			ILinkUserID: statusResp.ILinkUserID,
-		}); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
-		if err := store.SaveBindState(*state); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
-		if s.config.Channels.WeChat.Enabled {
-			if err := s.reloadChannel("wechat"); err != nil {
-				s.logger.Error("Failed to reload WeChat after binding", zap.Error(err))
-				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			}
-		}
-	case wxtypes.QRStatusScanned:
-		state.Status = channelwechat.BindStatusScanned
-		state.Error = ""
-		if err := store.SaveBindState(*state); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
-	case wxtypes.QRStatusExpired:
-		state.Status = channelwechat.BindStatusExpired
-		state.Error = ""
-		if err := store.SaveBindState(*state); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
-	default:
-		state.Status = channelwechat.BindStatusPending
-		state.Error = ""
-		if err := store.SaveBindState(*state); err != nil {
+	if s.config.Channels.WeChat.Enabled {
+		if err := s.reloadChannel("wechat"); err != nil {
+			s.logger.Error("Failed to reload WeChat after binding", zap.Error(err))
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 	}
 
-	payload, err := s.buildWechatBindingPayload(store)
+	payload, err := s.buildWechatBindingPayload(authSvc, profile.UserID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -3550,15 +3549,16 @@ func (s *Server) handlePollWechatBinding(c *echo.Context) error {
 }
 
 func (s *Server) handleDeleteWechatBinding(c *echo.Context) error {
-	store, err := s.wechatStore()
+	authSvc, err := s.ilinkAuthService()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-
-	if err := store.ClearBindState(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	profile, err := s.currentAuthUser(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
 	}
-	if err := store.ClearCredentials(); err != nil {
+
+	if err := authSvc.DeleteBinding(profile.UserID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -3573,105 +3573,33 @@ func (s *Server) handleDeleteWechatBinding(c *echo.Context) error {
 }
 
 func (s *Server) handleActivateWechatBinding(c *echo.Context) error {
-	store, err := s.wechatStore()
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-
-	var req struct {
-		AccountID string `json:"account_id"`
-	}
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-	if err := store.SetActiveAccount(req.AccountID); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	if s.config.Channels.WeChat.Enabled {
-		if err := s.reloadChannel("wechat"); err != nil {
-			s.logger.Error("Failed to reload WeChat after activating account", zap.Error(err))
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
-	}
-
-	payload, err := s.buildWechatBindingPayload(store)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusOK, payload)
+	return c.JSON(http.StatusBadRequest, map[string]string{"error": "multiple wechat accounts are no longer supported"})
 }
 
 func (s *Server) handleDeleteWechatBindingAccount(c *echo.Context) error {
-	store, err := s.wechatStore()
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-
-	accountID, err := url.PathUnescape(c.Param("accountId"))
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-	if err := store.DeleteCredentials(accountID); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	if s.config.Channels.WeChat.Enabled {
-		if err := s.reloadChannel("wechat"); err != nil {
-			s.logger.Error("Failed to reload WeChat after deleting account", zap.Error(err))
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
-	}
-
-	payload, err := s.buildWechatBindingPayload(store)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusOK, payload)
+	return c.JSON(http.StatusBadRequest, map[string]string{"error": "multiple wechat accounts are no longer supported"})
 }
 
-func (s *Server) buildWechatBindingPayload(store *channelwechat.CredentialStore) (map[string]interface{}, error) {
-	creds, err := store.LoadCredentials()
-	if err != nil {
-		return nil, fmt.Errorf("load wechat credentials: %w", err)
-	}
-	accounts, err := store.ListCredentials()
-	if err != nil {
-		return nil, fmt.Errorf("list wechat credentials: %w", err)
-	}
-	state, err := store.LoadBindState()
-	if err != nil {
-		return nil, fmt.Errorf("load wechat bind state: %w", err)
+func (s *Server) buildWechatBindingPayload(authSvc *ilinkauth.Service, userID string) (map[string]interface{}, error) {
+	payload := map[string]interface{}{
+		"bound": false,
 	}
 
-	payload := map[string]interface{}{
-		"bound": creds != nil,
+	binding, err := authSvc.GetBinding(userID)
+	if err != nil && !errors.Is(err, ilinkauth.ErrBindingNotFound) {
+		return nil, fmt.Errorf("load ilink binding: %w", err)
 	}
-	if len(accounts) > 0 {
-		items := make([]map[string]interface{}, 0, len(accounts))
-		activeAccountID := ""
-		for _, account := range accounts {
-			if account == nil || account.Creds == nil {
-				continue
-			}
-			if account.Active {
-				activeAccountID = account.AccountID
-			}
-			items = append(items, map[string]interface{}{
-				"account_id": account.AccountID,
-				"bot_id":     account.Creds.ILinkBotID,
-				"user_id":    account.Creds.ILinkUserID,
-				"active":     account.Active,
-			})
-		}
-		payload["accounts"] = items
-		payload["active_account_id"] = activeAccountID
-	}
-	if creds != nil {
+	if binding != nil {
+		payload["bound"] = true
 		payload["account"] = map[string]interface{}{
-			"bot_id":  creds.ILinkBotID,
-			"user_id": creds.ILinkUserID,
+			"bot_id":  binding.Credentials.ILinkBotID,
+			"user_id": binding.Credentials.ILinkUserID,
 		}
+	}
+
+	state, err := authSvc.LoadBindSession(userID)
+	if err != nil {
+		return nil, fmt.Errorf("load ilink bind session: %w", err)
 	}
 	if state != nil {
 		bind := map[string]interface{}{
@@ -3679,7 +3607,7 @@ func (s *Server) buildWechatBindingPayload(store *channelwechat.CredentialStore)
 			"qrcode_content": state.QRCodeContent,
 			"updated_at":     state.UpdatedAt,
 			"bot_id":         state.BotID,
-			"user_id":        state.UserID,
+			"user_id":        state.ILinkUserID,
 			"error":          state.Error,
 		}
 		if strings.TrimSpace(state.QRCodeContent) != "" {

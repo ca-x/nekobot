@@ -8,8 +8,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	channelwechat "nekobot/pkg/channels/wechat"
 	"nekobot/pkg/config"
+	"nekobot/pkg/ilinkauth"
 	wxtypes "nekobot/pkg/wechat/types"
 )
 
@@ -86,45 +86,45 @@ func TestHandleGetChannelsIncludesGotify(t *testing.T) {
 	}
 }
 
-func TestBuildWechatBindingPayloadIncludesAccounts(t *testing.T) {
+func TestBuildWechatBindingPayloadIncludesCurrentBinding(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
 
-	store, err := channelwechat.NewCredentialStore(cfg)
+	store, err := ilinkauth.NewStore(cfg)
 	if err != nil {
-		t.Fatalf("NewCredentialStore failed: %v", err)
-	}
-	if err := store.SaveCredentials(&wxtypes.Credentials{
-		BotToken:    "token-1",
-		ILinkBotID:  "bot-1@im.wechat",
-		BaseURL:     "https://ilinkai.weixin.qq.com",
-		ILinkUserID: "user-1",
-	}, true); err != nil {
-		t.Fatalf("SaveCredentials(first) failed: %v", err)
-	}
-	if err := store.SaveCredentials(&wxtypes.Credentials{
-		BotToken:    "token-2",
-		ILinkBotID:  "bot-2@im.wechat",
-		BaseURL:     "https://ilinkai.weixin.qq.com",
-		ILinkUserID: "user-2",
-	}, false); err != nil {
-		t.Fatalf("SaveCredentials(second) failed: %v", err)
+		t.Fatalf("NewStore failed: %v", err)
 	}
 
-	s := &Server{config: cfg}
-	payload, err := s.buildWechatBindingPayload(store)
+	if err := store.SaveBinding(&ilinkauth.Binding{
+		UserID: "user-1",
+		Credentials: wxtypes.Credentials{
+			BotToken:    "token-1",
+			ILinkBotID:  "bot-1@im.wechat",
+			BaseURL:     "https://ilinkai.weixin.qq.com",
+			ILinkUserID: "wechat-user-1",
+		},
+	}); err != nil {
+		t.Fatalf("SaveBinding failed: %v", err)
+	}
+
+	authSvc := ilinkauth.NewService(store, nil)
+	s := &Server{config: cfg, ilinkAuth: authSvc}
+	payload, err := s.buildWechatBindingPayload(authSvc, "user-1")
 	if err != nil {
 		t.Fatalf("buildWechatBindingPayload failed: %v", err)
 	}
 
-	if payload["active_account_id"] != "bot-1@im.wechat" {
-		t.Fatalf("unexpected active account: %#v", payload["active_account_id"])
+	if payload["bound"] != true {
+		t.Fatalf("expected bound=true, got %#v", payload["bound"])
 	}
-	accounts, ok := payload["accounts"].([]map[string]interface{})
+	account, ok := payload["account"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected accounts list, got %#v", payload["accounts"])
+		t.Fatalf("expected account payload, got %#v", payload["account"])
 	}
-	if len(accounts) != 2 {
-		t.Fatalf("expected 2 accounts, got %d", len(accounts))
+	if account["bot_id"] != "bot-1@im.wechat" {
+		t.Fatalf("unexpected bot id: %#v", account["bot_id"])
+	}
+	if account["user_id"] != "wechat-user-1" {
+		t.Fatalf("unexpected user id: %#v", account["user_id"])
 	}
 }

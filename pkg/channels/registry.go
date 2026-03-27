@@ -23,6 +23,7 @@ import (
 	"nekobot/pkg/channels/whatsapp"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
+	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
 	"nekobot/pkg/toolsessions"
@@ -116,12 +117,13 @@ var channelDescriptors = []channelDescriptor{
 		},
 		enabled: func(cfg *config.Config) bool { return cfg.Channels.WeChat.Enabled },
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
-			store, err := wechat.NewCredentialStore(cfg)
+			store, err := ilinkauth.NewStore(cfg)
 			if err != nil {
 				return nil, err
 			}
+			authSvc := ilinkauth.NewService(store, nil)
 			transcriber := transcription.NewFromConfig(log, cfg)
-			return wechat.NewChannel(log, cfg.Channels.WeChat, messageBus, ag, cmdRegistry, store, toolSessionMgr, processMgr, cfg, transcriber)
+			return wechat.NewChannel(log, cfg.Channels.WeChat, messageBus, ag, cmdRegistry, authSvc, toolSessionMgr, processMgr, cfg, transcriber)
 		},
 	},
 	{
