@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kratos/blades"
 	bladestools "github.com/go-kratos/blades/tools"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/memory"
@@ -915,6 +916,46 @@ func TestBuildBladesToolsResolver_ToolErrorReturnsResultInsteadOfAbort(t *testin
 	}
 	if failingTool.callCount() != 1 {
 		t.Fatalf("expected failing tool execute once, got %d", failingTool.callCount())
+	}
+}
+
+func TestExecuteToolCallPassesSessionIDToApproval(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	approvalMgr := approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	ag.approval = approvalMgr
+	ag.tools.MustRegister(&toolExecutionResultStubTool{
+		name:        "approval_test_tool",
+		description: "captures approval flow",
+	})
+
+	ctx := context.WithValue(context.Background(), promptContextSessionKey, "wechat-user-1")
+	result, err := ag.executeToolCall(ctx, providers.UnifiedToolCall{
+		Name:      "approval_test_tool",
+		Arguments: map[string]interface{}{"x": 1},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if result != "Tool call pending approval" {
+		t.Fatalf("unexpected tool result: %q", result)
+	}
+
+	pending := approvalMgr.GetPending()
+	if len(pending) != 1 {
+		t.Fatalf("expected 1 pending approval, got %d", len(pending))
+	}
+	if pending[0].SessionID != "wechat-user-1" {
+		t.Fatalf("expected session ID to propagate, got %q", pending[0].SessionID)
+	}
+}
+
+func TestSetApprovalModeForSessionRejectsUnknownMode(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.approval = approval.NewManager(approval.Config{Mode: approval.ModePrompt})
+
+	err := ag.SetApprovalModeForSession("wechat-user-1", approval.Mode("weird"))
+	if err == nil {
+		t.Fatal("expected error for unsupported approval mode")
 	}
 }
 

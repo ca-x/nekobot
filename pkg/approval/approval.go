@@ -40,17 +40,18 @@ type Request struct {
 
 // Config configures the approval system.
 type Config struct {
-	Mode      Mode     `json:"mode"`       // Approval mode
-	Allowlist []string `json:"allowlist"`   // Tools that bypass approval (always auto-approved)
-	Denylist  []string `json:"denylist"`    // Tools that are always denied
+	Mode      Mode     `json:"mode"`      // Approval mode
+	Allowlist []string `json:"allowlist"` // Tools that bypass approval (always auto-approved)
+	Denylist  []string `json:"denylist"`  // Tools that are always denied
 }
 
 // Manager handles tool execution approvals.
 type Manager struct {
-	config   Config
-	pending  map[string]*Request
-	mu       sync.RWMutex
-	counter  int
+	config  Config
+	pending map[string]*Request
+	session map[string]Mode
+	mu      sync.RWMutex
+	counter int
 	// PromptFunc is called in prompt mode to ask the user.
 	// Returns true if approved. Nil means auto-approve.
 	PromptFunc func(req *Request) (bool, error)
@@ -61,6 +62,7 @@ func NewManager(cfg Config) *Manager {
 	return &Manager{
 		config:  cfg,
 		pending: make(map[string]*Request),
+		session: make(map[string]Mode),
 	}
 }
 
@@ -77,7 +79,9 @@ func (m *Manager) CheckApproval(toolName string, args map[string]interface{}, se
 		return Approved, "", nil
 	}
 
-	switch m.config.Mode {
+	mode := m.modeForSession(sessionID)
+
+	switch mode {
 	case ModeAuto:
 		return Approved, "", nil
 
@@ -106,6 +110,33 @@ func (m *Manager) CheckApproval(toolName string, args map[string]interface{}, se
 	default:
 		return Approved, "", nil
 	}
+}
+
+// SetSessionMode overrides approval mode for one session.
+func (m *Manager) SetSessionMode(sessionID string, mode Mode) {
+	trimmedID := sessionID
+	if trimmedID == "" {
+		return
+	}
+	if mode == "" {
+		m.ClearSessionMode(trimmedID)
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.session[trimmedID] = mode
+}
+
+// ClearSessionMode removes the approval mode override for one session.
+func (m *Manager) ClearSessionMode(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.session, sessionID)
 }
 
 // Approve approves a pending request by ID.
@@ -196,4 +227,16 @@ func (m *Manager) isInList(name string, list []string) bool {
 		}
 	}
 	return false
+}
+
+func (m *Manager) modeForSession(sessionID string) Mode {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if sessionID != "" {
+		if mode, ok := m.session[sessionID]; ok {
+			return mode
+		}
+	}
+	return m.config.Mode
 }

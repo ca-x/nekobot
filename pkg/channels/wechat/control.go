@@ -28,6 +28,9 @@ const (
 	controlCommandNew      controlCommandKind = "new"
 	controlCommandStatus   controlCommandKind = "status"
 	controlCommandLogs     controlCommandKind = "logs"
+	controlCommandShare    controlCommandKind = "share"
+	controlCommandYolo     controlCommandKind = "yolo"
+	controlCommandSafe     controlCommandKind = "safe"
 	controlCommandRestart  controlCommandKind = "restart"
 	controlCommandStop     controlCommandKind = "stop"
 	controlCommandDelete   controlCommandKind = "delete"
@@ -177,6 +180,12 @@ func parseControlCommand(input string) (controlCommand, error) {
 			name = strings.TrimSpace(fields[1])
 		}
 		return controlCommand{Kind: controlCommandLogs, RuntimeName: name}, nil
+	case "/share":
+		return controlCommand{Kind: controlCommandShare}, nil
+	case "/whosyourdaddy", "/yolo":
+		return controlCommand{Kind: controlCommandYolo}, nil
+	case "/imyourdaddy", "/safe":
+		return controlCommand{Kind: controlCommandSafe}, nil
 	case "/restart":
 		if len(fields) < 2 {
 			return controlCommand{}, fmt.Errorf("usage: /restart <runtime>")

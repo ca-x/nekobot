@@ -243,6 +243,35 @@ func (a *Agent) RegisterSkillTool(skillsManager *skills.Manager) {
 	a.logger.Info("Skill tool registered")
 }
 
+// SetApprovalModeForSession overrides approval mode for one chat session.
+func (a *Agent) SetApprovalModeForSession(sessionID string, mode approval.Mode) error {
+	if a == nil {
+		return fmt.Errorf("agent is nil")
+	}
+	if a.approval == nil {
+		return fmt.Errorf("approval manager is unavailable")
+	}
+	switch mode {
+	case approval.ModeAuto, approval.ModePrompt, approval.ModeManual:
+	default:
+		return fmt.Errorf("unsupported approval mode: %s", mode)
+	}
+	a.approval.SetSessionMode(strings.TrimSpace(sessionID), mode)
+	return nil
+}
+
+// ClearApprovalModeForSession removes the approval override for one chat session.
+func (a *Agent) ClearApprovalModeForSession(sessionID string) error {
+	if a == nil {
+		return fmt.Errorf("agent is nil")
+	}
+	if a.approval == nil {
+		return fmt.Errorf("approval manager is unavailable")
+	}
+	a.approval.ClearSessionMode(strings.TrimSpace(sessionID))
+	return nil
+}
+
 // EnableSubagents registers the spawn tool and optional completion notifications.
 func (a *Agent) EnableSubagents(notify subagent.NotifyFunc) {
 	if a == nil {
@@ -921,7 +950,11 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 
 	// Check approval
 	if a.approval != nil {
-		decision, _, err := a.approval.CheckApproval(toolCall.Name, toolCall.Arguments, "")
+		decision, _, err := a.approval.CheckApproval(
+			toolCall.Name,
+			toolCall.Arguments,
+			ctxStringValue(ctx, promptContextSessionKey),
+		)
 		if err != nil {
 			return "", fmt.Errorf("approval check failed: %w", err)
 		}

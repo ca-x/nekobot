@@ -22,6 +22,11 @@ func TestParseControlCommandParsesUseAndNew(t *testing.T) {
 		{name: "bindings", input: "/bindings", want: controlCommandBindings},
 		{name: "list", input: "/list", want: controlCommandList},
 		{name: "logs", input: "/logs code1", want: controlCommandLogs, wantArg: "code1"},
+		{name: "share", input: "/share", want: controlCommandShare},
+		{name: "legacy yolo", input: "/whosyourdaddy", want: controlCommandYolo},
+		{name: "legacy safe", input: "/imyourdaddy", want: controlCommandSafe},
+		{name: "short yolo", input: "/yolo", want: controlCommandYolo},
+		{name: "short safe", input: "/safe", want: controlCommandSafe},
 		{name: "restart", input: "/restart code1", want: controlCommandRestart, wantArg: "code1"},
 		{name: "delete", input: "/delete code1", want: controlCommandDelete, wantArg: "code1"},
 	}

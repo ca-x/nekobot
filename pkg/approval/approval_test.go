@@ -201,3 +201,39 @@ func TestPromptModeNilFunc(t *testing.T) {
 		t.Fatalf("expected Approved when PromptFunc is nil, got %s", decision)
 	}
 }
+
+func TestSessionModeOverrideTakesPrecedence(t *testing.T) {
+	mgr := NewManager(Config{Mode: ModePrompt})
+	mgr.PromptFunc = func(req *Request) (bool, error) {
+		t.Fatalf("PromptFunc should not be called when session override applies")
+		return false, nil
+	}
+
+	mgr.SetSessionMode("sess-1", ModeAuto)
+
+	decision, _, err := mgr.CheckApproval("exec", nil, "sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision != Approved {
+		t.Fatalf("expected Approved for session override, got %s", decision)
+	}
+}
+
+func TestSessionModeOverrideCanBeCleared(t *testing.T) {
+	mgr := NewManager(Config{Mode: ModeManual})
+
+	mgr.SetSessionMode("sess-1", ModeAuto)
+	mgr.ClearSessionMode("sess-1")
+
+	decision, id, err := mgr.CheckApproval("exec", nil, "sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision != Pending {
+		t.Fatalf("expected Pending after clearing override, got %s", decision)
+	}
+	if id == "" {
+		t.Fatal("expected pending request ID after clearing override")
+	}
+}

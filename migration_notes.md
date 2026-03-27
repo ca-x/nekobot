@@ -41,11 +41,19 @@
   - `pkg/channels/wechat/store.go`
 - Key points:
   - `nekobot` already has WeChat runtime creation, binding, ACP session mapping, `/list`, `/bindings`, `/use`, `/new`, `/status`, `/logs`, `/restart`, `/stop`, `/delete`, and conversation-to-session persistence.
-  - ACP runtime command normalization already covers `claude-agent-acp`, `codex-acp`, `agent acp`, `gemini --acp`, `opencode acp`.
-  - Existing WeChat interaction handling is currently limited to skill-install confirmation.
-  - ACP permission requests are auto-approved in `pkg/channels/wechat/control.go` instead of being exposed to users.
-  - ACP logs are not buffered yet; `GetRuntimeLogs` returns a placeholder for ACP runtimes.
-  - WeChat credential store is currently single-account oriented: `LoadCredentials` returns the first stored account.
+- ACP runtime command normalization already covers `claude-agent-acp`, `codex-acp`, `agent acp`, `gemini --acp`, `opencode acp`.
+- Existing WeChat interaction handling is currently limited to skill-install confirmation.
+- ACP permission requests are auto-approved in `pkg/channels/wechat/control.go` instead of being exposed to users.
+- ACP logs are not buffered yet; `GetRuntimeLogs` returns a placeholder for ACP runtimes.
+- WeChat credential store is currently single-account oriented: `LoadCredentials` returns the first stored account.
+
+### Source 5: nekobot WebUI WeChat binding flow
+- Paths:
+  - `pkg/webui/server.go`
+  - `pkg/wechat/auth/login.go`
+- Key points:
+  - WebUI binding already uses `wxauth.FetchQRCode` to fetch the same WeChat QR content needed by `gua`'s `/share`.
+  - `pkg/channels/wechat/channel.go` already supports sending local image/file attachments by absolute file path, so `/share` can be implemented as "fetch QR content -> render temp PNG -> send attachment".
 
 ## Synthesized Findings
 
@@ -65,7 +73,17 @@
 - Generic pending interactions do not exist for ACP permission or elicitation requests; only skill install confirmation uses `/yes` `/no`.
 - ACP runtime output/status loop is partial: logs are not buffered for ACP sessions.
 - `/share` and explicit account/session management UX from `gua` are not exposed in `nekobot` WeChat runtime flow.
+- `/share` is a small vertical slice with low architectural risk because the target repo already has both QR-fetching and file-sending primitives.
 - Multi-account WeChat account storage from `goclaw`/`gua` parity is not present; current credential loading is single-account.
+- `gua`'s yolo/safe commands are not simple aliases in `nekobot`: the target architecture needed a session-scoped approval override so one WeChat chat can switch modes without mutating the global approval config.
+
+### Product Closure Check
+- WebUI does not yet cover every startup/bootstrap config surface:
+  - `handleGetConfig`/`handleSaveConfig` expose `agents`, `gateway`, `tools`, `transcription`, `memory`, `sessions`, `heartbeat`, `approval`, `logger`, and `webui`, but not `storage`, `state`, `bus`, `redis`, raw auth bootstrap, or all file/env based startup concerns.
+  - README still describes a CLI/bootstrap-file-first startup model before WebUI takes over.
+- Feature parity against the meaningful `gua` backlog is now materially closer to closed:
+  - WeChat now has `/share`, multi-account management, ACP permission routing, `/select`, buffered ACP output, and yolo/safe compatibility.
+  - Remaining non-migrated concerns are broader product-closure issues, not an obvious uncopied `gua` end-user command set.
 
 ### Recommended Migration Order
 1. Fix the highest-risk behavior gap first: route ACP permission prompts to WeChat users instead of auto-allowing.

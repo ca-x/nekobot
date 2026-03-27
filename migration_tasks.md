@@ -11,7 +11,9 @@ Compare current `nekobot` against local `goclaw` and `gua`, remove already-migra
 - [x] Add ACP interaction/event buffering so runtime status, `/logs`, and incremental runtime reads are inspectable.
 - [x] Add ACP multi-option permission selection so `/select N` resolves to concrete ACP permission options.
 - [x] Add WeChat multi-account account management and active-account switching.
-- [ ] Evaluate follow-up `gua` parity tasks: `/share`, session management UX.
+- [x] Add WeChat `/share` parity by generating and sending a shareable QR image.
+- [x] Add `gua`-style yolo/safe WeChat control commands via session-scoped approval mode overrides.
+- [ ] Re-evaluate broader product closure gaps after feature parity work.
 
 ## Execution Log
 - Research complete enough to start Phase 1 execution on the highest-priority `gua` gap.
@@ -47,3 +49,14 @@ Compare current `nekobot` against local `goclaw` and `gua`, remove already-migra
 - Verified with `go test -count=1 ./pkg/channels/wechat ./pkg/webui`.
 - Verified with `npm --prefix pkg/webui/frontend ci`.
 - Verified with `npm --prefix pkg/webui/frontend run build`.
+- Selected next migration slice: `/share` parity for WeChat.
+- `/share` will reuse the same QR source as WebUI binding (`wxauth.FetchQRCode`) and WeChat's existing local-file attachment sending path instead of introducing a cross-channel abstraction first.
+- Implemented WeChat `/share` parity:
+  - added `/share` command parsing in WeChat control flow.
+  - fetches a fresh WeChat QR via `wxauth.FetchQRCode`, renders PNG locally, and sends it through the existing attachment pipeline.
+  - added regression tests for command parsing and QR PNG generation.
+- Implemented `gua`-style yolo/safe compatibility:
+  - added `/whosyourdaddy` and `/imyourdaddy` aliases, plus `/yolo` and `/safe`.
+  - approval manager now supports per-session mode overrides instead of only one global mode.
+  - agent approval checks now receive the active prompt/session ID so chat-local overrides actually apply to tool calls.
+  - added regression tests for session override precedence, clearing, and session propagation into approval checks.

@@ -181,7 +181,7 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 		zap.String("user_id", msg.FromUserID),
 		zap.Int("length", len(content)))
 
-	if c.runtime != nil && strings.HasPrefix(strings.TrimSpace(content), "/") {
+	if strings.HasPrefix(strings.TrimSpace(content), "/") {
 		handled, err := c.handleControlCommand(msg, content)
 		if err != nil {
 			sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -306,10 +306,6 @@ func (c *Channel) handleCommand(msg wxtypes.WeixinMessage, content string) {
 }
 
 func (c *Channel) handleControlCommand(msg wxtypes.WeixinMessage, content string) (bool, error) {
-	if c.runtime == nil {
-		return false, nil
-	}
-
 	cmd, err := parseControlCommand(content)
 	if err != nil {
 		return false, nil
@@ -321,6 +317,9 @@ func (c *Channel) handleControlCommand(msg wxtypes.WeixinMessage, content string
 	var reply string
 	switch cmd.Kind {
 	case controlCommandList:
+		if c.runtime == nil {
+			return true, fmt.Errorf("runtime control is unavailable")
+		}
 		items, err := c.runtime.ListRuntimes(ctx)
 		if err != nil {
 			return true, err
@@ -342,17 +341,26 @@ func (c *Channel) handleControlCommand(msg wxtypes.WeixinMessage, content string
 		}
 		reply = strings.Join(lines, "\n")
 	case controlCommandBindings:
+		if c.runtime == nil {
+			return true, fmt.Errorf("runtime control is unavailable")
+		}
 		text, err := c.runtime.DescribeBindings(ctx)
 		if err != nil {
 			return true, err
 		}
 		reply = text
 	case controlCommandUse:
+		if c.runtime == nil {
+			return true, fmt.Errorf("runtime control is unavailable")
+		}
 		if err := c.runtime.BindRuntime(ctx, msg.FromUserID, cmd.RuntimeName); err != nil {
 			return true, err
 		}
 		reply = fmt.Sprintf("Bound current chat to %s.", cmd.RuntimeName)
 	case controlCommandNew:
+		if c.runtime == nil {
+			return true, fmt.Errorf("runtime control is unavailable")
+		}
 		created, err := c.runtime.CreateRuntime(ctx, msg.FromUserID, RuntimeCreateRequest{
 			Name:    cmd.RuntimeName,
 			Driver:  cmd.Spec.Driver,
@@ -365,6 +373,9 @@ func (c *Channel) handleControlCommand(msg wxtypes.WeixinMessage, content string
 		}
 		reply = fmt.Sprintf("Created runtime %s (%s).", strings.TrimSpace(created.Title), created.Tool)
 	case controlCommandStatus:
+		if c.runtime == nil {
+			return true, fmt.Errorf("runtime control is unavailable")
+		}
 		runtimeName := strings.TrimSpace(cmd.RuntimeName)
 		if runtimeName == "" {
 			bound, err := c.runtime.GetConversationRuntime(ctx, msg.FromUserID)
@@ -386,6 +397,9 @@ func (c *Channel) handleControlCommand(msg wxtypes.WeixinMessage, content string
 		}
 		reply = formatRuntimeStatus(status)
 	case controlCommandLogs:
+		if c.runtime == nil {
+			return true, fmt.Errorf("runtime control is unavailable")
+		}
 		runtimeName := strings.TrimSpace(cmd.RuntimeName)
 		if runtimeName == "" {
 			bound, err := c.runtime.GetConversationRuntime(ctx, msg.FromUserID)
@@ -406,17 +420,51 @@ func (c *Channel) handleControlCommand(msg wxtypes.WeixinMessage, content string
 			return true, err
 		}
 		reply = logs
+	case controlCommandShare:
+		sharePath, err := c.createShareQRCode(ctx)
+		if err != nil {
+			return true, err
+		}
+		if err := c.sendAttachment(ctx, msg.FromUserID, sharePath, msg.ContextToken); err != nil {
+			return true, err
+		}
+		reply = "已发送当前微信绑定二维码，可转发扫码绑定。"
+	case controlCommandYolo:
+		if c.agent == nil {
+			return true, fmt.Errorf("agent is unavailable")
+		}
+		if err := c.agent.SetApprovalModeForSession(msg.FromUserID, "auto"); err != nil {
+			return true, err
+		}
+		reply = "yolo mode activated"
+	case controlCommandSafe:
+		if c.agent == nil {
+			return true, fmt.Errorf("agent is unavailable")
+		}
+		if err := c.agent.SetApprovalModeForSession(msg.FromUserID, "prompt"); err != nil {
+			return true, err
+		}
+		reply = "safe mode restored"
 	case controlCommandRestart:
+		if c.runtime == nil {
+			return true, fmt.Errorf("runtime control is unavailable")
+		}
 		if err := c.runtime.RestartRuntime(ctx, cmd.RuntimeName); err != nil {
 			return true, err
 		}
 		reply = fmt.Sprintf("Restarted runtime %s.", cmd.RuntimeName)
 	case controlCommandStop:
+		if c.runtime == nil {
+			return true, fmt.Errorf("runtime control is unavailable")
+		}
 		if err := c.runtime.StopRuntime(ctx, cmd.RuntimeName); err != nil {
 			return true, err
 		}
 		reply = fmt.Sprintf("Stopped runtime %s.", cmd.RuntimeName)
 	case controlCommandDelete:
+		if c.runtime == nil {
+			return true, fmt.Errorf("runtime control is unavailable")
+		}
 		if err := c.runtime.DeleteRuntime(ctx, cmd.RuntimeName); err != nil {
 			return true, err
 		}
