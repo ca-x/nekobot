@@ -351,6 +351,8 @@
   "fetchModels": "Discover Models",
   "save": "Save",
   "delete": "Delete",
+  "snapshotDeleteConfirmTitle": "Delete Snapshot",
+  "snapshotDeleteConfirmDescription": "Are you sure you want to delete this snapshot? This action cannot be undone.",
   "addModel": "Add",
   "manualModel": "Manual model name",
   "filterModels": "Filter models",

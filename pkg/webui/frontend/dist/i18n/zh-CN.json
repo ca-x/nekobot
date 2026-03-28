@@ -351,6 +351,8 @@
   "fetchModels": "发现模型",
   "save": "保存",
   "delete": "删除",
+  "snapshotDeleteConfirmTitle": "删除快照",
+  "snapshotDeleteConfirmDescription": "确定要删除此快照吗？此操作无法撤销。",
   "addModel": "添加",
   "manualModel": "手动输入模型名",
   "filterModels": "筛选模型",

@@ -6,6 +6,15 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogPortal,
+} from '@/components/ui/dialog';
+import {
   useCreateMarketplaceSnapshot,
   useDeleteMarketplaceSnapshot,
   useDisableMarketplaceSkill,
@@ -39,6 +48,7 @@ import {
   FileText,
   FolderCog,
   FolderOpen,
+  Loader2,
   Pin,
   RefreshCcw,
   RotateCcw,
@@ -48,6 +58,7 @@ import {
   Sparkles,
   TimerReset,
   ToggleLeft,
+  Trash2,
   Wrench,
   Zap,
 } from 'lucide-react';
@@ -75,6 +86,8 @@ export default function MarketplacePage() {
   const [snapshotLabel, setSnapshotLabel] = useState('');
   const [snapshotNote, setSnapshotNote] = useState('');
   const { data: remoteSearch, isFetching: isSearchingRemote } = useSearchMarketplaceSkills(remoteQuery);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteSnapshotId, setDeleteSnapshotId] = useState<string>('');
 
   const marketplaceSkills = skills ?? [];
   const filteredSkills = useMemo(() => {
@@ -475,7 +488,10 @@ export default function MarketplacePage() {
                 isRestoring={restoreSnapshot.isPending && restoreSnapshot.variables === snapshot.id}
                 isDeleting={deleteSnapshot.isPending && deleteSnapshot.variables === snapshot.id}
                 onRestore={(id) => restoreSnapshot.mutate(id)}
-                onDelete={(id) => deleteSnapshot.mutate(id)}
+                onDelete={(id) => {
+                  setDeleteSnapshotId(id);
+                  setShowDeleteConfirm(true);
+                }}
               />
             ))}
             {snapshotItems.length === 0 ? (
@@ -823,6 +839,43 @@ export default function MarketplacePage() {
           </Card>
         </div>
       )}
+
+      {/* Delete Snapshot Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogPortal>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('snapshotDeleteConfirmTitle')}</DialogTitle>
+              <DialogDescription>
+                {t('snapshotDeleteConfirmDescription')}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (deleteSnapshotId) {
+                    deleteSnapshot.mutate(deleteSnapshotId);
+                    setShowDeleteConfirm(false);
+                    setDeleteSnapshotId('');
+                  }
+                }}
+                disabled={deleteSnapshot.isPending}
+              >
+                {deleteSnapshot.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                )}
+                {t('delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </DialogPortal>
+      </Dialog>
     </div>
   );
 }

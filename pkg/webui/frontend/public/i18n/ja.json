@@ -351,6 +351,8 @@
   "fetchModels": "モデル検出",
   "save": "保存",
   "delete": "削除",
+  "snapshotDeleteConfirmTitle": "スナップショットを削除",
+  "snapshotDeleteConfirmDescription": "このスナップショットを削除してもよろしいですか？この操作は元に戻せません。",
   "addModel": "追加",
   "manualModel": "モデル名を手動入力",
   "filterModels": "モデルを絞り込み",
