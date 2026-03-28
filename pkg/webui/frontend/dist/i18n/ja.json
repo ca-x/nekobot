@@ -268,6 +268,8 @@
   "modify": "修正して新規",
   "kill": "停止",
   "killConfirm": "このツールセッションを停止しますか？",
+  "killConfirmTitle": "プロセスを停止",
+  "killConfirmDescription": "このプロセスを停止してもよろしいですか？この操作は元に戻せません。",
   "running": "実行中",
   "runningWebsocket": "実行中（WebSocket）",
   "stoppedWithCode": "停止（終了コード {0}）",

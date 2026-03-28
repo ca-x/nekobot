@@ -26,7 +26,17 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  Loader2,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogPortal,
+} from '@/components/ui/dialog';
 
 /* ---------- helpers ---------- */
 
@@ -70,6 +80,8 @@ export default function ToolSessionsPage() {
   const [accessSession, setAccessSession] = useState<ToolSession | null>(null);
   const [accessInitialUrl, setAccessInitialUrl] = useState('');
   const [accessInitialPw, setAccessInitialPw] = useState('');
+  const [showKillConfirm, setShowKillConfirm] = useState(false);
+  const [killTargetId, setKillTargetId] = useState<string>('');
 
   /* ---- sidebar toggle ---- */
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -183,11 +195,18 @@ export default function ToolSessionsPage() {
   /* ---- kill process ---- */
   const handleKill = useCallback(
     (id: string) => {
-      if (!window.confirm(t('killConfirm'))) return;
-      killMutation.mutate(id);
+      setKillTargetId(id);
+      setShowKillConfirm(true);
     },
-    [killMutation],
+    [],
   );
+
+  const confirmKill = useCallback(() => {
+    if (!killTargetId) return;
+    killMutation.mutate(killTargetId);
+    setShowKillConfirm(false);
+    setKillTargetId('');
+  }, [killMutation, killTargetId]);
 
   /* ---- cleanup terminated ---- */
   const handleCleanup = useCallback(() => {
@@ -376,155 +395,39 @@ export default function ToolSessionsPage() {
                             <Skull className="h-3 w-3 mr-0.5" />
                             {t('kill')}
                           </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </ScrollArea>
-          )}
-        </div>
+)}
+      />
 
-        {/* ======== Main Terminal Area ======== */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Tab bar */}
-          {openTabs.length > 0 && (
-            <div className="flex items-center border-b border-border bg-card overflow-x-auto">
-              <div className="flex items-center gap-0 flex-1 min-w-0 px-1">
-                {openTabs.map((tabId) => {
-                  const s = getSessionById(tabId);
-                  const tabTitle = s ? getTitle(s) : tabId.slice(0, 8);
-                  const isActive = tabId === validActiveTab;
-                  const isSplit = tabId === validSplitTab;
-                  return (
-                    <div
-                      key={tabId}
-                      className={cn(
-                        'flex items-center gap-1 px-3 py-1.5 text-xs cursor-pointer border-b-2 transition-colors whitespace-nowrap',
-                        isActive
-                          ? 'border-primary text-foreground font-medium'
-                          : isSplit
-                            ? 'border-blue-400 text-foreground/80'
-                            : 'border-transparent text-muted-foreground hover:text-foreground',
-                      )}
-                      onClick={() => setActiveTab(tabId)}
-                    >
-                      <span>{tabTitle}</span>
-                      {isSplit && (
-                        <span className="text-[10px] text-blue-500">[split]</span>
-                      )}
-                      <button
-                        className="ml-1 hover:bg-muted rounded p-0.5"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          closeTab(tabId);
-                        }}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-              {hasSplit && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 mr-1 text-xs"
-                  onClick={clearSplit}
-                >
-                  {t('clearSplit')}
-                </Button>
+    {/* Kill Confirmation Dialog */}
+    <Dialog open={showKillConfirm} onOpenChange={setShowKillConfirm}>
+      <DialogPortal>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('killConfirmTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('killConfirmDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowKillConfirm(false)}>
+              {t('cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmKill}
+              disabled={killMutation.isPending}
+            >
+              {killMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <Skull className="h-4 w-4 mr-1.5" />
               )}
-            </div>
-          )}
-
-          {/* Terminal panels */}
-          <div className="flex-1 min-h-0 flex">
-            {validActiveTab ? (
-              <>
-                {/* Primary panel */}
-                <div
-                  className={cn(
-                    'flex flex-col min-h-0 min-w-0',
-                    hasSplit ? 'flex-1' : 'flex-1',
-                  )}
-                >
-                  <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border text-xs text-muted-foreground">
-                    <span>
-                      {getTitle(getSessionById(validActiveTab)!) ||
-                        validActiveTab.slice(0, 8)}
-                    </span>
-                    <SessionStatusBadge
-                      session={getSessionById(validActiveTab)}
-                    />
-                  </div>
-                  <div className="flex-1 min-h-0">
-                    <TerminalPanel
-                      key={validActiveTab}
-                      sessionId={validActiveTab}
-                      active={true}
-                    />
-                  </div>
-                </div>
-
-                {/* Split panel */}
-                {hasSplit && (
-                  <>
-                    <div className="w-px bg-border" />
-                    <div className="flex flex-col flex-1 min-h-0 min-w-0">
-                      <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border text-xs text-muted-foreground">
-                        <span>
-                          {getTitle(getSessionById(validSplitTab)!) ||
-                            validSplitTab.slice(0, 8)}
-                        </span>
-                        <SessionStatusBadge
-                          session={getSessionById(validSplitTab)}
-                        />
-                      </div>
-                      <div className="flex-1 min-h-0">
-                        <TerminalPanel
-                          key={validSplitTab}
-                          sessionId={validSplitTab}
-                          active={true}
-                        />
-                      </div>
-                    </div>
-                  </>
-                )}
-              </>
-            ) : (
-              /* Empty state */
-              <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-                <div className="text-center space-y-3">
-                  <Terminal className="h-12 w-12 mx-auto opacity-30" />
-                  <p>{t('noSessionOpened')}</p>
-                  <Button size="sm" onClick={handleNewSession}>
-                    <Plus className="h-3.5 w-3.5 mr-1.5" />
-                    {t('newToolSession')}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Dialogs */}
-      <ToolSessionDialog
-        open={sessionDialogOpen}
-        onOpenChange={setSessionDialogOpen}
-        editSession={editSession}
-        onCreated={handleSessionCreated}
-      />
-      <ToolAccessDialog
-        open={accessDialogOpen}
-        onOpenChange={setAccessDialogOpen}
-        session={accessSession}
-        initialUrl={accessInitialUrl}
-        initialPassword={accessInitialPw}
-      />
+              {t('kill')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </DialogPortal>
+    </Dialog>
     </div>
   );
 }

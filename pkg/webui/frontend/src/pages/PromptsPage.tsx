@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Bot, Plus, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { Bot, Plus, Sparkles, Trash2, Wand2, Loader2 } from 'lucide-react';
 
 import Header from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,15 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogPortal,
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -82,6 +91,8 @@ export default function PromptsPage() {
   const [draft, setDraft] = useState<PromptInput>(emptyPromptDraft());
   const [tagsInput, setTagsInput] = useState('');
   const [bindingDraft, setBindingDraft] = useState<PromptBindingInput>(emptyBindingDraft());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ type: 'prompt' | 'binding'; id: string } | null>(null);
 
   const selectedPrompt = useMemo(
     () => prompts.find((item) => item.id === selectedPromptID) ?? null,
@@ -135,13 +146,8 @@ export default function PromptsPage() {
   }
 
   async function handleDeletePromptRecord(id: string) {
-    if (!window.confirm(t('deleteConfirm'))) {
-      return;
-    }
-    await deletePrompt.mutateAsync(id);
-    if (selectedPromptID === id) {
-      resetPromptForm(null);
-    }
+    setDeleteTarget({ type: 'prompt', id });
+    setShowDeleteConfirm(true);
   }
 
   async function handleCreateBindingRecord() {
@@ -153,10 +159,22 @@ export default function PromptsPage() {
   }
 
   async function handleDeleteBindingRecord(id: string) {
-    if (!window.confirm(t('deleteConfirm'))) {
-      return;
+    setDeleteTarget({ type: 'binding', id });
+    setShowDeleteConfirm(true);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    if (deleteTarget.type === 'prompt') {
+      await deletePrompt.mutateAsync(deleteTarget.id);
+      if (selectedPromptID === deleteTarget.id) {
+        resetPromptForm(null);
+      }
+    } else {
+      await deleteBinding.mutateAsync(deleteTarget.id);
     }
-    await deleteBinding.mutateAsync(id);
+    setShowDeleteConfirm(false);
+    setDeleteTarget(null);
   }
 
   return (
@@ -446,6 +464,37 @@ export default function PromptsPage() {
         </Card>
       </div>
     </div>
+
+    {/* Delete Confirmation Dialog */}
+    <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <DialogPortal>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('deleteConfirmDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+              {t('cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleteTarget?.type === 'prompt' ? deletePrompt.isPending : deleteBinding.isPending}
+            >
+              {(deleteTarget?.type === 'prompt' ? deletePrompt.isPending : deleteBinding.isPending) ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-1.5" />
+              )}
+              {t('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </DialogPortal>
+    </Dialog>
   );
 }
 

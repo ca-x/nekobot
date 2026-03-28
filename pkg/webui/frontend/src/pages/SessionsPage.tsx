@@ -18,7 +18,16 @@ import {
   useSessions,
   useUpdateSessionSummary,
 } from '@/hooks/useSessions';
-import { Save, Trash2 } from 'lucide-react';
+import { Save, Trash2, Loader2 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogPortal,
+} from '@/components/ui/dialog';
 
 function formatDateTime(value: string): string {
   if (!value) return '-';
@@ -34,6 +43,7 @@ export default function SessionsPage() {
 
   const updateSummary = useUpdateSessionSummary();
   const deleteSession = useDeleteSession();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const sortedSessions = useMemo(
     () =>
@@ -71,12 +81,16 @@ export default function SessionsPage() {
 
   const handleDeleteSession = () => {
     if (!detail) return;
-    if (!window.confirm(t('sessionDeleteConfirm'))) return;
+    setShowDeleteConfirm(true);
+  };
 
+  const confirmDeleteSession = () => {
+    if (!detail) return;
     const targetId = detail.id;
     deleteSession.mutate(targetId, {
       onSuccess: () => {
         setSelectedId((current) => (current === targetId ? '' : current));
+        setShowDeleteConfirm(false);
       },
     });
   };
@@ -267,5 +281,36 @@ export default function SessionsPage() {
         </Card>
       </div>
     </div>
+
+    {/* Delete Confirmation Dialog */}
+    <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <DialogPortal>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('deleteConfirmDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+              {t('cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteSession}
+              disabled={deleteSession.isPending}
+            >
+              {deleteSession.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-1.5" />
+              )}
+              {t('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </DialogPortal>
+    </Dialog>
   );
 }

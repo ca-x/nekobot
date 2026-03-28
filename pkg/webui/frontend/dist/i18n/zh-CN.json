@@ -268,6 +268,8 @@
   "modify": "修改重建",
   "kill": "终止",
   "killConfirm": "确认终止该工具会话？",
+  "killConfirmTitle": "终止进程",
+  "killConfirmDescription": "确定要终止该进程吗？此操作无法撤销。",
   "running": "运行中",
   "runningWebsocket": "运行中（WebSocket）",
   "stoppedWithCode": "已停止（退出码 {0}）",
