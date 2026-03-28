@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogPortal,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -107,6 +108,8 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
   const [modelFilter, setModelFilter] = useState('');
   const [manualModel, setManualModel] = useState('');
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [configuredModelFilter, setConfiguredModelFilter] = useState('');
 
   // Populate form on open / provider change
   useEffect(() => {
@@ -154,6 +157,13 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
     return discoveredModels.filter((m) => m.toLowerCase().includes(lc));
   }, [discoveredModels, modelFilter]);
 
+  // Filter configured models
+  const filteredConfiguredModels = useMemo(() => {
+    if (!configuredModelFilter.trim()) return models;
+    const lc = configuredModelFilter.toLowerCase();
+    return models.filter((m) => m.toLowerCase().includes(lc));
+  }, [models, configuredModelFilter]);
+
   // ---------- Handlers ----------
 
   const close = () => onOpenChange(false);
@@ -188,8 +198,15 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
 
   const handleDelete = () => {
     if (!provider) return;
-    if (!window.confirm(t('deleteConfirm'))) return;
-    deleteProvider.mutate(provider.name, { onSuccess: close });
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = () => {
+    if (!provider) return;
+    deleteProvider.mutate(provider.name, { onSuccess: () => {
+      setShowDeleteConfirm(false);
+      close();
+    }});
   };
 
   const handleDiscover = () => {
@@ -500,24 +517,38 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                     </Button>
                   </div>
 
-                  {/* Current models list */}
+                  {/* Current models list with filter and scroll */}
                   {models.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {models.map((model) => (
-                        <span
-                          key={model}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-xs"
-                        >
-                          <span className="truncate max-w-[200px]">{model}</span>
-                          <button
-                            type="button"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={() => removeModel(model)}
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
+                    <div className="space-y-2">
+                      <Input
+                        type="text"
+                        placeholder={t('filterConfiguredModels')}
+                        value={configuredModelFilter}
+                        onChange={(e) => setConfiguredModelFilter(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                      <ScrollArea className="max-h-48">
+                        <div className="flex flex-wrap gap-1.5">
+                          {filteredConfiguredModels.map((model) => (
+                            <span
+                              key={model}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-xs"
+                            >
+                              <span className="truncate max-w-[200px]">{model}</span>
+                              <button
+                                type="button"
+                                className="text-muted-foreground hover:text-foreground"
+                                onClick={() => removeModel(model)}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                      <div className="text-xs text-muted-foreground">
+                        {t('showingModels', String(filteredConfiguredModels.length), String(models.length))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -554,6 +585,33 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
           </DialogFooter>
         </form>
       </DialogContent>
+    </Dialog>
+
+    {/* Delete Confirmation Dialog */}
+    <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <DialogPortal>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('deleteConfirmDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+              {t('cancel')}
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleteProvider.isPending}>
+              {deleteProvider.isPending ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-1.5" />
+              )}
+              {t('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </DialogPortal>
     </Dialog>
   );
 }

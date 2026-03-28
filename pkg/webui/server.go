@@ -946,10 +946,28 @@ func (s *Server) handleDiscoverProviderModels(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	kind := strings.TrimSpace(profile.ProviderKind)
-	if kind == "" {
-		kind = strings.TrimSpace(profile.Name)
+	name := strings.TrimSpace(profile.Name)
+	if name != "" {
+		if existing, err := s.providers.Get(c.Request().Context(), name); err == nil {
+			if strings.TrimSpace(profile.APIKey) == "" {
+				profile.APIKey = existing.APIKey
+			}
+			if strings.TrimSpace(profile.APIBase) == "" {
+				profile.APIBase = existing.APIBase
+			}
+			if profile.Timeout == 0 {
+				profile.Timeout = existing.Timeout
+			}
+			if strings.TrimSpace(profile.Proxy) == "" {
+				profile.Proxy = existing.Proxy
+			}
+			if strings.TrimSpace(profile.ProviderKind) == "" {
+				profile.ProviderKind = existing.ProviderKind
+			}
+		}
 	}
+
+	kind := strings.TrimSpace(profile.ProviderKind)
 	if kind == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "provider_kind is required"})
 	}
