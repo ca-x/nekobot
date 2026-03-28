@@ -465,6 +465,8 @@
   "wechatBindStatus_expired": "QR コード期限切れ",
   "wechatBindStatus_failed": "バインド失敗",
   "saving": "保存中...",
+  "saveFailed": "保存に失敗しました",
+  "deleteFailed": "削除に失敗しました",
   "configSaved": "設定を保存しました。",
   "configRestartRequired": "保存しました。次の設定を反映するにはサービスを再起動してください: {0}。",
   "systemLoading": "読み込み中…",

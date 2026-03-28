@@ -465,6 +465,8 @@
   "promptScope_channel": "通道",
   "promptScope_session": "会话",
   "saving": "保存中...",
+  "saveFailed": "保存失败",
+  "deleteFailed": "删除失败",
   "configSaved": "配置已保存。",
   "configRestartRequired": "已保存。请重启服务以应用这些配置：{0}。",
   "systemLoading": "加载中…",

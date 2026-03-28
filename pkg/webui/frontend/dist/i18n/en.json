@@ -465,6 +465,8 @@
   "promptScope_channel": "Channel",
   "promptScope_session": "Session",
   "saving": "Saving...",
+  "saveFailed": "Save failed",
+  "deleteFailed": "Delete failed",
   "configSaved": "Configuration saved.",
   "configRestartRequired": "Saved. Restart the service to apply: {0}.",
   "systemLoading": "Loading…",

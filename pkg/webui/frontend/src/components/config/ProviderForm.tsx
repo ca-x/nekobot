@@ -22,6 +22,7 @@ import {
 import { MaskedInput } from '@/components/common/MaskedInput';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import {
   useCreateProvider,
   useUpdateProvider,
@@ -180,7 +181,10 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
       if (data.api_key) payload.api_key = data.api_key;
       updateProvider.mutate(
         { name: provider!.name, data: payload },
-        { onSuccess: close },
+        {
+          onSuccess: close,
+          onError: (err) => toast.error(err instanceof Error ? err.message : t('saveFailed')),
+        },
       );
     } else {
       if (!data.name.trim()) return;
@@ -192,7 +196,10 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
         proxy: data.proxy || undefined,
         timeout: data.timeout ? parseInt(data.timeout, 10) : undefined,
       };
-      createProvider.mutate(payload, { onSuccess: close });
+      createProvider.mutate(payload, {
+        onSuccess: close,
+        onError: (err) => toast.error(err instanceof Error ? err.message : t('saveFailed')),
+      });
     }
   };
 
@@ -203,10 +210,13 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
 
   const confirmDelete = () => {
     if (!provider) return;
-    deleteProvider.mutate(provider.name, { onSuccess: () => {
-      setShowDeleteConfirm(false);
-      close();
-    }});
+    deleteProvider.mutate(provider.name, {
+      onSuccess: () => {
+        setShowDeleteConfirm(false);
+        close();
+      },
+      onError: (err) => toast.error(err instanceof Error ? err.message : t('deleteFailed')),
+    });
   };
 
   const handleDiscover = () => {
