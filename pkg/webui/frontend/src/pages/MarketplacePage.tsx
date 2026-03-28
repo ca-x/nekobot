@@ -135,6 +135,7 @@ export default function MarketplacePage() {
     }
     installSkill.mutate(source, {
       onSuccess: () => setInstallSource(''),
+      onError: (err) => toast.error(err instanceof Error ? err.message : t('marketplaceInstallFailed')),
     });
   };
 
