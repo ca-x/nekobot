@@ -51,7 +51,7 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -71,16 +71,16 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 	}
 
 	var out strings.Builder
-	out.WriteString(fmt.Sprintf("Results for: %s (via Brave Search)\n\n", query))
+	_, _ = fmt.Fprintf(&out, "Results for: %s (via Brave Search)\n\n", query)
 	for i, item := range parsed.Web.Results {
 		if i >= count {
 			break
 		}
-		out.WriteString(fmt.Sprintf("%d. %s\n", i+1, strings.TrimSpace(item.Title)))
-		out.WriteString(fmt.Sprintf("   URL: %s\n", strings.TrimSpace(item.URL)))
+		_, _ = fmt.Fprintf(&out, "%d. %s\n", i+1, strings.TrimSpace(item.Title))
+		_, _ = fmt.Fprintf(&out, "   URL: %s\n", strings.TrimSpace(item.URL))
 		desc := strings.TrimSpace(item.Description)
 		if desc != "" {
-			out.WriteString(fmt.Sprintf("   %s\n", desc))
+			_, _ = fmt.Fprintf(&out, "   %s\n", desc)
 		}
 		out.WriteString("\n")
 	}

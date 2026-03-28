@@ -245,8 +245,14 @@ func runCronList(cmd *cobra.Command, args []string) {
 	fmt.Printf("\nCron Jobs (%d)\n\n", len(jobs))
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tNAME\tKIND\tSCHEDULE\tENABLED\tNEXT RUN\tLAST RUN\tRUNS\tSTATUS")
-	fmt.Fprintln(w, "--\t----\t----\t--------\t-------\t--------\t--------\t----\t------")
+	if _, err := fmt.Fprintln(w, "ID\tNAME\tKIND\tSCHEDULE\tENABLED\tNEXT RUN\tLAST RUN\tRUNS\tSTATUS"); err != nil {
+		fmt.Printf("Error writing output: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := fmt.Fprintln(w, "--\t----\t----\t--------\t-------\t--------\t--------\t----\t------"); err != nil {
+		fmt.Printf("Error writing output: %v\n", err)
+		os.Exit(1)
+	}
 
 	for _, job := range jobs {
 		enabled := "yes"
@@ -274,7 +280,7 @@ func runCronList(cmd *cobra.Command, args []string) {
 		}
 
 		schedule := scheduleSummary(job)
-		fmt.Fprintf(
+		if _, err := fmt.Fprintf(
 			w,
 			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n",
 			job.ID,
@@ -286,7 +292,10 @@ func runCronList(cmd *cobra.Command, args []string) {
 			lastRun,
 			job.RunCount,
 			status,
-		)
+		); err != nil {
+			fmt.Printf("Error writing output: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	_ = w.Flush()

@@ -113,7 +113,9 @@ func detectMIMEType(path string) string {
 	if err != nil {
 		return ""
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	buf := make([]byte, 512)
 	n, err := file.Read(buf)

@@ -115,9 +115,10 @@ func (c *GeminiConverter) ToProviderRequest(unified *providers.UnifiedRequest) (
 	for _, msg := range conversationMsgs {
 		// Convert role: "assistant" -> "model", "tool" -> "user"
 		role := msg.Role
-		if role == "assistant" {
+		switch role {
+		case "assistant":
 			role = "model"
-		} else if role == "tool" {
+		case "tool":
 			role = "user"
 		}
 

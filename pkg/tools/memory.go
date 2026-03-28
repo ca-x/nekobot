@@ -218,16 +218,16 @@ func formatMemorySearchResults(results []*memory.SearchResult, includeScores boo
 
 	for i, result := range results {
 		if includeScores {
-			sb.WriteString(fmt.Sprintf("## Memory %d (score: %.2f)\n\n", i+1, result.Score))
+			_, _ = fmt.Fprintf(&sb, "## Memory %d (score: %.2f)\n\n", i+1, result.Score)
 		} else {
-			sb.WriteString(fmt.Sprintf("## Memory %d\n\n", i+1))
+			_, _ = fmt.Fprintf(&sb, "## Memory %d\n\n", i+1)
 		}
 		sb.WriteString(result.Text)
 		sb.WriteString("\n\n")
 		if citation := memory.FormatCitation(result); citation != "" {
-			sb.WriteString(fmt.Sprintf("*Source: %s*\n\n", citation))
+			_, _ = fmt.Fprintf(&sb, "*Source: %s*\n\n", citation)
 		} else if result.Metadata.FilePath != "" {
-			sb.WriteString(fmt.Sprintf("*Source: %s*\n\n", result.Metadata.FilePath))
+			_, _ = fmt.Fprintf(&sb, "*Source: %s*\n\n", result.Metadata.FilePath)
 		}
 		sb.WriteString("---\n\n")
 	}

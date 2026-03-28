@@ -122,7 +122,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) View() string {
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Nekobot TUI | Provider: %s | Model: %s\n", m.provider, m.model))
+	_, _ = fmt.Fprintf(&b, "Nekobot TUI | Provider: %s | Model: %s\n", m.provider, m.model)
 	b.WriteString(strings.Repeat("-", 80))
 	b.WriteString("\n")
 

@@ -25,9 +25,10 @@ func NewOpenAIEmbeddingProvider(apiKey, model string) *OpenAIEmbeddingProvider {
 	}
 
 	dimension := 1536 // text-embedding-3-small dimension
-	if model == "text-embedding-3-large" {
+	switch model {
+	case "text-embedding-3-large":
 		dimension = 3072
-	} else if model == "text-embedding-ada-002" {
+	case "text-embedding-ada-002":
 		dimension = 1536
 	}
 
@@ -91,7 +92,9 @@ func (p *OpenAIEmbeddingProvider) EmbedBatch(texts []string) ([][]float32, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

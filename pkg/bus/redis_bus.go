@@ -104,14 +104,14 @@ func (b *RedisBus) Stop() error {
 
 	// Close pubsub
 	if b.pubsub != nil {
-		b.pubsub.Close()
+		_ = b.pubsub.Close()
 	}
 
 	// Wait for processors
 	b.wg.Wait()
 
 	// Close client
-	b.client.Close()
+	_ = b.client.Close()
 
 	b.log.Info("Redis message bus stopped")
 	return nil

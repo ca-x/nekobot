@@ -195,15 +195,15 @@ func (m *Manager) GetRelevantContext(ctx context.Context, query string, maxResul
 	sb.WriteString("# Relevant Memory\n\n")
 
 	for i, result := range results {
-		sb.WriteString(fmt.Sprintf("## Memory %d (score: %.2f)\n\n", i+1, result.Score))
+		_, _ = fmt.Fprintf(&sb, "## Memory %d (score: %.2f)\n\n", i+1, result.Score)
 		sb.WriteString(result.Text)
 		sb.WriteString("\n\n")
 
 		// Add metadata if available
 		if citation := FormatCitation(result); citation != "" {
-			sb.WriteString(fmt.Sprintf("*Source: %s*\n\n", citation))
+			_, _ = fmt.Fprintf(&sb, "*Source: %s*\n\n", citation)
 		} else if result.Metadata.FilePath != "" {
-			sb.WriteString(fmt.Sprintf("*Source: %s*\n\n", result.Metadata.FilePath))
+			_, _ = fmt.Fprintf(&sb, "*Source: %s*\n\n", result.Metadata.FilePath)
 		}
 
 		sb.WriteString("---\n\n")

@@ -18,24 +18,16 @@ import { ChannelForm } from '@/components/config/ChannelForm';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
-/** Emoji icons for known channel types; unknown channels get their first letter. */
-const channelEmoji: Record<string, string> = {
-  telegram: 'TG',
-  gotify: 'GF',
-  discord: 'DC',
-  slack: 'SK',
-  whatsapp: 'WA',
-  feishu: 'FS',
-  dingtalk: 'DT',
-  qq: 'QQ',
-  wework: 'WW',
-  serverchan: 'SC',
-  googlechat: 'GC',
-  maixcam: 'MX',
-  teams: 'TM',
-  infoflow: 'IF',
-  wechat: 'WC',
-  email: 'EM',
+const channelLogos: Record<string, string> = {
+  telegram: '/logos/telegram.svg',
+  discord: '/logos/discord.svg',
+  slack: '/logos/slack.svg',
+  whatsapp: '/logos/whatsapp.svg',
+  feishu: '/logos/feishu.svg',
+  dingtalk: '/logos/dingtalk.svg',
+  qq: '/logos/qq.svg',
+  wework: '/logos/wecom.svg',
+  wechat: '/logos/weixin.svg',
 };
 
 /** Background color per channel (for the badge). */
@@ -154,8 +146,9 @@ export default function ChannelsPage() {
             if (name === 'wechat') return null;
 
             const enabled = config.enabled ?? false;
-            const badge = channelEmoji[name] ?? name.slice(0, 2).toUpperCase();
+            const badge = name.slice(0, 2).toUpperCase();
             const badgeColor = channelColors[name] ?? 'bg-gray-400';
+            const logo = channelLogos[name];
 
             return (
               <Card
@@ -169,14 +162,20 @@ export default function ChannelsPage() {
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-3">
                     {/* Channel badge */}
-                    <div
-                      className={cn(
-                        'flex h-10 w-10 items-center justify-center rounded-lg text-white text-xs font-bold',
-                        badgeColor,
-                      )}
-                    >
-                      {badge}
-                    </div>
+                    {logo ? (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+                        <img src={logo} alt={name} className="h-full w-full object-contain" />
+                      </div>
+                    ) : (
+                      <div
+                        className={cn(
+                          'flex h-10 w-10 items-center justify-center rounded-lg text-white text-xs font-bold',
+                          badgeColor,
+                        )}
+                      >
+                        {badge}
+                      </div>
+                    )}
 
                     {/* Enabled / Disabled indicator */}
                     <span

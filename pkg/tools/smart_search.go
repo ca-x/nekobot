@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
 	"nekobot/pkg/logger"
-	"go.uber.org/zap")
+)
 
 // SmartSearchTool provides intelligent web search with fallback.
 type SmartSearchTool struct {
-	log         *logger.Logger
-	webSearch   *WebSearchTool
-	webFetch    *WebFetchTool
-	browser     *BrowserTool
-	hasWebAPI   bool
-	hasBrowser  bool
+	log        *logger.Logger
+	webSearch  *WebSearchTool
+	webFetch   *WebFetchTool
+	browser    *BrowserTool
+	hasWebAPI  bool
+	hasBrowser bool
 }
 
 // NewSmartSearchTool creates a new smart search tool.
@@ -157,10 +158,12 @@ func (t *SmartSearchTool) searchWithBrowser(ctx context.Context, query string, m
 	}
 
 	// Wait for results to load
-	t.browser.Execute(ctx, map[string]interface{}{
+	if _, err := t.browser.Execute(ctx, map[string]interface{}{
 		"action":   "wait",
 		"duration": 2000,
-	})
+	}); err != nil {
+		return "", fmt.Errorf("failed to wait for search results: %w", err)
+	}
 
 	// Extract page HTML
 	html, err := t.browser.Execute(ctx, map[string]interface{}{
@@ -272,15 +275,15 @@ func (t *SmartSearchTool) formatResults(results []map[string]string) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d results:\n\n", len(results)))
+	_, _ = fmt.Fprintf(&sb, "Found %d results:\n\n", len(results))
 
 	for i, result := range results {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, result["title"]))
+		_, _ = fmt.Fprintf(&sb, "%d. %s\n", i+1, result["title"])
 		if result["url"] != "" {
-			sb.WriteString(fmt.Sprintf("   URL: %s\n", result["url"]))
+			_, _ = fmt.Fprintf(&sb, "   URL: %s\n", result["url"])
 		}
 		if result["description"] != "" {
-			sb.WriteString(fmt.Sprintf("   %s\n", result["description"]))
+			_, _ = fmt.Fprintf(&sb, "   %s\n", result["description"])
 		}
 		sb.WriteString("\n")
 	}

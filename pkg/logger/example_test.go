@@ -18,7 +18,9 @@ func Example_basicUsage() {
 	if err != nil {
 		panic(err)
 	}
-	defer log.Sync()
+	defer func() {
+		_ = log.Sync()
+	}()
 
 	// Use structured logging
 	log.Info("Server starting",
@@ -38,7 +40,9 @@ func Example_withFields() {
 	cfg.OutputPath = ""
 
 	log, _ := logger.New(cfg)
-	defer log.Sync()
+	defer func() {
+		_ = log.Sync()
+	}()
 
 	// Create logger with default fields
 	requestLogger := log.WithFields(
@@ -58,7 +62,9 @@ func Example_sugarLogger() {
 	cfg.OutputPath = ""
 
 	log, _ := logger.New(cfg)
-	defer log.Sync()
+	defer func() {
+		_ = log.Sync()
+	}()
 
 	// Get sugared logger
 	sugar := log.Sugar()
@@ -84,7 +90,9 @@ func Example_globalLogger() {
 	if err := logger.InitGlobal(cfg); err != nil {
 		panic(err)
 	}
-	defer logger.Sync()
+	defer func() {
+		_ = logger.Sync()
+	}()
 
 	// Use global logger functions
 	logger.Info("Application started")
@@ -106,7 +114,9 @@ func Example_fileRotation() {
 	if err != nil {
 		panic(err)
 	}
-	defer log.Sync()
+	defer func() {
+		_ = log.Sync()
+	}()
 
 	fmt.Println("Logging to file with rotation enabled")
 	log.Info("This will be written to file")

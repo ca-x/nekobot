@@ -438,7 +438,7 @@ export default function CronPage() {
       <ScrollArea className="flex-1">
         <div className="space-y-3 pr-2 pb-4">
           {isLoading ? (
-            <div className="text-sm text-muted-foreground py-8 text-center">Loading…</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">{t('loading')}</div>
           ) : sortedJobs.length === 0 ? (
             <div className="text-sm text-muted-foreground py-8 text-center">{t('cronNoJobs')}</div>
           ) : (

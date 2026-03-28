@@ -94,7 +94,9 @@ func (s *Server) setupRoutes() {
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
+			s.logger.Warn("Failed to write health response", zap.Error(err))
+		}
 	})
 
 	s.mux = mux
@@ -129,7 +131,9 @@ func (s *Server) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	for id, client := range s.clients {
 		close(client.send)
-		client.conn.Close()
+		if err := client.conn.Close(); err != nil {
+			s.logger.Warn("Failed to close gateway websocket", zap.String("client_id", id), zap.Error(err))
+		}
 		delete(s.clients, id)
 	}
 	s.mu.Unlock()
@@ -208,13 +212,19 @@ func (s *Server) getOrCreateSession(sessionID string) (agent.SessionInterface, e
 func (s *Server) readPump(client *Client) {
 	defer func() {
 		s.removeClient(client)
-		client.conn.Close()
+		if err := client.conn.Close(); err != nil {
+			s.logger.Warn("Failed to close read websocket", zap.String("client_id", client.id), zap.Error(err))
+		}
 	}()
 
 	client.conn.SetReadLimit(65536)
-	client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	if err := client.conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+		s.logger.Warn("Failed to set gateway read deadline", zap.String("client_id", client.id), zap.Error(err))
+	}
 	client.conn.SetPongHandler(func(string) error {
-		client.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		if err := client.conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+			s.logger.Warn("Failed to refresh gateway read deadline", zap.String("client_id", client.id), zap.Error(err))
+		}
 		return nil
 	})
 
@@ -257,15 +267,21 @@ func (s *Server) writePump(client *Client) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer func() {
 		ticker.Stop()
-		client.conn.Close()
+		if err := client.conn.Close(); err != nil {
+			s.logger.Warn("Failed to close write websocket", zap.String("client_id", client.id), zap.Error(err))
+		}
 	}()
 
 	for {
 		select {
 		case message, ok := <-client.send:
-			client.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := client.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				s.logger.Warn("Failed to set gateway write deadline", zap.String("client_id", client.id), zap.Error(err))
+			}
 			if !ok {
-				client.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if err := client.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+					s.logger.Warn("Failed to write close frame", zap.String("client_id", client.id), zap.Error(err))
+				}
 				return
 			}
 
@@ -274,7 +290,9 @@ func (s *Server) writePump(client *Client) {
 			}
 
 		case <-ticker.C:
-			client.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := client.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				s.logger.Warn("Failed to set gateway ping deadline", zap.String("client_id", client.id), zap.Error(err))
+			}
 			if err := client.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -379,7 +397,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		s.logger.Warn("Failed to encode gateway status", zap.Error(err))
+	}
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
@@ -396,7 +416,9 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(conns)
+	if err := json.NewEncoder(w).Encode(conns); err != nil {
+		s.logger.Warn("Failed to encode gateway connections", zap.Error(err))
+	}
 }
 
 // --- Auth ---

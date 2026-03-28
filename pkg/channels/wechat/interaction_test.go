@@ -142,7 +142,11 @@ func TestResolvePendingInteractionDelegatesToRuntimeApprovals(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {

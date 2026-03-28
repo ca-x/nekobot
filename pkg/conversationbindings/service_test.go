@@ -18,7 +18,11 @@ func TestServiceBindResolveAndClear(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
 
 	mgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -79,7 +83,11 @@ func TestServiceListFiltersChannelAndPrefix(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
 
 	mgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -145,7 +153,11 @@ func TestServiceBindWithOptionsAndListBindings(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
 
 	mgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -233,7 +245,11 @@ func TestServiceCleanupExpiredBindings(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
 
 	mgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {

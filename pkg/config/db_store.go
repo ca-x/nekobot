@@ -38,7 +38,9 @@ func ApplyDatabaseOverrides(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer func() {
+		_ = client.Close()
+	}()
 
 	ctx := context.Background()
 	for _, section := range runtimeConfigSections {
@@ -77,7 +79,9 @@ func SaveDatabaseSections(cfg *Config, sections ...string) error {
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer func() {
+		_ = client.Close()
+	}()
 
 	ctx := context.Background()
 	for _, section := range normalizeSections(sections) {

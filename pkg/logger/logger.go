@@ -191,10 +191,11 @@ func (l *Logger) Sugar() *zap.SugaredLogger {
 
 // WithFields creates a new logger with the given fields.
 func (l *Logger) WithFields(fields ...zap.Field) *Logger {
+	child := l.With(fields...)
 	return &Logger{
-		Logger: l.Logger.With(fields...),
+		Logger: child,
 		config: l.config,
-		sugar:  l.Logger.With(fields...).Sugar(),
+		sugar:  child.Sugar(),
 	}
 }
 

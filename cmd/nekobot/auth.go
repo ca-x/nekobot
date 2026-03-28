@@ -68,7 +68,9 @@ func init() {
 	authLoginCmd.Flags().StringVarP(&authProvider, "provider", "p", "", "API provider (openai, anthropic, google, etc.)")
 	authLoginCmd.Flags().BoolVar(&authDeviceCode, "device-code", false, "Use device code flow (headless)")
 	authLoginCmd.Flags().BoolVar(&authPaste, "paste", false, "Manually paste API key")
-	authLoginCmd.MarkFlagRequired("provider")
+	if err := authLoginCmd.MarkFlagRequired("provider"); err != nil {
+		panic(fmt.Sprintf("mark auth provider flag required: %v", err))
+	}
 
 	authLogoutCmd.Flags().StringVarP(&authProvider, "provider", "p", "", "API provider to logout from")
 	authLogoutCmd.Flags().BoolVar(&authLogoutAll, "all", false, "Logout from all providers")

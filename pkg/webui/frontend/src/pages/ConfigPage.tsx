@@ -1777,12 +1777,12 @@ export default function ConfigPage() {
   }, []);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="config-page flex h-full flex-col">
       <Header title={t('tabConfig')} />
-      <div className="grid min-h-0 flex-1 gap-5 px-6 pb-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <Card className="overflow-hidden border-white/70 bg-[linear-gradient(180deg,rgba(255,250,247,0.96),rgba(252,242,246,0.9))] shadow-[0_24px_60px_-42px_rgba(120,55,75,0.5)]">
-          <CardHeader className="border-b border-white/60 pb-5">
-            <CardTitle className="text-xl text-[hsl(var(--gray-900))]">Config Control</CardTitle>
+      <div className="grid min-h-0 flex-1 gap-4 px-4 pb-4 md:px-5 md:pb-5 lg:grid-cols-[252px_minmax(0,1fr)]">
+        <Card className="overflow-hidden border-border/70 bg-card/92 shadow-[0_24px_60px_-42px_rgba(120,55,75,0.28)]">
+          <CardHeader className="border-b border-border/70 pb-5">
+            <CardTitle className="text-xl text-foreground">{t('configControlTitle')}</CardTitle>
             <CardDescription>{t('configPageDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 p-4">
@@ -1793,12 +1793,12 @@ export default function ConfigPage() {
                 onClick={() => handleSectionChange(item)}
                 className={
                   item === section
-                    ? 'w-full rounded-2xl border border-[hsl(var(--brand-300))] bg-white/90 px-4 py-3 text-left shadow-[0_18px_36px_-28px_rgba(120,55,75,0.4)]'
-                    : 'w-full rounded-2xl border border-transparent bg-white/55 px-4 py-3 text-left transition hover:border-white hover:bg-white/80'
+                    ? 'w-full rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-left shadow-[0_18px_36px_-28px_rgba(120,55,75,0.24)]'
+                    : 'w-full rounded-2xl border border-transparent bg-muted/35 px-4 py-3 text-left transition hover:border-border/70 hover:bg-muted/55'
                 }
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-[hsl(var(--gray-900))]">{sectionLabel(item)}</div>
+                  <div className="text-sm font-semibold text-foreground">{sectionLabel(item)}</div>
                   <DirtyDot dirty={sectionDirty[item]} />
                 </div>
                 <div className="mt-1 text-xs leading-5 text-muted-foreground">{SECTION_DESCRIPTIONS[item]}</div>
@@ -1807,15 +1807,15 @@ export default function ConfigPage() {
           </CardContent>
         </Card>
 
-        <Card className="min-h-0 overflow-hidden border-white/70 bg-white/78 shadow-[0_26px_80px_-48px_rgba(120,55,75,0.5)] backdrop-blur">
-          <CardHeader className="border-b border-[hsl(var(--gray-200))]/80 bg-[linear-gradient(135deg,rgba(255,248,245,0.95),rgba(255,241,246,0.92))]">
+        <Card className="min-h-0 overflow-hidden border-border/70 bg-card/88 shadow-[0_26px_80px_-48px_rgba(120,55,75,0.28)] backdrop-blur">
+          <CardHeader className="border-b border-border/70 bg-[linear-gradient(135deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.7))]">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-[hsl(var(--brand-700))]">
+                <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-primary">
                   <DirtyDot dirty={sectionDirty[section]} />
                   {sectionLabel(section)}
                 </div>
-                <CardTitle className="text-2xl text-[hsl(var(--gray-900))]">{sectionLabel(section)}</CardTitle>
+                <CardTitle className="text-2xl text-foreground">{sectionLabel(section)}</CardTitle>
                 <CardDescription>{SECTION_DESCRIPTIONS[section]}</CardDescription>
               </div>
 
@@ -1823,14 +1823,14 @@ export default function ConfigPage() {
                 <div className="relative min-w-[220px] flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    className="h-10 rounded-full border-white bg-white/85 pl-9"
+                    className="h-10 rounded-full border-border/70 bg-background/80 pl-9"
                     placeholder={t('configSearchPlaceholder')}
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                   />
                 </div>
                 <Select value={mode} onValueChange={(value) => value !== mode && handleToggleMode()}>
-                  <SelectTrigger className="h-10 w-[120px] rounded-full border-white bg-white/85">
+                  <SelectTrigger className="h-10 w-[120px] rounded-full border-border/70 bg-background/80">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -1870,14 +1870,14 @@ export default function ConfigPage() {
 
             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
               <span>{sectionPersistenceHint(section)}</span>
-              <span className="rounded-full bg-[hsl(var(--gray-100))] px-2.5 py-1">
+              <span className="rounded-full bg-muted px-2.5 py-1">
                 {dirtyCount > 0 ? t('configDraftSections', String(dirtyCount)) : t('configNoUnsavedDrafts')}
               </span>
             </div>
           </CardHeader>
 
           <CardContent className="min-h-0 p-0">
-            <ScrollArea className="h-[calc(100vh-15rem)] px-6 py-5">
+            <ScrollArea className="h-[calc(100dvh-15rem)] px-4 py-4 md:px-6 md:py-5">
               {isLoading ? (
                 <div className="py-12 text-center text-sm text-muted-foreground">{t('loading')}</div>
               ) : mode === 'json' ? (
@@ -1916,7 +1916,7 @@ export default function ConfigPage() {
                 />
               ) : filteredFields.length === 0 ? (
                 <div className="py-16 text-center">
-                  <div className="text-sm font-medium text-[hsl(var(--gray-900))]">{t('configNoMatchingFields')}</div>
+                  <div className="text-sm font-medium text-foreground">{t('configNoMatchingFields')}</div>
                   <div className="mt-1 text-sm text-muted-foreground">
                     {search.trim() ? t('configNoMatchingFieldsHint') : t('configNoEditableFields')}
                   </div>

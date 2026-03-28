@@ -220,17 +220,16 @@ func (c *Channel) handleCommand(senderID, senderNick, chatID, content, sessionWe
 			zap.Error(err))
 
 		// Send error response
-		c.sendReply(sessionWebhook, "❌ Command failed: "+err.Error())
+		if sendErr := c.sendReply(sessionWebhook, "❌ Command failed: "+err.Error()); sendErr != nil {
+			c.log.Error("Failed to send DingTalk command error", zap.Error(sendErr))
+		}
 		return
 	}
 
 	// Send response
-	c.sendReply(sessionWebhook, resp.Content)
-}
-
-// handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
+	if err := c.sendReply(sessionWebhook, resp.Content); err != nil {
+		c.log.Error("Failed to send DingTalk command response", zap.Error(err))
+	}
 }
 
 // SendMessage sends a message to DingTalk.

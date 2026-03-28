@@ -91,7 +91,7 @@ func helpHandler(registry *Registry) CommandHandler {
 				if desc == "" {
 					desc = "Command"
 				}
-				sb.WriteString(fmt.Sprintf("/%s - %s\n", cmd.Name, desc))
+				_, _ = fmt.Fprintf(&sb, "/%s - %s\n", cmd.Name, desc)
 			}
 			sb.WriteString("\n提示：普通文本会进入 AI 对话。")
 			return CommandResponse{Content: sb.String(), ReplyInline: true}, nil
@@ -101,7 +101,7 @@ func helpHandler(registry *Registry) CommandHandler {
 		sb.WriteString("🤖 **Available Commands**\n\n")
 
 		for _, cmd := range cmds {
-			sb.WriteString(fmt.Sprintf("**/%s** - %s\n", cmd.Name, compactDescription(cmd.Description, 72)))
+			_, _ = fmt.Fprintf(&sb, "**/%s** - %s\n", cmd.Name, compactDescription(cmd.Description, 72))
 		}
 
 		sb.WriteString("\nUse `/help [command]` for detailed information.")

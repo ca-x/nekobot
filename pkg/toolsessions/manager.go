@@ -605,7 +605,7 @@ func (m *Manager) VerifySessionAccess(ctx context.Context, id, password string) 
 	mode := normalizeAccessMode(rec.AccessMode)
 	permanentOK := false
 	if mode != AccessModeNone && strings.TrimSpace(rec.AccessSecretHash) != "" {
-		if !(mode == AccessModeOneTime && rec.AccessOnceUsedAt != nil) && compareAccessSecret(rec.AccessSecretHash, secret) {
+		if (mode != AccessModeOneTime || rec.AccessOnceUsedAt == nil) && compareAccessSecret(rec.AccessSecretHash, secret) {
 			permanentOK = true
 		}
 	}

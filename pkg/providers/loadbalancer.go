@@ -112,11 +112,6 @@ func (lb *LoadBalancer) Chat(ctx context.Context, req *UnifiedRequest, providerO
 
 		// Context cancellation: abort immediately.
 		if ctx.Err() == context.Canceled {
-			attempts = append(attempts, FallbackAttempt{
-				Provider: providerName,
-				Error:    err,
-				Duration: elapsed,
-			})
 			return nil, context.Canceled
 		}
 
@@ -126,12 +121,6 @@ func (lb *LoadBalancer) Chat(ctx context.Context, req *UnifiedRequest, providerO
 		if failErr != nil && !failErr.IsRetriable() {
 			// Non-retriable: abort immediately.
 			lb.recordFailure(state)
-			attempts = append(attempts, FallbackAttempt{
-				Provider: providerName,
-				Error:    failErr,
-				Reason:   failErr.Reason,
-				Duration: elapsed,
-			})
 			return nil, failErr
 		}
 
@@ -207,11 +196,6 @@ func (lb *LoadBalancer) ChatStream(ctx context.Context, req *UnifiedRequest, han
 		}
 
 		if ctx.Err() == context.Canceled {
-			attempts = append(attempts, FallbackAttempt{
-				Provider: providerName,
-				Error:    err,
-				Duration: elapsed,
-			})
 			return context.Canceled
 		}
 
@@ -260,13 +244,13 @@ type FallbackExhaustedError struct {
 
 func (e *FallbackExhaustedError) Error() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("all %d providers failed:", len(e.Attempts)))
+	_, _ = fmt.Fprintf(&sb, "all %d providers failed:", len(e.Attempts))
 	for i, a := range e.Attempts {
 		if a.Skipped {
-			sb.WriteString(fmt.Sprintf("\n  [%d] %s: skipped (cooldown)", i+1, a.Provider))
+			_, _ = fmt.Fprintf(&sb, "\n  [%d] %s: skipped (cooldown)", i+1, a.Provider)
 		} else {
-			sb.WriteString(fmt.Sprintf("\n  [%d] %s: %v (reason=%s, %s)",
-				i+1, a.Provider, a.Error, a.Reason, a.Duration.Round(time.Millisecond)))
+			_, _ = fmt.Fprintf(&sb, "\n  [%d] %s: %v (reason=%s, %s)",
+				i+1, a.Provider, a.Error, a.Reason, a.Duration.Round(time.Millisecond))
 		}
 	}
 	return sb.String()

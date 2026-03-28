@@ -133,7 +133,9 @@ func TestCleanup(t *testing.T) {
 	_, _, _ = mgr.CheckApproval("read_file", nil, "")
 
 	// Approve first, leave second pending
-	mgr.Approve(id1)
+	if err := mgr.Approve(id1); err != nil {
+		t.Fatalf("approve first request: %v", err)
+	}
 
 	mgr.Cleanup()
 

@@ -149,29 +149,29 @@ func (t *SpawnTool) status(params map[string]interface{}) (string, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Task ID: %s\n", task.ID))
-	sb.WriteString(fmt.Sprintf("Label: %s\n", task.Label))
-	sb.WriteString(fmt.Sprintf("Status: %s\n", task.Status))
-	sb.WriteString(fmt.Sprintf("Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05")))
+	_, _ = fmt.Fprintf(&sb, "Task ID: %s\n", task.ID)
+	_, _ = fmt.Fprintf(&sb, "Label: %s\n", task.Label)
+	_, _ = fmt.Fprintf(&sb, "Status: %s\n", task.Status)
+	_, _ = fmt.Fprintf(&sb, "Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
 
 	if !task.StartedAt.IsZero() {
-		sb.WriteString(fmt.Sprintf("Started: %s\n", task.StartedAt.Format("2006-01-02 15:04:05")))
+		_, _ = fmt.Fprintf(&sb, "Started: %s\n", task.StartedAt.Format("2006-01-02 15:04:05"))
 	}
 
 	if !task.CompletedAt.IsZero() {
-		sb.WriteString(fmt.Sprintf("Completed: %s\n", task.CompletedAt.Format("2006-01-02 15:04:05")))
+		_, _ = fmt.Fprintf(&sb, "Completed: %s\n", task.CompletedAt.Format("2006-01-02 15:04:05"))
 		duration := task.CompletedAt.Sub(task.StartedAt)
-		sb.WriteString(fmt.Sprintf("Duration: %s\n", duration.Round(time.Second)))
+		_, _ = fmt.Fprintf(&sb, "Duration: %s\n", duration.Round(time.Second))
 	}
 
-	sb.WriteString(fmt.Sprintf("\nTask: %s\n", task.Task))
+	_, _ = fmt.Fprintf(&sb, "\nTask: %s\n", task.Task)
 
 	if task.Status == "completed" && task.Result != "" {
-		sb.WriteString(fmt.Sprintf("\nResult:\n%s\n", task.Result))
+		_, _ = fmt.Fprintf(&sb, "\nResult:\n%s\n", task.Result)
 	}
 
 	if task.Error != nil {
-		sb.WriteString(fmt.Sprintf("\nError: %s\n", task.Error))
+		_, _ = fmt.Fprintf(&sb, "\nError: %s\n", task.Error)
 	}
 
 	return sb.String(), nil
@@ -186,7 +186,7 @@ func (t *SpawnTool) list() (string, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Subagent Tasks (%d total):\n\n", len(tasks)))
+	_, _ = fmt.Fprintf(&sb, "Subagent Tasks (%d total):\n\n", len(tasks))
 
 	// Group by status
 	statuses := map[string][]*subagent.SubagentTask{
@@ -207,15 +207,15 @@ func (t *SpawnTool) list() (string, error) {
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("## %s (%d)\n\n", strings.ToUpper(status), len(taskList)))
+		_, _ = fmt.Fprintf(&sb, "## %s (%d)\n\n", strings.ToUpper(status), len(taskList))
 
 		for _, task := range taskList {
-			sb.WriteString(fmt.Sprintf("- [%s] %s (ID: %s)\n",
-				task.Label, task.Task[:min(len(task.Task), 60)], task.ID[:8]))
+			_, _ = fmt.Fprintf(&sb, "- [%s] %s (ID: %s)\n",
+				task.Label, task.Task[:min(len(task.Task), 60)], task.ID[:8])
 
 			if task.Status == "completed" || task.Status == "failed" {
 				duration := task.CompletedAt.Sub(task.StartedAt)
-				sb.WriteString(fmt.Sprintf("  Completed in %s\n", duration.Round(time.Second)))
+				_, _ = fmt.Fprintf(&sb, "  Completed in %s\n", duration.Round(time.Second))
 			}
 		}
 		sb.WriteString("\n")

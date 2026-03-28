@@ -76,7 +76,7 @@ func runSkillsList(cmd *cobra.Command, args []string) {
 		Development: true,
 	})
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
 		return
 	}
 
@@ -86,7 +86,7 @@ func runSkillsList(cmd *cobra.Command, args []string) {
 	// Load all skills
 	allSkills, err := loader.LoadAll()
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills: %v\n", err)
 		return
 	}
 
@@ -111,7 +111,7 @@ func runSkillsSources(cmd *cobra.Command, args []string) {
 		Development: true,
 	})
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
 		return
 	}
 
@@ -131,13 +131,13 @@ func runSkillsSources(cmd *cobra.Command, args []string) {
 func runSkillsValidate(cmd *cobra.Command, args []string) {
 	manager, err := loadSkillsManager()
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
 		return
 	}
 
 	report, err := manager.CheckRequirementsReport(strings.TrimSpace(args[0]))
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to validate skill: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to validate skill: %v\n", err)
 		return
 	}
 
@@ -147,20 +147,20 @@ func runSkillsValidate(cmd *cobra.Command, args []string) {
 func runSkillsInstallDeps(cmd *cobra.Command, args []string) {
 	manager, err := loadSkillsManager()
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
 		return
 	}
 
 	skillID := strings.TrimSpace(args[0])
-	fmt.Fprintf(cmd.OutOrStdout(), "Installing dependencies for skill %s\n", skillID)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Installing dependencies for skill %s\n", skillID)
 
 	results, err := manager.InstallDependencies(context.Background(), skillID)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to install dependencies: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to install dependencies: %v\n", err)
 		return
 	}
 	if len(results) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No dependencies declared.")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No dependencies declared.")
 		return
 	}
 
@@ -169,31 +169,31 @@ func runSkillsInstallDeps(cmd *cobra.Command, args []string) {
 		if !result.Success {
 			status = "failed"
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "[%s] %s %s\n", status, result.Method, result.Package)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[%s] %s %s\n", status, result.Method, result.Package)
 		if result.Error != nil {
-			fmt.Fprintf(cmd.OutOrStdout(), "  error: %v\n", result.Error)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  error: %v\n", result.Error)
 		}
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), skills.GetInstallSummary(results))
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), skills.GetInstallSummary(results))
 }
 
 func runSkillsSearch(cmd *cobra.Command, args []string) {
 	manager, err := loadSkillsManager()
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
 		return
 	}
 
 	query := strings.TrimSpace(strings.Join(args, " "))
-	fmt.Fprintf(cmd.OutOrStdout(), "Search query: %s\n", query)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Search query: %s\n", query)
 
 	localResults := manager.Search(query)
 	if len(localResults) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "\nLocal matches: none")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\nLocal matches: none")
 	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "\nLocal matches: %d\n", len(localResults))
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nLocal matches: %d\n", len(localResults))
 		for _, result := range localResults {
-			fmt.Fprintf(
+			_, _ = fmt.Fprintf(
 				cmd.OutOrStdout(),
 				"- %s (%s) [score=%.1f matches=%s]\n",
 				result.Skill.ID,
@@ -209,34 +209,34 @@ func runSkillsSearch(cmd *cobra.Command, args []string) {
 
 	remoteOutput, err := manager.SearchRegistry(ctx, query)
 	if err != nil {
-		fmt.Fprintf(cmd.OutOrStdout(), "\nRemote registry unavailable: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nRemote registry unavailable: %v\n", err)
 		return
 	}
 	if strings.TrimSpace(remoteOutput) == "" {
-		fmt.Fprintln(cmd.OutOrStdout(), "\nRemote registry returned no results")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\nRemote registry returned no results")
 		return
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "\nRemote registry:")
-	fmt.Fprintln(cmd.OutOrStdout(), remoteOutput)
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "\nRemote registry:")
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), remoteOutput)
 }
 
 func runSkillsInstall(cmd *cobra.Command, args []string) {
 	manager, err := loadSkillsManager()
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load skills manager: %v\n", err)
 		return
 	}
 
 	source := strings.TrimSpace(args[0])
 	targetPath, err := manager.InstallSkill(context.Background(), source)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to install skill: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to install skill: %v\n", err)
 		return
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Installed skill from %s\n", source)
-	fmt.Fprintf(cmd.OutOrStdout(), "Target: %s\n", targetPath)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Installed skill from %s\n", source)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Target: %s\n", targetPath)
 }
 
 func loadSkillsManager() (*skills.Manager, error) {
@@ -262,25 +262,25 @@ func loadSkillsManager() (*skills.Manager, error) {
 
 func writeSkillValidationReport(w io.Writer, report *skills.SkillEntry) {
 	if report == nil || report.Skill == nil {
-		fmt.Fprintln(w, "No skill report available")
+		_, _ = fmt.Fprintln(w, "No skill report available")
 		return
 	}
 
-	fmt.Fprintf(w, "Skill: %s\n", report.Skill.Name)
-	fmt.Fprintf(w, "ID: %s\n", report.Skill.ID)
+	_, _ = fmt.Fprintf(w, "Skill: %s\n", report.Name)
+	_, _ = fmt.Fprintf(w, "ID: %s\n", report.ID)
 	if report.Eligible {
-		fmt.Fprintln(w, "Eligible: yes")
+		_, _ = fmt.Fprintln(w, "Eligible: yes")
 	} else {
-		fmt.Fprintln(w, "Eligible: no")
+		_, _ = fmt.Fprintln(w, "Eligible: no")
 	}
 
 	if len(report.Reasons) == 0 {
-		fmt.Fprintln(w, "All requirements satisfied.")
+		_, _ = fmt.Fprintln(w, "All requirements satisfied.")
 		return
 	}
 
-	fmt.Fprintln(w, "Missing requirements:")
+	_, _ = fmt.Fprintln(w, "Missing requirements:")
 	for _, reason := range report.Reasons {
-		fmt.Fprintf(w, "- %s\n", reason)
+		_, _ = fmt.Fprintf(w, "- %s\n", reason)
 	}
 }

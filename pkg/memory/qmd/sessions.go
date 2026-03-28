@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"nekobot/pkg/logger"
 )
 
@@ -111,19 +113,20 @@ func (se *SessionExporter) convertToMarkdown(sessionID string, messages []Sessio
 	var sb strings.Builder
 
 	// Write header
-	sb.WriteString(fmt.Sprintf("# Session: %s\n\n", sessionID))
+	_, _ = fmt.Fprintf(&sb, "# Session: %s\n\n", sessionID)
 
 	if len(messages) > 0 && !messages[0].Timestamp.IsZero() {
-		sb.WriteString(fmt.Sprintf("**Date**: %s\n\n", messages[0].Timestamp.Format("2006-01-02 15:04:05")))
+		_, _ = fmt.Fprintf(&sb, "**Date**: %s\n\n", messages[0].Timestamp.Format("2006-01-02 15:04:05"))
 	}
 
 	sb.WriteString("---\n\n")
 
 	// Write messages
+	titleCaser := cases.Title(language.English)
 	for i, msg := range messages {
 		// Write message header
-		role := strings.Title(strings.ToLower(msg.Role))
-		sb.WriteString(fmt.Sprintf("## %s\n\n", role))
+		role := titleCaser.String(strings.ToLower(msg.Role))
+		_, _ = fmt.Fprintf(&sb, "## %s\n\n", role)
 
 		// Write message content with basic redaction to avoid leaking common secrets into QMD.
 		sb.WriteString(sanitizeText(msg.Content))

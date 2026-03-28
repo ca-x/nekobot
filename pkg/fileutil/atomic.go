@@ -38,7 +38,7 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 
 	defer func() {
 		if cleanup {
-			tmpFile.Close()
+			_ = tmpFile.Close()
 			_ = os.Remove(tmpPath)
 		}
 	}()
@@ -65,7 +65,7 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 
 	if dirFile, err := os.Open(dir); err == nil {
 		_ = dirFile.Sync()
-		dirFile.Close()
+		_ = dirFile.Close()
 	}
 
 	cleanup = false

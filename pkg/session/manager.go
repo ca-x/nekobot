@@ -45,7 +45,7 @@ type Manager struct {
 
 // NewManager creates a new session manager.
 func NewManager(baseDir string, cfg config.SessionsConfig) *Manager {
-	os.MkdirAll(baseDir, 0755)
+	_ = os.MkdirAll(baseDir, 0755)
 	return &Manager{
 		baseDir:  baseDir,
 		config:   cfg,

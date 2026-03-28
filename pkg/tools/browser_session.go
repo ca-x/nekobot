@@ -140,7 +140,9 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 	time.Sleep(2 * time.Second)
 
 	if err := s.connect(9222, timeout); err != nil {
-		s.Stop()
+		if stopErr := s.Stop(); stopErr != nil {
+			s.log.Warn("Failed to stop browser session after launch failure", zap.Error(stopErr))
+		}
 		return err
 	}
 	s.mode = BrowserModeDirect

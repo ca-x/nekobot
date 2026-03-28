@@ -89,7 +89,9 @@ func MigrateRuntimeDB(oldPath, newPath string) error {
 	if err != nil {
 		return fmt.Errorf("open old runtime database: %w", err)
 	}
-	defer src.Close()
+	defer func() {
+		_ = src.Close()
+	}()
 
 	tmpPath := filepath.Join(
 		filepath.Dir(newRuntimePath),

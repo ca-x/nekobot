@@ -304,17 +304,16 @@ func (c *Channel) handleCommand(senderID, chatID, content, messageID string) {
 			zap.Error(err))
 
 		// Send error response
-		c.sendMessage(chatID, "❌ Command failed: "+err.Error())
+		if sendErr := c.sendMessage(chatID, "❌ Command failed: "+err.Error()); sendErr != nil {
+			c.log.Error("Failed to send QQ command error", zap.Error(sendErr))
+		}
 		return
 	}
 
 	// Send response
-	c.sendMessage(chatID, resp.Content)
-}
-
-// handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
+	if err := c.sendMessage(chatID, resp.Content); err != nil {
+		c.log.Error("Failed to send QQ command response", zap.Error(err))
+	}
 }
 
 // SendMessage sends a message to QQ.

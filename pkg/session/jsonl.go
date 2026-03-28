@@ -98,7 +98,12 @@ func (m *Manager) SaveJSONL(key string, messages []Message, metadata map[string]
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
-	defer file.Close()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = file.Close()
+		}
+	}()
 
 	encoder := json.NewEncoder(file)
 
@@ -121,7 +126,10 @@ func (m *Manager) SaveJSONL(key string, messages []Message, metadata map[string]
 		}
 	}
 
-	file.Close()
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	closed = true
 
 	// Atomic rename
 	if err := os.Rename(tmpPath, path); err != nil {
@@ -234,7 +242,9 @@ func (m *Manager) AppendMessageJSONL(key string, msg Message) error {
 	if err != nil {
 		return fmt.Errorf("opening file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	// Check if file is empty (need to write metadata first)
 	stat, err := file.Stat()

@@ -116,7 +116,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("server returned status %d", resp.StatusCode)
@@ -163,12 +163,12 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 
 	// Build result
 	var output strings.Builder
-	output.WriteString(fmt.Sprintf("URL: %s\n", urlStr))
-	output.WriteString(fmt.Sprintf("Status: %d\n", resp.StatusCode))
-	output.WriteString(fmt.Sprintf("Content-Type: %s\n", contentType))
-	output.WriteString(fmt.Sprintf("Format: %s\n", contentFormat))
+	_, _ = fmt.Fprintf(&output, "URL: %s\n", urlStr)
+	_, _ = fmt.Fprintf(&output, "Status: %d\n", resp.StatusCode)
+	_, _ = fmt.Fprintf(&output, "Content-Type: %s\n", contentType)
+	_, _ = fmt.Fprintf(&output, "Format: %s\n", contentFormat)
 	if truncated {
-		output.WriteString(fmt.Sprintf("(Truncated to %d characters)\n", maxChars))
+		_, _ = fmt.Fprintf(&output, "(Truncated to %d characters)\n", maxChars)
 	}
 	output.WriteString("\n--- Content ---\n\n")
 	output.WriteString(text)
@@ -235,4 +235,3 @@ func (t *WebFetchTool) extractTextFromHTML(html string) string {
 
 	return strings.Join(cleanLines, "\n")
 }
-

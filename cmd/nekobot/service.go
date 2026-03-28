@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/kardianos/service"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
@@ -50,7 +51,7 @@ func NewGatewayService() *GatewayService {
 // Start implements service.Interface.Start
 func (s *GatewayService) Start(svc service.Service) error {
 	if s.logger != nil {
-		s.logger.Info("Starting nekobot gateway service")
+		_ = s.logger.Info("Starting nekobot gateway service")
 	}
 
 	// Start in a goroutine to not block
@@ -62,7 +63,7 @@ func (s *GatewayService) Start(svc service.Service) error {
 // Stop implements service.Interface.Stop
 func (s *GatewayService) Stop(svc service.Service) error {
 	if s.logger != nil {
-		s.logger.Info("Stopping nekobot gateway service")
+		_ = s.logger.Info("Stopping nekobot gateway service")
 	}
 
 	if s.app != nil {
@@ -71,7 +72,7 @@ func (s *GatewayService) Stop(svc service.Service) error {
 
 		if err := s.app.Stop(ctx); err != nil {
 			if s.logger != nil {
-				s.logger.Errorf("Error stopping service: %v", err)
+				_ = s.logger.Errorf("Error stopping service: %v", err)
 			}
 			return err
 		}
@@ -232,7 +233,8 @@ func StatusService() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Service Status: %s\n", strings.Title(status.Status))
+	titleCaser := cases.Title(language.English)
+	fmt.Printf("Service Status: %s\n", titleCaser.String(status.Status))
 	return nil
 }
 
@@ -255,7 +257,7 @@ func RunService() error {
 
 	// Run the service
 	if err := s.Run(); err != nil {
-		logger.Error(err)
+		_ = logger.Error(err)
 		return err
 	}
 

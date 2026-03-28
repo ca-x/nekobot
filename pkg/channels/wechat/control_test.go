@@ -71,7 +71,11 @@ func TestControlServiceCreateBindAndList(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -153,7 +157,11 @@ func TestControlServiceCreateACPRuntimeDoesNotStartPTYAndCanStop(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -209,7 +217,11 @@ func TestControlServiceRouteMessageToBoundRuntime(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -260,7 +272,11 @@ func TestControlServiceReadRuntimeOutputReturnsOnlyNewChunks(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -341,7 +357,11 @@ func TestControlServiceGetRuntimeLogsReturnsRecentOutput(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -387,7 +407,11 @@ func TestControlServiceGetRuntimeLogsReturnsACPEvents(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -442,7 +466,11 @@ func TestControlServiceReadRuntimeOutputReturnsACPEventsIncrementally(t *testing
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -536,7 +564,11 @@ func TestControlServiceRestartAndDeleteRuntime(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -676,7 +708,11 @@ func TestControlServiceSendToACPRuntimeReturnsDirectReply(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -731,7 +767,11 @@ func TestControlServiceSendToACPRuntimeReturnsPendingPrompt(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -774,7 +814,11 @@ func TestControlServiceResolvePendingInteractionContinuesACPRuntime(t *testing.T
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -826,7 +870,11 @@ func TestControlServiceResolvePendingInteractionSelectsACPOption(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {
@@ -926,7 +974,11 @@ func TestControlServiceRestoresPersistedACPSessions(t *testing.T) {
 
 	log := newRuntimeTestLogger(t)
 	client := newRuntimeTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
 	if err != nil {

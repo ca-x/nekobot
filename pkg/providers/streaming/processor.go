@@ -134,10 +134,8 @@ func (sp *StreamProcessor) readSSEChunk() ([]byte, bool, error) {
 			}
 
 			data = []byte(dataLine)
-		} else if strings.HasPrefix(line, ":") {
-			// Comment line (keep-alive), ignore
-			continue
 		}
+		continue
 	}
 }
 

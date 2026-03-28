@@ -184,7 +184,7 @@ func (c *Channel) verifyBot() error {
 	if err != nil {
 		return fmt.Errorf("calling getMe: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("getMe returned status %d", resp.StatusCode)
@@ -227,7 +227,7 @@ func (c *Channel) getUpdates() error {
 	if err != nil {
 		return fmt.Errorf("getting updates: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("getUpdates returned status %d", resp.StatusCode)
@@ -372,17 +372,16 @@ func (c *Channel) handleCommand(userID, username, chatID, content string) {
 			zap.Error(err))
 
 		// Send error response
-		c.sendMessage(chatID, "❌ Command failed: "+err.Error(), false)
+		if sendErr := c.sendMessage(chatID, "❌ Command failed: "+err.Error(), false); sendErr != nil {
+			c.log.Error("Failed to send ServerChan command error", zap.Error(sendErr))
+		}
 		return
 	}
 
 	// Send response
-	c.sendMessage(chatID, resp.Content, false)
-}
-
-// handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
+	if err := c.sendMessage(chatID, resp.Content, false); err != nil {
+		c.log.Error("Failed to send ServerChan command response", zap.Error(err))
+	}
 }
 
 // SendMessage sends a message to ServerChan.
@@ -426,7 +425,7 @@ func (c *Channel) sendMessage(chatID, text string, silent bool) error {
 	if err != nil {
 		return fmt.Errorf("sending message: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

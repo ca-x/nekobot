@@ -138,12 +138,10 @@ func (s *Store) AppendToday(content string) error {
 		return fmt.Errorf("read daily memory before append: %w", err)
 	}
 
-	updated := content
+	updated := existing + "\n\n" + content
 	if strings.TrimSpace(existing) == "" {
 		header := fmt.Sprintf("# %s\n\n", today.Format("2006-01-02 Monday"))
 		updated = header + content
-	} else {
-		updated = existing + "\n\n" + content
 	}
 
 	if err := s.backend.WriteDaily(context.Background(), today, updated); err != nil {

@@ -193,14 +193,6 @@ func (m *QMDSearchManager) BackendName() string {
 	return "qmd"
 }
 
-func normalizePolicy(policy string) string {
-	value := strings.TrimSpace(strings.ToLower(policy))
-	if value == "" {
-		return "hybrid"
-	}
-	return value
-}
-
 // BladesMemoryStoreAdapter adapts nekobot memory search to blades.MemoryStore.
 type BladesMemoryStoreAdapter struct {
 	manager SearchManager

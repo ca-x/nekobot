@@ -253,10 +253,6 @@ func (c *Channel) handleCommand(sessionID, userID, username, content, replyWebho
 	})
 }
 
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
-}
-
 // SendMessage sends message to infoflow webhook.
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	webhook := c.config.WebhookURL
@@ -295,7 +291,7 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	if err != nil {
 		return fmt.Errorf("sending infoflow request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("infoflow webhook status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))

@@ -99,18 +99,18 @@ func modelHandler(cfg *config.Config) CommandHandler {
 			hasProviders := len(cfg.Providers) > 0
 
 			for _, profile := range cfg.Providers {
-				sb.WriteString(fmt.Sprintf("**%s** (%s)\n", profile.Name, profile.ProviderKind))
+				_, _ = fmt.Fprintf(&sb, "**%s** (%s)\n", profile.Name, profile.ProviderKind)
 				if profile.APIBase != "" {
-					sb.WriteString(fmt.Sprintf("  Base: %s\n", profile.APIBase))
+					_, _ = fmt.Fprintf(&sb, "  Base: %s\n", profile.APIBase)
 				}
 				if len(profile.Models) > 0 {
-					sb.WriteString(fmt.Sprintf("  Models: %d configured\n", len(profile.Models)))
+					_, _ = fmt.Fprintf(&sb, "  Models: %d configured\n", len(profile.Models))
 				}
 				if profile.DefaultModel != "" {
-					sb.WriteString(fmt.Sprintf("  Default: %s\n", profile.DefaultModel))
+					_, _ = fmt.Fprintf(&sb, "  Default: %s\n", profile.DefaultModel)
 				}
 				if profile.Timeout > 0 {
-					sb.WriteString(fmt.Sprintf("  Timeout: %ds\n", profile.Timeout))
+					_, _ = fmt.Fprintf(&sb, "  Timeout: %ds\n", profile.Timeout)
 				}
 				sb.WriteString("\n")
 			}
@@ -149,19 +149,19 @@ func modelHandler(cfg *config.Config) CommandHandler {
 		}
 
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("🤖 **Provider: %s**\n\n", providerName))
-		sb.WriteString(fmt.Sprintf("Type: %s\n", providerProfile.ProviderKind))
+		_, _ = fmt.Fprintf(&sb, "🤖 **Provider: %s**\n\n", providerName)
+		_, _ = fmt.Fprintf(&sb, "Type: %s\n", providerProfile.ProviderKind)
 		if providerProfile.APIBase != "" {
-			sb.WriteString(fmt.Sprintf("Base URL: %s\n", providerProfile.APIBase))
+			_, _ = fmt.Fprintf(&sb, "Base URL: %s\n", providerProfile.APIBase)
 		}
 		if len(providerProfile.Models) > 0 {
-			sb.WriteString(fmt.Sprintf("Models: %d configured\n", len(providerProfile.Models)))
+			_, _ = fmt.Fprintf(&sb, "Models: %d configured\n", len(providerProfile.Models))
 			if providerProfile.DefaultModel != "" {
-				sb.WriteString(fmt.Sprintf("Default Model: %s\n", providerProfile.DefaultModel))
+				_, _ = fmt.Fprintf(&sb, "Default Model: %s\n", providerProfile.DefaultModel)
 			}
 		}
 		if providerProfile.Timeout > 0 {
-			sb.WriteString(fmt.Sprintf("Timeout: %ds\n", providerProfile.Timeout))
+			_, _ = fmt.Fprintf(&sb, "Timeout: %ds\n", providerProfile.Timeout)
 		}
 
 		return CommandResponse{
@@ -189,10 +189,10 @@ func gatewayHandler(channelMgr ChannelManager, ctrl GatewayController) CommandHa
 			sb.WriteString("🌐 **Gateway Status**\n\n")
 
 			channels := channelMgr.GetEnabledChannels()
-			sb.WriteString(fmt.Sprintf("Active Channels: %d\n\n", len(channels)))
+			_, _ = fmt.Fprintf(&sb, "Active Channels: %d\n\n", len(channels))
 
 			for _, ch := range channels {
-				sb.WriteString(fmt.Sprintf("• **%s** - %s\n", ch.Name(), ch.ID()))
+				_, _ = fmt.Fprintf(&sb, "• **%s** - %s\n", ch.Name(), ch.ID())
 			}
 
 			return CommandResponse{
@@ -263,10 +263,10 @@ func agentHandler(cfg *config.Config) CommandHandler {
 				defaultProvider = "Not configured"
 			}
 
-			sb.WriteString(fmt.Sprintf("Default Provider: **%s**\n", defaultProvider))
-			sb.WriteString(fmt.Sprintf("Model: %s\n", cfg.Agents.Defaults.Model))
-			sb.WriteString(fmt.Sprintf("Max Tokens: %d\n", cfg.Agents.Defaults.MaxTokens))
-			sb.WriteString(fmt.Sprintf("Temperature: %.2f\n", cfg.Agents.Defaults.Temperature))
+			_, _ = fmt.Fprintf(&sb, "Default Provider: **%s**\n", defaultProvider)
+			_, _ = fmt.Fprintf(&sb, "Model: %s\n", cfg.Agents.Defaults.Model)
+			_, _ = fmt.Fprintf(&sb, "Max Tokens: %d\n", cfg.Agents.Defaults.MaxTokens)
+			_, _ = fmt.Fprintf(&sb, "Temperature: %.2f\n", cfg.Agents.Defaults.Temperature)
 
 			sb.WriteString("\nUse `/agent list` to see all available providers.")
 
@@ -293,7 +293,7 @@ func agentHandler(cfg *config.Config) CommandHandler {
 				if p == currentProvider {
 					prefix = "→ " // Current
 				}
-				sb.WriteString(fmt.Sprintf("%s**%s**\n", prefix, p))
+				_, _ = fmt.Fprintf(&sb, "%s**%s**\n", prefix, p)
 			}
 
 			sb.WriteString("\nUse `/model <provider>` to see provider details.")

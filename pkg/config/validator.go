@@ -31,9 +31,9 @@ func (e ValidationErrors) Error() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%d validation errors:\n", len(e)))
-	for _, err := range e {
-		sb.WriteString(fmt.Sprintf("  - %s\n", err.Error()))
+	_, _ = fmt.Fprintf(&sb, "%d validation errors:\n", len(e))
+	for _, validationErr := range e {
+		_, _ = fmt.Fprintf(&sb, "  - %s\n", validationErr.Error())
 	}
 	return sb.String()
 }

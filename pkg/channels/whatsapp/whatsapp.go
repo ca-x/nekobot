@@ -276,17 +276,16 @@ func (c *Channel) handleCommand(rawMsg map[string]interface{}, senderID, chatID,
 			zap.Error(err))
 
 		// Send error response
-		c.sendBridgeMessage(chatID, "❌ Command failed: "+err.Error())
+		if sendErr := c.sendBridgeMessage(chatID, "❌ Command failed: "+err.Error()); sendErr != nil {
+			c.log.Error("Failed to send WhatsApp command error", zap.Error(sendErr))
+		}
 		return
 	}
 
 	// Send response
-	c.sendBridgeMessage(chatID, resp.Content)
-}
-
-// handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
+	if err := c.sendBridgeMessage(chatID, resp.Content); err != nil {
+		c.log.Error("Failed to send WhatsApp command response", zap.Error(err))
+	}
 }
 
 // SendMessage sends a message to WhatsApp via the bridge.

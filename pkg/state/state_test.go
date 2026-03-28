@@ -31,12 +31,18 @@ func TestFileStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
 
 	ctx := t.Context()
 
 	// Test Set/Get string
-	store.Set(ctx, "key1", "value1")
+	if err := store.Set(ctx, "key1", "value1"); err != nil {
+		t.Fatalf("set key1: %v", err)
+	}
 	value, exists, err := store.GetString(ctx, "key1")
 	if err != nil {
 		t.Fatalf("GetString error: %v", err)
@@ -49,7 +55,9 @@ func TestFileStore(t *testing.T) {
 	}
 
 	// Test Set/Get int
-	store.Set(ctx, "key2", 42)
+	if err := store.Set(ctx, "key2", 42); err != nil {
+		t.Fatalf("set key2: %v", err)
+	}
 	intVal, exists, err := store.GetInt(ctx, "key2")
 	if err != nil {
 		t.Fatalf("GetInt error: %v", err)
@@ -62,7 +70,9 @@ func TestFileStore(t *testing.T) {
 	}
 
 	// Test Set/Get bool
-	store.Set(ctx, "key3", true)
+	if err := store.Set(ctx, "key3", true); err != nil {
+		t.Fatalf("set key3: %v", err)
+	}
 	boolVal, exists, err := store.GetBool(ctx, "key3")
 	if err != nil {
 		t.Fatalf("GetBool error: %v", err)
@@ -79,7 +89,9 @@ func TestFileStore(t *testing.T) {
 		"nested": "value",
 		"count":  10,
 	}
-	store.Set(ctx, "key4", testMap)
+	if err := store.Set(ctx, "key4", testMap); err != nil {
+		t.Fatalf("set key4: %v", err)
+	}
 	mapVal, exists, err := store.GetMap(ctx, "key4")
 	if err != nil {
 		t.Fatalf("GetMap error: %v", err)
@@ -114,7 +126,9 @@ func TestFileStore(t *testing.T) {
 	}
 
 	// Test Delete
-	store.Delete(ctx, "key1")
+	if err := store.Delete(ctx, "key1"); err != nil {
+		t.Fatalf("delete key1: %v", err)
+	}
 	exists, _ = store.Exists(ctx, "key1")
 	if exists {
 		t.Error("key1 should be deleted")
@@ -133,7 +147,11 @@ func TestFileStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store2: %v", err)
 	}
-	defer store2.Close()
+	t.Cleanup(func() {
+		if err := store2.Close(); err != nil {
+			t.Fatalf("close store2: %v", err)
+		}
+	})
 
 	// Verify loaded data
 	intVal2, exists, err := store2.GetInt(ctx, "key2")
@@ -162,12 +180,18 @@ func TestFileStoreAutoSave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
 
 	ctx := t.Context()
 
 	// Set value
-	store.Set(ctx, "test", "auto-save")
+	if err := store.Set(ctx, "test", "auto-save"); err != nil {
+		t.Fatalf("set test: %v", err)
+	}
 
 	// Wait for auto-save
 	time.Sleep(200 * time.Millisecond)
@@ -185,7 +209,11 @@ func TestFileStoreAutoSave(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store2: %v", err)
 	}
-	defer store2.Close()
+	t.Cleanup(func() {
+		if err := store2.Close(); err != nil {
+			t.Fatalf("close store2: %v", err)
+		}
+	})
 
 	value, exists, err := store2.GetString(ctx, "test")
 	if err != nil || !exists || value != "auto-save" {
@@ -206,15 +234,21 @@ func TestFileStoreUpdateFunc(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
 
 	ctx := t.Context()
 
 	// Set initial value
-	store.Set(ctx, "counter", 0)
+	if err := store.Set(ctx, "counter", 0); err != nil {
+		t.Fatalf("set counter: %v", err)
+	}
 
 	// Update using function
-	store.UpdateFunc(ctx, "counter", func(current interface{}) interface{} {
+	if err := store.UpdateFunc(ctx, "counter", func(current interface{}) interface{} {
 		if current == nil {
 			return 1
 		}
@@ -222,7 +256,9 @@ func TestFileStoreUpdateFunc(t *testing.T) {
 			return count + 1
 		}
 		return current
-	})
+	}); err != nil {
+		t.Fatalf("increment counter: %v", err)
+	}
 
 	// Verify
 	value, exists, err := store.GetInt(ctx, "counter")
@@ -231,14 +267,19 @@ func TestFileStoreUpdateFunc(t *testing.T) {
 	}
 
 	// Update again
-	store.UpdateFunc(ctx, "counter", func(current interface{}) interface{} {
+	if err := store.UpdateFunc(ctx, "counter", func(current interface{}) interface{} {
 		if count, ok := current.(int); ok {
 			return count + 10
 		}
 		return current
-	})
+	}); err != nil {
+		t.Fatalf("add to counter: %v", err)
+	}
 
-	value, _, _ = store.GetInt(ctx, "counter")
+	value, _, err = store.GetInt(ctx, "counter")
+	if err != nil {
+		t.Fatalf("get updated counter: %v", err)
+	}
 	if value != 11 {
 		t.Errorf("Expected 11, got %d", value)
 	}
@@ -257,13 +298,21 @@ func TestFileStoreClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
-	defer store.Close()
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("close store: %v", err)
+		}
+	})
 
 	ctx := t.Context()
 
 	// Add some data
-	store.Set(ctx, "key1", "value1")
-	store.Set(ctx, "key2", "value2")
+	if err := store.Set(ctx, "key1", "value1"); err != nil {
+		t.Fatalf("set key1: %v", err)
+	}
+	if err := store.Set(ctx, "key2", "value2"); err != nil {
+		t.Fatalf("set key2: %v", err)
+	}
 
 	keys, _ := store.Keys(ctx)
 	if len(keys) != 2 {
@@ -290,11 +339,17 @@ func BenchmarkFileStoreSet(b *testing.B) {
 		FilePath: statePath,
 		AutoSave: false,
 	})
-	defer store.Close()
+	b.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			b.Fatalf("close store: %v", err)
+		}
+	})
 
 	b.ResetTimer()
 	for i := 0; b.Loop(); i++ {
-		store.Set(context.Background(), "benchmark", i)
+		if err := store.Set(context.Background(), "benchmark", i); err != nil {
+			b.Fatalf("set benchmark: %v", err)
+		}
 	}
 }
 
@@ -307,12 +362,20 @@ func BenchmarkFileStoreGet(b *testing.B) {
 		FilePath: statePath,
 		AutoSave: false,
 	})
-	defer store.Close()
+	b.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			b.Fatalf("close store: %v", err)
+		}
+	})
 
-	store.Set(context.Background(), "benchmark", 42)
+	if err := store.Set(context.Background(), "benchmark", 42); err != nil {
+		b.Fatalf("set benchmark: %v", err)
+	}
 
 	b.ResetTimer()
 	for b.Loop() {
-		store.GetInt(context.Background(), "benchmark")
+		if _, _, err := store.GetInt(context.Background(), "benchmark"); err != nil {
+			b.Fatalf("get benchmark: %v", err)
+		}
 	}
 }

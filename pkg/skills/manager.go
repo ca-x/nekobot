@@ -605,14 +605,14 @@ func formatSkillSummaryXML(skills []*Skill) string {
 	var sb strings.Builder
 	sb.WriteString("<skills>\n")
 	for _, skill := range skills {
-		sb.WriteString(fmt.Sprintf(
+		_, _ = fmt.Fprintf(&sb,
 			"  <skill id=\"%s\" name=\"%s\" instructions_length=\"%s\">\n",
 			xmlEscape(skill.ID),
 			xmlEscape(skill.Name),
 			strconv.Itoa(len([]rune(skill.Instructions))),
-		))
+		)
 		if skill.Description != "" {
-			sb.WriteString(fmt.Sprintf("    <description>%s</description>\n", xmlEscape(skill.Description)))
+			_, _ = fmt.Fprintf(&sb, "    <description>%s</description>\n", xmlEscape(skill.Description))
 		}
 		sb.WriteString("  </skill>\n")
 	}
@@ -622,13 +622,13 @@ func formatSkillSummaryXML(skills []*Skill) string {
 
 func formatSkillXML(skill *Skill) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(
+	_, _ = fmt.Fprintf(&sb,
 		"<skill id=\"%s\" name=\"%s\" always=\"true\">\n",
 		xmlEscape(skill.ID),
 		xmlEscape(skill.Name),
-	))
+	)
 	if skill.Description != "" {
-		sb.WriteString(fmt.Sprintf("  <description>%s</description>\n", xmlEscape(skill.Description)))
+		_, _ = fmt.Fprintf(&sb, "  <description>%s</description>\n", xmlEscape(skill.Description))
 	}
 	sb.WriteString("  <instructions>\n")
 	sb.WriteString(xmlEscape(skill.Instructions))

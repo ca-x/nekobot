@@ -371,7 +371,9 @@ func LoadAdminCredentialFromConfig(cfg *Config) (*AdminCredential, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer client.Close()
+	defer func() {
+		_ = client.Close()
+	}()
 	return LoadAdminCredential(client)
 }
 
@@ -383,6 +385,8 @@ func SaveAdminCredentialFromConfig(cfg *Config, cred *AdminCredential) error {
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer func() {
+		_ = client.Close()
+	}()
 	return SaveAdminCredential(client, cred)
 }

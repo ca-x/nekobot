@@ -160,18 +160,18 @@ export default function PromptsPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col overflow-hidden">
+    <div className="prompts-page flex h-[calc(100dvh-4rem)] flex-col overflow-hidden">
       <Header title={t('tabPrompts')} />
 
       <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_380px]">
         <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-          <Card className="overflow-hidden border-white/70 bg-white/82 shadow-[0_20px_60px_-42px_rgba(120,55,75,0.4)]">
-            <div className="border-b border-[hsl(var(--gray-200))] bg-[linear-gradient(135deg,rgba(255,249,245,0.98),rgba(252,239,244,0.9))] p-5">
-              <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] text-[hsl(var(--brand-700))]">
+          <Card className="overflow-hidden border-border/70 bg-card/88 shadow-[0_20px_60px_-42px_rgba(120,55,75,0.28)]">
+            <div className="border-b border-border/70 bg-[linear-gradient(135deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.72))] p-5">
+              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] text-primary">
                 <Sparkles className="h-3.5 w-3.5" />
                 {t('promptLibraryBadge')}
               </div>
-              <h2 className="mt-3 text-xl font-semibold text-[hsl(var(--gray-900))]">{t('promptLibraryTitle')}</h2>
+              <h2 className="mt-3 text-xl font-semibold text-foreground">{t('promptLibraryTitle')}</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('promptLibraryDescription')}</p>
             </div>
             <div className="space-y-3 p-4">
@@ -188,13 +188,13 @@ export default function PromptsPage() {
                     className={cn(
                       'w-full rounded-[1.4rem] border p-4 text-left transition-colors',
                       selectedPromptID === item.id
-                        ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-50))]'
-                        : 'border-[hsl(var(--gray-200))] bg-white hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
+                        ? 'border-primary/30 bg-primary/10'
+                        : 'border-border/70 bg-card hover:border-border hover:bg-muted/35',
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold text-[hsl(var(--gray-900))]">{item.name}</div>
+                        <div className="text-sm font-semibold text-foreground">{item.name}</div>
                         <div className="mt-1 text-xs uppercase tracking-[0.16em] text-muted-foreground">{item.key}</div>
                       </div>
                       <span
@@ -214,7 +214,7 @@ export default function PromptsPage() {
                   </button>
                 ))}
                 {prompts.length === 0 && (
-                  <div className="rounded-[1.4rem] border border-dashed border-[hsl(var(--gray-200))] px-4 py-8 text-center text-sm text-muted-foreground">
+                  <div className="rounded-[1.4rem] border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                     {t('promptEmpty')}
                   </div>
                 )}
@@ -222,13 +222,13 @@ export default function PromptsPage() {
             </div>
           </Card>
 
-          <Card className="overflow-hidden border-white/70 bg-white/88 shadow-[0_22px_60px_-42px_rgba(82,42,59,0.45)]">
-            <div className="border-b border-[hsl(var(--gray-200))] bg-[linear-gradient(160deg,rgba(255,252,247,0.98),rgba(249,244,241,0.92))] p-5">
-              <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--gray-100))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] text-[hsl(var(--gray-700))]">
+          <Card className="overflow-hidden border-border/70 bg-card/90 shadow-[0_22px_60px_-42px_rgba(82,42,59,0.3)]">
+            <div className="border-b border-border/70 bg-[linear-gradient(160deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.65))] p-5">
+              <div className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
                 <Wand2 className="h-3.5 w-3.5" />
                 {selectedPrompt ? t('promptEditorEdit') : t('promptEditorCreate')}
               </div>
-              <h2 className="mt-3 text-xl font-semibold text-[hsl(var(--gray-900))]">{t('promptEditorTitle')}</h2>
+              <h2 className="mt-3 text-xl font-semibold text-foreground">{t('promptEditorTitle')}</h2>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('promptEditorDescription')}</p>
             </div>
             <div className="space-y-4 p-5">
@@ -268,9 +268,9 @@ export default function PromptsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex items-center justify-between rounded-[1.2rem] border border-[hsl(var(--gray-200))] px-4 py-3">
+                <div className="flex items-center justify-between rounded-[1.2rem] border border-border/70 bg-muted/20 px-4 py-3">
                   <div>
-                    <div className="text-sm font-medium text-[hsl(var(--gray-900))]">{t('enabled')}</div>
+                    <div className="text-sm font-medium text-foreground">{t('enabled')}</div>
                     <div className="text-xs text-muted-foreground">{t('promptEnabledHint')}</div>
                   </div>
                   <Switch
@@ -320,18 +320,18 @@ export default function PromptsPage() {
           </Card>
         </div>
 
-        <Card className="overflow-hidden border-white/70 bg-white/86 shadow-[0_24px_60px_-42px_rgba(93,51,68,0.42)]">
-          <div className="border-b border-[hsl(var(--gray-200))] bg-[linear-gradient(150deg,rgba(255,249,243,0.98),rgba(250,240,245,0.9))] p-5">
-            <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] text-[hsl(var(--brand-700))]">
+        <Card className="overflow-hidden border-border/70 bg-card/88 shadow-[0_24px_60px_-42px_rgba(93,51,68,0.28)]">
+          <div className="border-b border-border/70 bg-[linear-gradient(150deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.72))] p-5">
+            <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] text-primary">
               <Bot className="h-3.5 w-3.5" />
               {t('promptBindingsBadge')}
             </div>
-            <h2 className="mt-3 text-xl font-semibold text-[hsl(var(--gray-900))]">{t('promptBindingsTitle')}</h2>
+            <h2 className="mt-3 text-xl font-semibold text-foreground">{t('promptBindingsTitle')}</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('promptBindingsDescription')}</p>
           </div>
 
           <div className="space-y-5 p-5">
-            <div className="space-y-4 rounded-[1.6rem] border border-[hsl(var(--gray-200))] bg-[hsl(var(--gray-50))]/65 p-4">
+            <div className="space-y-4 rounded-[1.6rem] border border-border/70 bg-muted/30 p-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>{t('promptBindingScope')}</Label>
@@ -437,11 +437,11 @@ export default function PromptsPage() {
                 />
               ))}
               {bindingsWithPrompt.length === 0 && (
-                <div className="rounded-[1.4rem] border border-dashed border-[hsl(var(--gray-200))] px-4 py-8 text-center text-sm text-muted-foreground">
-                  {t('promptBindingsEmpty')}
-                </div>
-              )}
-            </div>
+                  <div className="rounded-[1.4rem] border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                    {t('promptBindingsEmpty')}
+                  </div>
+                )}
+              </div>
           </div>
         </Card>
       </div>
@@ -461,10 +461,10 @@ function BindingCard({
   deleting: boolean;
 }) {
   return (
-    <div className="rounded-[1.4rem] border border-[hsl(var(--gray-200))] bg-white p-4">
+    <div className="rounded-[1.4rem] border border-border/70 bg-card p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-[hsl(var(--gray-900))]">
+          <div className="text-sm font-semibold text-foreground">
             {prompt?.name ?? t('promptBindingMissingPrompt')}
           </div>
           <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">

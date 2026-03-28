@@ -34,7 +34,11 @@ func TestHandleInitStatusIncludesBootstrapSummary(t *testing.T) {
 	}
 
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	s := &Server{
 		config:    cfg,
@@ -58,12 +62,12 @@ func TestHandleInitStatusIncludesBootstrapSummary(t *testing.T) {
 	var payload struct {
 		Initialized bool `json:"initialized"`
 		Bootstrap   struct {
-			ConfigPath string              `json:"config_path"`
-			DBDir      string              `json:"db_dir"`
-			Workspace  string              `json:"workspace"`
-			Logger     config.LoggerConfig `json:"logger"`
+			ConfigPath string               `json:"config_path"`
+			DBDir      string               `json:"db_dir"`
+			Workspace  string               `json:"workspace"`
+			Logger     config.LoggerConfig  `json:"logger"`
 			Gateway    config.GatewayConfig `json:"gateway"`
-			WebUI      config.WebUIConfig  `json:"webui"`
+			WebUI      config.WebUIConfig   `json:"webui"`
 		} `json:"bootstrap"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
@@ -109,7 +113,11 @@ func TestHandleInitPasswordPersistsBootstrapSectionsAndReturnsRestartHint(t *tes
 	}
 
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	s := &Server{
 		config:    cfg,
@@ -150,8 +158,8 @@ func TestHandleInitPasswordPersistsBootstrapSectionsAndReturnsRestartHint(t *tes
 	}
 
 	var payload struct {
-		Token           string `json:"token"`
-		RestartRequired bool   `json:"restart_required"`
+		Token           string   `json:"token"`
+		RestartRequired bool     `json:"restart_required"`
 		RestartSections []string `json:"restart_sections"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {

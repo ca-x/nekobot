@@ -93,12 +93,7 @@ func (l *Loader) Load(configPath string) (*Config, error) {
 	if cfg.Tools.Web.Search.BraveAPIKey == "" {
 		cfg.Tools.Web.Search.BraveAPIKey = cfg.Tools.Web.Search.LegacyAPIKey
 	}
-	if !explicitPath {
-		used := strings.TrimSpace(l.viper.ConfigFileUsed())
-		if used != "" {
-			resolvedPath = used
-		}
-	} else {
+	if explicitPath {
 		desiredWorkspace := defaultWorkspaceForConfigPath(resolvedPath)
 		changed := false
 		if strings.TrimSpace(cfg.Agents.Defaults.Workspace) != desiredWorkspace {

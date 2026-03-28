@@ -81,19 +81,19 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 
 			if errorParam != "" {
 				errCh <- fmt.Errorf("OAuth error: %s", errorParam)
-				fmt.Fprintf(w, "Authentication failed: %s\nYou can close this window.", errorParam)
+				_, _ = fmt.Fprintf(w, "Authentication failed: %s\nYou can close this window.", errorParam)
 				return
 			}
 
 			if code == "" {
 				errCh <- fmt.Errorf("no authorization code received")
-				fmt.Fprintf(w, "Authentication failed: no code received\nYou can close this window.")
+				_, _ = fmt.Fprintf(w, "Authentication failed: no code received\nYou can close this window.")
 				return
 			}
 
 			codeCh <- code
 			stateCh <- receivedState
-			fmt.Fprintf(w, "Authentication successful! You can close this window and return to the CLI.")
+			_, _ = fmt.Fprintf(w, "Authentication successful! You can close this window and return to the CLI.")
 		}),
 	}
 
@@ -106,7 +106,7 @@ func LoginBrowser(cfg OAuthProviderConfig) (*AuthCredential, error) {
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		server.Shutdown(ctx)
+		_ = server.Shutdown(ctx)
 	}()
 
 	// Build authorization URL
@@ -169,7 +169,9 @@ func LoginDeviceCode(cfg OAuthProviderConfig) (*AuthCredential, error) {
 	if err != nil {
 		return nil, fmt.Errorf("requesting device code: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -255,7 +257,9 @@ func RefreshToken(cfg OAuthProviderConfig, refreshToken string) (*AuthCredential
 	if err != nil {
 		return nil, fmt.Errorf("refreshing token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -329,7 +333,9 @@ func exchangeCodeForTokens(cfg OAuthProviderConfig, code, codeVerifier, redirect
 	if err != nil {
 		return nil, fmt.Errorf("exchanging code for tokens: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -373,7 +379,9 @@ func pollDeviceToken(cfg OAuthProviderConfig, deviceCode string) (*OAuthTokenRes
 	if err != nil {
 		return nil, fmt.Errorf("polling for token: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, _ := io.ReadAll(resp.Body)
 

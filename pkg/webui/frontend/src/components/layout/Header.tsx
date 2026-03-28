@@ -1,11 +1,14 @@
+import { cn } from '@/lib/utils';
+
 interface HeaderProps {
   title?: string;
   description?: string;
+  className?: string;
 }
 
-export default function Header({ title, description }: HeaderProps) {
+export default function Header({ title, description, className }: HeaderProps) {
   return (
-    <header className="mb-6">
+    <header className={cn('mb-6', className)}>
       {title && (
         <div>
           <h1 className="text-2xl font-semibold text-foreground tracking-tight">

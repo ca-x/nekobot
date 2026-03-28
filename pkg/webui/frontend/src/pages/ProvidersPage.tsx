@@ -277,25 +277,25 @@ export default function ProvidersPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="providers-page space-y-6">
       <Header
         title={t('tabProviders')}
         description={t('providersHeaderDescription')}
       />
 
-      <section className="relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.12),_transparent_38%),linear-gradient(135deg,_rgba(255,255,255,0.98),_rgba(248,250,252,0.96))] p-5 shadow-sm sm:p-6">
+      <section className="relative overflow-hidden rounded-[28px] border border-border/70 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.14),_transparent_38%),linear-gradient(135deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.72))] p-5 shadow-sm sm:p-6">
         <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-sky-100/60 blur-3xl" />
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-sky-200/70 bg-white/85 px-3 py-1 text-xs font-medium text-sky-700 shadow-sm">
+            <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/40 bg-card/90 px-3 py-1 text-xs font-medium text-sky-700 dark:text-sky-300 shadow-sm">
               <Sparkles className="h-3.5 w-3.5" />
               {t('providersHeroBadge')}
             </div>
             <div className="space-y-2">
-              <h2 className="max-w-2xl text-2xl font-semibold tracking-tight text-slate-900">
+              <h2 className="max-w-2xl text-2xl font-semibold tracking-tight text-foreground">
                 {t('providersHeroTitle')}
               </h2>
-              <p className="max-w-2xl text-sm leading-6 text-slate-600">
+              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
                 {t('providersHeroDescription')}
               </p>
             </div>
@@ -312,12 +312,12 @@ export default function ProvidersPage() {
 
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:min-w-[320px]">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={t('providersSearchPlaceholder')}
-                className="h-11 rounded-2xl border-slate-200 bg-white/90 pl-9 shadow-sm"
+                className="h-11 rounded-2xl border-border/70 bg-card/90 pl-9 shadow-sm"
               />
             </div>
             <Button size="sm" onClick={openNew} className="h-11 rounded-2xl px-4">
@@ -329,18 +329,18 @@ export default function ProvidersPage() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-        <Card className="overflow-hidden rounded-[28px] border-slate-200/80 bg-[linear-gradient(145deg,_rgba(255,255,255,0.98),_rgba(248,250,252,0.92))] shadow-sm">
-          <div className="border-b border-slate-100 px-5 py-5">
+        <Card className="overflow-hidden rounded-[28px] border-border/70 bg-card/92 shadow-sm">
+          <div className="border-b border-border/70 px-5 py-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-violet-200/80 bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">
                   <GitBranch className="h-3.5 w-3.5" />
                   {t('providerGroupsBadge')}
                 </div>
-                <h3 className="mt-3 text-lg font-semibold text-slate-950">
+                <h3 className="mt-3 text-lg font-semibold text-foreground">
                   {t('providerGroupsTitle')}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   {t('providerGroupsDescription')}
                 </p>
               </div>

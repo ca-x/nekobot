@@ -38,7 +38,7 @@ func (p *DuckDuckGoSearchProvider) Search(ctx context.Context, query string, cou
 	if err != nil {
 		return "", fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -63,19 +63,19 @@ func (p *DuckDuckGoSearchProvider) extractResults(html string, count int, query 
 
 	maxItems := min(len(links), count)
 	var out strings.Builder
-	out.WriteString(fmt.Sprintf("Results for: %s (via DuckDuckGo)\n\n", query))
+	_, _ = fmt.Fprintf(&out, "Results for: %s (via DuckDuckGo)\n\n", query)
 
 	for i := 0; i < maxItems; i++ {
 		rawURL := strings.TrimSpace(links[i][1])
 		title := cleanHTMLText(links[i][2])
 		finalURL := decodeDuckDuckGoURL(rawURL)
 
-		out.WriteString(fmt.Sprintf("%d. %s\n", i+1, title))
-		out.WriteString(fmt.Sprintf("   URL: %s\n", finalURL))
+		_, _ = fmt.Fprintf(&out, "%d. %s\n", i+1, title)
+		_, _ = fmt.Fprintf(&out, "   URL: %s\n", finalURL)
 		if i < len(snippets) {
 			s := cleanHTMLText(snippets[i][1])
 			if s != "" {
-				out.WriteString(fmt.Sprintf("   %s\n", s))
+				_, _ = fmt.Fprintf(&out, "   %s\n", s)
 			}
 		}
 		out.WriteString("\n")

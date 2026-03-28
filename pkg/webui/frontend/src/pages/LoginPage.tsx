@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, setToken } from '@/api/client';
 import { t } from '@/lib/i18n';
@@ -8,11 +8,40 @@ interface LoginResponse {
   token: string;
 }
 
+interface InitStatusResponse {
+  initialized: boolean;
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch('/api/auth/init-status')
+      .then(async (resp) => {
+        if (!resp.ok) {
+          throw new Error(`init status failed: ${resp.status}`);
+        }
+        return (await resp.json()) as InitStatusResponse;
+      })
+      .then((data) => {
+        if (cancelled || data.initialized) {
+          return;
+        }
+        navigate('/init', { replace: true });
+      })
+      .catch(() => {
+        // Keep login accessible if init status is temporarily unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,10 +65,12 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="rounded-2xl border border-border bg-card p-8 shadow-card">
           {/* Logo */}
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <span className="text-2xl" role="img" aria-label="cat">
-              🐱
-            </span>
+          <div className="mb-2 flex items-center justify-center gap-3">
+            <img
+              src="/brand/nekobot-logo.png"
+              alt="Nekobot"
+              className="h-10 w-10 rounded-xl object-cover shadow-sm"
+            />
             <span className="text-xl font-semibold text-foreground tracking-tight">
               Nekobot
             </span>

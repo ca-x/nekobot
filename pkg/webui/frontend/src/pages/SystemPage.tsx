@@ -20,9 +20,9 @@ export default function SystemPage() {
   const serviceStatus = service?.status ?? 'unknown';
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="system-page flex h-full flex-col">
       <Header title={t('tabStatus')} />
-      <div className="flex items-center gap-2 px-6 pb-4">
+      <div className="flex flex-wrap items-center gap-2 pb-4">
         <Button
           variant="outline"
           size="sm"
@@ -48,40 +48,40 @@ export default function SystemPage() {
           disabled={qmdFetching}
         >
           <DatabaseZap className={`h-4 w-4 mr-1 ${qmdFetching ? 'animate-spin' : ''}`} />
-          QMD
+          {t('systemQMDButton')}
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 px-6 pb-6">
+      <ScrollArea className="flex-1 pb-6">
         <div className="space-y-4">
           {!isLoading ? (
-            <Card className="rounded-[24px] border-slate-200/80 bg-white/95 p-5 shadow-sm">
+            <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
               <div>
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Runtime Paths</div>
-                <h3 className="mt-2 text-lg font-semibold text-slate-900">
-                  Active bootstrap and storage targets.
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{t('systemRuntimePathsTitle')}</div>
+                <h3 className="mt-2 text-lg font-semibold text-foreground">
+                  {t('systemRuntimePathsHeadline')}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Use this to confirm which config file, runtime DB, and workspace the current process is pointing at.
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {t('systemRuntimePathsDescription')}
                 </p>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <StatusMetric label="Config path" value={String(statusRecord?.config_path ?? '-')} />
-                <StatusMetric label="DB directory" value={String(statusRecord?.database_dir ?? '-')} />
-                <StatusMetric label="Runtime DB" value={String(statusRecord?.runtime_db_path ?? '-')} />
-                <StatusMetric label="Workspace" value={String(statusRecord?.workspace_path ?? '-')} />
+                <StatusMetric label={t('systemConfigPath')} value={String(statusRecord?.config_path ?? '-')} />
+                <StatusMetric label={t('systemDatabaseDir')} value={String(statusRecord?.database_dir ?? '-')} />
+                <StatusMetric label={t('systemRuntimeDatabase')} value={String(statusRecord?.runtime_db_path ?? '-')} />
+                <StatusMetric label={t('agentsWorkspace')} value={String(statusRecord?.workspace_path ?? '-')} />
               </div>
             </Card>
           ) : null}
 
-          <Card className="rounded-[24px] border-slate-200/80 bg-white/95 p-5 shadow-sm">
+          <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">{t('systemServiceTitle')}</div>
-                <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{t('systemServiceTitle')}</div>
+                <h3 className="mt-2 text-lg font-semibold text-foreground">
                   {t('systemServiceHeadline')}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   {t('systemServiceDescription')}
                 </p>
               </div>
@@ -107,22 +107,22 @@ export default function SystemPage() {
                   <StatusMetric label={t('systemServiceName')} value={service?.name || '-'} />
                 </div>
 
-                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">{t('systemServiceConfigPath')}</div>
-                  <div className="mt-2 break-all font-mono text-sm text-slate-700">{service?.config_path || '-'}</div>
+                <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{t('systemServiceConfigPath')}</div>
+                  <div className="mt-2 break-all font-mono text-sm text-foreground">{service?.config_path || '-'}</div>
                   <div className="mt-3">
-                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">{t('systemServiceArguments')}</div>
-                    <div className="mt-2 break-all font-mono text-sm text-slate-700">
+                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{t('systemServiceArguments')}</div>
+                    <div className="mt-2 break-all font-mono text-sm text-foreground">
                       {service?.arguments && service.arguments.length > 0 ? service.arguments.join(' ') : '-'}
                     </div>
                   </div>
                   {!serviceInstalled ? (
-                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    <div className="mt-3 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
                       {t('systemServiceNotInstalledHint')}
                     </div>
                   ) : null}
                   {serviceInstalled && serviceStatus !== 'running' ? (
-                    <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <div className="mt-3 rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-sm text-foreground/80">
                       {t('systemServiceRestartHint')}
                     </div>
                   ) : null}
@@ -131,15 +131,15 @@ export default function SystemPage() {
             )}
           </Card>
 
-          <Card className="rounded-[24px] border-slate-200/80 bg-white/95 p-5 shadow-sm">
+          <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">QMD</div>
-                <h3 className="mt-2 text-lg font-semibold text-slate-900">
-                  Optional semantic search runtime.
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{t('systemQMDTitle')}</div>
+                <h3 className="mt-2 text-lg font-semibold text-foreground">
+                  {t('systemQMDHeadline')}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  This reflects actual runtime availability, not just saved config.
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {t('systemQMDDescription')}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -150,7 +150,7 @@ export default function SystemPage() {
                   disabled={installQMD.isPending}
                 >
                   <RefreshCw className={cn('mr-2 h-4 w-4', installQMD.isPending && 'animate-spin')} />
-                  {installQMD.isPending ? 'Installing…' : 'Install persisted QMD'}
+                  {installQMD.isPending ? t('marketplaceInstalling') : t('systemQMDInstall')}
                 </Button>
                 <Button
                   size="sm"
@@ -159,7 +159,7 @@ export default function SystemPage() {
                   disabled={updateQMD.isPending || !qmd?.available}
                 >
                   <RefreshCw className={cn('mr-2 h-4 w-4', updateQMD.isPending && 'animate-spin')} />
-                  {updateQMD.isPending ? 'Updating…' : 'Update QMD'}
+                  {updateQMD.isPending ? t('systemUpdating') : t('systemQMDUpdate')}
                 </Button>
               </div>
             </div>
@@ -169,22 +169,22 @@ export default function SystemPage() {
             ) : (
               <div className="mt-4 space-y-4">
                 <div className="grid gap-3 md:grid-cols-4">
-                  <StatusMetric label="Enabled" value={qmd?.enabled ? t('systemYes') : t('systemNo')} />
-                  <StatusMetric label="Available" value={qmd?.available ? t('systemYes') : t('systemNo')} />
-                  <StatusMetric label="Version" value={qmd?.version || '-'} />
-                  <StatusMetric label="Collections" value={String(qmd?.collections.length ?? 0)} />
+                  <StatusMetric label={t('enabled')} value={qmd?.enabled ? t('systemYes') : t('systemNo')} />
+                  <StatusMetric label={t('systemAvailable')} value={qmd?.available ? t('systemYes') : t('systemNo')} />
+                  <StatusMetric label={t('marketplaceVersion')} value={qmd?.version || '-'} />
+                  <StatusMetric label={t('systemCollections')} value={String(qmd?.collections.length ?? 0)} />
                 </div>
 
-                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
-                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Command</div>
-                  <div className="mt-2 font-mono text-sm text-slate-700">{qmd?.command || '-'}</div>
+                <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+                  <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{t('systemCommand')}</div>
+                  <div className="mt-2 font-mono text-sm text-foreground">{qmd?.command || '-'}</div>
                   <div className="mt-3 grid gap-3 md:grid-cols-3">
-                    <StatusMetric label="Resolved command" value={qmd?.resolved_command || '-'} />
-                    <StatusMetric label="Command source" value={qmd?.command_source || '-'} />
-                    <StatusMetric label="Persistent command" value={qmd?.persistent_command || '-'} />
+                    <StatusMetric label={t('systemResolvedCommand')} value={qmd?.resolved_command || '-'} />
+                    <StatusMetric label={t('systemCommandSource')} value={qmd?.command_source || '-'} />
+                    <StatusMetric label={t('systemPersistentCommand')} value={qmd?.persistent_command || '-'} />
                   </div>
                   {qmd?.error ? (
-                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    <div className="mt-3 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
                       {qmd.error}
                     </div>
                   ) : null}
@@ -192,23 +192,23 @@ export default function SystemPage() {
 
                 <div className="space-y-3">
                   {(qmd?.collections ?? []).map((collection) => (
-                    <div key={`${collection.Name}-${collection.Path}`} className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
+                    <div key={`${collection.Name}-${collection.Path}`} className="rounded-2xl border border-border/70 bg-muted/35 p-4">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-white">
+                        <span className="rounded-full bg-primary px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-primary-foreground">
                           {collection.Name}
                         </span>
-                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] text-slate-600">
+                        <span className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] text-muted-foreground">
                           {collection.Pattern}
                         </span>
                       </div>
-                      <div className="mt-3 break-all font-mono text-xs leading-6 text-slate-700">
+                      <div className="mt-3 break-all font-mono text-xs leading-6 text-foreground">
                         {collection.Path}
                       </div>
                     </div>
                   ))}
                   {(qmd?.collections ?? []).length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
-                      No QMD collections initialized.
+                    <div className="rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                      {t('systemQMDNoCollections')}
                     </div>
                   ) : null}
                 </div>
@@ -244,9 +244,9 @@ function formatServiceStatus(status: string) {
 
 function StatusMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
-      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</div>
-      <div className="mt-2 break-all text-sm font-semibold text-slate-900">{value}</div>
+    <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className="mt-2 break-all text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
 }

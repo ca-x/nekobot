@@ -43,7 +43,6 @@ type Channel struct {
 	running              bool
 	ctx                  context.Context
 	cancel               context.CancelFunc
-	pendingAcks          sync.Map // chat_id -> message reference
 	transcriber          transcription.Transcriber
 	httpClient           *http.Client
 	pendingSkillMu       sync.Mutex
@@ -351,16 +350,20 @@ func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 			zap.Error(err))
 
 		// Send error as ephemeral message
-		c.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
-			slack.MsgOptionText("❌ Command failed: "+err.Error(), false))
+		if _, sendErr := c.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+			slack.MsgOptionText("❌ Command failed: "+err.Error(), false)); sendErr != nil {
+			c.log.Error("Failed to send Slack command error", zap.Error(sendErr))
+		}
 		return
 	}
 
 	if resp.Interaction != nil && resp.Interaction.Type == commands.InteractionTypeSkillInstallConfirm {
 		if err := c.sendSkillInstallConfirmation(cmd, cmdName, resp); err != nil {
 			c.log.Error("Failed to send skill install confirmation", zap.Error(err))
-			c.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
-				slack.MsgOptionText("Failed to create install confirmation: "+err.Error(), false))
+			if _, sendErr := c.api.PostEphemeral(cmd.ChannelID, cmd.UserID,
+				slack.MsgOptionText("Failed to create install confirmation: "+err.Error(), false)); sendErr != nil {
+				c.log.Error("Failed to send Slack install confirmation error", zap.Error(sendErr))
+			}
 		}
 		return
 	}
@@ -372,10 +375,14 @@ func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 
 	if resp.Ephemeral {
 		// Send as ephemeral message (only visible to user)
-		c.api.PostEphemeral(cmd.ChannelID, cmd.UserID, opts...)
+		if _, err := c.api.PostEphemeral(cmd.ChannelID, cmd.UserID, opts...); err != nil {
+			c.log.Error("Failed to send Slack ephemeral response", zap.Error(err))
+		}
 	} else {
 		// Send as regular message
-		c.api.PostMessage(cmd.ChannelID, opts...)
+		if _, _, err := c.api.PostMessage(cmd.ChannelID, opts...); err != nil {
+			c.log.Error("Failed to send Slack response", zap.Error(err))
+		}
 	}
 }
 
@@ -431,13 +438,17 @@ func (c *Channel) handleSkillInstallConfirm(callback slack.InteractionCallback, 
 	messageTS := c.interactionMessageTS(callback)
 	pending, ok := c.getPendingSkillInstall(messageTS)
 	if !ok {
-		c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
-			slack.MsgOptionText("This install request has expired. Please run the command again.", false))
+		if _, err := c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
+			slack.MsgOptionText("This install request has expired. Please run the command again.", false)); err != nil {
+			c.log.Error("Failed to send Slack interaction expiry message", zap.Error(err))
+		}
 		return
 	}
 	if callback.User.ID != pending.UserID {
-		c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
-			slack.MsgOptionText("Only the requester can confirm this installation.", false))
+		if _, err := c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
+			slack.MsgOptionText("Only the requester can confirm this installation.", false)); err != nil {
+			c.log.Error("Failed to send Slack interaction authorization message", zap.Error(err))
+		}
 		return
 	}
 	if repo != pending.Repo {
@@ -456,13 +467,17 @@ func (c *Channel) handleSkillInstallCancel(callback slack.InteractionCallback) {
 	messageTS := c.interactionMessageTS(callback)
 	pending, ok := c.getPendingSkillInstall(messageTS)
 	if !ok {
-		c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
-			slack.MsgOptionText("This install request has expired. Please run the command again.", false))
+		if _, err := c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
+			slack.MsgOptionText("This install request has expired. Please run the command again.", false)); err != nil {
+			c.log.Error("Failed to send Slack cancel expiry message", zap.Error(err))
+		}
 		return
 	}
 	if callback.User.ID != pending.UserID {
-		c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
-			slack.MsgOptionText("Only the requester can cancel this installation.", false))
+		if _, err := c.api.PostEphemeral(callback.Channel.ID, callback.User.ID,
+			slack.MsgOptionText("Only the requester can cancel this installation.", false)); err != nil {
+			c.log.Error("Failed to send Slack unauthorized cancel message", zap.Error(err))
+		}
 		return
 	}
 
@@ -641,10 +656,6 @@ func (c *Channel) clearPendingSkillInstall(messageTS string) {
 }
 
 // handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
-}
-
 // SendMessage sends a message to Slack.
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	// Parse session ID (format: "slack:channel_id" or "slack:channel_id:thread_ts")
@@ -732,11 +743,11 @@ func (c *Channel) transcribeFiles(files []slack.File) (string, bool) {
 			continue
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			continue
 		}
 		data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			c.log.Warn("Failed reading Slack audio", zap.Error(err))
 			continue

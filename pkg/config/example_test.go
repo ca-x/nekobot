@@ -26,7 +26,9 @@ func Example_basicUsage() {
 func Example_saveAndLoad() {
 	tmpDir := os.TempDir()
 	configPath := filepath.Join(tmpDir, "nanobot-test-config.json")
-	defer os.Remove(configPath)
+	defer func() {
+		_ = os.Remove(configPath)
+	}()
 
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Model = "gpt-4o-mini"

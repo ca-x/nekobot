@@ -22,8 +22,6 @@ type GatewayServiceStatus struct {
 	Status     string   `json:"status"`
 }
 
-type serviceFactory func(service.Interface, *service.Config) (service.Service, error)
-
 var newService = service.New
 
 type noopProgram struct{}

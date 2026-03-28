@@ -224,17 +224,16 @@ func (c *Channel) handleCommand(message *larkim.EventMessage, sender *larkim.Eve
 			zap.Error(err))
 
 		// Send error response
-		c.sendMessage(chatID, "❌ Command failed: "+err.Error())
+		if sendErr := c.sendMessage(chatID, "❌ Command failed: "+err.Error()); sendErr != nil {
+			c.log.Error("Failed to send Feishu command error", zap.Error(sendErr))
+		}
 		return
 	}
 
 	// Send response
-	c.sendMessage(chatID, resp.Content)
-}
-
-// handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
+	if err := c.sendMessage(chatID, resp.Content); err != nil {
+		c.log.Error("Failed to send Feishu command response", zap.Error(err))
+	}
 }
 
 // SendMessage sends a message to Feishu.
@@ -272,7 +271,7 @@ func (c *Channel) sendMessage(chatID, content string) error {
 		Build()
 
 	// Send message
-	resp, err := c.client.Im.V1.Message.Create(context.Background(), req)
+	resp, err := c.client.Im.Message.Create(context.Background(), req)
 	if err != nil {
 		return fmt.Errorf("sending message: %w", err)
 	}

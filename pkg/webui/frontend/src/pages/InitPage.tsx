@@ -134,10 +134,12 @@ export default function InitPage() {
       <div className="w-full max-w-4xl">
         <div className="rounded-2xl border border-border bg-card p-8 shadow-card">
           {/* Logo */}
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <span className="text-2xl" role="img" aria-label="cat">
-              🐱
-            </span>
+          <div className="mb-2 flex items-center justify-center gap-3">
+            <img
+              src="/brand/nekobot-logo.png"
+              alt="Nekobot"
+              className="h-10 w-10 rounded-xl object-cover shadow-sm"
+            />
             <span className="text-xl font-semibold text-foreground tracking-tight">
               Nekobot
             </span>

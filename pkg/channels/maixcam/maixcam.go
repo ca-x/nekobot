@@ -120,7 +120,9 @@ func (c *Channel) Stop(ctx context.Context) error {
 
 	// Close listener
 	if c.listener != nil {
-		c.listener.Close()
+		if err := c.listener.Close(); err != nil {
+			c.log.Warn("Failed to close MaixCAM listener", zap.Error(err))
+		}
 	}
 
 	// Close all client connections
@@ -128,7 +130,9 @@ func (c *Channel) Stop(ctx context.Context) error {
 	defer c.clientsMux.Unlock()
 
 	for conn := range c.clients {
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			c.log.Warn("Failed to close MaixCAM client connection", zap.Error(err))
+		}
 	}
 	c.clients = make(map[net.Conn]bool)
 
@@ -166,7 +170,9 @@ func (c *Channel) acceptConnections() {
 // handleConnection handles a single client connection.
 func (c *Channel) handleConnection(conn net.Conn) {
 	defer func() {
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			c.log.Warn("Failed to close MaixCAM connection", zap.Error(err))
+		}
 		c.clientsMux.Lock()
 		delete(c.clients, conn)
 		c.clientsMux.Unlock()
@@ -359,11 +365,6 @@ func (c *Channel) handleCommand(msg MaixCamMessage, conn net.Conn, deviceID, con
 			c.log.Error("Failed to send command response to device", zap.Error(err))
 		}
 	}
-}
-
-// handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
 }
 
 // SendMessage sends a message to MaixCAM device(s).

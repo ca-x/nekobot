@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
+import { t } from '@/lib/i18n';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const InitPage = lazy(() => import('./pages/InitPage'));
@@ -18,7 +19,7 @@ const CronPage = lazy(() => import('./pages/CronPage'));
 function Loading() {
   return (
     <div className="flex h-screen items-center justify-center">
-      <div className="animate-pulse-soft text-muted-foreground">Loading...</div>
+      <div className="animate-pulse-soft text-muted-foreground">{t('loading')}</div>
     </div>
   );
 }

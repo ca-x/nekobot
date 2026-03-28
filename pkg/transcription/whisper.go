@@ -155,7 +155,9 @@ func (c *WhisperClient) Transcribe(ctx context.Context, audio []byte, filename s
 	if err != nil {
 		return "", fmt.Errorf("calling whisper api: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	rawResp, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

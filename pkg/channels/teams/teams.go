@@ -253,10 +253,6 @@ func (c *Channel) handleCommand(sessionID string, act activity, content string) 
 	}
 }
 
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
-}
-
 // SendMessage sends a message to Teams conversation.
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	return c.sendActivity(ctx, msg.SessionID, msg.Content, msg.ReplyTo)
@@ -300,7 +296,7 @@ func (c *Channel) sendActivity(ctx context.Context, sessionID, text, replyTo str
 	if err != nil {
 		return fmt.Errorf("sending teams request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("teams api status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
@@ -332,7 +328,7 @@ func (c *Channel) getAccessToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

@@ -65,7 +65,9 @@ func runOnboard(cmd *cobra.Command, args []string) {
 	workspaceDir := defaultWorkspace
 	fmt.Printf("Workspace location: [%s] ", defaultWorkspace)
 	var input string
-	fmt.Scanln(&input)
+	if _, err := fmt.Scanln(&input); err != nil {
+		input = ""
+	}
 	if input != "" {
 		workspaceDir = input
 	}

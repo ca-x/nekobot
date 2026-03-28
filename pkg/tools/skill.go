@@ -100,15 +100,15 @@ func (t *SkillTool) list() (string, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Available Skills (%d total):\n\n", len(allSkills)))
+	_, _ = fmt.Fprintf(&sb, "Available Skills (%d total):\n\n", len(allSkills))
 
 	// Show enabled skills
 	if len(enabled) > 0 {
-		sb.WriteString(fmt.Sprintf("## ENABLED (%d)\n\n", len(enabled)))
+		_, _ = fmt.Fprintf(&sb, "## ENABLED (%d)\n\n", len(enabled))
 		for _, skill := range enabled {
-			sb.WriteString(fmt.Sprintf("- **%s** (ID: %s)\n", skill.Name, skill.ID))
+			_, _ = fmt.Fprintf(&sb, "- **%s** (ID: %s)\n", skill.Name, skill.ID)
 			if skill.Description != "" {
-				sb.WriteString(fmt.Sprintf("  %s\n", skill.Description))
+				_, _ = fmt.Fprintf(&sb, "  %s\n", skill.Description)
 			}
 		}
 		sb.WriteString("\n")
@@ -116,17 +116,17 @@ func (t *SkillTool) list() (string, error) {
 
 	// Show disabled skills
 	if len(disabled) > 0 {
-		sb.WriteString(fmt.Sprintf("## DISABLED (%d)\n\n", len(disabled)))
+		_, _ = fmt.Fprintf(&sb, "## DISABLED (%d)\n\n", len(disabled))
 		for _, skill := range disabled {
-			sb.WriteString(fmt.Sprintf("- **%s** (ID: %s)\n", skill.Name, skill.ID))
+			_, _ = fmt.Fprintf(&sb, "- **%s** (ID: %s)\n", skill.Name, skill.ID)
 			if skill.Description != "" {
-				sb.WriteString(fmt.Sprintf("  %s\n", skill.Description))
+				_, _ = fmt.Fprintf(&sb, "  %s\n", skill.Description)
 			}
 			// Show why disabled (if requirements exist)
 			if skill.Requirements != nil {
 				eligible, reasons := t.manager.CheckRequirements(context.Background(), skill.ID)
 				if !eligible {
-					sb.WriteString(fmt.Sprintf("  ⚠️  Missing requirements: %s\n", strings.Join(reasons, ", ")))
+					_, _ = fmt.Fprintf(&sb, "  ⚠️  Missing requirements: %s\n", strings.Join(reasons, ", "))
 				}
 			}
 		}
@@ -152,12 +152,12 @@ func (t *SkillTool) get(params map[string]interface{}) (string, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("# %s\n\n", skill.Name))
-	sb.WriteString(fmt.Sprintf("**ID:** %s\n", skill.ID))
-	sb.WriteString(fmt.Sprintf("**Status:** %s\n\n", enabledStatus(skill.Enabled)))
+	_, _ = fmt.Fprintf(&sb, "# %s\n\n", skill.Name)
+	_, _ = fmt.Fprintf(&sb, "**ID:** %s\n", skill.ID)
+	_, _ = fmt.Fprintf(&sb, "**Status:** %s\n\n", enabledStatus(skill.Enabled))
 
 	if skill.Description != "" {
-		sb.WriteString(fmt.Sprintf("**Description:**\n%s\n\n", skill.Description))
+		_, _ = fmt.Fprintf(&sb, "**Description:**\n%s\n\n", skill.Description)
 	}
 
 	// Show requirements
@@ -165,24 +165,24 @@ func (t *SkillTool) get(params map[string]interface{}) (string, error) {
 		sb.WriteString("**Requirements:**\n")
 
 		if len(skill.Requirements.Binaries) > 0 {
-			sb.WriteString(fmt.Sprintf("- Binaries: %s\n", strings.Join(skill.Requirements.Binaries, ", ")))
+			_, _ = fmt.Fprintf(&sb, "- Binaries: %s\n", strings.Join(skill.Requirements.Binaries, ", "))
 		}
 		if len(skill.Requirements.Env) > 0 {
-			sb.WriteString(fmt.Sprintf("- Environment Variables: %s\n", strings.Join(skill.Requirements.Env, ", ")))
+			_, _ = fmt.Fprintf(&sb, "- Environment Variables: %s\n", strings.Join(skill.Requirements.Env, ", "))
 		}
 		if len(skill.Requirements.Languages) > 0 {
 			for lang, version := range skill.Requirements.Languages {
-				sb.WriteString(fmt.Sprintf("- %s: %s\n", lang, version))
+				_, _ = fmt.Fprintf(&sb, "- %s: %s\n", lang, version)
 			}
 		}
 		if len(skill.Requirements.ConfigPaths) > 0 {
-			sb.WriteString(fmt.Sprintf("- Config Paths: %s\n", strings.Join(skill.Requirements.ConfigPaths, ", ")))
+			_, _ = fmt.Fprintf(&sb, "- Config Paths: %s\n", strings.Join(skill.Requirements.ConfigPaths, ", "))
 		}
 		if len(skill.Requirements.PythonPackages) > 0 {
-			sb.WriteString(fmt.Sprintf("- Python Packages: %s\n", strings.Join(skill.Requirements.PythonPackages, ", ")))
+			_, _ = fmt.Fprintf(&sb, "- Python Packages: %s\n", strings.Join(skill.Requirements.PythonPackages, ", "))
 		}
 		if len(skill.Requirements.NodePackages) > 0 {
-			sb.WriteString(fmt.Sprintf("- Node Packages: %s\n", strings.Join(skill.Requirements.NodePackages, ", ")))
+			_, _ = fmt.Fprintf(&sb, "- Node Packages: %s\n", strings.Join(skill.Requirements.NodePackages, ", "))
 		}
 
 		// Check if requirements are met
@@ -191,9 +191,9 @@ func (t *SkillTool) get(params map[string]interface{}) (string, error) {
 			return "", err
 		}
 		if !report.Eligible {
-			sb.WriteString(fmt.Sprintf("\n⚠️  **Missing Requirements:**\n"))
+			sb.WriteString("\n⚠️  **Missing Requirements:**\n")
 			for _, reason := range report.Reasons {
-				sb.WriteString(fmt.Sprintf("- %s\n", reason))
+				_, _ = fmt.Fprintf(&sb, "- %s\n", reason)
 			}
 		} else {
 			sb.WriteString("\n✅ All requirements met\n")
@@ -207,8 +207,8 @@ func (t *SkillTool) get(params map[string]interface{}) (string, error) {
 		if len(preview) > 500 {
 			preview = preview[:500] + "..."
 		}
-		sb.WriteString(fmt.Sprintf("**Instructions Preview:**\n```\n%s\n```\n\n", preview))
-		sb.WriteString(fmt.Sprintf("Full instructions: %d characters\n", len(skill.Instructions)))
+		_, _ = fmt.Fprintf(&sb, "**Instructions Preview:**\n```\n%s\n```\n\n", preview)
+		_, _ = fmt.Fprintf(&sb, "Full instructions: %d characters\n", len(skill.Instructions))
 	}
 
 	return sb.String(), nil
@@ -238,14 +238,14 @@ func (t *SkillTool) invoke(params map[string]interface{}) (string, error) {
 
 	// Build response with skill instructions
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Skill '%s' invoked successfully.\n\n", skill.Name))
+	_, _ = fmt.Fprintf(&sb, "Skill '%s' invoked successfully.\n\n", skill.Name)
 	sb.WriteString("You should now follow the instructions below to complete the task:\n\n")
 	sb.WriteString("---\n\n")
 	sb.WriteString(skill.Instructions)
 	sb.WriteString("\n\n---\n\n")
 
 	if userContext != "" {
-		sb.WriteString(fmt.Sprintf("**User Context:**\n%s\n\n", userContext))
+		_, _ = fmt.Fprintf(&sb, "**User Context:**\n%s\n\n", userContext)
 	}
 
 	sb.WriteString("Apply the above instructions to handle the user's request.")

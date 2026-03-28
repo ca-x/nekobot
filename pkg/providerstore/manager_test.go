@@ -23,7 +23,11 @@ func TestManagerCRUDAndConfigSync(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
 	mgr, err := NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("NewManager failed: %v", err)
@@ -104,7 +108,11 @@ func TestManagerPrefersExistingDatabaseProviders(t *testing.T) {
 	cfg1.Storage.DBDir = dbDir
 	cfg1.Providers = []config.ProviderProfile{{Name: "anthropic", ProviderKind: "anthropic"}}
 	client1 := newTestEntClient(t, cfg1)
-	defer client1.Close()
+	t.Cleanup(func() {
+		if err := client1.Close(); err != nil {
+			t.Fatalf("close first ent client: %v", err)
+		}
+	})
 
 	mgr1, err := NewManager(cfg1, log, client1)
 	if err != nil {
@@ -122,13 +130,21 @@ func TestManagerPrefersExistingDatabaseProviders(t *testing.T) {
 	cfg2.Storage.DBDir = dbDir
 	cfg2.Providers = []config.ProviderProfile{{Name: "gemini", ProviderKind: "gemini"}}
 	client2 := newTestEntClient(t, cfg2)
-	defer client2.Close()
+	t.Cleanup(func() {
+		if err := client2.Close(); err != nil {
+			t.Fatalf("close second ent client: %v", err)
+		}
+	})
 
 	mgr2, err := NewManager(cfg2, log, client2)
 	if err != nil {
 		t.Fatalf("NewManager second failed: %v", err)
 	}
-	defer mgr2.Close()
+	t.Cleanup(func() {
+		if err := mgr2.Close(); err != nil {
+			t.Fatalf("close second manager: %v", err)
+		}
+	})
 
 	providers, err := mgr2.List(ctx)
 	if err != nil {
@@ -139,7 +155,7 @@ func TestManagerPrefersExistingDatabaseProviders(t *testing.T) {
 	}
 
 	names := []string{providers[0].Name, providers[1].Name}
-	if !((names[0] == "anthropic" && names[1] == "openai") || (names[0] == "openai" && names[1] == "anthropic")) {
+	if (names[0] != "anthropic" || names[1] != "openai") && (names[0] != "openai" || names[1] != "anthropic") {
 		t.Fatalf("unexpected provider names: %v", names)
 	}
 

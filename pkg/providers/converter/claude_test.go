@@ -25,7 +25,9 @@ func TestToProviderRequest_Basic(t *testing.T) {
 
 	data, _ := json.Marshal(result)
 	var claudeReq claudeRequest
-	json.Unmarshal(data, &claudeReq)
+	if err := json.Unmarshal(data, &claudeReq); err != nil {
+		t.Fatalf("unmarshal claude request: %v", err)
+	}
 
 	if claudeReq.Model != "claude-sonnet-4-5-20250929" {
 		t.Fatalf("expected model claude-sonnet-4-5-20250929, got %s", claudeReq.Model)
@@ -60,7 +62,9 @@ func TestToProviderRequest_ExtendedThinking(t *testing.T) {
 	// Marshal to JSON to check thinking field
 	data, _ := json.Marshal(result)
 	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal thinking request: %v", err)
+	}
 
 	thinking, ok := raw["thinking"].(map[string]interface{})
 	if !ok {
@@ -99,7 +103,9 @@ func TestToProviderRequest_ExtendedThinkingDefaultBudget(t *testing.T) {
 
 	data, _ := json.Marshal(result)
 	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal thinking request: %v", err)
+	}
 
 	thinking := raw["thinking"].(map[string]interface{})
 	budget, _ := thinking["budget_tokens"].(float64)
@@ -127,7 +133,9 @@ func TestToProviderRequest_SystemMessage(t *testing.T) {
 
 	data, _ := json.Marshal(result)
 	var claudeReq claudeRequest
-	json.Unmarshal(data, &claudeReq)
+	if err := json.Unmarshal(data, &claudeReq); err != nil {
+		t.Fatalf("unmarshal claude request: %v", err)
+	}
 
 	if claudeReq.System != "You are a helpful assistant." {
 		t.Fatalf("expected system message, got %q", claudeReq.System)
@@ -160,7 +168,9 @@ func TestToProviderRequest_ToolResult(t *testing.T) {
 
 	data, _ := json.Marshal(result)
 	var claudeReq claudeRequest
-	json.Unmarshal(data, &claudeReq)
+	if err := json.Unmarshal(data, &claudeReq); err != nil {
+		t.Fatalf("unmarshal claude request: %v", err)
+	}
 
 	if len(claudeReq.Messages) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(claudeReq.Messages))

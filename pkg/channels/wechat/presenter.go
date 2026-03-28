@@ -23,7 +23,7 @@ func buildWeChatAgentInput(content, workspace string) string {
 
 	if trimmedWorkspace := strings.TrimSpace(workspace); trimmedWorkspace != "" {
 		builder.WriteString("\n\n[Workspace]\n")
-		builder.WriteString(fmt.Sprintf("Preferred workspace root: %s", filepath.Clean(trimmedWorkspace)))
+		_, _ = fmt.Fprintf(&builder, "Preferred workspace root: %s", filepath.Clean(trimmedWorkspace))
 	}
 
 	builder.WriteString("\n\n[User Message]\n")

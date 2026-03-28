@@ -176,7 +176,9 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body, resul
 	if err != nil {
 		return fmt.Errorf("HTTP %s %s: %w", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

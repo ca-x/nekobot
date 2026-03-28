@@ -434,7 +434,9 @@ func (d *Downloader) downloadPlain(ctx context.Context, encryptQueryParam string
 	if err != nil {
 		return nil, fmt.Errorf("download cdn media: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return nil, fmt.Errorf("cdn status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))

@@ -146,6 +146,99 @@ export interface WorkspaceStatus {
   updated_at: string;
 }
 
+function normalizeInstallSpec(input: Partial<MarketplaceInstallSpec> | null | undefined): MarketplaceInstallSpec {
+  return {
+    method: input?.method ?? '',
+    package: input?.package ?? '',
+    version: input?.version ?? '',
+    post_hook: input?.post_hook ?? '',
+    options: input?.options,
+  };
+}
+
+function normalizeMissingRequirements(
+  input: Partial<MarketplaceMissingRequirements> | null | undefined,
+): MarketplaceMissingRequirements {
+  return {
+    binaries: Array.isArray(input?.binaries) ? input.binaries : [],
+    any_binaries: Array.isArray(input?.any_binaries) ? input.any_binaries : [],
+    env: Array.isArray(input?.env) ? input.env : [],
+    config_paths: Array.isArray(input?.config_paths) ? input.config_paths : [],
+    python_packages: Array.isArray(input?.python_packages) ? input.python_packages : [],
+    node_packages: Array.isArray(input?.node_packages) ? input.node_packages : [],
+  };
+}
+
+function normalizeMarketplaceSkill(input: Partial<MarketplaceSkill> | null | undefined): MarketplaceSkill {
+  return {
+    id: input?.id ?? '',
+    name: input?.name ?? '',
+    description: input?.description ?? '',
+    version: input?.version ?? '',
+    author: input?.author ?? '',
+    enabled: Boolean(input?.enabled),
+    always: Boolean(input?.always),
+    file_path: input?.file_path ?? '',
+    tags: Array.isArray(input?.tags) ? input.tags : [],
+    eligible: Boolean(input?.eligible),
+    ineligibility_reasons: Array.isArray(input?.ineligibility_reasons) ? input.ineligibility_reasons : [],
+    missing_requirements: normalizeMissingRequirements(input?.missing_requirements),
+    install_specs: Array.isArray(input?.install_specs)
+      ? input.install_specs.map((spec) => normalizeInstallSpec(spec))
+      : [],
+    is_installed: Boolean(input?.is_installed),
+  };
+}
+
+function normalizeMarketplaceInventory(
+  input: Partial<MarketplaceInventoryResponse> | null | undefined,
+): MarketplaceInventoryResponse {
+  const rawHistory = input?.version_history;
+  return {
+    writable_dir: input?.writable_dir ?? '',
+    proxy: input?.proxy ?? '',
+    source_count: input?.source_count ?? 0,
+    enabled_count: input?.enabled_count ?? 0,
+    always_count: input?.always_count ?? 0,
+    version_history: {
+      enabled: Boolean(rawHistory?.enabled),
+      max_count: rawHistory?.max_count ?? 0,
+      skill_count: rawHistory?.skill_count ?? 0,
+      version_count: rawHistory?.version_count ?? 0,
+    },
+    sources: Array.isArray(input?.sources) ? input.sources : [],
+  };
+}
+
+function normalizeMarketplaceSnapshot(
+  input: Partial<MarketplaceSnapshot> | null | undefined,
+): MarketplaceSnapshot {
+  return {
+    id: input?.id ?? '',
+    timestamp: input?.timestamp ?? '',
+    skill_count: input?.skill_count ?? 0,
+    enabled_count: input?.enabled_count ?? 0,
+    metadata: input?.metadata ?? {},
+  };
+}
+
+function normalizeWorkspaceStatus(input: Partial<WorkspaceStatus> | null | undefined): WorkspaceStatus {
+  return {
+    path: input?.path ?? '',
+    exists: Boolean(input?.exists),
+    bootstrapped: Boolean(input?.bootstrapped),
+    bootstrap_files: Array.isArray(input?.bootstrap_files) ? input.bootstrap_files : [],
+    missing_bootstrap: Array.isArray(input?.missing_bootstrap) ? input.missing_bootstrap : [],
+    today_log_path: input?.today_log_path ?? '',
+    today_log_exists: Boolean(input?.today_log_exists),
+    heartbeat_state_path: input?.heartbeat_state_path ?? '',
+    heartbeat_state_exists: Boolean(input?.heartbeat_state_exists),
+    file_count: input?.file_count ?? 0,
+    directory_count: input?.directory_count ?? 0,
+    updated_at: input?.updated_at ?? '',
+  };
+}
+
 const marketplaceKeys = {
   all: ['marketplace'] as const,
   skills: () => [...marketplaceKeys.all, 'skills'] as const,
@@ -162,7 +255,7 @@ export function useMarketplaceSkills() {
     queryKey: marketplaceKeys.skills(),
     queryFn: async () => {
       const data = await api.get<MarketplaceSkill[]>('/api/marketplace/skills');
-      return Array.isArray(data) ? data : [];
+      return Array.isArray(data) ? data.map((skill) => normalizeMarketplaceSkill(skill)) : [];
     },
     staleTime: 30_000,
   });
@@ -191,7 +284,10 @@ export function useSearchMarketplaceSkills(query: string) {
 export function useMarketplaceSkillItem(skillID: string | null) {
   return useQuery<MarketplaceSkill>({
     queryKey: marketplaceKeys.item(skillID ?? ''),
-    queryFn: () => api.get<MarketplaceSkill>(`/api/marketplace/skills/items/${encodeURIComponent(skillID ?? '')}`),
+    queryFn: async () =>
+      normalizeMarketplaceSkill(
+        await api.get<MarketplaceSkill>(`/api/marketplace/skills/items/${encodeURIComponent(skillID ?? '')}`),
+      ),
     enabled: Boolean(skillID),
     staleTime: 30_000,
   });
@@ -212,7 +308,10 @@ export function useMarketplaceSkillContent(skillID: string | null) {
 export function useMarketplaceInventory() {
   return useQuery<MarketplaceInventoryResponse>({
     queryKey: marketplaceKeys.inventory(),
-    queryFn: () => api.get<MarketplaceInventoryResponse>('/api/marketplace/skills/inventory'),
+    queryFn: async () =>
+      normalizeMarketplaceInventory(
+        await api.get<MarketplaceInventoryResponse>('/api/marketplace/skills/inventory'),
+      ),
     staleTime: 30_000,
   });
 }
@@ -220,7 +319,17 @@ export function useMarketplaceInventory() {
 export function useMarketplaceSnapshots() {
   return useQuery<MarketplaceSnapshotListResponse>({
     queryKey: marketplaceKeys.snapshots(),
-    queryFn: () => api.get<MarketplaceSnapshotListResponse>('/api/marketplace/skills/snapshots'),
+    queryFn: async () => {
+      const data = await api.get<MarketplaceSnapshotListResponse>('/api/marketplace/skills/snapshots');
+      return {
+        total: data?.total ?? 0,
+        snapshots: Array.isArray(data?.snapshots)
+          ? data.snapshots.map((snapshot) => normalizeMarketplaceSnapshot(snapshot))
+          : [],
+        auto_prune: Boolean(data?.auto_prune),
+        max_count: data?.max_count ?? 0,
+      };
+    },
     staleTime: 15_000,
   });
 }
@@ -228,7 +337,8 @@ export function useMarketplaceSnapshots() {
 export function useWorkspaceStatus() {
   return useQuery<WorkspaceStatus>({
     queryKey: marketplaceKeys.workspace(),
-    queryFn: () => api.get<WorkspaceStatus>('/api/workspace/status'),
+    queryFn: async () =>
+      normalizeWorkspaceStatus(await api.get<WorkspaceStatus>('/api/workspace/status')),
     staleTime: 15_000,
   });
 }
@@ -276,10 +386,10 @@ export function useInstallMarketplaceSkillDependencies() {
     onSuccess: (data, skillID) => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.all });
       if (data.success) {
-        toast.success('Skill dependencies installed');
+        toast.success(t('marketplaceDependenciesInstalled'));
         return;
       }
-      toast.error('Some dependencies failed to install');
+      toast.error(t('marketplaceDependenciesPartialFailure'));
     },
     onError: (err) => toast.error(err.message),
   });
@@ -292,7 +402,7 @@ export function useInstallMarketplaceSkill() {
       api.post<MarketplaceInstallSkillResponse>('/api/marketplace/skills/install', { source }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.all });
-      toast.success('Skill installed');
+      toast.success(t('marketplaceSkillInstalled'));
     },
     onError: (err) => toast.error(err.message),
   });
@@ -304,7 +414,7 @@ export function useCreateMarketplaceSnapshot() {
     mutationFn: (payload) => api.post<MarketplaceSnapshot>('/api/marketplace/skills/snapshots', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.snapshots() });
-      toast.success('Snapshot created');
+      toast.success(t('marketplaceSnapshotCreated'));
     },
     onError: (err) => toast.error(err.message),
   });
@@ -320,7 +430,7 @@ export function useRestoreMarketplaceSnapshot() {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.all });
-      toast.success('Snapshot restored');
+      toast.success(t('marketplaceSnapshotRestored'));
     },
     onError: (err) => toast.error(err.message),
   });
@@ -335,7 +445,7 @@ export function useDeleteMarketplaceSnapshot() {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.snapshots() });
-      toast.success('Snapshot deleted');
+      toast.success(t('marketplaceSnapshotDeleted'));
     },
     onError: (err) => toast.error(err.message),
   });
@@ -348,7 +458,7 @@ export function usePruneMarketplaceSnapshots() {
       api.post<MarketplaceSnapshotPruneResponse>('/api/marketplace/skills/snapshots/prune', {}),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.snapshots() });
-      toast.success(`Pruned ${data.deleted} old snapshots`);
+      toast.success(t('marketplaceSnapshotsPruned', String(data.deleted)));
     },
     onError: (err) => toast.error(err.message),
   });
@@ -360,7 +470,7 @@ export function useRepairWorkspace() {
     mutationFn: () => api.post<WorkspaceStatus>('/api/workspace/repair', {}),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: marketplaceKeys.workspace() });
-      toast.success('Workspace repaired');
+      toast.success(t('marketplaceWorkspaceRepaired'));
     },
     onError: (err) => toast.error(err.message),
   });

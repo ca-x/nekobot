@@ -92,12 +92,20 @@ func TestHandleSaveConfigPersistsStartupSections(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
 	providers, err := providerstore.NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("new provider manager: %v", err)
 	}
-	defer providers.Close()
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Fatalf("close provider manager: %v", err)
+		}
+	})
 
 	s := &Server{
 		config:    cfg,
@@ -206,12 +214,20 @@ func TestHandleSaveConfigPersistsMemorySection(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
 	providers, err := providerstore.NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("new provider manager: %v", err)
 	}
-	defer providers.Close()
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
 
 	s := &Server{
 		config:    cfg,
@@ -313,12 +329,20 @@ func TestHandleImportConfigPersistsMemorySection(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
 	providers, err := providerstore.NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("new provider manager: %v", err)
 	}
-	defer providers.Close()
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
 
 	s := &Server{
 		config:    cfg,
@@ -372,12 +396,20 @@ func TestHandleImportConfigPersistsBootstrapSectionsAndReportsRestart(t *testing
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 	providers, err := providerstore.NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("new provider manager: %v", err)
 	}
-	defer providers.Close()
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
 
 	s := &Server{
 		config:    cfg,
@@ -460,7 +492,11 @@ func TestHandleSaveConfigMigratesRuntimeDBWhenStorageChanges(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	adminCred := &config.AdminCredential{
 		Username:     "admin",
@@ -503,7 +539,11 @@ func TestHandleSaveConfigMigratesRuntimeDBWhenStorageChanges(t *testing.T) {
 	reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
 
 	newClient := newTestEntClient(t, reloaded)
-	defer newClient.Close()
+	t.Cleanup(func() {
+		if err := newClient.Close(); err != nil {
+			t.Fatalf("close migrated ent client: %v", err)
+		}
+	})
 
 	migratedCred, err := config.LoadAdminCredential(newClient)
 	if err != nil {
@@ -539,7 +579,11 @@ func TestHandleImportConfigMigratesRuntimeDBWhenStorageChanges(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	adminCred := &config.AdminCredential{
 		Username:     "owner",
@@ -558,7 +602,11 @@ func TestHandleImportConfigMigratesRuntimeDBWhenStorageChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new provider manager: %v", err)
 	}
-	defer providers.Close()
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
 
 	s := &Server{
 		config:    cfg,
@@ -589,7 +637,11 @@ func TestHandleImportConfigMigratesRuntimeDBWhenStorageChanges(t *testing.T) {
 	reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
 
 	newClient := newTestEntClient(t, reloaded)
-	defer newClient.Close()
+	t.Cleanup(func() {
+		if err := newClient.Close(); err != nil {
+			t.Fatalf("close imported ent client: %v", err)
+		}
+	})
 
 	migratedCred, err := config.LoadAdminCredential(newClient)
 	if err != nil {
@@ -616,12 +668,20 @@ func TestHandleExportConfigIncludesMemorySection(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 	providers, err := providerstore.NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("new provider manager: %v", err)
 	}
-	defer providers.Close()
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
 
 	if _, err := providers.Create(context.Background(), config.ProviderProfile{
 		Name:         "openai",
@@ -775,12 +835,20 @@ func TestHandleGetProvidersReturnsProjectedView(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 	providers, err := providerstore.NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("new provider manager: %v", err)
 	}
-	defer providers.Close()
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
 
 	if _, err := providers.Create(context.Background(), config.ProviderProfile{
 		Name:         "primary",
@@ -865,13 +933,21 @@ func TestHandleGetProviderRuntimeReturnsCooldownState(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	providerMgr, err := providerstore.NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("new provider manager: %v", err)
 	}
-	defer providerMgr.Close()
+	t.Cleanup(func() {
+		if err := providerMgr.Close(); err != nil {
+			t.Fatalf("close provider manager: %v", err)
+		}
+	})
 
 	if _, err := providerMgr.Create(context.Background(), config.ProviderProfile{
 		Name:         "primary",

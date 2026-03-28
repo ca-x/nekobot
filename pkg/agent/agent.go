@@ -87,7 +87,6 @@ type acpSessionState struct {
 	modeID      string
 	cancel      context.CancelFunc
 	mcpServers  []config.MCPServerConfig
-	customTools bool
 }
 
 // Config holds agent configuration.
@@ -364,11 +363,6 @@ func (a *Agent) ChatWithProviderModelAndFallbackDetailed(
 	fallback []string,
 ) (string, ChatRouteResult, error) {
 	return a.chatWithProviderModelDetailed(ctx, sess, userMessage, provider, model, fallback, PromptContext{})
-}
-
-func (a *Agent) chatWithProviderModel(ctx context.Context, sess SessionInterface, userMessage, provider, model string, fallback []string) (string, error) {
-	response, _, err := a.chatWithProviderModelDetailed(ctx, sess, userMessage, provider, model, fallback, PromptContext{})
-	return response, err
 }
 
 func (a *Agent) chatWithProviderModelAndPromptContext(

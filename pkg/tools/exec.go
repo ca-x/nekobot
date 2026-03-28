@@ -208,7 +208,9 @@ func (t *ExecTool) executeInDocker(ctx context.Context, command, workdir string,
 	if err != nil {
 		return "", &sandboxUnavailableError{cause: fmt.Errorf("initializing docker client: %w", err)}
 	}
-	defer cli.Close()
+	defer func() {
+		_ = cli.Close()
+	}()
 
 	if _, err := cli.Ping(execCtx); err != nil {
 		return "", &sandboxUnavailableError{cause: fmt.Errorf("docker daemon unavailable: %w", err)}
@@ -293,14 +295,16 @@ func (t *ExecTool) executeInDocker(ctx context.Context, command, workdir string,
 		ShowStderr: true,
 	})
 	if err == nil {
-		defer logsReader.Close()
+		defer func() {
+			_ = logsReader.Close()
+		}()
 		_, _ = stdcopy.StdCopy(&stdoutBuf, &stderrBuf, logsReader)
 	}
 
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Command: %s\n", command))
-	result.WriteString(fmt.Sprintf("Working Directory: %s\n", workdir))
-	result.WriteString(fmt.Sprintf("Mode: Docker Sandbox (%s)\n\n", t.config.Sandbox.Image))
+	_, _ = fmt.Fprintf(&result, "Command: %s\n", command)
+	_, _ = fmt.Fprintf(&result, "Working Directory: %s\n", workdir)
+	_, _ = fmt.Fprintf(&result, "Mode: Docker Sandbox (%s)\n\n", t.config.Sandbox.Image)
 
 	if stdoutBuf.Len() > 0 {
 		result.WriteString("STDOUT:\n")
@@ -313,9 +317,9 @@ func (t *ExecTool) executeInDocker(ctx context.Context, command, workdir string,
 		result.WriteString("\n")
 	}
 	if waitResp.Error != nil && waitResp.Error.Message != "" {
-		result.WriteString(fmt.Sprintf("Error: %s\n", waitResp.Error.Message))
+		_, _ = fmt.Fprintf(&result, "Error: %s\n", waitResp.Error.Message)
 	}
-	result.WriteString(fmt.Sprintf("\nExit Code: %d\n", waitResp.StatusCode))
+	_, _ = fmt.Fprintf(&result, "\nExit Code: %d\n", waitResp.StatusCode)
 	return result.String(), nil
 }
 
@@ -335,8 +339,8 @@ func (t *ExecTool) executeStandard(ctx context.Context, command, workdir string,
 
 	// Build result
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Command: %s\n", command))
-	result.WriteString(fmt.Sprintf("Working Directory: %s\n\n", workdir))
+	_, _ = fmt.Fprintf(&result, "Command: %s\n", command)
+	_, _ = fmt.Fprintf(&result, "Working Directory: %s\n\n", workdir)
 
 	if stdout.Len() > 0 {
 		result.WriteString("STDOUT:\n")
@@ -351,9 +355,9 @@ func (t *ExecTool) executeStandard(ctx context.Context, command, workdir string,
 	}
 
 	if err != nil {
-		result.WriteString(fmt.Sprintf("\nError: %v\n", err))
+		_, _ = fmt.Fprintf(&result, "\nError: %v\n", err)
 		if execCtx.Err() == context.DeadlineExceeded {
-			result.WriteString(fmt.Sprintf("(Command timed out after %v)\n", timeout))
+			_, _ = fmt.Fprintf(&result, "(Command timed out after %v)\n", timeout)
 		}
 	}
 
@@ -364,7 +368,7 @@ func (t *ExecTool) executeStandard(ctx context.Context, command, workdir string,
 		}
 	}
 
-	result.WriteString(fmt.Sprintf("\nExit Code: %d\n", exitCode))
+	_, _ = fmt.Fprintf(&result, "\nExit Code: %d\n", exitCode)
 
 	return result.String(), nil
 }
@@ -382,7 +386,9 @@ func (t *ExecTool) executeWithPTY(ctx context.Context, command, workdir string, 
 	if err != nil {
 		return "", fmt.Errorf("starting PTY: %w", err)
 	}
-	defer ptmx.Close()
+	defer func() {
+		_ = ptmx.Close()
+	}()
 
 	// Capture output
 	var output strings.Builder
@@ -433,8 +439,8 @@ func (t *ExecTool) executeWithPTY(ctx context.Context, command, workdir string, 
 
 	// Build result
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Command: %s\n", command))
-	result.WriteString(fmt.Sprintf("Working Directory: %s\n", workdir))
+	_, _ = fmt.Fprintf(&result, "Command: %s\n", command)
+	_, _ = fmt.Fprintf(&result, "Working Directory: %s\n", workdir)
 	result.WriteString("Mode: PTY\n\n")
 
 	if output.Len() > 0 {
@@ -448,10 +454,10 @@ func (t *ExecTool) executeWithPTY(ctx context.Context, command, workdir string, 
 		if exitErr, ok := processErr.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
 		}
-		result.WriteString(fmt.Sprintf("\nError: %v\n", processErr))
+		_, _ = fmt.Fprintf(&result, "\nError: %v\n", processErr)
 	}
 
-	result.WriteString(fmt.Sprintf("\nExit Code: %d\n", exitCode))
+	_, _ = fmt.Fprintf(&result, "\nExit Code: %d\n", exitCode)
 
 	return result.String(), nil
 }

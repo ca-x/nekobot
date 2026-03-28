@@ -161,13 +161,13 @@ func (t *ToolSessionTool) handleList(ctx context.Context) (string, error) {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Agent tool sessions (%d):\n", len(sessions)))
+	_, _ = fmt.Fprintf(&sb, "Agent tool sessions (%d):\n", len(sessions))
 	for _, s := range sessions {
 		title := s.Title
 		if title == "" {
 			title = s.Tool
 		}
-		sb.WriteString(fmt.Sprintf("  - [%s] %s (tool=%s, state=%s, command=%s)\n", s.ID, title, s.Tool, s.State, s.Command))
+		_, _ = fmt.Fprintf(&sb, "  - [%s] %s (tool=%s, state=%s, command=%s)\n", s.ID, title, s.Tool, s.State, s.Command)
 	}
 	return sb.String(), nil
 }
@@ -180,9 +180,7 @@ func (t *ToolSessionTool) handleTerminate(ctx context.Context, args map[string]i
 	}
 
 	// Kill the process first
-	if err := t.processMgr.Kill(sessionID); err != nil {
-		// Process may already be dead; continue to terminate the session record
-	}
+	_ = t.processMgr.Kill(sessionID)
 
 	if err := t.toolSessionMgr.TerminateSession(ctx, sessionID, "terminated by agent"); err != nil {
 		return "", fmt.Errorf("failed to terminate session %s: %w", sessionID, err)

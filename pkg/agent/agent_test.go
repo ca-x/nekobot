@@ -271,7 +271,7 @@ func TestBuildToolsSection_SortsToolDescriptionsDeterministically(t *testing.T) 
 	if alphaIdx == -1 || middleIdx == -1 || zetaIdx == -1 {
 		t.Fatalf("expected all tool descriptions in section: %q", section)
 	}
-	if !(alphaIdx < middleIdx && middleIdx < zetaIdx) {
+	if alphaIdx >= middleIdx || middleIdx >= zetaIdx {
 		t.Fatalf("expected sorted tool descriptions, got section: %q", section)
 	}
 }

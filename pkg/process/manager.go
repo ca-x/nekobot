@@ -191,7 +191,7 @@ func (m *Manager) waitForExit(session *Session, cmd *exec.Cmd) {
 	session.OutputMutex.Unlock()
 
 	// Close PTY
-	session.PTY.Close()
+	_ = session.PTY.Close()
 
 	m.log.Info("PTY session exited",
 		zap.String("session_id", session.ID),

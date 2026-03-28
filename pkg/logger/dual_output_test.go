@@ -20,7 +20,9 @@ func Example_dualOutput() {
 	if err != nil {
 		panic(err)
 	}
-	defer log.Sync()
+	defer func() {
+		_ = log.Sync()
+	}()
 
 	// This log will appear in BOTH console AND file
 	log.Info("This message appears in both console and log file",
@@ -42,7 +44,9 @@ func Example_consoleOnly() {
 	cfg.OutputPath = "" // Empty path = console only
 
 	log, _ := logger.New(cfg)
-	defer log.Sync()
+	defer func() {
+		_ = log.Sync()
+	}()
 
 	log.Info("This only appears on console")
 }
@@ -67,7 +71,9 @@ func Example_productionLogging() {
 		cfg.OutputPath = ""
 		log, _ = logger.New(cfg)
 	}
-	defer log.Sync()
+	defer func() {
+		_ = log.Sync()
+	}()
 
 	// Logs to both console (JSON format) and file
 	log.Info("Production log entry",
@@ -83,7 +89,9 @@ func Example_differentFormats() {
 	cfg.OutputPath = "/tmp/nanobot-formatted.log" // File: JSON format
 
 	log, _ := logger.New(cfg)
-	defer log.Sync()
+	defer func() {
+		_ = log.Sync()
+	}()
 
 	// Console will show: INFO [timestamp] msg="User action" user=john action=login
 	// File will show: {"level":"info","time":"...","msg":"User action","user":"john","action":"login"}
@@ -103,7 +111,9 @@ func Example_structuredLogging() {
 	cfg.OutputPath = "/tmp/nanobot-structured.log"
 
 	log, _ := logger.New(cfg)
-	defer log.Sync()
+	defer func() {
+		_ = log.Sync()
+	}()
 
 	// Structured fields make logs searchable and analyzable
 	log.Info("HTTP request",

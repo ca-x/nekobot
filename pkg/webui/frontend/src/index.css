@@ -17,6 +17,10 @@
     @apply antialiased;
   }
 
+  html, body, #root {
+    min-height: 100dvh;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
@@ -62,6 +66,120 @@
   .focus-ring {
     @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
     --tw-ring-color: hsl(var(--ring));
+  }
+}
+
+@layer components {
+  .dark .chat-page .bg-white,
+  .dark .chat-page .bg-white\/55,
+  .dark .chat-page .bg-white\/70,
+  .dark .chat-page .bg-white\/72,
+  .dark .chat-page .bg-white\/75,
+  .dark .chat-page .bg-white\/80,
+  .dark .chat-page .bg-white\/85,
+  .dark .chat-page .bg-white\/90,
+  .dark .providers-page .bg-white,
+  .dark .providers-page .bg-white\/85,
+  .dark .providers-page .bg-white\/90,
+  .dark .providers-page .bg-white\/95,
+  .dark .marketplace-page .bg-white,
+  .dark .marketplace-page .bg-white\/90,
+  .dark .marketplace-page .bg-white\/95,
+  .dark .prompts-page .bg-white,
+  .dark .prompts-page .bg-white\/82,
+  .dark .prompts-page .bg-white\/86,
+  .dark .prompts-page .bg-white\/88,
+  .dark .system-page .bg-white,
+  .dark .system-page .bg-white\/95,
+  .dark .cron-page .bg-white,
+  .dark .cron-page .bg-white\/80,
+  .dark .cron-page .bg-white\/90,
+  .dark .config-page .bg-white,
+  .dark .config-page .bg-white\/55,
+  .dark .config-page .bg-white\/60,
+  .dark .config-page .bg-white\/70,
+  .dark .config-page .bg-white\/78,
+  .dark .config-page .bg-white\/80,
+  .dark .config-page .bg-white\/82,
+  .dark .config-page .bg-white\/85,
+  .dark .config-page .bg-white\/86,
+  .dark .config-page .bg-white\/90 {
+    background-color: hsl(var(--card) / 0.9) !important;
+  }
+
+  .dark .chat-page [class*='text-slate-'],
+  .dark .providers-page [class*='text-slate-'],
+  .dark .marketplace-page [class*='text-slate-'],
+  .dark .prompts-page [class*='text-slate-'],
+  .dark .system-page [class*='text-slate-'],
+  .dark .cron-page [class*='text-slate-'],
+  .dark .config-page [class*='text-slate-'] {
+    color: hsl(var(--foreground)) !important;
+  }
+
+  .dark .chat-page [class*='border-slate-'],
+  .dark .providers-page [class*='border-slate-'],
+  .dark .marketplace-page [class*='border-slate-'],
+  .dark .prompts-page [class*='border-slate-'],
+  .dark .system-page [class*='border-slate-'],
+  .dark .config-page [class*='border-slate-'],
+  .dark .chat-page .border-white,
+  .dark .chat-page .border-white\/60,
+  .dark .chat-page .border-white\/70,
+  .dark .chat-page .border-white\/80,
+  .dark .providers-page .border-white,
+  .dark .providers-page .border-white\/70,
+  .dark .marketplace-page .border-white,
+  .dark .system-page .border-white,
+  .dark .cron-page .border-white,
+  .dark .cron-page .border-white\/70,
+  .dark .config-page .border-white,
+  .dark .config-page .border-white\/60,
+  .dark .config-page .border-white\/70 {
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .dark .chat-page [class*='bg-slate-50'],
+  .dark .chat-page [class*='bg-slate-100'],
+  .dark .providers-page [class*='bg-slate-50'],
+  .dark .providers-page [class*='bg-slate-100'],
+  .dark .marketplace-page [class*='bg-slate-50'],
+  .dark .marketplace-page [class*='bg-slate-100'],
+  .dark .system-page [class*='bg-slate-50'],
+  .dark .cron-page [class*='bg-slate-50'],
+  .dark .cron-page [class*='bg-slate-100'],
+  .dark .config-page [class*='bg-slate-50'],
+  .dark .config-page [class*='bg-slate-100'] {
+    background-color: hsl(var(--muted) / 0.55) !important;
+  }
+
+  .dark .chat-page [class*='bg-[linear-gradient'],
+  .dark .providers-page [class*='bg-[linear-gradient'],
+  .dark .marketplace-page [class*='bg-[linear-gradient'],
+  .dark .prompts-page [class*='bg-[linear-gradient'],
+  .dark .system-page [class*='bg-[linear-gradient'],
+  .dark .config-page [class*='bg-[linear-gradient'],
+  .dark .chat-page [class*='bg-[radial-gradient'],
+  .dark .providers-page [class*='bg-[radial-gradient'],
+  .dark .marketplace-page [class*='bg-[radial-gradient'],
+  .dark .prompts-page [class*='bg-[radial-gradient'],
+  .dark .system-page [class*='bg-[radial-gradient'],
+  .dark .cron-page [class*='bg-[linear-gradient'],
+  .dark .cron-page [class*='bg-[radial-gradient'],
+  .dark .config-page [class*='bg-[radial-gradient'] {
+    background-image:
+      radial-gradient(circle at top left, hsl(var(--brand-500) / 0.16), transparent 42%),
+      linear-gradient(180deg, hsl(var(--card) / 0.96), hsl(var(--muted) / 0.72)) !important;
+  }
+
+  .dark .chat-page .shadow-sm,
+  .dark .providers-page .shadow-sm,
+  .dark .marketplace-page .shadow-sm,
+  .dark .prompts-page .shadow-sm,
+  .dark .system-page .shadow-sm,
+  .dark .cron-page .shadow-sm,
+  .dark .config-page .shadow-sm {
+    box-shadow: 0 18px 44px -34px rgba(0, 0, 0, 0.72) !important;
   }
 }
 

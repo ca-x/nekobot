@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -84,7 +85,11 @@ func runApprovalList(cmd *cobra.Command, args []string) {
 		fmt.Println("Make sure the gateway is running with WebUI enabled.")
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Printf("close approval list response body: %v", closeErr)
+		}
+	}()
 
 	body, _ := io.ReadAll(resp.Body)
 
@@ -115,18 +120,30 @@ func runApprovalList(cmd *cobra.Command, args []string) {
 	fmt.Printf("\nPending Approvals (%d)\n\n", len(requests))
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tTOOL\tSESSION\tSTATUS")
-	fmt.Fprintln(w, "--\t----\t-------\t------")
+	if _, err := fmt.Fprintln(w, "ID\tTOOL\tSESSION\tSTATUS"); err != nil {
+		fmt.Printf("Error writing output: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := fmt.Fprintln(w, "--\t----\t-------\t------"); err != nil {
+		fmt.Printf("Error writing output: %v\n", err)
+		os.Exit(1)
+	}
 
 	for _, req := range requests {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			req.ID,
 			req.ToolName,
 			truncateStr(req.SessionID, 20),
 			req.Decision,
-		)
+		); err != nil {
+			fmt.Printf("Error writing output: %v\n", err)
+			os.Exit(1)
+		}
 	}
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		fmt.Printf("Error flushing output: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Println()
 }
 
@@ -139,7 +156,11 @@ func runApprovalApprove(cmd *cobra.Command, args []string) {
 		fmt.Printf("Error connecting to gateway: %v\n", err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Printf("close approval approve response body: %v", closeErr)
+		}
+	}()
 
 	if resp.StatusCode == http.StatusNotFound {
 		fmt.Printf("Request not found: %s\n", id)
@@ -163,7 +184,11 @@ func runApprovalDeny(cmd *cobra.Command, args []string) {
 		fmt.Printf("Error connecting to gateway: %v\n", err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			log.Printf("close approval deny response body: %v", closeErr)
+		}
+	}()
 
 	if resp.StatusCode == http.StatusNotFound {
 		fmt.Printf("Request not found: %s\n", id)

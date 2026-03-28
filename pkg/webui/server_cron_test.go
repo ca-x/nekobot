@@ -95,7 +95,11 @@ func TestCronHandlers_Flow(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	manager := cron.New(log, nil, client)
 	s := &Server{
@@ -250,7 +254,11 @@ func TestHandleCreateCronJob_AcceptsRouteOverrides(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	manager := cron.New(log, nil, client)
 	s := &Server{
@@ -339,7 +347,11 @@ func TestHandleRunCronJob_DisabledJobDoesNotExecute(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	manager := cron.New(log, nil, client)
 	job, err := manager.AddCronJob("disabled-job", "*/5 * * * *", "hello")

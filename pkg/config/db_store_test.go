@@ -218,7 +218,11 @@ func TestSaveAdminCredentialMigratesToUserTenantMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open runtime client: %v", err)
 	}
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close runtime client: %v", err)
+		}
+	})
 
 	cred := &AdminCredential{
 		Username:     "admin",
@@ -303,7 +307,11 @@ func TestGetJWTSecretWithLegacyPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open runtime client: %v", err)
 	}
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close runtime client: %v", err)
+		}
+	})
 
 	legacy := &AdminCredential{
 		Username:     "legacy",

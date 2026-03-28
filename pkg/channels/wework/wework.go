@@ -110,7 +110,9 @@ func (c *Channel) Stop(ctx context.Context) error {
 	if c.httpServer != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		c.httpServer.Shutdown(shutdownCtx)
+		if err := c.httpServer.Shutdown(shutdownCtx); err != nil {
+			c.log.Warn("Failed to stop WeWork webhook server", zap.Error(err))
+		}
 	}
 
 	c.log.Info("WeWork channel stopped")
@@ -160,9 +162,13 @@ func (c *Channel) handleWebhook(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			w.Write(decrypted)
+			if _, err := w.Write(decrypted); err != nil {
+				c.log.Warn("Failed to write WeWork verification response", zap.Error(err))
+			}
 		} else {
-			w.Write([]byte(echostr))
+			if _, err := w.Write([]byte(echostr)); err != nil {
+				c.log.Warn("Failed to write WeWork echostr response", zap.Error(err))
+			}
 		}
 		return
 	}
@@ -297,17 +303,16 @@ func (c *Channel) handleCommand(senderID, content string) {
 			zap.Error(err))
 
 		// Send error response
-		c.sendMessageToUser(senderID, "❌ Command failed: "+err.Error())
+		if sendErr := c.sendMessageToUser(senderID, "❌ Command failed: "+err.Error()); sendErr != nil {
+			c.log.Error("Failed to send WeWork command error", zap.Error(sendErr))
+		}
 		return
 	}
 
 	// Send response
-	c.sendMessageToUser(senderID, resp.Content)
-}
-
-// handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
+	if err := c.sendMessageToUser(senderID, resp.Content); err != nil {
+		c.log.Error("Failed to send WeWork command response", zap.Error(err))
+	}
 }
 
 // SendMessage sends a message to WeWork.
@@ -348,7 +353,7 @@ func (c *Channel) sendMessageToUser(userID, content string) error {
 	if err != nil {
 		return fmt.Errorf("sending message: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		ErrCode int    `json:"errcode"`
@@ -382,7 +387,7 @@ func (c *Channel) getAccessToken() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("http get failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		ErrCode     int    `json:"errcode"`

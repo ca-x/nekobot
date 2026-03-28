@@ -280,7 +280,11 @@ func interactiveLoop(ctx context.Context, ag *agent.Agent, sess *session.Session
 		fmt.Printf("Warning: readline not available, using simple mode\n")
 		return simpleInteractiveLoop(ctx, ag, sess)
 	}
-	defer rl.Close()
+	defer func() {
+		if closeErr := rl.Close(); closeErr != nil {
+			fmt.Printf("Error closing readline: %v\n", closeErr)
+		}
+	}()
 
 	for {
 		select {
@@ -332,7 +336,7 @@ func simpleInteractiveLoop(ctx context.Context, ag *agent.Agent, sess *session.S
 		default:
 		}
 
-		fmt.Print(fmt.Sprintf("%s You: ", logo))
+		fmt.Printf("%s You: ", logo)
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {

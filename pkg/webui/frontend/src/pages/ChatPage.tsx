@@ -254,10 +254,16 @@ function StatusPill({
         : t('wsDisconnected');
 
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur">
-      <span className={cn('h-2.5 w-2.5 rounded-full', colorClass)} />
-      <span>{label}</span>
-      {isAwaitingReply && <span className="text-[hsl(var(--brand-700))]">{t('chatWaitingReply')}</span>}
+    <div className="flex max-w-full flex-col items-start gap-1.5 sm:items-end">
+      <div className="inline-flex h-9 items-center gap-2 rounded-full border border-border/70 bg-card/92 px-3.5 text-xs text-muted-foreground shadow-sm backdrop-blur whitespace-nowrap">
+        <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', colorClass)} />
+        <span className="whitespace-nowrap font-medium">{label}</span>
+      </div>
+      {isAwaitingReply && (
+        <span className="inline-flex h-7 items-center rounded-full bg-accent px-2.5 text-[11px] font-medium text-accent-foreground whitespace-nowrap">
+          {t('chatWaitingReply')}
+        </span>
+      )}
     </div>
   );
 }
@@ -447,13 +453,13 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col overflow-hidden">
-      <Header title={t('tabChat')} />
+    <div className="chat-page flex min-h-0 flex-1 flex-col overflow-hidden">
+      <Header title={t('tabChat')} className="mb-3 md:mb-4" />
 
-      <div className="relative flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-5">
         <div className="absolute inset-x-0 top-0 -z-10 h-48 rounded-[2rem] bg-[radial-gradient(circle_at_top_left,rgba(198,104,140,0.22),transparent_48%),radial-gradient(circle_at_top_right,rgba(229,183,107,0.22),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,247,243,0.55))]" />
 
-        <Card className="overflow-hidden border-white/70 bg-white/72 shadow-[0_20px_60px_-36px_rgba(120,55,75,0.45)] backdrop-blur xl:sticky xl:top-0 xl:h-fit">
+        <Card className="overflow-hidden border-border/70 bg-card/88 shadow-[0_20px_60px_-36px_rgba(120,55,75,0.45)] backdrop-blur xl:sticky xl:top-2 xl:h-fit">
           <CardHeader className="space-y-4 border-b border-[hsl(var(--gray-200))]/80 bg-[linear-gradient(135deg,rgba(255,248,246,0.96),rgba(252,239,244,0.9))]">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-2">
@@ -469,7 +475,7 @@ export default function ChatPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-white/80 bg-white/75 p-3">
+              <div className="rounded-2xl border border-border/70 bg-card/90 p-3">
                 <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                   {t('chatMetricMessages')}
                 </div>
@@ -477,7 +483,7 @@ export default function ChatPage() {
                   {messageCount}
                 </div>
               </div>
-              <div className="rounded-2xl border border-white/80 bg-white/75 p-3">
+              <div className="rounded-2xl border border-border/70 bg-card/90 p-3">
                 <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                   {t('chatMetricModel')}
                 </div>
@@ -489,7 +495,7 @@ export default function ChatPage() {
           </CardHeader>
 
           <CardContent className="space-y-4 p-4">
-            <div className="rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(255,255,255,0.85),rgba(249,244,241,0.96))] p-4">
+            <div className="rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(249,244,241,0.92))] p-4 dark:bg-card/90">
               <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
                 {t('chatActiveRoute')}
@@ -501,7 +507,7 @@ export default function ChatPage() {
                 <span className="rounded-full bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]">
                   {activeModel || t('chatModelUnset')}
                 </span>
-                <span className="rounded-full border border-[hsl(var(--gray-200))] bg-white px-3 py-1.5 text-xs text-muted-foreground">
+                <span className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
                   {activeFallback.length > 0
                     ? `${t('fallbackProviders')}: ${activeFallback.join(' -> ')}`
                     : t('chatNoFallback')}
@@ -509,7 +515,7 @@ export default function ChatPage() {
               </div>
             </div>
 
-            <div className="rounded-[1.5rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.95),rgba(252,241,245,0.82))] p-4">
+            <div className="rounded-[1.5rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.92),rgba(252,241,245,0.8))] p-4 dark:bg-card/90">
               <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
                 <Radio className="h-3.5 w-3.5" />
                 {t('chatActualRoute')}
@@ -518,10 +524,10 @@ export default function ChatPage() {
                 <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white">
                   {actualProvider || t('chatActualRoutePending')}
                 </span>
-                <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]">
+                <span className="rounded-full bg-card px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))] dark:text-foreground">
                   {actualModel || t('chatActualRoutePending')}
                 </span>
-                <span className="rounded-full border border-[hsl(var(--brand-200))] bg-white px-3 py-1.5 text-xs text-[hsl(var(--brand-800))]">
+                <span className="rounded-full border border-[hsl(var(--brand-200))] bg-card px-3 py-1.5 text-xs text-[hsl(var(--brand-800))] dark:text-foreground">
                   {resolvedOrder.length > 0
                     ? `${t('chatResolvedOrder')}: ${resolvedOrder.join(' -> ')}`
                     : t('chatActualRouteNoResult')}
@@ -537,7 +543,7 @@ export default function ChatPage() {
                 {t('defaultProvider')}
               </label>
               <Select value={toSelectValue(selectedProvider)} onValueChange={handleProviderChange}>
-                <SelectTrigger className="h-11 rounded-2xl border-white bg-white/80">
+                <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
                   <SelectValue placeholder={t('defaultProvider')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -558,7 +564,7 @@ export default function ChatPage() {
                 {t('defaultModel')}
               </label>
               <Select value={selectedModelValue} onValueChange={handleModelChange}>
-                <SelectTrigger className="h-11 rounded-2xl border-white bg-white/80">
+                <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
                   <SelectValue placeholder={t('defaultModel')} />
                 </SelectTrigger>
                 <SelectContent>
@@ -577,7 +583,7 @@ export default function ChatPage() {
                 {t('customModel')}
               </label>
               <Input
-                className="h-11 rounded-2xl border-white bg-white/80"
+                className="h-11 rounded-2xl border-border/70 bg-card/90"
                 placeholder={t('chatCustomModelHint')}
                 value={customModel}
                 onChange={(event) => setCustomModel(event.target.value)}
@@ -588,7 +594,7 @@ export default function ChatPage() {
               <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 {t('chatSystemPrompts')}
               </label>
-              <div className="space-y-3 rounded-[1.4rem] border border-white bg-white/80 p-3">
+              <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
                 <p className="text-sm text-muted-foreground">{t('chatSystemPromptsHint')}</p>
                 {systemPrompts.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
@@ -623,7 +629,7 @@ export default function ChatPage() {
               <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 {t('chatUserPrompts')}
               </label>
-              <div className="space-y-3 rounded-[1.4rem] border border-white bg-white/80 p-3">
+              <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
                 <p className="text-sm text-muted-foreground">{t('chatUserPromptsHint')}</p>
                 {userPrompts.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
@@ -642,7 +648,7 @@ export default function ChatPage() {
                             'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                             selected
                               ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
-                              : 'border-[hsl(var(--gray-200))] bg-white text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
+                              : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
                           )}
                         >
                           {prompt.name}
@@ -658,7 +664,7 @@ export default function ChatPage() {
               <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 {t('fallbackProviders')}
               </label>
-              <div className="space-y-3 rounded-[1.4rem] border border-white bg-white/80 p-3">
+              <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
                 <p className="text-sm text-muted-foreground">{t('chatFallbackSelectHint')}</p>
                 {activeFallback.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
@@ -669,7 +675,7 @@ export default function ChatPage() {
                         onClick={() => handleToggleFallbackTarget(targetName)}
                         className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
                       >
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] text-[hsl(var(--brand-700))]">
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-card text-[10px] text-[hsl(var(--brand-700))]">
                           {index + 1}
                         </span>
                         {targetName}
@@ -693,7 +699,7 @@ export default function ChatPage() {
                           'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                           selected
                             ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
-                            : 'border-[hsl(var(--gray-200))] bg-white text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
+                            : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
                         )}
                       >
                         {target.type === 'group'
@@ -721,7 +727,7 @@ export default function ChatPage() {
           </CardContent>
         </Card>
 
-        <Card className="flex min-h-0 flex-col overflow-hidden border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(255,250,248,0.96))] shadow-[0_24px_80px_-40px_rgba(80,40,45,0.45)] backdrop-blur">
+        <Card className="flex min-h-0 flex-col overflow-hidden border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(255,250,248,0.96))] shadow-[0_24px_80px_-40px_rgba(80,40,45,0.45)] backdrop-blur dark:bg-card/92">
           <CardHeader className="border-b border-[hsl(var(--gray-200))]/80 pb-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -732,7 +738,7 @@ export default function ChatPage() {
                   {t('chatTranscriptSubtitle')}
                 </div>
               </div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--gray-100))] px-3 py-1.5 text-xs text-muted-foreground">
+              <div className="inline-flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1.5 text-xs text-muted-foreground">
                 <Radio className="h-3.5 w-3.5" />
                 {actualProvider || activeProvider || t('chatRouteAuto')}
                 <span className="text-[hsl(var(--gray-300))]">/</span>
@@ -745,7 +751,7 @@ export default function ChatPage() {
             <ScrollArea className="min-h-0 flex-1 px-4 py-5 sm:px-6">
               {messages.length === 0 ? (
                 <div className="flex h-full min-h-[320px] items-center justify-center">
-                  <div className="max-w-md rounded-[2rem] border border-dashed border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,251,250,0.95),rgba(252,241,245,0.78))] p-8 text-center shadow-[0_20px_60px_-40px_rgba(198,104,140,0.45)]">
+                  <div className="max-w-md rounded-[2rem] border border-dashed border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,251,250,0.95),rgba(252,241,245,0.78))] p-8 text-center shadow-[0_20px_60px_-40px_rgba(198,104,140,0.45)] dark:bg-card/92">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-700))]">
                       <Sparkles className="h-6 w-6" />
                     </div>
@@ -764,7 +770,7 @@ export default function ChatPage() {
                   ))}
                   {isAwaitingReply && (
                     <div className="flex justify-start">
-                      <div className="rounded-full border border-[hsl(var(--brand-200))] bg-white/90 px-4 py-2 text-sm text-muted-foreground shadow-sm">
+                      <div className="rounded-full border border-[hsl(var(--brand-200))] bg-card/92 px-4 py-2 text-sm text-muted-foreground shadow-sm">
                         {t('chatWaitingReply')}
                       </div>
                     </div>
@@ -774,8 +780,8 @@ export default function ChatPage() {
               )}
             </ScrollArea>
 
-            <div className="border-t border-[hsl(var(--gray-200))]/80 bg-white/85 p-4 sm:p-5">
-              <div className="rounded-[1.6rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(249,244,241,0.98))] p-3 shadow-[0_18px_44px_-36px_rgba(50,32,20,0.45)]">
+            <div className="border-t border-[hsl(var(--gray-200))]/80 bg-card/88 p-4 sm:p-5">
+              <div className="rounded-[1.6rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(249,244,241,0.98))] p-3 shadow-[0_18px_44px_-36px_rgba(50,32,20,0.45)] dark:bg-card/92">
                 <textarea
                   rows={1}
                   className="min-h-[84px] w-full resize-none border-0 bg-transparent px-2 py-1 text-sm leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none"

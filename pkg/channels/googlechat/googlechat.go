@@ -122,13 +122,16 @@ func (c *Channel) initService() error {
 		return nil
 	}
 
-	// Read credentials file
 	credBytes, err := os.ReadFile(c.config.CredentialsFile)
 	if err != nil {
 		return fmt.Errorf("reading credentials file: %w", err)
 	}
 
-	service, err := chat.NewService(c.ctx, option.WithCredentialsJSON(credBytes))
+	service, err := chat.NewService(
+		c.ctx,
+		option.WithAuthCredentialsJSON(option.ServiceAccount, credBytes),
+		option.WithScopes(chat.ChatBotScope),
+	)
 	if err != nil {
 		return fmt.Errorf("creating chat service: %w", err)
 	}
@@ -234,12 +237,9 @@ func (c *Channel) handleCommand(senderID, senderName, spaceName, content string,
 		Content:   resp.Content,
 		Timestamp: time.Now(),
 	}
-	c.SendMessage(context.Background(), outMsg)
-}
-
-// handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
+	if err := c.SendMessage(context.Background(), outMsg); err != nil {
+		c.log.Error("Failed to send Google Chat command response", zap.Error(err))
+	}
 }
 
 // SendMessage sends a message to Google Chat.
@@ -309,7 +309,7 @@ func (c *Channel) SendViaWebhook(webhookURL, content string) error {
 	if err != nil {
 		return fmt.Errorf("sending request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(resp.Body)

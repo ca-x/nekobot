@@ -36,7 +36,9 @@ func (d *ExecSILKDecoder) DecodeToWAV(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	tmpInput := filepath.Join(tmpDir, "input.silk")
 	tmpOutput := filepath.Join(tmpDir, "output.pcm")

@@ -22,7 +22,11 @@ func TestLocalBus(t *testing.T) {
 	if err := bus.Start(); err != nil {
 		t.Fatalf("Failed to start bus: %v", err)
 	}
-	defer bus.Stop()
+	t.Cleanup(func() {
+		if err := bus.Stop(); err != nil {
+			t.Fatalf("Failed to stop bus: %v", err)
+		}
+	})
 
 	// Register handler
 	received := make(chan *Message, 1)
@@ -70,8 +74,14 @@ func TestLocalBus(t *testing.T) {
 func TestBusMultipleHandlers(t *testing.T) {
 	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 	bus := NewLocalBus(log, 10)
-	bus.Start()
-	defer bus.Stop()
+	if err := bus.Start(); err != nil {
+		t.Fatalf("start bus: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := bus.Stop(); err != nil {
+			t.Fatalf("stop bus: %v", err)
+		}
+	})
 
 	// Register multiple handlers
 	count := 0
@@ -92,7 +102,9 @@ func TestBusMultipleHandlers(t *testing.T) {
 		Timestamp: time.Now(),
 	}
 
-	bus.SendInbound(testMsg)
+	if err := bus.SendInbound(testMsg); err != nil {
+		t.Fatalf("send inbound: %v", err)
+	}
 	time.Sleep(100 * time.Millisecond)
 
 	if count != 2 {
@@ -103,8 +115,14 @@ func TestBusMultipleHandlers(t *testing.T) {
 func TestBusOutbound(t *testing.T) {
 	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 	bus := NewLocalBus(log, 10)
-	bus.Start()
-	defer bus.Stop()
+	if err := bus.Start(); err != nil {
+		t.Fatalf("start bus: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := bus.Stop(); err != nil {
+			t.Fatalf("stop bus: %v", err)
+		}
+	})
 
 	received := make(chan *Message, 1)
 	bus.RegisterHandler("test", func(ctx context.Context, msg *Message) error {
@@ -119,7 +137,9 @@ func TestBusOutbound(t *testing.T) {
 		Timestamp: time.Now(),
 	}
 
-	bus.SendOutbound(testMsg)
+	if err := bus.SendOutbound(testMsg); err != nil {
+		t.Fatalf("send outbound: %v", err)
+	}
 
 	select {
 	case msg := <-received:
@@ -139,8 +159,14 @@ func TestBusOutbound(t *testing.T) {
 func BenchmarkBusThroughput(b *testing.B) {
 	log, _ := logger.New(&logger.Config{Level: "error", OutputPath: ""})
 	bus := NewLocalBus(log, 1000)
-	bus.Start()
-	defer bus.Stop()
+	if err := bus.Start(); err != nil {
+		b.Fatalf("start bus: %v", err)
+	}
+	b.Cleanup(func() {
+		if err := bus.Stop(); err != nil {
+			b.Fatalf("stop bus: %v", err)
+		}
+	})
 
 	// Register no-op handler
 	bus.RegisterHandler("test", func(ctx context.Context, msg *Message) error {
@@ -157,7 +183,9 @@ func BenchmarkBusThroughput(b *testing.B) {
 				Content:   "Benchmark message",
 				Timestamp: time.Now(),
 			}
-			bus.SendInbound(msg)
+			if err := bus.SendInbound(msg); err != nil {
+				b.Fatalf("send inbound: %v", err)
+			}
 			i++
 		}
 	})

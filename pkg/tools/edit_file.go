@@ -204,7 +204,9 @@ func (t *AppendFileTool) Execute(ctx context.Context, args map[string]interface{
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	n, err := f.WriteString(content)
 	if err != nil {

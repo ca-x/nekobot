@@ -54,14 +54,14 @@ func runQMDStatus(cmd *cobra.Command, args []string) {
 		Development: true,
 	})
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
 		return
 	}
 
 	// Load config
 	cfg, err := loadConfigForQMD()
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load config: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load config: %v\n", err)
 		return
 	}
 
@@ -106,14 +106,14 @@ func runQMDUpdate(cmd *cobra.Command, args []string) {
 		Development: true,
 	})
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
 		return
 	}
 
 	// Load config
 	cfg, err := loadConfigForQMD()
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load config: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load config: %v\n", err)
 		return
 	}
 
@@ -130,14 +130,14 @@ func runQMDUpdate(cmd *cobra.Command, args []string) {
 	workspaceDir := cfg.WorkspacePath()
 	ctx := context.Background()
 	if err := manager.Initialize(ctx, workspaceDir); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize: %v\n", err)
 		return
 	}
 
 	// Update all collections
 	fmt.Println("Updating QMD collections...")
 	if err := manager.UpdateAll(ctx); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to update: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to update: %v\n", err)
 		return
 	}
 
@@ -154,14 +154,14 @@ func runQMDSearch(cmd *cobra.Command, args []string) {
 		Development: true,
 	})
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to initialize logger: %v\n", err)
 		return
 	}
 
 	// Load config
 	cfg, err := loadConfigForQMD()
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load config: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Failed to load config: %v\n", err)
 		return
 	}
 
@@ -178,7 +178,7 @@ func runQMDSearch(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 	results, err := manager.Search(ctx, collectionName, query, searchLimit)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Search failed: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Search failed: %v\n", err)
 		return
 	}
 

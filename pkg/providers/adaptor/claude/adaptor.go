@@ -102,7 +102,7 @@ func (a *Adaptor) DoRequest(ctx context.Context, req *http.Request) ([]byte, err
 		if err != nil {
 			return nil, fmt.Errorf("executing request: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -121,7 +121,7 @@ func (a *Adaptor) DoRequest(ctx context.Context, req *http.Request) ([]byte, err
 	if err != nil {
 		return nil, fmt.Errorf("executing request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -226,7 +226,9 @@ func (c *Channel) handleCommand(s *discordgo.Session, m *discordgo.MessageCreate
 			zap.String("command", cmdName),
 			zap.Error(err))
 
-		s.ChannelMessageSend(m.ChannelID, "❌ Command failed: "+err.Error())
+		if _, sendErr := s.ChannelMessageSend(m.ChannelID, "❌ Command failed: "+err.Error()); sendErr != nil {
+			c.log.Error("Failed to send Discord command error", zap.Error(sendErr))
+		}
 		return
 	}
 
@@ -451,10 +453,6 @@ func (c *Channel) clearPendingSkillInstall(messageID string) {
 }
 
 // handleOutbound handles outbound messages from the bus.
-func (c *Channel) handleOutbound(ctx context.Context, msg *bus.Message) error {
-	return c.SendMessage(ctx, msg)
-}
-
 // SendMessage sends a message to Discord.
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	if c.session == nil {
@@ -517,11 +515,11 @@ func (c *Channel) transcribeAttachmentAudio(attachments []*discordgo.MessageAtta
 			continue
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			continue
 		}
 		data, err := io.ReadAll(io.LimitReader(resp.Body, 20*1024*1024))
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if err != nil {
 			c.log.Warn("Failed reading Discord audio", zap.Error(err))
 			continue

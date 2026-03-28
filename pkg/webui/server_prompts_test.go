@@ -22,7 +22,11 @@ func TestPromptHandlers_CRUDAndResolve(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	promptMgr, err := prompts.NewManager(cfg, log, client)
 	if err != nil {
@@ -133,7 +137,11 @@ func TestSessionPromptHandlers_ResolveAliasAndCleanup(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	promptMgr, err := prompts.NewManager(cfg, log, client)
 	if err != nil {
@@ -252,7 +260,11 @@ func TestResolveWebUIChatSessionAlias_UsesServerGeneratedToken(t *testing.T) {
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	s := &Server{
 		config:    cfg,
@@ -291,7 +303,11 @@ func TestPromptHandlers_ResolveHonorsScopeOverrideAndTemplateContext(t *testing.
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
 
 	promptMgr, err := prompts.NewManager(cfg, log, client)
 	if err != nil {

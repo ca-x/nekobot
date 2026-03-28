@@ -234,7 +234,9 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 		b.log.Warn("Failed to wait for DOMContentLoaded",
 			zap.Error(err))
 	} else {
-		defer domLoaded.Close()
+		defer func() {
+			_ = domLoaded.Close()
+		}()
 		_, _ = domLoaded.Recv()
 	}
 

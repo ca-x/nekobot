@@ -349,7 +349,7 @@ func (s *Server) setup() {
 				// Serve index.html for SPA client-side routing
 				r.URL.Path = "/"
 			} else {
-				f.Close()
+				_ = f.Close()
 			}
 			fileServer.ServeHTTP(w, r)
 		})))
@@ -1197,7 +1197,7 @@ func discoverOpenAICompatibleModels(apiBase, apiKey, proxy string, timeout int) 
 	if err != nil {
 		return nil, fmt.Errorf("request /models failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -1595,7 +1595,7 @@ func (s *Server) handleUpdateToolSession(c *echo.Context) error {
 		workdir = s.config.WorkspacePath()
 	}
 
-	updated, err := s.toolSess.UpdateSessionConfig(c.Request().Context(), id, toolName, strings.TrimSpace(body.Title), command, workdir)
+	_, err = s.toolSess.UpdateSessionConfig(c.Request().Context(), id, toolName, strings.TrimSpace(body.Title), command, workdir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
@@ -1614,24 +1614,24 @@ func (s *Server) handleUpdateToolSession(c *echo.Context) error {
 	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), id, nextMetadata); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	updated, _ = s.toolSess.GetSession(c.Request().Context(), id)
+	updatedSession, _ := s.toolSess.GetSession(c.Request().Context(), id)
 
 	accessPassword := ""
 	modeChanged := strings.TrimSpace(body.AccessMode) != "" || strings.TrimSpace(body.AccessPassword) != ""
 	if modeChanged {
 		mode := strings.TrimSpace(body.AccessMode)
 		if mode == "" {
-			mode = strings.TrimSpace(updated.AccessMode)
+			mode = strings.TrimSpace(updatedSession.AccessMode)
 		}
 		accessPassword, err = s.toolSess.ConfigureSessionAccess(c.Request().Context(), id, mode, body.AccessPassword)
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to configure session access: " + err.Error()})
 		}
-		updated, _ = s.toolSess.GetSession(c.Request().Context(), id)
+		updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
 	}
 
 	accessURL := ""
-	if strings.TrimSpace(updated.AccessMode) != "" && updated.AccessMode != toolsessions.AccessModeNone {
+	if strings.TrimSpace(updatedSession.AccessMode) != "" && updatedSession.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, id, strings.TrimSpace(body.PublicBaseURL))
 	}
 	_ = s.toolSess.AppendEvent(context.Background(), id, "session_updated", map[string]interface{}{
@@ -1641,8 +1641,8 @@ func (s *Server) handleUpdateToolSession(c *echo.Context) error {
 	})
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"session":         updated,
-		"access_mode":     updated.AccessMode,
+		"session":         updatedSession,
+		"access_mode":     updatedSession.AccessMode,
 		"access_url":      accessURL,
 		"access_password": accessPassword,
 	})
@@ -1727,7 +1727,7 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to restart tool process: " + err.Error()})
 	}
 
-	updated, err := s.toolSess.UpdateSessionLaunch(c.Request().Context(), id, toolName, strings.TrimSpace(body.Title), command, workdir)
+	_, err = s.toolSess.UpdateSessionLaunch(c.Request().Context(), id, toolName, strings.TrimSpace(body.Title), command, workdir)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -1737,24 +1737,24 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), id, nextMetadata); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	updated, _ = s.toolSess.GetSession(c.Request().Context(), id)
+	updatedSession, _ := s.toolSess.GetSession(c.Request().Context(), id)
 
 	accessPassword := ""
 	modeChanged := strings.TrimSpace(body.AccessMode) != "" || strings.TrimSpace(body.AccessPassword) != ""
 	if modeChanged {
 		mode := strings.TrimSpace(body.AccessMode)
 		if mode == "" {
-			mode = strings.TrimSpace(updated.AccessMode)
+			mode = strings.TrimSpace(updatedSession.AccessMode)
 		}
 		accessPassword, err = s.toolSess.ConfigureSessionAccess(c.Request().Context(), id, mode, body.AccessPassword)
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to configure session access: " + err.Error()})
 		}
-		updated, _ = s.toolSess.GetSession(c.Request().Context(), id)
+		updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
 	}
 
 	accessURL := ""
-	if strings.TrimSpace(updated.AccessMode) != "" && updated.AccessMode != toolsessions.AccessModeNone {
+	if strings.TrimSpace(updatedSession.AccessMode) != "" && updatedSession.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, id, strings.TrimSpace(body.PublicBaseURL))
 	}
 
@@ -1767,8 +1767,8 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	})
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"session":         updated,
-		"access_mode":     updated.AccessMode,
+		"session":         updatedSession,
+		"access_mode":     updatedSession.AccessMode,
 		"access_url":      accessURL,
 		"access_password": accessPassword,
 	})
@@ -3152,26 +3152,6 @@ func (s *Server) persistentQMDPrefix() string {
 	return filepath.Join(s.config.WorkspacePath(), ".nekobot", "runtime", "qmd")
 }
 
-func (s *Server) qmdExportDir() string {
-	exportDir := strings.TrimSpace(os.ExpandEnv(s.config.Memory.QMD.Sessions.ExportDir))
-	if exportDir == "" {
-		return ""
-	}
-	if exportDir == "~" {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			exportDir = home
-		}
-	}
-	if strings.HasPrefix(exportDir, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			exportDir = filepath.Join(home, strings.TrimPrefix(exportDir, "~/"))
-		}
-	}
-	return exportDir
-}
-
 func (s *Server) qmdResolvedExportDir() string {
 	return memoryqmd.ConfigFromConfigWithWorkspace(s.config.Memory.QMD, s.config.WorkspacePath()).Sessions.ExportDir
 }
@@ -4439,7 +4419,9 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		s.logger.Error("WebUI chat WS upgrade failed", zap.Error(err))
 		return nil
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	sessionID := webUIChatSessionID(username)
 	sess, err := s.getOrCreateChatSession(sessionID)
@@ -4455,7 +4437,9 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		Timestamp: time.Now().Unix(),
 	}
 	if data, err := json.Marshal(welcome); err == nil {
-		conn.WriteMessage(websocket.TextMessage, data)
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			s.logger.Warn("Failed to send chat welcome", zap.Error(err))
+		}
 	}
 	routing := chatRouteSettings{
 		Provider: strings.TrimSpace(s.config.Agents.Defaults.Provider),
@@ -4467,14 +4451,20 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		Content:   mustMarshalChatRouting(routing),
 		Timestamp: time.Now().Unix(),
 	}); err == nil {
-		conn.WriteMessage(websocket.TextMessage, data)
+		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			s.logger.Warn("Failed to send chat routing", zap.Error(err))
+		}
 	}
 
 	// Read loop
 	conn.SetReadLimit(65536)
-	conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(120 * time.Second)); err != nil {
+		s.logger.Warn("Failed to set chat read deadline", zap.Error(err))
+	}
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(120 * time.Second)); err != nil {
+			s.logger.Warn("Failed to refresh chat read deadline", zap.Error(err))
+		}
 		return nil
 	})
 
@@ -4486,7 +4476,9 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		for {
 			select {
 			case <-ticker.C:
-				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+					s.logger.Warn("Failed to set chat ping deadline", zap.Error(err))
+				}
 				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 					return
 				}
@@ -4516,7 +4508,9 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		case "ping":
 			resp := chatWSResponse{Type: "pong", Timestamp: time.Now().Unix()}
 			if data, err := json.Marshal(resp); err == nil {
-				conn.WriteMessage(websocket.TextMessage, data)
+				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+					s.logger.Warn("Failed to send chat pong", zap.Error(err))
+				}
 			}
 
 		case "clear":
@@ -4531,7 +4525,9 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 			resp := chatWSResponse{Type: "system", Content: "Session cleared", Timestamp: time.Now().Unix()}
 			if data, err := json.Marshal(resp); err == nil {
-				conn.WriteMessage(websocket.TextMessage, data)
+				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+					s.logger.Warn("Failed to send chat cleared event", zap.Error(err))
+				}
 			}
 
 		case "message":
@@ -4598,8 +4594,12 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Timestamp: time.Now().Unix(),
 			}
 			if data, err := json.Marshal(resp); err == nil {
-				conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
-				conn.WriteMessage(websocket.TextMessage, data)
+				if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+					s.logger.Warn("Failed to set chat response deadline", zap.Error(err))
+				}
+				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+					s.logger.Warn("Failed to send chat response", zap.Error(err))
+				}
 			}
 
 			routeResp := chatWSResponse{
@@ -4615,8 +4615,12 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				},
 			}
 			if data, err := json.Marshal(routeResp); err == nil {
-				conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
-				conn.WriteMessage(websocket.TextMessage, data)
+				if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+					s.logger.Warn("Failed to set chat route deadline", zap.Error(err))
+				}
+				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+					s.logger.Warn("Failed to send chat route result", zap.Error(err))
+				}
 			}
 		}
 	}
@@ -4664,13 +4668,17 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 		s.logger.Error("Tool session WS upgrade failed", zap.Error(err))
 		return nil
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	var writeMu sync.Mutex
 	writeJSON := func(v interface{}) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			s.logger.Warn("Failed to set tool session WS write deadline", zap.Error(err))
+		}
 		return conn.WriteJSON(v)
 	}
 
@@ -4681,9 +4689,13 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 	})
 
 	conn.SetReadLimit(65536)
-	conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(120 * time.Second)); err != nil {
+		s.logger.Warn("Failed to set tool session WS read deadline", zap.Error(err))
+	}
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(120 * time.Second)); err != nil {
+			s.logger.Warn("Failed to refresh tool session WS read deadline", zap.Error(err))
+		}
 		return nil
 	})
 
@@ -4731,10 +4743,13 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 				}
 				if err := s.processMgr.Write(sessionID, msg.Data); err != nil {
 					if isProcessSessionNotFound(err) && s.tryRestoreToolSessionRuntime(context.Background(), sessionID) {
-						err = s.processMgr.Write(sessionID, msg.Data)
+						if retryErr := s.processMgr.Write(sessionID, msg.Data); retryErr == nil {
+							_ = s.toolSess.TouchSession(context.Background(), sessionID, toolsessions.StateRunning)
+							continue
+						} else {
+							err = retryErr
+						}
 					}
-				}
-				if err != nil {
 					_ = writeJSON(toolWSResponse{Type: "error", Message: err.Error()})
 					continue
 				}
@@ -4761,7 +4776,10 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 			return nil
 		case <-pingTicker.C:
 			writeMu.Lock()
-			conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				writeMu.Unlock()
+				return nil
+			}
 			err := conn.WriteMessage(websocket.PingMessage, nil)
 			writeMu.Unlock()
 			if err != nil {
@@ -4828,7 +4846,7 @@ func sendWSError(conn *websocket.Conn, errMsg string) {
 		Timestamp: time.Now().Unix(),
 	}
 	if data, err := json.Marshal(resp); err == nil {
-		conn.WriteMessage(websocket.TextMessage, data)
+		_ = conn.WriteMessage(websocket.TextMessage, data)
 	}
 }
 
