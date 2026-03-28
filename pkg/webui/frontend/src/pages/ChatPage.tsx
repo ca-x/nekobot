@@ -521,17 +521,29 @@ export default function ChatPage() {
                 {t('chatActualRoute')}
               </div>
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
-                  {actualProvider || t('chatActualRoutePending')}
-                </span>
-                <span className="rounded-full bg-card px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))] dark:text-foreground">
-                  {actualModel || t('chatActualRoutePending')}
-                </span>
-                <span className="rounded-full border border-[hsl(var(--brand-200))] bg-card px-3 py-1.5 text-xs text-[hsl(var(--brand-800))] dark:text-foreground">
-                  {resolvedOrder.length > 0
-                    ? `${t('chatResolvedOrder')}: ${resolvedOrder.join(' -> ')}`
-                    : t('chatActualRouteNoResult')}
-                </span>
+                {actualProvider || actualModel ? (
+                  <>
+                    {actualProvider && (
+                      <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
+                        {actualProvider}
+                      </span>
+                    )}
+                    {actualModel && (
+                      <span className="rounded-full bg-card px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))] dark:text-foreground">
+                        {actualModel}
+                      </span>
+                    )}
+                    {resolvedOrder.length > 0 && (
+                      <span className="rounded-full border border-[hsl(var(--brand-200))] bg-card px-3 py-1.5 text-xs text-[hsl(var(--brand-800))] dark:text-foreground">
+                        {t('chatResolvedOrder')}: {resolvedOrder.join(' -> ')}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="rounded-full bg-[hsl(var(--gray-100))] px-3 py-1.5 text-xs font-medium text-muted-foreground dark:bg-[hsl(var(--gray-200))]">
+                    {t('chatActualRoutePending')}
+                  </span>
+                )}
               </div>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 {t('chatActualRouteHint')}
