@@ -310,6 +310,9 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                   {...register('name', { required: !isEdit })}
                   className={cn(errors.name && 'border-destructive')}
                 />
+                {errors.name && (
+                  <p className="text-xs text-destructive">{t('providerNameRequired')}</p>
+                )}
               </div>
 
               {/* Provider Type */}
