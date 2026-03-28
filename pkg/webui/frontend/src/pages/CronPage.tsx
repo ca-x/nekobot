@@ -9,6 +9,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogPortal,
+} from '@/components/ui/dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -27,7 +36,7 @@ import {
   type CronScheduleKind,
   type CronJob,
 } from '@/hooks/useCron';
-import { Plus, Play, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus, Play, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 
 interface ProviderGroupInfo {
   name: string;
@@ -109,6 +118,9 @@ export default function CronPage() {
   const enableJob = useEnableCronJob();
   const disableJob = useDisableCronJob();
   const runJob = useRunCronJob();
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteJobId, setDeleteJobId] = useState<string>('');
 
   const isBusy = createJob.isPending || deleteJob.isPending || enableJob.isPending || disableJob.isPending || runJob.isPending;
 
@@ -497,7 +509,10 @@ export default function CronPage() {
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={() => deleteJob.mutate(job.id)}
+                      onClick={() => {
+                        setDeleteJobId(job.id);
+                        setShowDeleteConfirm(true);
+                      }}
                       disabled={isBusy}
                     >
                       <Trash2 className="h-3.5 w-3.5 mr-1" />
@@ -510,6 +525,43 @@ export default function CronPage() {
           )}
         </div>
       </ScrollArea>
+
+      {/* Delete Job Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogPortal>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('cronDeleteConfirmTitle')}</DialogTitle>
+              <DialogDescription>
+                {t('cronDeleteConfirmDescription')}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (deleteJobId) {
+                    deleteJob.mutate(deleteJobId);
+                    setShowDeleteConfirm(false);
+                    setDeleteJobId('');
+                  }
+                }}
+                disabled={deleteJob.isPending}
+              >
+                {deleteJob.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                )}
+                {t('delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </DialogPortal>
+      </Dialog>
     </div>
   );
 }
