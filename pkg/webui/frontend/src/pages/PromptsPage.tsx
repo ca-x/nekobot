@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Bot, Plus, Sparkles, Trash2, Wand2, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import Header from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
@@ -137,12 +138,16 @@ export default function PromptsPage() {
       ...draft,
       tags: parseTags(tagsInput),
     };
-    if (selectedPromptID) {
-      await updatePrompt.mutateAsync({ id: selectedPromptID, input: payload });
-      return;
+    try {
+      if (selectedPromptID) {
+        await updatePrompt.mutateAsync({ id: selectedPromptID, input: payload });
+        return;
+      }
+      const created = await createPrompt.mutateAsync(payload);
+      resetPromptForm(created);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('saveFailed'));
     }
-    const created = await createPrompt.mutateAsync(payload);
-    resetPromptForm(created);
   }
 
   async function handleDeletePromptRecord(id: string) {
