@@ -235,6 +235,7 @@ export default function CronPage() {
       onSuccess: () => {
         resetForm();
       },
+      onError: (err) => toast.error(err instanceof Error ? err.message : t('saveFailed')),
     });
   };
 
@@ -544,7 +545,9 @@ export default function CronPage() {
                 variant="destructive"
                 onClick={() => {
                   if (deleteJobId) {
-                    deleteJob.mutate(deleteJobId);
+                    deleteJob.mutate(deleteJobId, {
+                      onError: (err) => toast.error(err instanceof Error ? err.message : t('deleteFailed')),
+                    });
                     setShowDeleteConfirm(false);
                     setDeleteJobId('');
                   }
