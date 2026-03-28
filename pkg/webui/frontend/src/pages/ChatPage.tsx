@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2, AlertCircle, ArrowRight } from 'lucide-react';
 
 import { api } from '@/api/client';
 import Header from '@/components/layout/Header';
@@ -373,6 +374,8 @@ export default function ChatPage() {
     () => prompts.filter((item) => item.enabled && item.mode === 'user'),
     [prompts],
   );
+  const hasProviders = providers.length > 0;
+  const hasEnabledPrompts = systemPrompts.length + userPrompts.length > 0;
 
   useEffect(() => {
     if (!sessionPromptBindings) {
@@ -495,6 +498,57 @@ export default function ChatPage() {
           </CardHeader>
 
           <CardContent className="space-y-4 p-4">
+            {(!hasProviders || !hasEnabledPrompts) && (
+              <div className="rounded-[1.5rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.92),rgba(252,241,245,0.8))] p-4 dark:bg-card/90">
+                <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {t('chatSetupGuide')}
+                </div>
+                <div className="space-y-3">
+                  {!hasProviders && (
+                    <div className="rounded-2xl border border-amber-300/60 bg-amber-50/80 p-4 dark:border-amber-700/50 dark:bg-amber-950/30">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                          <AlertCircle className="h-4 w-4" />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="text-sm font-semibold text-amber-900 dark:text-amber-200">{t('chatNoProvidersTitle')}</div>
+                          <p className="text-xs leading-5 text-amber-800/80 dark:text-amber-300/80">{t('chatNoProvidersDescription')}</p>
+                          <Link
+                            to="/providers"
+                            className="inline-flex items-center gap-1.5 rounded-full bg-amber-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-800 dark:bg-amber-200 dark:text-amber-900 dark:hover:bg-amber-100"
+                          >
+                            {t('chatGoToProviders')}
+                            <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {!hasEnabledPrompts && (
+                    <div className="rounded-[1.4rem] border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))]/60 p-4 dark:border-[hsl(var(--brand-800))] dark:bg-[hsl(var(--brand-950))]/20">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-700))] dark:bg-[hsl(var(--brand-900))]/50 dark:text-[hsl(var(--brand-300))]">
+                          <Sparkles className="h-4 w-4" />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="text-sm font-semibold text-[hsl(var(--brand-900))] dark:text-[hsl(var(--brand-200))]">{t('chatNoPromptsTitle')}</div>
+                          <p className="text-xs leading-5 text-[hsl(var(--brand-800))]/70 dark:text-[hsl(var(--brand-300))]/70">{t('chatNoPromptsDescription')}</p>
+                          <Link
+                            to="/prompts"
+                            className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--brand-700))] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[hsl(var(--brand-800))] dark:bg-[hsl(var(--brand-300))] dark:text-[hsl(var(--brand-900))] dark:hover:bg-[hsl(var(--brand-200))]"
+                          >
+                            {t('chatGoToPrompts')}
+                            <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(249,244,241,0.92))] p-4 dark:bg-card/90">
               <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
                 <Sparkles className="h-3.5 w-3.5" />

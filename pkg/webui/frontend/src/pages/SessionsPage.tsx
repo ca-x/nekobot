@@ -18,7 +18,8 @@ import {
   useSessions,
   useUpdateSessionSummary,
 } from '@/hooks/useSessions';
-import { Save, Trash2, Loader2 } from 'lucide-react';
+import { Save, Trash2, Loader2, MessageSquare } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,7 @@ function formatDateTime(value: string): string {
 }
 
 export default function SessionsPage() {
+  const navigate = useNavigate();
   const { data: sessions = [], isLoading } = useSessions();
   const [selectedId, setSelectedId] = useState('');
   const [summaryDraft, setSummaryDraft] = useState('');
@@ -96,7 +98,8 @@ export default function SessionsPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <>
+      <div className="flex flex-col h-[calc(100vh-4rem)]">
       <Header
         title={t('tabSessions')}
         description={t('sessionsPageDescription')}
@@ -120,8 +123,13 @@ export default function SessionsPage() {
                 )}
 
                 {!isLoading && sortedSessions.length === 0 && (
-                  <div className="text-sm text-muted-foreground text-center py-8">
-                    {t('sessionsEmpty')}
+                  <div className="space-y-3 py-6 text-center text-sm text-muted-foreground">
+                    <p>{t('sessionsEmpty')}</p>
+                    <p className="text-xs">{t('sessionsEmptyHint')}</p>
+                    <Button variant="outline" size="sm" onClick={() => navigate('/chat')}>
+                      <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                      {t('sessionsStartChat')}
+                    </Button>
                   </div>
                 )}
 
@@ -167,8 +175,14 @@ export default function SessionsPage() {
           </CardHeader>
           <CardContent className="flex-1 min-h-0 pt-0">
             {!selectedId && (
-              <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
-                {t('sessionSelectHint')}
+              <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+                <p className="text-sm">{t('sessionSelectHint')}</p>
+                {sortedSessions.length === 0 && (
+                  <Button variant="outline" size="sm" onClick={() => navigate('/chat')}>
+                    <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                    {t('sessionsStartChat')}
+                  </Button>
+                )}
               </div>
             )}
 
@@ -280,37 +294,38 @@ export default function SessionsPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+      </div>
 
-    {/* Delete Confirmation Dialog */}
-    <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-      <DialogPortal>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('deleteConfirmDescription')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
-              {t('cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmDeleteSession}
-              disabled={deleteSession.isPending}
-            >
-              {deleteSession.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-1.5" />
-              )}
-              {t('delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </DialogPortal>
-    </Dialog>
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogPortal>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
+              <DialogDescription>
+                {t('deleteConfirmDescription')}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmDeleteSession}
+                disabled={deleteSession.isPending}
+              >
+                {deleteSession.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                )}
+                {t('delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </DialogPortal>
+      </Dialog>
+    </>
   );
 }

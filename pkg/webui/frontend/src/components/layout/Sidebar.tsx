@@ -24,7 +24,7 @@ import {
   PanelLeft,
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const LANGUAGE_OPTIONS: { value: I18nLang; label: string }[] = [
   { value: 'en', label: 'EN' },
@@ -43,6 +43,8 @@ export default function Sidebar() {
   } = useUiStore();
   const [currentTheme, setCurrentTheme] = useState<Theme>(getTheme());
   const [currentLang, setCurrentLang] = useState<I18nLang>(getLanguage());
+  const mobileBackdropRef = useRef<HTMLDivElement | null>(null);
+  const mobileAsideRef = useRef<HTMLElement | null>(null);
 
   const navItems = [
     { target: '/chat', label: t('tabChat'), icon: MessageSquare },
@@ -85,6 +87,16 @@ export default function Sidebar() {
   const handleNavigate = () => {
     setMobileSidebarOpen(false);
   };
+
+  useEffect(() => {
+    const elements = [mobileBackdropRef.current, mobileAsideRef.current];
+    for (const element of elements) {
+      if (!element) {
+        continue;
+      }
+      (element as HTMLElement & { inert?: boolean }).inert = !mobileSidebarOpen;
+    }
+  }, [mobileSidebarOpen]);
 
   const renderNav = () => (
     <nav className="flex-1">
@@ -195,6 +207,8 @@ export default function Sidebar() {
       </div>
 
       <div
+        ref={mobileBackdropRef}
+        aria-hidden={!mobileSidebarOpen}
         className={cn(
           'fixed inset-0 z-30 bg-background/70 backdrop-blur-sm transition-opacity lg:hidden',
           mobileSidebarOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
@@ -203,6 +217,8 @@ export default function Sidebar() {
       />
 
       <aside
+        ref={mobileAsideRef}
+        aria-hidden={!mobileSidebarOpen}
         className={cn(
           panelClass,
           'fixed inset-y-0 left-0 z-40 w-[84vw] max-w-[320px] px-4 py-5 transition-transform duration-200 lg:hidden',

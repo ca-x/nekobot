@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import Header from '@/components/layout/Header';
 import { useConfig } from '@/hooks/useConfig';
@@ -36,7 +37,7 @@ import {
   type CronScheduleKind,
   type CronJob,
 } from '@/hooks/useCron';
-import { Plus, Play, RefreshCw, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Play, RefreshCw, Trash2, Loader2, ArrowRight } from 'lucide-react';
 
 interface ProviderGroupInfo {
   name: string;
@@ -453,7 +454,24 @@ export default function CronPage() {
           {isLoading ? (
             <div className="py-8 text-center text-sm text-muted-foreground">{t('loading')}</div>
           ) : sortedJobs.length === 0 ? (
-            <div className="text-sm text-muted-foreground py-8 text-center">{t('cronNoJobs')}</div>
+            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+              <div className="text-sm font-medium text-foreground">{t('cronNoJobs')}</div>
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('cronEmptyJobsGuide')}</p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+                  {t('cronCreate')}
+                </Button>
+                {routeTargets.length === 0 && (
+                  <Link
+                    to="/providers"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                  >
+                    {t('cronGoToProviders')}
+                    <ArrowRight className="h-3 w-3" />
+                  </Link>
+                )}
+              </div>
+            </div>
           ) : (
             sortedJobs.map((job) => (
               <Card key={job.id}>

@@ -289,7 +289,8 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
   const isSaving = createProvider.isPending || updateProvider.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[560px] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-3">
@@ -598,33 +599,34 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
           </DialogFooter>
         </form>
       </DialogContent>
-    </Dialog>
+      </Dialog>
 
-    {/* Delete Confirmation Dialog */}
-    <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-      <DialogPortal>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
-            <DialogDescription>
-              {t('deleteConfirmDescription')}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
-              {t('cancel')}
-            </Button>
-            <Button variant="destructive" onClick={confirmDelete} disabled={deleteProvider.isPending}>
-              {deleteProvider.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-1.5" />
-              )}
-              {t('delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </DialogPortal>
-    </Dialog>
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogPortal>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
+              <DialogDescription>
+                {t('deleteConfirmDescription')}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
+                {t('cancel')}
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete} disabled={deleteProvider.isPending}>
+                {deleteProvider.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                )}
+                {t('delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </DialogPortal>
+      </Dialog>
+    </>
   );
 }
