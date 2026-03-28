@@ -501,7 +501,7 @@ export default function ChatPage() {
                 {t('chatActiveRoute')}
               </div>
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white">
+                <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
                   {activeProvider || t('chatRouteAuto')}
                 </span>
                 <span className="rounded-full bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]">
@@ -521,7 +521,7 @@ export default function ChatPage() {
                 {t('chatActualRoute')}
               </div>
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white">
+                <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
                   {actualProvider || t('chatActualRoutePending')}
                 </span>
                 <span className="rounded-full bg-card px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))] dark:text-foreground">
