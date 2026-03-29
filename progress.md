@@ -366,3 +366,17 @@
   - Marked Batch A verification complete
   - Marked Batch C frontend build and backend test complete
   - Marked 2026-03-29 review batch Phase 4 complete
+
+- Added missing i18n labels for harness config sections:
+  - Added audit, undo, preprocess, learnings, watch section labels
+  - Added translations for en, zh-CN, ja
+  - Committed as `28a8093`
+- Added line range support for @file mentions:
+  - Support @file.txt:50-100 syntax for extracting specific line ranges
+  - Added extractLineRange method for line-based content extraction
+  - Updated formatFileReference to show line range in output
+  - Added test cases for line range functionality
+  - Committed as `6707d22`
+- Verification run:
+  - `go test -count=1 ./pkg/preprocess` passed
+  - `npm --prefix pkg/webui/frontend run build` passed
