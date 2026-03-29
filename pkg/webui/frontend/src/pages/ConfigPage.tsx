@@ -59,6 +59,11 @@ const CONFIG_SECTIONS = [
   'approval',
   'logger',
   'webui',
+  'audit',
+  'undo',
+  'preprocess',
+  'learnings',
+  'watch',
 ] as const;
 
 type ConfigSection = (typeof CONFIG_SECTIONS)[number];
