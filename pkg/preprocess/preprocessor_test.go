@@ -206,10 +206,10 @@ func TestProcessDirMention(t *testing.T) {
 
 	// Create test files
 	files := map[string]string{
-		"file1.txt":     "Content 1",
-		"file2.go":      "package main",
+		"file1.txt":       "Content 1",
+		"file2.go":        "package main",
 		"subdir/file3.md": "# Title",
-		".hidden":       "Hidden content", // Should be skipped
+		".hidden":         "Hidden content", // Should be skipped
 	}
 
 	for path, content := range files {
@@ -453,7 +453,7 @@ func TestFormatFileReference(t *testing.T) {
 		Truncated:    false,
 	}
 
-	ref := p.formatFileReference(file)
+	ref := p.formatFileReference(file, nil)
 
 	if !strings.Contains(ref, "### test.go") {
 		t.Error("Expected path in reference")
@@ -463,5 +463,77 @@ func TestFormatFileReference(t *testing.T) {
 	}
 	if !strings.Contains(ref, "package main") {
 		t.Error("Expected content in reference")
+	}
+}
+
+func TestProcessFileMentionWithLineRange(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := NewPreprocessorWithWorkspace(tmpDir)
+
+	// Create a test file with multiple lines
+	content := `line 1
+line 2
+line 3
+line 4
+line 5
+line 6
+line 7
+line 8
+line 9
+line 10`
+	filePath := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Test line range @test.txt:3-7
+	result, err := p.Process("check @test.txt:3-7")
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	if len(result.Files) != 1 {
+		t.Fatalf("Expected 1 file, got %d", len(result.Files))
+	}
+
+	expectedContent := "line 3\nline 4\nline 5\nline 6\nline 7"
+	if result.Files[0].Content != expectedContent {
+		t.Errorf("Expected content %q, got %q", expectedContent, result.Files[0].Content)
+	}
+
+	// Check that line range is shown in reference
+	if !strings.Contains(result.FileReferences, "lines 3-7") {
+		t.Errorf("Expected line range in reference, got %q", result.FileReferences)
+	}
+}
+
+func TestProcessFileMentionWithLineRangeStartOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	p := NewPreprocessorWithWorkspace(tmpDir)
+
+	// Create a test file
+	content := `line 1
+line 2
+line 3
+line 4
+line 5`
+	filePath := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Test line range @test.txt:3- (from line 3 to end)
+	result, err := p.Process("check @test.txt:3-5")
+	if err != nil {
+		t.Fatalf("Process failed: %v", err)
+	}
+
+	if len(result.Files) != 1 {
+		t.Fatalf("Expected 1 file, got %d", len(result.Files))
+	}
+
+	expectedContent := "line 3\nline 4\nline 5"
+	if result.Files[0].Content != expectedContent {
+		t.Errorf("Expected content %q, got %q", expectedContent, result.Files[0].Content)
 	}
 }

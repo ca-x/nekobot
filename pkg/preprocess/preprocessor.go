@@ -18,23 +18,27 @@ import (
 var (
 	// fileMentionRegex matches @file and @dir mentions with optional path in parentheses or bare.
 	// Examples: @file, @file.txt, @file(path/to/file.txt), @dir(path/to/dir)
-	fileMentionRegex = regexp.MustCompile(`@(?:file|dir)(?:\(([^)]+)\))?|\@([a-zA-Z0-9._\-/]+\.[a-zA-Z0-9]+)`)
+	// Also supports line ranges: @file.txt:50-100, @file(path/to/file.txt):20-30
+	fileMentionRegex = regexp.MustCompile(`@(?:file|dir)(?:\(([^)]+)\))?|\@([a-zA-Z0-9._\-/]+\.[a-zA-Z0-9]+)(?::(\d+)-(\d+))?`)
 
 	// dirMentionRegex specifically matches @dir mentions
 	dirMentionRegex = regexp.MustCompile(`@dir(?:\(([^)]+)\))?`)
+
+	// lineRangeRegex matches line range suffix like :50-100
+	lineRangeRegex = regexp.MustCompile(`:(\d+)-(\d+)$`)
 )
 
 // FileContent represents the content of a file with metadata.
 type FileContent struct {
-	Path        string    // Absolute path
-	RelativePath string  // Relative path from workspace
-	Content     string    // File content (may be truncated)
-	Size        int64     // Original file size
-	Truncated   bool      // Whether content was truncated
-	Summary     string    // Summary for large files (if applicable)
-	Hash        string    // SHA256 hash of content for cache validation
-	ModTime     time.Time // File modification time
-	Error       string    // Error message if file couldn't be read
+	Path         string    // Absolute path
+	RelativePath string    // Relative path from workspace
+	Content      string    // File content (may be truncated)
+	Size         int64     // Original file size
+	Truncated    bool      // Whether content was truncated
+	Summary      string    // Summary for large files (if applicable)
+	Hash         string    // SHA256 hash of content for cache validation
+	ModTime      time.Time // File modification time
+	Error        string    // Error message if file couldn't be read
 }
 
 // MentionType represents the type of mention.
@@ -52,6 +56,8 @@ type Mention struct {
 	Path       string
 	IsRelative bool
 	Position   int // Position in original text
+	StartLine  int // Start line for line range (0 means no range)
+	EndLine    int // End line for line range (0 means no range)
 }
 
 // PreprocessorConfig holds configuration for the preprocessor.
@@ -87,8 +93,8 @@ func DefaultConfig() PreprocessorConfig {
 	homeDir, _ := os.UserHomeDir()
 	return PreprocessorConfig{
 		Workspace:        filepath.Join(homeDir, ".nekobot", "workspace"),
-		MaxFileSize:      100 * 1024,      // 100KB
-		MaxTotalSize:     500 * 1024,      // 500KB total
+		MaxFileSize:      100 * 1024, // 100KB
+		MaxTotalSize:     500 * 1024, // 500KB total
 		MaxFiles:         10,
 		MaxDirDepth:      5,
 		Enabled:          true,
@@ -107,10 +113,10 @@ type Preprocessor struct {
 }
 
 type cachedFileEntry struct {
-	content   *FileContent
-	hash      string
-	modTime   time.Time
-	accessed  time.Time
+	content  *FileContent
+	hash     string
+	modTime  time.Time
+	accessed time.Time
 }
 
 // NewPreprocessor creates a new preprocessor with the given configuration.
@@ -197,7 +203,7 @@ func (p *Preprocessor) Process(input string) (*Result, error) {
 				totalSize += f.Size
 				files = append(files, f)
 				if f.Error == "" {
-					fileRefs = append(fileRefs, p.formatFileReference(f))
+					fileRefs = append(fileRefs, p.formatFileReference(f, nil))
 				}
 			}
 		} else {
@@ -210,7 +216,7 @@ func (p *Preprocessor) Process(input string) (*Result, error) {
 			totalSize += file.Size
 			files = append(files, file)
 			if file.Error == "" {
-				fileRefs = append(fileRefs, p.formatFileReference(file))
+				fileRefs = append(fileRefs, p.formatFileReference(file, &mention))
 			}
 		}
 	}
@@ -242,12 +248,22 @@ func (p *Preprocessor) parseMentions(input string) []Mention {
 		isDir := dirMentionRegex.MatchString(rawMatch)
 
 		var path string
+		var startLine, endLine int
+
 		if match[2] >= 0 {
 			// Path in parentheses: @file(path) or @dir(path)
 			path = input[match[2]:match[3]]
 		} else if match[4] >= 0 {
-			// Bare mention: @file.txt
+			// Bare mention: @file.txt or @file.txt:50-100
 			path = input[match[4]:match[5]]
+
+			// Check for line range
+			if match[6] >= 0 && match[7] >= 0 {
+				startLineStr := input[match[6]:match[7]]
+				endLineStr := input[match[8]:match[9]]
+				fmt.Sscanf(startLineStr, "%d", &startLine)
+				fmt.Sscanf(endLineStr, "%d", &endLine)
+			}
 		} else {
 			// Bare @file or @dir without extension - use placeholder
 			if isDir {
@@ -262,10 +278,24 @@ func (p *Preprocessor) parseMentions(input string) []Mention {
 			continue
 		}
 
-		// Deduplicate
-		key := string(MentionFile) + ":" + path
+		// Check if path has line range suffix (for parenthesized paths)
+		if startLine == 0 && endLine == 0 {
+			if lineRange := lineRangeRegex.FindStringSubmatch(path); lineRange != nil {
+				// Remove line range from path
+				path = path[:len(path)-len(lineRange[0])]
+				fmt.Sscanf(lineRange[1], "%d", &startLine)
+				fmt.Sscanf(lineRange[2], "%d", &endLine)
+			}
+		}
+
+		// Deduplicate (including line range)
+		dedupKey := path
+		if startLine > 0 || endLine > 0 {
+			dedupKey = fmt.Sprintf("%s:%d-%d", path, startLine, endLine)
+		}
+		key := string(MentionFile) + ":" + dedupKey
 		if isDir {
-			key = string(MentionDir) + ":" + path
+			key = string(MentionDir) + ":" + dedupKey
 		}
 		if seen[key] {
 			continue
@@ -283,6 +313,8 @@ func (p *Preprocessor) parseMentions(input string) []Mention {
 			Path:       path,
 			IsRelative: !filepath.IsAbs(path),
 			Position:   position,
+			StartLine:  startLine,
+			EndLine:    endLine,
 		})
 	}
 
@@ -305,9 +337,11 @@ func (p *Preprocessor) processFileMention(mention Mention) FileContent {
 		}
 	}
 
-	// Check cache
-	if cached := p.getCached(absPath); cached != nil {
-		return *cached
+	// Check cache (only for non-line-range reads)
+	if mention.StartLine == 0 && mention.EndLine == 0 {
+		if cached := p.getCached(absPath); cached != nil {
+			return *cached
+		}
 	}
 
 	// Read file
@@ -317,8 +351,15 @@ func (p *Preprocessor) processFileMention(mention Mention) FileContent {
 			Path:  absPath,
 			Error: err.Error(),
 		}
-		p.cacheFile(absPath, &result)
+		if mention.StartLine == 0 && mention.EndLine == 0 {
+			p.cacheFile(absPath, &result)
+		}
 		return result
+	}
+
+	// Handle line range
+	if mention.StartLine > 0 || mention.EndLine > 0 {
+		content = p.extractLineRange(content, mention.StartLine, mention.EndLine)
 	}
 
 	// Handle large files
@@ -344,14 +385,14 @@ func (p *Preprocessor) processFileMention(mention Mention) FileContent {
 	}
 
 	result := FileContent{
-		Path:        absPath,
+		Path:         absPath,
 		RelativePath: relPath,
-		Content:     finalContent,
-		Size:        int64(len(content)),
-		Truncated:   truncated,
-		Summary:     summary,
-		Hash:        hash,
-		ModTime:     modTime,
+		Content:      finalContent,
+		Size:         int64(len(content)),
+		Truncated:    truncated,
+		Summary:      summary,
+		Hash:         hash,
+		ModTime:      modTime,
 	}
 
 	p.cacheFile(absPath, &result)
@@ -402,8 +443,8 @@ func (p *Preprocessor) processDirMention(mention Mention) ([]FileContent, []stri
 
 		// Create file mention and process
 		fileMention := Mention{
-			Type:     MentionFile,
-			Path:     path,
+			Type:       MentionFile,
+			Path:       path,
 			IsRelative: false,
 		}
 		file := p.processFileMention(fileMention)
@@ -534,7 +575,7 @@ func (p *Preprocessor) computeHash(content string) string {
 }
 
 // formatFileReference creates a markdown reference for a file.
-func (p *Preprocessor) formatFileReference(file FileContent) string {
+func (p *Preprocessor) formatFileReference(file FileContent, mention *Mention) string {
 	var sb strings.Builder
 
 	path := file.RelativePath
@@ -543,6 +584,11 @@ func (p *Preprocessor) formatFileReference(file FileContent) string {
 	}
 
 	sb.WriteString(fmt.Sprintf("### %s", path))
+
+	// Add line range info if specified
+	if mention != nil && (mention.StartLine > 0 || mention.EndLine > 0) {
+		sb.WriteString(fmt.Sprintf(" (lines %d-%d)", mention.StartLine, mention.EndLine))
+	}
 
 	if file.Truncated {
 		sb.WriteString(" (truncated)")
@@ -678,6 +724,37 @@ func (p *Preprocessor) GetCacheStats() (count int, totalSize int64) {
 		totalSize += entry.content.Size
 	}
 	return
+}
+
+// extractLineRange extracts a specific line range from content.
+// Lines are 1-indexed. If startLine is 0, it starts from the beginning.
+// If endLine is 0, it goes to the end.
+func (p *Preprocessor) extractLineRange(content string, startLine, endLine int) string {
+	lines := strings.Split(content, "\n")
+	totalLines := len(lines)
+
+	// Normalize line numbers
+	if startLine <= 0 {
+		startLine = 1
+	}
+	if endLine <= 0 || endLine > totalLines {
+		endLine = totalLines
+	}
+
+	// Validate range
+	if startLine > endLine {
+		return ""
+	}
+
+	// Extract lines (convert to 0-indexed)
+	startIdx := startLine - 1
+	endIdx := endLine
+
+	if startIdx >= totalLines {
+		return ""
+	}
+
+	return strings.Join(lines[startIdx:endIdx], "\n")
 }
 
 // BuildContextInjection builds the context injection string for the processed result.
