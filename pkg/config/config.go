@@ -31,6 +31,11 @@ type Config struct {
 	Sessions      SessionsConfig      `mapstructure:"sessions" json:"sessions"`
 	Approval      ApprovalConfig      `mapstructure:"approval" json:"approval"`
 	WebUI         WebUIConfig         `mapstructure:"webui" json:"webui"`
+	Audit         AuditConfig         `mapstructure:"audit" json:"audit"`
+	Undo          UndoConfig          `mapstructure:"undo" json:"undo"`
+	Preprocess    PreprocessConfig    `mapstructure:"preprocess" json:"preprocess"`
+	Learnings     LearningsConfig     `mapstructure:"learnings" json:"learnings"`
+	Watch         WatchConfig         `mapstructure:"watch" json:"watch"`
 	mu            sync.RWMutex
 }
 
@@ -830,6 +835,58 @@ type SkillVersionsConfig struct {
 	MaxCount int  `mapstructure:"max_count" json:"max_count"`
 }
 
+// AuditConfig controls tool execution audit logging.
+type AuditConfig struct {
+	Enabled       bool `mapstructure:"enabled" json:"enabled"`
+	MaxArgLength  int  `mapstructure:"max_arg_length" json:"max_arg_length"`
+	MaxResults    int  `mapstructure:"max_results" json:"max_results"`
+	RetentionDays int  `mapstructure:"retention_days" json:"retention_days"`
+}
+
+// UndoConfig controls turn-based undo functionality.
+type UndoConfig struct {
+	Enabled       bool `mapstructure:"enabled" json:"enabled"`
+	MaxTurns      int  `mapstructure:"max_turns" json:"max_turns"`
+	SnapshotFiles bool `mapstructure:"snapshot_files" json:"snapshot_files"`
+}
+
+// PreprocessConfig controls message preprocessing features.
+type PreprocessConfig struct {
+	FileMentions FileMentionsConfig `mapstructure:"file_mentions" json:"file_mentions"`
+}
+
+// FileMentionsConfig controls @file mention expansion in messages.
+type FileMentionsConfig struct {
+	Enabled      bool  `mapstructure:"enabled" json:"enabled"`
+	MaxFileSize  int64 `mapstructure:"max_file_size" json:"max_file_size"`
+	MaxTotalSize int64 `mapstructure:"max_total_size" json:"max_total_size"`
+	MaxFiles     int   `mapstructure:"max_files" json:"max_files"`
+}
+
+// LearningsConfig controls the learnings JSONL system.
+type LearningsConfig struct {
+	Enabled           bool    `mapstructure:"enabled" json:"enabled"`
+	MaxRawEntries     int     `mapstructure:"max_raw_entries" json:"max_raw_entries"`
+	CompressedMaxSize int     `mapstructure:"compressed_max_size" json:"compressed_max_size"`
+	HalfLifeDays      float64 `mapstructure:"half_life_days" json:"half_life_days"`
+	CompressInterval  string  `mapstructure:"compress_interval" json:"compress_interval"`
+}
+
+// WatchConfig controls file watch mode for auto-running commands.
+type WatchConfig struct {
+	Enabled    bool           `mapstructure:"enabled" json:"enabled"`
+	DebounceMs int            `mapstructure:"debounce_ms" json:"debounce_ms"`
+	Patterns   []WatchPattern `mapstructure:"patterns" json:"patterns"`
+}
+
+// WatchPattern defines a file pattern and command to run on changes.
+type WatchPattern struct {
+	FileGlob    string `mapstructure:"file_glob" json:"file_glob"`
+	Command     string `mapstructure:"command" json:"command"`
+	FailCommand string `mapstructure:"fail_command" json:"fail_command"`
+}
+
+
 // ApplyFrom copies runtime-reloadable fields from another Config into this one.
 func (c *Config) ApplyFrom(other *Config) {
 	c.mu.Lock()
@@ -849,4 +906,9 @@ func (c *Config) ApplyFrom(other *Config) {
 	c.Sessions = other.Sessions
 	c.Approval = other.Approval
 	c.WebUI = other.WebUI
+	c.Audit = other.Audit
+	c.Undo = other.Undo
+	c.Preprocess = other.Preprocess
+	c.Learnings = other.Learnings
+	c.Watch = other.Watch
 }

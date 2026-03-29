@@ -98,6 +98,10 @@ func (t *ExecTool) Parameters() map[string]interface{} {
 				"type":        "boolean",
 				"description": "Run in background and return session ID. Use with process tool to monitor. Default: false",
 			},
+			"streaming": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Enable real-time output streaming. Requires streaming handler in context. Default: false",
+			},
 			"workdir": map[string]interface{}{
 				"type":        "string",
 				"description": "Working directory (relative to workspace). Default: workspace root",
@@ -120,8 +124,15 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 	// Parse options
 	usePTY := getBoolArg(args, "pty", false)
 	background := getBoolArg(args, "background", false)
+	streaming := getBoolArg(args, "streaming", false)
 	workdir := getStringArg(args, "workdir", "")
 	timeout := getIntArg(args, "timeout", int(t.config.Timeout.Seconds()))
+
+	// Get streaming handler from context if available
+	streamHandler := GetStreamingHandler(ctx)
+	if streaming && streamHandler == nil {
+		streaming = false // Disable streaming if no handler
+	}
 
 	// Resolve workdir
 	if workdir == "" {
@@ -190,6 +201,12 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 	// PTY mode (direct execution only).
 	if usePTY {
 		return t.executeWithPTY(ctx, command, workdir, execTimeout)
+	}
+
+	// Standard mode with optional streaming
+	if streaming && streamHandler != nil {
+		streamWriter := NewStreamWriter(streamHandler, 500*time.Millisecond)
+		return t.executeStandardWithStreaming(ctx, command, workdir, execTimeout, streamWriter)
 	}
 
 	// Standard mode
@@ -325,6 +342,11 @@ func (t *ExecTool) executeInDocker(ctx context.Context, command, workdir string,
 
 // executeStandard executes command in standard mode.
 func (t *ExecTool) executeStandard(ctx context.Context, command, workdir string, timeout time.Duration) (string, error) {
+	return t.executeStandardWithStreaming(ctx, command, workdir, timeout, nil)
+}
+
+// executeStandardWithStreaming executes command with optional streaming output.
+func (t *ExecTool) executeStandardWithStreaming(ctx context.Context, command, workdir string, timeout time.Duration, streamWriter *StreamWriter) (string, error) {
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -332,8 +354,14 @@ func (t *ExecTool) executeStandard(ctx context.Context, command, workdir string,
 	cmd.Dir = workdir
 
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	if streamWriter != nil {
+		// Use streaming writer
+		cmd.Stdout = streamWriter
+		cmd.Stderr = streamWriter
+	} else {
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+	}
 
 	err := cmd.Run()
 
@@ -342,16 +370,26 @@ func (t *ExecTool) executeStandard(ctx context.Context, command, workdir string,
 	_, _ = fmt.Fprintf(&result, "Command: %s\n", command)
 	_, _ = fmt.Fprintf(&result, "Working Directory: %s\n\n", workdir)
 
-	if stdout.Len() > 0 {
-		result.WriteString("STDOUT:\n")
-		result.WriteString(stdout.String())
-		result.WriteString("\n")
-	}
+	if streamWriter != nil {
+		// Get output from stream writer
+		output := streamWriter.Output()
+		if output != "" {
+			result.WriteString("OUTPUT:\n")
+			result.WriteString(output)
+			result.WriteString("\n")
+		}
+	} else {
+		if stdout.Len() > 0 {
+			result.WriteString("STDOUT:\n")
+			result.WriteString(stdout.String())
+			result.WriteString("\n")
+		}
 
-	if stderr.Len() > 0 {
-		result.WriteString("STDERR:\n")
-		result.WriteString(stderr.String())
-		result.WriteString("\n")
+		if stderr.Len() > 0 {
+			result.WriteString("STDERR:\n")
+			result.WriteString(stderr.String())
+			result.WriteString("\n")
+		}
 	}
 
 	if err != nil {
@@ -369,6 +407,15 @@ func (t *ExecTool) executeStandard(ctx context.Context, command, workdir string,
 	}
 
 	_, _ = fmt.Fprintf(&result, "\nExit Code: %d\n", exitCode)
+
+	// Send final streaming update
+	if streamWriter != nil {
+		errMsg := ""
+		if err != nil {
+			errMsg = err.Error()
+		}
+		streamWriter.Finish(exitCode, errMsg)
+	}
 
 	return result.String(), nil
 }

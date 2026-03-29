@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 )
+
+// ExecutionHook is called after each tool execution with timing and result info.
+type ExecutionHook func(ctx context.Context, toolName string, args map[string]interface{}, result string, duration time.Duration, err error)
 
 // Tool represents an action that the agent can perform.
 type Tool interface {
@@ -27,6 +31,7 @@ type Tool interface {
 type Registry struct {
 	mu    sync.RWMutex
 	tools map[string]Tool
+	hook  ExecutionHook // Optional execution hook for auditing/logging
 }
 
 // NewRegistry creates a new tool registry.
@@ -132,5 +137,22 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]int
 		return "", fmt.Errorf("unknown tool: %s", name)
 	}
 
-	return tool.Execute(ctx, args)
+	start := time.Now()
+	result, err := tool.Execute(ctx, args)
+	duration := time.Since(start)
+
+	// Call hook if registered
+	if r.hook != nil {
+		r.hook(ctx, name, args, result, duration, err)
+	}
+
+	return result, err
+}
+
+// SetHook sets the execution hook for all tool executions.
+// The hook is called after each tool execution with timing information.
+func (r *Registry) SetHook(hook ExecutionHook) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.hook = hook
 }

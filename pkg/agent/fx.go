@@ -7,6 +7,7 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"nekobot/pkg/approval"
+	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -62,6 +63,7 @@ type provideAgentDeps struct {
 	KVStore       state.KV               `optional:"true"`
 	EntClient     *ent.Client            `optional:"true"`
 	PromptMgr     *prompts.Manager       `optional:"true"`
+	AuditLogger   *audit.Logger          `optional:"true"`
 }
 
 // ProvideAgent provides an agent instance.
@@ -137,6 +139,12 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 			log.Warn("Subagent notification failed", zap.Error(err))
 		}
 	})
+
+	// Set up audit logging hook
+	if deps.AuditLogger != nil && cfg.Audit.Enabled {
+		agent.GetTools().SetHook(deps.AuditLogger.Hook())
+		log.Info("Audit logging enabled", zap.String("path", deps.AuditLogger.FilePath()))
+	}
 
 	orchestrator := strings.TrimSpace(strings.ToLower(cfg.Agents.Defaults.Orchestrator))
 	if orchestrator == "" {
