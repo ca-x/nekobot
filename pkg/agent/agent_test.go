@@ -20,6 +20,7 @@ import (
 	"nekobot/pkg/memory"
 	promptmemory "nekobot/pkg/memory/prompt"
 	"nekobot/pkg/providers"
+	"nekobot/pkg/session"
 	"nekobot/pkg/tools"
 )
 
@@ -983,6 +984,55 @@ func TestExecuteToolCallPassesSessionIDToApproval(t *testing.T) {
 	}
 }
 
+func TestExecuteToolCallInjectsSessionIDIntoToolContext(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	tool := &toolExecutionResultStubTool{
+		name:        "context_session_tool",
+		description: "captures tool context session id",
+	}
+	ag.tools.MustRegister(tool)
+
+	ctx := context.WithValue(context.Background(), promptContextSessionKey, "wechat-user-2")
+	result, err := ag.executeToolCall(ctx, providers.UnifiedToolCall{
+		Name:      "context_session_tool",
+		Arguments: map[string]interface{}{"x": 1},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if result != "ok" {
+		t.Fatalf("unexpected tool result: %q", result)
+	}
+	if tool.lastSessionID != "wechat-user-2" {
+		t.Fatalf("expected session id in tool context, got %q", tool.lastSessionID)
+	}
+}
+
+func TestRegisterUndoToolReplacesExistingUndoTool(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Undo.Enabled = true
+	cfg.Undo.MaxTurns = 20
+
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.config = cfg
+	ag.snapshotMgr = session.NewSnapshotManager(t.TempDir(), cfg.Undo)
+
+	ag.RegisterUndoTool("session-a")
+	first, ok := ag.tools.Get("undo")
+	if !ok {
+		t.Fatal("expected undo tool to be registered")
+	}
+
+	ag.RegisterUndoTool("session-b")
+	second, ok := ag.tools.Get("undo")
+	if !ok {
+		t.Fatal("expected undo tool to remain registered")
+	}
+	if first == second {
+		t.Fatal("expected undo tool registration to replace existing instance")
+	}
+}
+
 func TestSetApprovalModeForSessionRejectsUnknownMode(t *testing.T) {
 	ag := newRoutingTestAgent(t, orchestratorBlades)
 	ag.approval = approval.NewManager(approval.Config{Mode: approval.ModePrompt})
@@ -1385,8 +1435,9 @@ type toolExecutionResultStubTool struct {
 	description string
 	err         error
 
-	mu          sync.Mutex
-	executeHits int
+	mu            sync.Mutex
+	executeHits   int
+	lastSessionID string
 }
 
 func (t *toolExecutionResultStubTool) Name() string {
@@ -1405,11 +1456,13 @@ func (t *toolExecutionResultStubTool) Parameters() map[string]interface{} {
 }
 
 func (t *toolExecutionResultStubTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
-	_ = ctx
 	_ = args
 
 	t.mu.Lock()
 	t.executeHits++
+	if sessionID, ok := ctx.Value("session_id").(string); ok {
+		t.lastSessionID = sessionID
+	}
 	t.mu.Unlock()
 
 	if t.err != nil {

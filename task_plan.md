@@ -2,6 +2,45 @@
 
 > Last Updated: 2026-03-26
 
+## 2026-03-29 Harness 审阅批次
+
+### Goal
+审阅以下 5 次 harness 相关提交，参考 `/home/czyt/code/yoyo-evolve` 的成熟实现，修复明确存在的业务流程问题、架构缝隙和 WebUI 体验问题，并在收尾后更新本计划。
+
+目标提交：
+1. `1b7c3d0` `docs: update harness progress tracker`
+2. `580741d` `feat: add Turn Undo, @file Mentions, and Watch Mode`
+3. `46026ac` `feat: add Learnings JSONL system`
+4. `583245d` `feat(webui): add harness config sections`
+5. `c409cf1` `feat: add audit log and streaming bash`
+
+### Phases
+- [x] Phase 1: 建立计划与审阅范围
+- [x] Phase 2: 对照 `yoyo-evolve` 审阅后端流程与架构
+- [x] Phase 3: 审阅 WebUI 配置页与前端体验
+- [x] Phase 4: 修复已确认问题并补测试/验证
+- [x] Phase 5: 更新计划、记录结果并提交相关代码
+
+### Key Questions
+1. 这几次 harness 迁移在哪些地方只迁了“配置面”而没接通“执行面”？
+2. `yoyo-evolve` 的 harness 行为里，哪些最关键的约束/流程在 `nekobot` 里被做薄了？
+3. WebUI ConfigPage 是否暴露了配置分区，但缺少配套文案、说明、状态反馈或交互保护？
+
+### Decisions Made
+- `watch` 不重写实现，直接复用已存在的 `pkg/watch.Module`，把它接回所有主要 FX 启动路径。
+- `undo` 不做独立命令通道，继续作为 agent tool 存在，但改为按真实 session 动态注册/替换。
+- `audit` 先补 `session_id` 上下文透传，不在本批次扩展更重的流式 UI 事件桥。
+- ConfigPage 先补最关键的 `watch.patterns` 可视化编辑；其余 harness 分区继续保留通用表单/JSON 模式。
+
+### Errors Encountered
+- `pkg/agent/agent_test.go` 新增测试首次编译失败：缺少 `session` import。
+  - 处理：补 import 后重新跑红绿测试。
+- `RegisterUndoTool` 重复注册导致 panic。
+  - 处理：在 `tools.Registry` 中增加 `Replace`，并让 undo 改用 replace 语义。
+
+### Status
+**Completed** - 已完成审阅、修复与验证，待提交相关代码。
+
 ## Goal
 在保持 `nekobot` 现有稳定性的前提下，基于 `~/code/goclaw` 与 `~/code/gua` 的成熟实践，完成：
 1. 准确认定 `nekobot` 当前已完成与待完成功能。

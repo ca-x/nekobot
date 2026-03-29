@@ -26,6 +26,7 @@ import (
 	"nekobot/pkg/state"
 	"nekobot/pkg/tools"
 	"nekobot/pkg/toolsessions"
+	"nekobot/pkg/watch"
 	"nekobot/pkg/workspace"
 )
 
@@ -59,6 +60,7 @@ func runACP(cmd *cobra.Command, args []string) {
 		skills.Module,
 		state.Module,
 		process.Module,
+		watch.Module,
 		approval.Module,
 		toolsessions.Module,
 		prompts.Module,

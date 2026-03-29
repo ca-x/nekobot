@@ -64,6 +64,13 @@ func (r *Registry) MustRegister(tool Tool) {
 	}
 }
 
+// Replace registers a tool, replacing any existing tool with the same name.
+func (r *Registry) Replace(tool Tool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.tools[tool.Name()] = tool
+}
+
 // Get retrieves a tool by name.
 func (r *Registry) Get(name string) (Tool, bool) {
 	r.mu.RLock()

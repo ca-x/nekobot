@@ -1419,6 +1419,152 @@ function StorageSectionForm({
   );
 }
 
+function WatchSectionForm({
+  data,
+  onChange,
+}: {
+  data: Record<string, unknown>;
+  onChange: (key: string, value: unknown) => void;
+}) {
+  const readBool = (path: string) => Boolean(getNestedValue(data, path));
+  const readNumber = (path: string) => Number(getNestedValue(data, path) ?? 0);
+  const readPatterns = (): Array<{ file_glob: string; command: string; fail_command: string }> => {
+    const value = getNestedValue(data, 'patterns');
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return { file_glob: '', command: '', fail_command: '' };
+      }
+      const record = item as Record<string, unknown>;
+      return {
+        file_glob: typeof record.file_glob === 'string' ? record.file_glob : '',
+        command: typeof record.command === 'string' ? record.command : '',
+        fail_command: typeof record.fail_command === 'string' ? record.fail_command : '',
+      };
+    });
+  };
+
+  const patterns = readPatterns();
+
+  const updatePattern = (index: number, patch: Partial<{ file_glob: string; command: string; fail_command: string }>) => {
+    const next = patterns.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item));
+    onChange('patterns', next);
+  };
+
+  const addPattern = () => {
+    onChange('patterns', [...patterns, { file_glob: '', command: '', fail_command: '' }]);
+  };
+
+  const removePattern = (index: number) => {
+    onChange('patterns', patterns.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  return (
+    <div className="space-y-5">
+      <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(247,250,255,0.95),rgba(241,246,255,0.9))] shadow-[0_24px_60px_-42px_rgba(71,85,132,0.35)]">
+        <CardHeader className="pb-4">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700">
+            <RefreshCw className="h-3.5 w-3.5" />
+            {t('configSectionWatch')}
+          </div>
+          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('configSectionWatch')}</CardTitle>
+          <CardDescription>{t('configSectionDescWatch')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+            <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div>
+                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchEnabledTitle')}</Label>
+                <div className="mt-1 text-xs text-muted-foreground">{t('watchEnabledHint')}</div>
+              </div>
+              <Switch checked={readBool('enabled')} onCheckedChange={(next) => onChange('enabled', next)} />
+            </div>
+            <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchDebounceMs')}</Label>
+              <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('watchDebounceMsHint')}</div>
+              <Input
+                type="number"
+                min={0}
+                className="h-11 rounded-xl bg-white"
+                value={String(readNumber('debounce_ms'))}
+                onChange={(event) => onChange('debounce_ms', Number(event.target.value || 0))}
+              />
+            </div>
+          </div>
+
+          <Card className="border-white/70 bg-white/80 shadow-none">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">{t('watchPatternsTitle')}</CardTitle>
+                  <CardDescription>{t('watchPatternsHint')}</CardDescription>
+                </div>
+                <Button type="button" variant="outline" className="rounded-full" onClick={addPattern}>
+                  {t('add')}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {patterns.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-4 py-6 text-sm text-muted-foreground">
+                  {t('watchPatternsEmpty')}
+                </div>
+              ) : (
+                patterns.map((pattern, index) => (
+                  <div key={index} className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold text-[hsl(var(--gray-900))]">
+                        {t('watchPatternLabel', String(index + 1))}
+                      </div>
+                      <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => removePattern(index)}>
+                        {t('remove')}
+                      </Button>
+                    </div>
+                    <div className="grid gap-4">
+                      <div>
+                        <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchPatternGlob')}</Label>
+                        <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('watchPatternGlobHint')}</div>
+                        <Input
+                          className="h-11 rounded-xl bg-white"
+                          value={pattern.file_glob}
+                          onChange={(event) => updatePattern(index, { file_glob: event.target.value })}
+                          placeholder="pkg/**/*.go"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchPatternCommand')}</Label>
+                        <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('watchPatternCommandHint')}</div>
+                        <Input
+                          className="h-11 rounded-xl bg-white"
+                          value={pattern.command}
+                          onChange={(event) => updatePattern(index, { command: event.target.value })}
+                          placeholder="go test ./..."
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchPatternFailCommand')}</Label>
+                        <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('watchPatternFailCommandHint')}</div>
+                        <Input
+                          className="h-11 rounded-xl bg-white"
+                          value={pattern.fail_command}
+                          onChange={(event) => updatePattern(index, { fail_command: event.target.value })}
+                          placeholder="notify-send 'watch failed'"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function WebUISectionForm({
   data,
   onChange,
@@ -1917,6 +2063,8 @@ export default function ConfigPage() {
                   onCleanupSkillVersions={() => cleanupSkillVersions.mutate()}
                   cleanupSkillVersionsPending={cleanupSkillVersions.isPending}
                 />
+              ) : section === 'watch' ? (
+                <WatchSectionForm data={currentData} onChange={handleFieldChange} />
               ) : filteredFields.length === 0 ? (
                 <div className="py-16 text-center">
                   <div className="text-sm font-medium text-foreground">{t('configNoMatchingFields')}</div>

@@ -864,5 +864,20 @@
   "configSectionLearnings": "学習記録",
   "configSectionDescLearnings": "永続的コンテキスト圧縮、減衰率と要約生成。",
   "configSectionWatch": "ファイル監視",
-  "configSectionDescWatch": "ファイルシステム監視、グロブパターンとデバウンス設定。"
+  "configSectionDescWatch": "ファイルシステム監視、グロブパターンとデバウンス設定。",
+  "watchEnabledTitle": "監視モードを有効化",
+  "watchEnabledHint": "一致するファイルが変更されたら監視コマンドを自動実行します。",
+  "watchDebounceMs": "デバウンス（ms）",
+  "watchDebounceMsHint": "変更検知後、この時間だけ待ってからコマンドを実行します。",
+  "watchPatternsTitle": "監視パターン",
+  "watchPatternsHint": "各パターンはファイルグロブと実行コマンドの組み合わせです。",
+  "watchPatternsEmpty": "まだ監視パターンは設定されていません。",
+  "watchPatternLabel": "パターン {0}",
+  "watchPatternGlob": "ファイルグロブ",
+  "watchPatternGlobHint": "このグロブに一致するファイル変更でコマンドを実行します。",
+  "watchPatternCommand": "成功コマンド",
+  "watchPatternCommandHint": "一致するファイル変更後に実行する主コマンドです。",
+  "watchPatternFailCommand": "失敗時コマンド",
+  "watchPatternFailCommandHint": "主コマンド失敗時に任意で実行するフォールバックコマンドです。",
+  "remove": "削除"
 }

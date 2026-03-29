@@ -864,5 +864,20 @@
   "configSectionLearnings": "Learnings",
   "configSectionDescLearnings": "Durable context compression, decay rates and summarization.",
   "configSectionWatch": "Watch",
-  "configSectionDescWatch": "File system watcher, glob patterns and debounce settings."
+  "configSectionDescWatch": "File system watcher, glob patterns and debounce settings.",
+  "watchEnabledTitle": "Enable watch mode",
+  "watchEnabledHint": "Run watch commands automatically when matching files change.",
+  "watchDebounceMs": "Debounce (ms)",
+  "watchDebounceMsHint": "Wait this long after a change before running the command.",
+  "watchPatternsTitle": "Watch patterns",
+  "watchPatternsHint": "Each pattern maps a file glob to the command that should run.",
+  "watchPatternsEmpty": "No watch patterns configured yet.",
+  "watchPatternLabel": "Pattern {0}",
+  "watchPatternGlob": "File glob",
+  "watchPatternGlobHint": "Files matching this glob trigger the command.",
+  "watchPatternCommand": "Success command",
+  "watchPatternCommandHint": "Command to run after matching file changes.",
+  "watchPatternFailCommand": "Failure command",
+  "watchPatternFailCommandHint": "Optional fallback command to run if the main command fails.",
+  "remove": "Remove"
 }

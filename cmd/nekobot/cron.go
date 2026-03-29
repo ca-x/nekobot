@@ -23,6 +23,7 @@ import (
 	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
 	"nekobot/pkg/tools"
+	"nekobot/pkg/watch"
 	"nekobot/pkg/workspace"
 )
 
@@ -371,6 +372,7 @@ func buildCronManagerOrExit() (*cron.Manager, func()) {
 		workspace.Module,
 		skills.Module,
 		state.Module,
+		watch.Module,
 		prompts.Module,
 		providerstore.Module,
 		agent.Module,

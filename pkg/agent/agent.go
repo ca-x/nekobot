@@ -18,11 +18,11 @@ import (
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
+	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/subagent"
-	"nekobot/pkg/session"
 	"nekobot/pkg/tools"
 	"nekobot/pkg/toolsessions"
 )
@@ -288,7 +288,7 @@ func (a *Agent) RegisterUndoTool(sessionID string) {
 		a.logger.Debug("Undo tool not registered - snapshot manager not initialized")
 		return
 	}
-	a.tools.MustRegister(tools.NewUndoTool(tools.UndoToolOptions{
+	a.tools.Replace(tools.NewUndoTool(tools.UndoToolOptions{
 		SnapshotMgr: a.snapshotMgr,
 		SessionID:   sessionID,
 	}))
@@ -439,14 +439,18 @@ func (a *Agent) chatWithProviderModelDetailed(
 	ctx = context.WithValue(ctx, promptContextChannelKey, strings.TrimSpace(promptCtx.Channel))
 	ctx = context.WithValue(ctx, promptContextSessionKey, strings.TrimSpace(promptCtx.SessionID))
 
+	sessionID := strings.TrimSpace(promptCtx.SessionID)
+	if sessionID == "" {
+		if identifiable, ok := sess.(interface{ GetID() string }); ok {
+			sessionID = strings.TrimSpace(identifiable.GetID())
+		}
+	}
+	if sessionID != "" {
+		a.RegisterUndoTool(sessionID)
+	}
+
 	// Save snapshot before each turn (for undo functionality)
 	if a.snapshotMgr != nil && sess != nil {
-		sessionID := strings.TrimSpace(promptCtx.SessionID)
-		if sessionID == "" {
-			if identifiable, ok := sess.(interface{ GetID() string }); ok {
-				sessionID = strings.TrimSpace(identifiable.GetID())
-			}
-		}
 		store := a.snapshotMgr.GetStore(sessionID)
 		if store != nil {
 			messages := sess.GetMessages()
@@ -1066,6 +1070,10 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 			ctxStringValue(ctx, promptContextChannelKey),
 			ctxStringValue(ctx, promptContextSessionKey),
 		)
+	}
+
+	if sessionID := ctxStringValue(ctx, promptContextSessionKey); sessionID != "" {
+		ctx = context.WithValue(ctx, "session_id", sessionID)
 	}
 
 	result, err := a.tools.Execute(ctx, toolCall.Name, toolCall.Arguments)

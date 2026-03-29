@@ -1,5 +1,63 @@
 # Notes: nextclaw + picoclaw → nekobot 特性分析
 
+## 2026-03-29 Harness 审阅批次
+
+### 审阅范围
+- `1b7c3d0` `docs: update harness progress tracker`
+- `580741d` `feat: add Turn Undo, @file Mentions, and Watch Mode`
+- `46026ac` `feat: add Learnings JSONL system`
+- `583245d` `feat(webui): add harness config sections`
+- `c409cf1` `feat: add audit log and streaming bash`
+
+### 结合 `yoyo-evolve` 的关键发现
+
+#### 1. `watch` 只有配置和包实现，没有接入运行时
+- 现状：
+  - `pkg/watch/fx.go` 已经提供了完整 FX 模块和生命周期接线。
+  - 但 `cmd/nekobot/main.go`、`tui.go`、`acp.go`、`cron.go`、`service.go` 都没有引入 `watch.Module`。
+- 影响：
+  - 用户在 ConfigPage 或配置文件里开启 `watch.enabled` 后，功能不会实际运行。
+  - 这是典型的“配置面已上线、执行面未接通”问题。
+
+#### 2. `undo` 快照会保存，但工具从未被真实注册到会话
+- 现状：
+  - `pkg/agent/agent.go` 会在每轮对话前保存 snapshot。
+  - 但 `RegisterUndoTool` 只有定义，没有被聊天入口调用。
+- 影响：
+  - `Undo` 配置和后端存储都存在，但 agent 实际工具集里没有对应工具。
+  - 这导致功能对最终用户不可用。
+
+#### 3. audit log 缺少真实 `session_id`
+- 现状：
+  - `pkg/audit/fx.go` 的 hook 试图从 context 读取 `"session_id"`。
+  - `pkg/agent/executeToolCall` 之前没有把 prompt context 的 session id 注入到 tool context。
+- 影响：
+  - 审计日志无法稳定关联到真实会话，削弱了审计定位价值。
+
+#### 4. ConfigPage 对 harness 配置的前端体验不完整
+- 现状：
+  - `583245d` 只把 `audit / undo / preprocess / learnings / watch` 新分区挂进左侧导航。
+  - 其中 `watch.patterns` 是对象数组，表单模式下只能显示 JSON 预览，必须切 JSON 才能编辑。
+- 影响：
+  - 对终端用户来说，最关键的 watch 配置仍然不可视化操作。
+  - 这和 `yoyo-evolve` 的“直接可用”体验不一致。
+
+### 已落地修复
+- 后端：
+  - 在 agent 聊天入口按真实 session 动态注册/替换 `undo` 工具。
+  - 在 tool 执行上下文中注入 `"session_id"`，让 audit log 能记录真实会话。
+  - 给 `tools.Registry` 增加 `Replace`，避免 `undo` 按 session 重注册时 panic。
+  - 将 `watch.Module` 接入 CLI / TUI / ACP / Cron / Gateway/service 启动链路。
+- 前端：
+  - 为 ConfigPage 新增 `WatchSectionForm`。
+  - 直接支持编辑 `enabled`、`debounce_ms`、`patterns[]`、`file_glob`、`command`、`fail_command`。
+  - 补齐中英日文案。
+
+### 验证
+- `go test -count=1 ./pkg/agent ./pkg/watch`
+- `go test -count=1 ./cmd/nekobot/...`
+- `npm --prefix pkg/webui/frontend run build`
+
 ## 三项目对比总览
 
 | 维度 | nekobot (当前) | picoclaw (Go, 灵感源) | nextclaw (TS, 参考) |
