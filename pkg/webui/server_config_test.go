@@ -75,6 +75,11 @@ func TestHandleGetConfigIncludesMemorySection(t *testing.T) {
 	if _, ok := payload["bus"]; !ok {
 		t.Fatalf("expected bus section in response: %s", rec.Body.String())
 	}
+	for _, section := range []string{"audit", "undo", "preprocess", "learnings", "watch"} {
+		if _, ok := payload[section]; !ok {
+			t.Fatalf("expected %s section in response: %s", section, rec.Body.String())
+		}
+	}
 }
 
 func TestHandleSaveConfigPersistsStartupSections(t *testing.T) {
@@ -278,6 +283,89 @@ func TestHandleSaveConfigPersistsMemorySection(t *testing.T) {
 	}
 }
 
+func TestHandleSaveConfigPersistsHarnessSections(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		providers: providers,
+	}
+
+	body := `{"audit":{"enabled":true,"max_arg_length":4321,"max_results":17,"retention_days":9},"undo":{"enabled":true,"max_turns":17,"snapshot_files":true},"preprocess":{"file_mentions":{"enabled":true,"max_file_size":12345,"max_total_size":45678,"max_files":23}},"learnings":{"enabled":true,"max_raw_entries":66,"compressed_max_size":2048,"half_life_days":14,"compress_interval":"30m"},"watch":{"enabled":true,"debounce_ms":850,"patterns":[{"file_glob":"**/*.go","command":"go test ./...","fail_command":"notify-send fail"}]}}`
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleSaveConfig(c); err != nil {
+		t.Fatalf("handleSaveConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	if !s.config.Audit.Enabled || s.config.Audit.MaxArgLength != 4321 || s.config.Audit.MaxResults != 17 {
+		t.Fatalf("audit not applied to runtime config: %+v", s.config.Audit)
+	}
+	if !s.config.Undo.Enabled || s.config.Undo.MaxTurns != 17 || !s.config.Undo.SnapshotFiles {
+		t.Fatalf("undo not applied to runtime config: %+v", s.config.Undo)
+	}
+	if !s.config.Preprocess.FileMentions.Enabled || s.config.Preprocess.FileMentions.MaxFileSize != 12345 || s.config.Preprocess.FileMentions.MaxFiles != 23 {
+		t.Fatalf("preprocess not applied to runtime config: %+v", s.config.Preprocess)
+	}
+	if !s.config.Learnings.Enabled || s.config.Learnings.MaxRawEntries != 66 {
+		t.Fatalf("learnings not applied to runtime config: %+v", s.config.Learnings)
+	}
+	if !s.config.Watch.Enabled || s.config.Watch.DebounceMs != 850 || len(s.config.Watch.Patterns) != 1 {
+		t.Fatalf("watch not applied to runtime config: %+v", s.config.Watch)
+	}
+
+	reloaded := config.DefaultConfig()
+	reloaded.Storage.DBDir = cfg.Storage.DBDir
+	reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
+	if err := config.ApplyDatabaseOverrides(reloaded); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(reloaded.Audit, s.config.Audit) {
+		t.Fatalf("audit section not persisted: got %+v want %+v", reloaded.Audit, s.config.Audit)
+	}
+	if !reflect.DeepEqual(reloaded.Undo, s.config.Undo) {
+		t.Fatalf("undo section not persisted: got %+v want %+v", reloaded.Undo, s.config.Undo)
+	}
+	if !reflect.DeepEqual(reloaded.Preprocess, s.config.Preprocess) {
+		t.Fatalf("preprocess section not persisted: got %+v want %+v", reloaded.Preprocess, s.config.Preprocess)
+	}
+	if !reflect.DeepEqual(reloaded.Learnings, s.config.Learnings) {
+		t.Fatalf("learnings section not persisted: got %+v want %+v", reloaded.Learnings, s.config.Learnings)
+	}
+	if !reflect.DeepEqual(reloaded.Watch, s.config.Watch) {
+		t.Fatalf("watch section not persisted: got %+v want %+v", reloaded.Watch, s.config.Watch)
+	}
+}
+
 func TestHandleSaveConfigUpdatesSkillRetentionRuntime(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
@@ -377,6 +465,73 @@ func TestHandleImportConfigPersistsMemorySection(t *testing.T) {
 	}
 	if reloaded.Memory.Semantic.SearchPolicy != "hybrid" || reloaded.Memory.ShortTerm.RawHistoryLimit != 123 {
 		t.Fatalf("memory section not persisted by import: %+v", reloaded.Memory)
+	}
+}
+
+func TestHandleImportConfigPersistsHarnessSections(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		providers: providers,
+	}
+
+	body := `{"audit":{"enabled":true,"max_arg_length":22,"max_results":8,"retention_days":5},"undo":{"enabled":true,"max_turns":8,"snapshot_files":false},"preprocess":{"file_mentions":{"enabled":true,"max_file_size":54321,"max_total_size":88888,"max_files":9}},"learnings":{"enabled":true,"max_raw_entries":11,"compressed_max_size":1024,"half_life_days":10,"compress_interval":"1h"},"watch":{"enabled":true,"debounce_ms":1500,"patterns":[{"file_glob":"frontend/src/**/*.tsx","command":"npm run build","fail_command":"echo build failed"}]}}`
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/config/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleImportConfig(c); err != nil {
+		t.Fatalf("handleImportConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	reloaded := config.DefaultConfig()
+	reloaded.Storage.DBDir = cfg.Storage.DBDir
+	reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
+	if err := config.ApplyDatabaseOverrides(reloaded); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(reloaded.Audit, s.config.Audit) {
+		t.Fatalf("audit section not persisted by import: got %+v want %+v", reloaded.Audit, s.config.Audit)
+	}
+	if !reflect.DeepEqual(reloaded.Undo, s.config.Undo) {
+		t.Fatalf("undo section not persisted by import: got %+v want %+v", reloaded.Undo, s.config.Undo)
+	}
+	if !reflect.DeepEqual(reloaded.Preprocess, s.config.Preprocess) {
+		t.Fatalf("preprocess section not persisted by import: got %+v want %+v", reloaded.Preprocess, s.config.Preprocess)
+	}
+	if !reflect.DeepEqual(reloaded.Learnings, s.config.Learnings) {
+		t.Fatalf("learnings section not persisted by import: got %+v want %+v", reloaded.Learnings, s.config.Learnings)
+	}
+	if !reflect.DeepEqual(reloaded.Watch, s.config.Watch) {
+		t.Fatalf("watch section not persisted by import: got %+v want %+v", reloaded.Watch, s.config.Watch)
 	}
 }
 

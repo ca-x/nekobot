@@ -7,6 +7,12 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface FileMentionFeedback {
+  count: number;
+  paths: string[];
+  warnings: string[];
+}
+
 export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
 
 export interface ChatRouteSettings {
@@ -36,11 +42,14 @@ interface UseChatReturn {
   messages: ChatMessage[];
   sendMessage: (text: string, options: SendOptions) => void;
   clearMessages: () => void;
+  replaceMessages: (messages: ChatMessage[]) => void;
   connectionStatus: ConnectionStatus;
   reconnect: () => void;
   routeSettings: ChatRouteSettings;
   routeResult: ChatRouteResult | null;
   isAwaitingReply: boolean;
+  fileMentionFeedback: FileMentionFeedback | null;
+  clearFileMentionFeedback: () => void;
 }
 
 export function useChat(): UseChatReturn {
@@ -53,6 +62,7 @@ export function useChat(): UseChatReturn {
   });
   const [routeResult, setRouteResult] = useState<ChatRouteResult | null>(null);
   const [isAwaitingReply, setIsAwaitingReply] = useState(false);
+  const [fileMentionFeedback, setFileMentionFeedback] = useState<FileMentionFeedback | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -109,7 +119,12 @@ export function useChat(): UseChatReturn {
     };
 
     ws.onmessage = (ev: MessageEvent) => {
-      let msg: { type?: string; content?: string; route?: ChatRouteResult };
+      let msg: {
+        type?: string;
+        content?: string;
+        route?: ChatRouteResult;
+        meta?: { kind?: string; data?: FileMentionFeedback };
+      };
       try {
         msg = JSON.parse(ev.data);
       } catch {
@@ -148,6 +163,20 @@ export function useChat(): UseChatReturn {
         ]);
       } else if (msg.type === 'route_result' && msg.route) {
         setRouteResult(msg.route);
+      } else if (msg.type === 'system' && msg.meta?.kind === 'file_mentions' && msg.meta.data) {
+        setFileMentionFeedback({
+          count: Number(msg.meta.data.count || 0),
+          paths: Array.isArray(msg.meta.data.paths) ? msg.meta.data.paths : [],
+          warnings: Array.isArray(msg.meta.data.warnings) ? msg.meta.data.warnings : [],
+        });
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'system',
+            content: msg.content || 'file mention feedback',
+            timestamp: now,
+          },
+        ]);
       } else {
         setMessages((prev) => [
           ...prev,
@@ -187,6 +216,7 @@ export function useChat(): UseChatReturn {
       fallback: options.fallbackProviders,
     });
     setRouteResult(null);
+    setFileMentionFeedback(null);
     setIsAwaitingReply(true);
 
     setMessages((prev) => [
@@ -202,7 +232,17 @@ export function useChat(): UseChatReturn {
     }
     setIsAwaitingReply(false);
     setRouteResult(null);
+    setFileMentionFeedback(null);
     setMessages([]);
+  }, []);
+
+  const replaceMessages = useCallback((nextMessages: ChatMessage[]) => {
+    setIsAwaitingReply(false);
+    setMessages(nextMessages);
+  }, []);
+
+  const clearFileMentionFeedback = useCallback(() => {
+    setFileMentionFeedback(null);
   }, []);
 
   // Connect on mount, cleanup on unmount
@@ -215,10 +255,13 @@ export function useChat(): UseChatReturn {
     messages,
     sendMessage,
     clearMessages,
+    replaceMessages,
     connectionStatus,
     reconnect,
     routeSettings,
     routeResult,
     isAwaitingReply,
+    fileMentionFeedback,
+    clearFileMentionFeedback,
   };
 }

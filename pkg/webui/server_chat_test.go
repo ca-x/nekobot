@@ -1,9 +1,16 @@
 package webui
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/labstack/echo/v5"
+
 	"nekobot/pkg/config"
+	"nekobot/pkg/session"
 )
 
 func TestPersistChatRoutingPersistsModel(t *testing.T) {
@@ -25,5 +32,72 @@ func TestPersistChatRoutingPersistsModel(t *testing.T) {
 
 	if cfg.Agents.Defaults.Model != "new-model" {
 		t.Fatalf("expected model to persist, got %q", cfg.Agents.Defaults.Model)
+	}
+}
+
+func TestHandleUndoChatSession(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Sessions.Sources.WebUI = true
+	cfg.Undo.Enabled = true
+	cfg.Undo.MaxTurns = 10
+
+	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+	snapshotMgr := session.NewSnapshotManager(t.TempDir(), cfg.Undo)
+	sess, err := sessionMgr.GetWithSource("webui-chat:tester", session.SourceWebUI)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	store := snapshotMgr.GetStore("webui-chat:tester")
+	first := []session.MessageSnapshot{{Role: "user", Content: "first"}}
+	second := []session.MessageSnapshot{{Role: "user", Content: "first"}, {Role: "assistant", Content: "reply-1"}}
+	third := []session.MessageSnapshot{{Role: "user", Content: "first"}, {Role: "assistant", Content: "reply-1"}, {Role: "user", Content: "second"}}
+	if err := store.SaveSnapshot(first, ""); err != nil {
+		t.Fatalf("SaveSnapshot first failed: %v", err)
+	}
+	if err := store.SaveSnapshot(second, ""); err != nil {
+		t.Fatalf("SaveSnapshot second failed: %v", err)
+	}
+	if err := store.SaveSnapshot(third, ""); err != nil {
+		t.Fatalf("SaveSnapshot third failed: %v", err)
+	}
+	sess.ReplaceMessages(session.MessageSnapshotsToMessages(third))
+
+	s := &Server{
+		config:      cfg,
+		sessionMgr:  sessionMgr,
+		snapshotMgr: snapshotMgr,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/chat/session/webui-chat%3Atester/undo", strings.NewReader(`{"steps":2}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	ctx.SetPath("/api/chat/session/:id/undo")
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: "webui-chat:tester"}})
+
+	if err := s.handleUndoChatSession(ctx); err != nil {
+		t.Fatalf("handleUndoChatSession failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		UndoneSteps    int `json:"undone_steps"`
+		RemainingTurns int `json:"remaining_turns"`
+		MessageCount   int `json:"message_count"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal undo payload failed: %v", err)
+	}
+	if payload.UndoneSteps != 2 || payload.RemainingTurns != 1 || payload.MessageCount != 1 {
+		t.Fatalf("unexpected undo payload: %+v", payload)
+	}
+
+	messages := sess.GetMessages()
+	if len(messages) != 1 || messages[0].Content != "first" {
+		t.Fatalf("session not rolled back: %#v", messages)
 	}
 }

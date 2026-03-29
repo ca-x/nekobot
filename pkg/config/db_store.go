@@ -25,6 +25,11 @@ var runtimeConfigSections = []string{
 	"memory",
 	"sessions",
 	"webui",
+	"audit",
+	"undo",
+	"preprocess",
+	"learnings",
+	"watch",
 }
 
 // ApplyDatabaseOverrides loads runtime-config sections from SQLite.
@@ -185,6 +190,16 @@ func marshalSection(cfg *Config, section string) ([]byte, error) {
 		return json.Marshal(cfg.Sessions)
 	case "webui":
 		return json.Marshal(cfg.WebUI)
+	case "audit":
+		return json.Marshal(cfg.Audit)
+	case "undo":
+		return json.Marshal(cfg.Undo)
+	case "preprocess":
+		return json.Marshal(cfg.Preprocess)
+	case "learnings":
+		return json.Marshal(cfg.Learnings)
+	case "watch":
+		return json.Marshal(cfg.Watch)
 	default:
 		return nil, fmt.Errorf("unknown runtime config section: %s", section)
 	}
@@ -279,6 +294,36 @@ func applySection(cfg *Config, section string, payload []byte) error {
 			return fmt.Errorf("decode webui config: %w", err)
 		}
 		cfg.WebUI = v
+	case "audit":
+		var v AuditConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode audit config: %w", err)
+		}
+		cfg.Audit = v
+	case "undo":
+		var v UndoConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode undo config: %w", err)
+		}
+		cfg.Undo = v
+	case "preprocess":
+		var v PreprocessConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode preprocess config: %w", err)
+		}
+		cfg.Preprocess = v
+	case "learnings":
+		var v LearningsConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode learnings config: %w", err)
+		}
+		cfg.Learnings = v
+	case "watch":
+		var v WatchConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode watch config: %w", err)
+		}
+		cfg.Watch = v
 	default:
 		return fmt.Errorf("unknown runtime config section: %s", section)
 	}

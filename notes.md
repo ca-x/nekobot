@@ -79,6 +79,102 @@
 ### 补充验证
 - `go test -count=1 ./pkg/conversationbindings ./pkg/channels/wechat`
 
+## 2026-03-29 扩展 Harness 对照草案
+
+### 新增对照范围
+- `yoyo-evolve` `/watch` 命令语义：
+  - `status` / `off` / 自动探测测试命令 / 自定义命令切换。
+- `yoyo-evolve` `/undo` 语义：
+  - 按 turn 回滚、`/undo N`、`/undo --all`、无 turn history 时的降级提示。
+- `yoyo-evolve` `@file` 体验：
+  - 行内 `@path` / `@path:start-end` 扩展、邮箱样式跳过、真实文件才注入。
+- `yoyo-evolve` audit 可观测性：
+  - 记录工具调用、读取最近 N 条、清空日志、参数截断。
+- `yoyo-evolve` learnings 闭环：
+  - 原始 JSONL 持久化、压缩成 active learnings，并进入提示词上下文。
+
+### 当前初步评估
+
+#### 已整合且基本完整
+- `learnings`：
+  - `pkg/memory/learnings.go` 已支持 append-only JSONL、active learnings 压缩刷新。
+  - `pkg/agent/agent.go` / `pkg/memory/prompt/store.go` 已把 active learnings 注入 prompt 上下文。
+  - 这条链路较完整，主要剩可观测性和管理入口增强，不是主缺口。
+- audit 基础落地：
+  - `pkg/audit/*` 已有 JSONL 写入、最近 N 条读取、清空、统计能力。
+  - `pkg/agent/fx.go` + 上轮修复后已可拿到真实 `session_id`。
+  - 基础能力存在，但暴露面偏弱。
+
+#### 已整合但不完整
+- `undo`：
+  - 当前只有 tool 语义，没有 `yoyo-evolve` 那种面向用户的 `/undo` 工作流。
+  - `pkg/tools/undo.go` 只支持撤销 1 次，不支持 count / `--all` / 预览 / 无 turn history 时的降级引导。
+  - 更关键的是，返回的是说明文本，没有把“回滚后的消息状态”自动接回会话管理层的用户交互闭环。
+- `watch`：
+  - `pkg/watch/watcher.go` 已有 watcher + debounce + command + fail command + audit。
+  - 但当前主要是配置驱动后台运行，缺少类似 `yoyo-evolve` `/watch status|off|<cmd>` 的显式控制/反馈入口。
+  - 这意味着功能存在，但用户难以在会话内理解“当前 watch 是否开启、在跑什么命令”。
+- `@file` / mentions：
+  - `pkg/preprocess/preprocessor.go` 已支持 `@file` / `@dir` 与行范围，基础能力比 `yoyo-evolve` 更强。
+  - 但当前主要发生在 agent context build 阶段，缺少 `yoyo-evolve` 那种“明确提示已内联了几个文件”的用户反馈。
+  - 因此是功能已整合，但体验闭环偏弱。
+
+#### 适合本轮继续嵌入的候选
+- 候选 1：补一个 `watch` 控制/状态入口
+  - 风险低，因为底层 watcher 已存在，只需补可见控制面与状态反馈。
+- 候选 2：增强 `undo` 为多级参数化工作流
+  - 价值高，但需要先确认与现有 session/message 持久化的边界，避免出现“文件回滚了、会话展示没回滚”的双状态不一致。
+- 候选 3：给 `@file` 注入补显式反馈
+  - 风险低，适合作为体验增强项，尤其适合 WebUI / channel 回包提示。
+
+### 本轮已完成继续嵌入
+
+#### 1. Harness 配置分区改成“真实可持久化”
+- `pkg/config/db_store.go` 已将 `audit` / `undo` / `preprocess` / `learnings` / `watch` 纳入 runtime DB sections。
+- `pkg/webui/server.go` 已让 `/api/config`、`PUT /api/config`、`POST /api/config/import`、导出配置都完整携带这些分区。
+- `pkg/webui/server_config_test.go` 已覆盖 GET/PUT/import 与 `ApplyDatabaseOverrides` 回读闭环。
+
+#### 2. Watch 补成 Web-first 可见控制面
+- `pkg/watch/watcher.go`
+  - 新增 `Status()` 运行态快照，记录最近一次执行的命令、文件、成功状态、错误和结果预览。
+  - 新增 `UpdateConfig()` 用于 Web 层轻量更新运行时配置镜像。
+- `pkg/webui/server.go`
+  - 新增 `GET /api/harness/watch`
+  - 新增 `POST /api/harness/watch`
+  - 当前更新策略会持久化配置并刷新 server 持有的 watcher 配置视图，同时明确 `restart_required=true`，不假装已完成完整热重载。
+- `pkg/webui/server_status_test.go` / `pkg/watch/watcher_test.go` 已覆盖状态与持久化。
+
+#### 3. Undo 从 tool 语义补成 Web 会话工作流
+- `pkg/session/manager.go` 新增 `Session.ReplaceMessages()`，用于安全回写会话消息。
+- `pkg/session/snapshot.go` 新增 `MessageSnapshotsToMessages()`，把 undo 快照恢复成运行时消息结构。
+- `pkg/agent/agent.go` 暴露 `SnapshotManager()`，供更高层工作流使用。
+- `pkg/webui/server.go` 新增 `POST /api/chat/session/:id/undo`
+  - 支持 `steps`
+  - 按 snapshot store 连续回滚
+  - 自动把回滚后的消息写回 session 并返回最新消息列表
+- `pkg/webui/server_chat_test.go` 已覆盖多步回滚。
+
+#### 4. `@file` 注入反馈补到 Web Chat
+- `pkg/agent/context.go` / `pkg/agent/agent.go`
+  - 新增 `PreviewPreprocessedInput()`，把预处理 preview 收束到 agent 边界，避免 Web 层直接依赖 preprocessor 实现细节。
+- `pkg/webui/server.go`
+  - WebSocket 在真正发起 agent 调用前会发送一个 `system` 事件，并通过 `meta.kind=file_mentions` 携带结构化 feedback。
+- `pkg/webui/frontend/src/hooks/useChat.ts`
+  - 解析 file mention feedback，存成单独状态。
+- `pkg/webui/frontend/src/pages/ChatPage.tsx`
+  - 在会话区上方增加 `@file` 反馈卡片，可查看解析路径与 warnings。
+
+#### 5. Chat 页面同步补 Web 体验
+- 新增 watch 状态 pill。
+- 新增 Undo 按钮，直接走 Web API 回滚当前 chat session。
+- composer 区会展示最近一次 watch 命令摘要。
+- 补齐中英日文案。
+
+### 本轮验证
+- `go test -count=1 ./pkg/watch ./pkg/session ./pkg/agent ./pkg/webui`
+- `go test -count=1 ./cmd/nekobot/...`
+- `npm --prefix pkg/webui/frontend run build`
+
 ## 三项目对比总览
 
 | 维度 | nekobot (当前) | picoclaw (Go, 灵感源) | nextclaw (TS, 参考) |

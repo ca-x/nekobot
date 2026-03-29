@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2, AlertCircle, ArrowRight } from 'lucide-react';
+import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2, AlertCircle, ArrowRight, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { api } from '@/api/client';
 import Header from '@/components/layout/Header';
@@ -17,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useChat, type ChatMessage } from '@/hooks/useChat';
+import { useWatchStatus } from '@/hooks/useConfig';
 import { usePrompts, usePromptSessionBindings } from '@/hooks/usePrompts';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -278,12 +280,16 @@ export default function ChatPage() {
     messages,
     sendMessage,
     clearMessages,
+    replaceMessages,
     connectionStatus,
     reconnect,
     routeSettings,
     routeResult,
     isAwaitingReply,
+    fileMentionFeedback,
+    clearFileMentionFeedback,
   } = useChat();
+  const { data: watchStatus } = useWatchStatus();
 
   const { models, defaultProvider, defaultModel, defaultFallback, routeTargets } = buildModelList(providers, config);
   const [selectedProvider, setSelectedProvider] = useState('');
@@ -293,6 +299,7 @@ export default function ChatPage() {
   const [selectedSystemPromptIDs, setSelectedSystemPromptIDs] = useState<string[]>([]);
   const [selectedUserPromptIDs, setSelectedUserPromptIDs] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [showFileMentionDetails, setShowFileMentionDetails] = useState(false);
   const scrollEndRef = useRef<HTMLDivElement>(null);
   const routeTargetMap = useMemo(
     () => new Map(routeTargets.map((target) => [target.name, target])),
@@ -363,6 +370,9 @@ export default function ChatPage() {
   const actualProvider = routeResult?.actual_provider?.trim() || '';
   const actualModel = routeResult?.actual_model?.trim() || '';
   const resolvedOrder = routeResult?.resolved_order ?? [];
+  const watchEnabled = !!watchStatus?.enabled;
+  const watchRunning = !!watchStatus?.running;
+  const watchLabel = watchEnabled ? t('chatWatchOn') : t('chatWatchOff');
   const selectedModelEntry = findModelEntry(filteredModels, selectedProvider, selectedModel);
   const selectedModelValue = selectedModelEntry ? encodeModelValue(selectedModelEntry) : EMPTY_VALUE;
   const fallbackRouteTargets = routeTargets.filter((target) => target.name !== activeProvider);
@@ -452,6 +462,31 @@ export default function ChatPage() {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       handleSend();
+    }
+  }
+
+  async function handleUndo() {
+    try {
+      const result = await api.post<{
+        undone_steps: number;
+        remaining_turns: number;
+        message_count: number;
+        messages: { role: string; content: string }[];
+      }>('/api/chat/session/webui-chat/undo', { steps: 1 });
+      if ((result.undone_steps ?? 0) <= 0) {
+        toast.info(t('chatUndoNothing'));
+        return;
+      }
+      replaceMessages((result.messages ?? []).map((message, index) => ({
+        role: message.role as ChatMessage['role'],
+        content: message.content,
+        timestamp: Date.now() + index,
+      })));
+      clearFileMentionFeedback();
+      toast.success(t('chatUndoSuccess', String(result.undone_steps ?? 0)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('chatUndoFailed');
+      toast.error(message);
     }
   }
 
@@ -816,6 +851,15 @@ export default function ChatPage() {
                   {actualModel || activeModel || t('chatModelUnset')}
                 </span>
               </div>
+              <div className={cn(
+                'inline-flex max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium',
+                watchEnabled
+                  ? 'bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
+                  : 'bg-muted/70 text-muted-foreground',
+              )}>
+                <span className={cn('h-2.5 w-2.5 rounded-full', watchEnabled && watchRunning ? 'bg-emerald-500' : 'bg-slate-400')} />
+                <span>{watchLabel}</span>
+              </div>
             </div>
           </CardHeader>
 
@@ -837,6 +881,69 @@ export default function ChatPage() {
                 </div>
               ) : (
                 <div className="space-y-4 pb-2">
+                  {fileMentionFeedback && (
+                    <div className="rounded-[1.4rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.92),rgba(252,241,245,0.8))] p-4 text-sm">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="text-xs font-medium uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
+                            {t('chatFileMentionsTitle')}
+                          </div>
+                          <div className="mt-2 text-sm font-medium text-[hsl(var(--gray-900))]">
+                            {t('chatFileMentionsSummary', String(fileMentionFeedback.count))}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-9 rounded-full px-3"
+                            onClick={() => setShowFileMentionDetails((value) => !value)}
+                          >
+                            {showFileMentionDetails ? <EyeOff className="mr-2 h-4 w-4" /> : <Eye className="mr-2 h-4 w-4" />}
+                            {showFileMentionDetails ? t('chatHideDetails') : t('chatShowDetails')}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-9 rounded-full px-3"
+                            onClick={clearFileMentionFeedback}
+                          >
+                            {t('dismiss')}
+                          </Button>
+                        </div>
+                      </div>
+                      {showFileMentionDetails && (
+                        <div className="mt-3 space-y-3">
+                          {fileMentionFeedback.paths.length > 0 && (
+                            <div className="rounded-2xl border border-border/70 bg-card/80 p-3">
+                              <div className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                                {t('chatFileMentionPaths')}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {fileMentionFeedback.paths.map((path) => (
+                                  <span key={path} className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-foreground">
+                                    {path}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {fileMentionFeedback.warnings.length > 0 && (
+                            <div className="rounded-2xl border border-amber-300/60 bg-amber-50/80 p-3 text-amber-900">
+                              <div className="mb-2 text-xs uppercase tracking-[0.16em]">
+                                {t('chatFileMentionWarnings')}
+                              </div>
+                              <div className="space-y-1 text-xs">
+                                {fileMentionFeedback.warnings.map((warning) => (
+                                  <div key={warning}>{warning}</div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {messages.map((message, index) => (
                     <MessageBubble key={`${message.timestamp}-${index}`} message={message} />
                   ))}
@@ -864,17 +971,33 @@ export default function ChatPage() {
                   disabled={connectionStatus !== 'connected'}
                 />
                 <div className="mt-3 flex flex-col gap-3 border-t border-[hsl(var(--gray-200))]/80 px-2 pt-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="text-xs text-muted-foreground">
-                    {t('chatComposerHint')}
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <div>{t('chatComposerHint')}</div>
+                    {watchStatus?.last_command && (
+                      <div>
+                        {t('chatWatchHint', watchStatus.last_command)}
+                      </div>
+                    )}
                   </div>
-                  <Button
-                    className="h-11 w-full rounded-full px-5 sm:w-auto sm:self-end"
-                    onClick={handleSend}
-                    disabled={connectionStatus !== 'connected' || !chatInput.trim()}
-                  >
-                    <Send className="mr-2 h-4 w-4" />
-                    {t('send')}
-                  </Button>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:self-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 rounded-full px-5"
+                      onClick={handleUndo}
+                    >
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      {t('chatUndo')}
+                    </Button>
+                    <Button
+                      className="h-11 rounded-full px-5"
+                      onClick={handleSend}
+                      disabled={connectionStatus !== 'connected' || !chatInput.trim()}
+                    >
+                      <Send className="mr-2 h-4 w-4" />
+                      {t('send')}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>

@@ -1,10 +1,13 @@
 package watch
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 
 	"nekobot/pkg/audit"
 	"nekobot/pkg/config"
@@ -110,8 +113,8 @@ func TestExtractBaseDir(t *testing.T) {
 		{"simple glob", "*.go", "."},
 		{"path with glob", "pkg/*.go", "pkg"},
 		{"nested glob", "pkg/**/*.go", "pkg"},
-		{"question mark glob", "test?.go", "test"},        // Returns prefix before ?
-		{"character class glob", "test[0-9].go", "test"},  // Returns prefix before [
+		{"question mark glob", "test?.go", "test"},       // Returns prefix before ?
+		{"character class glob", "test[0-9].go", "test"}, // Returns prefix before [
 		{"brace glob", "*.{go,txt}", "."},
 		{"no glob", "file.go", ""},
 	}
@@ -225,4 +228,57 @@ func TestWatcherNilSafety(t *testing.T) {
 	if err := w.Stop(); err != nil {
 		t.Errorf("Stop should not error for nil watcher: %v", err)
 	}
+}
+
+func TestWatcherStatusTracksLastExecution(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Watch.Enabled = true
+	cfg.Watch.DebounceMs = 25
+	cfg.Watch.Patterns = []config.WatchPattern{{
+		FileGlob: filepath.Join(t.TempDir(), "*.txt"),
+		Command:  "printf 'watch-ok'",
+	}}
+
+	log, err := logger.New(&logger.Config{
+		Level:       logger.LevelDebug,
+		Development: true,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+	auditLogger := audit.NewLogger(audit.DefaultConfig(), t.TempDir(), log)
+
+	watcher, err := New(cfg, log, auditLogger)
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+
+	watcher.ctx = context.Background()
+	watcher.executeCommand(0, fsnotify.Event{Name: "/tmp/demo.txt", Op: fsnotify.Write})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		status := watcher.Status()
+		if !status.LastRunAt.IsZero() {
+			if !status.Enabled {
+				t.Fatalf("expected enabled watcher status, got %+v", status)
+			}
+			if status.LastCommand != "printf 'watch-ok'" {
+				t.Fatalf("unexpected last command: %+v", status)
+			}
+			if status.LastFile != "/tmp/demo.txt" {
+				t.Fatalf("unexpected last file: %+v", status)
+			}
+			if !status.LastSuccess {
+				t.Fatalf("expected successful last run: %+v", status)
+			}
+			if status.LastResultPreview != "watch-ok" {
+				t.Fatalf("unexpected result preview: %+v", status)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("watch status did not record last execution: %+v", watcher.Status())
 }

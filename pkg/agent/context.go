@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"nekobot/pkg/message"
 	promptmemory "nekobot/pkg/memory/prompt"
+	"nekobot/pkg/message"
 	"nekobot/pkg/preprocess"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/skills"
@@ -105,6 +105,18 @@ func (cb *ContextBuilder) SetPreprocessorConfig(cfg preprocess.PreprocessorConfi
 // GetPreprocessor returns the preprocessor instance.
 func (cb *ContextBuilder) GetPreprocessor() *preprocess.Preprocessor {
 	return cb.preprocessor
+}
+
+// PreviewPreprocessedInput returns file-mention preprocessing metadata without
+// coupling callers to the underlying preprocessor implementation.
+func (cb *ContextBuilder) PreviewPreprocessedInput(input string) (*preprocess.Result, error) {
+	if cb == nil || cb.preprocessor == nil {
+		return &preprocess.Result{
+			OriginalInput:  input,
+			ProcessedInput: input,
+		}, nil
+	}
+	return cb.preprocessor.Process(input)
 }
 
 // GetMemory returns the memory store.

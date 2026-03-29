@@ -38,14 +38,35 @@ type Watcher struct {
 	cronScheduler *cron.Cron
 
 	// Debounce tracking: map of watch pattern index to timer
-	mu            sync.RWMutex
+	mu             sync.RWMutex
 	debounceTimers map[int]*time.Timer
-	watchedPaths  map[string]int // path -> pattern index
+	watchedPaths   map[string]int // path -> pattern index
 
 	// State
 	running bool
 	ctx     context.Context
 	cancel  context.CancelFunc
+
+	lastRunAt         time.Time
+	lastCommand       string
+	lastFile          string
+	lastSuccess       bool
+	lastError         string
+	lastResultPreview string
+}
+
+// StatusSnapshot describes the current watcher runtime state.
+type StatusSnapshot struct {
+	Enabled           bool                  `json:"enabled"`
+	Running           bool                  `json:"running"`
+	DebounceMs        int                   `json:"debounce_ms"`
+	Patterns          []config.WatchPattern `json:"patterns"`
+	LastRunAt         time.Time             `json:"last_run_at,omitempty"`
+	LastCommand       string                `json:"last_command,omitempty"`
+	LastFile          string                `json:"last_file,omitempty"`
+	LastSuccess       bool                  `json:"last_success"`
+	LastError         string                `json:"last_error,omitempty"`
+	LastResultPreview string                `json:"last_result_preview,omitempty"`
 }
 
 // New creates a new file watcher.
@@ -81,10 +102,10 @@ func New(cfg *config.Config, log *logger.Logger, auditLogger *audit.Logger) (*Wa
 		log:      log,
 		audit:    auditLogger,
 
-		fsWatcher:     fsWatcher,
-		cronScheduler: cron.New(),
+		fsWatcher:      fsWatcher,
+		cronScheduler:  cron.New(),
 		debounceTimers: make(map[int]*time.Timer),
-		watchedPaths:  make(map[string]int),
+		watchedPaths:   make(map[string]int),
 	}
 
 	return w, nil
@@ -459,6 +480,19 @@ func (w *Watcher) executeCommand(patternIdx int, event fsnotify.Event) {
 			auditEntry.ResultPreview = outputStr
 		}
 
+		w.mu.Lock()
+		w.lastRunAt = time.Now()
+		w.lastCommand = command
+		w.lastFile = event.Name
+		w.lastSuccess = err == nil
+		if err != nil {
+			w.lastError = err.Error()
+		} else {
+			w.lastError = ""
+		}
+		w.lastResultPreview = auditEntry.ResultPreview
+		w.mu.Unlock()
+
 		// Log to audit
 		if w.audit != nil {
 			w.audit.Log(auditEntry)
@@ -527,7 +561,55 @@ func (w *Watcher) Patterns() []config.WatchPattern {
 	if w == nil {
 		return nil
 	}
-	return w.patterns
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	patterns := make([]config.WatchPattern, len(w.patterns))
+	copy(patterns, w.patterns)
+	return patterns
+}
+
+// Status returns a point-in-time runtime snapshot for UI and diagnostics.
+func (w *Watcher) Status() StatusSnapshot {
+	if w == nil {
+		return StatusSnapshot{}
+	}
+
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	patterns := make([]config.WatchPattern, len(w.patterns))
+	copy(patterns, w.patterns)
+
+	debounceMs := 0
+	enabled := false
+	if w.config != nil {
+		debounceMs = w.config.DebounceMs
+		enabled = w.config.Enabled
+	}
+
+	return StatusSnapshot{
+		Enabled:           enabled,
+		Running:           w.running,
+		DebounceMs:        debounceMs,
+		Patterns:          patterns,
+		LastRunAt:         w.lastRunAt,
+		LastCommand:       w.lastCommand,
+		LastFile:          w.lastFile,
+		LastSuccess:       w.lastSuccess,
+		LastError:         w.lastError,
+		LastResultPreview: w.lastResultPreview,
+	}
+}
+
+// UpdateConfig swaps the in-memory watcher config snapshot.
+func (w *Watcher) UpdateConfig(cfg config.WatchConfig) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.config = &cfg
+	w.patterns = append([]config.WatchPattern(nil), cfg.Patterns...)
 }
 
 // execShellCommand creates and returns a command that executes the given shell command.

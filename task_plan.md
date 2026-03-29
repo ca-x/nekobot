@@ -43,6 +43,39 @@
 ### Status
 **Completed** - 已完成 harness 审阅修复，并补完上一轮遗留的 WeChat/conversationbindings 多绑定收口与验证，待提交并推送相关代码。
 
+## 2026-03-29 扩展 Harness 对照与继续嵌入批次
+
+### Goal
+将对 `/home/czyt/code/yoyo-evolve` 的对照范围从上次 5 个 harness 提交扩展到其相邻的 harness 工作流能力，重新评估 `nekobot` 当前已整合功能是否真正完整，并筛选可继续低风险嵌入、可验证闭环的功能；在确认方案后按计划实现、测试并持续更新状态。
+
+### Phases
+- [x] Phase 1: 扩展对照范围并补计划
+- [x] Phase 2: 评估已整合功能的完整度与缺口
+- [x] Phase 3: 产出可继续嵌入功能方案并确认实现边界
+- [x] Phase 4: 按计划实现选定功能并补测试
+- [x] Phase 5: 完整验证、更新计划与交付结果
+
+### Key Questions
+1. `yoyo-evolve` 的 harness 相邻能力里，哪些已经在 `nekobot` 存在“配置或底层能力”，但缺少真正可用的用户工作流闭环？
+2. 哪些能力可以在不引入 REPL 重构的前提下，直接嵌入 `nekobot` 的现有 Agent/WebUI/命令体系？
+3. 哪些差异本质上是产品形态不同，不应机械追平？
+
+### Decisions Made
+- 对照范围扩大到与 harness 工作流直接相关的相邻能力：`/undo` 使用语义、`/watch` 状态/控制模型、`@file` 注入体验、audit 可观测性、learnings 的上下文接入闭环。
+- 优先选择“当前代码已有 60% 到 80% 基础设施，只差产品闭环”的功能进入本轮实现。
+- 不为了追平 `yoyo-evolve` 而强行引入整套 Rust REPL 命令模型；实现应贴合 `nekobot` 现有 WebUI + Agent + channel/control 结构。
+
+### Errors Encountered
+- `pkg/webui/server_config_test.go` 首轮 harness 配置测试按旧字段名编写，未对齐当前 `Audit/Undo/Preprocess/Learnings` 配置模型。
+  - 处理：按实际配置结构改写测试，再继续红绿循环。
+- `pkg/webui/server_status_test.go` 因 `NewServer` 新增 watcher 参数而编译失败。
+  - 处理：补齐测试调用参数。
+- `pkg/webui/server_chat_test.go` 误用 Echo v4 风格 `SetParamNames/SetParamValues`。
+  - 处理：改为 Echo v5 的 `SetPathValues`。
+
+### Status
+**Completed** - 已完成扩展 harness 对照、选定功能继续嵌入、补齐 Web 控制面与体验，并通过 Go/前端构建验证，待提交与推送。
+
 ## Goal
 在保持 `nekobot` 现有稳定性的前提下，基于 `~/code/goclaw` 与 `~/code/gua` 的成熟实践，完成：
 1. 准确认定 `nekobot` 当前已完成与待完成功能。

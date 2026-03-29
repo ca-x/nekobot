@@ -324,6 +324,26 @@ func (a *Agent) ClearApprovalModeForSession(sessionID string) error {
 	return nil
 }
 
+// SnapshotManager exposes the undo snapshot manager for higher-level workflows.
+func (a *Agent) SnapshotManager() *session.SnapshotManager {
+	if a == nil {
+		return nil
+	}
+	return a.snapshotMgr
+}
+
+// PreviewPreprocessedInput exposes the configured file-mention preprocessing
+// result so UI layers can show lightweight feedback.
+func (a *Agent) PreviewPreprocessedInput(input string) (*preprocess.Result, error) {
+	if a == nil || a.context == nil {
+		return &preprocess.Result{
+			OriginalInput:  input,
+			ProcessedInput: input,
+		}, nil
+	}
+	return a.context.PreviewPreprocessedInput(input)
+}
+
 // EnableSubagents registers the spawn tool and optional completion notifications.
 func (a *Agent) EnableSubagents(notify subagent.NotifyFunc) {
 	if a == nil {

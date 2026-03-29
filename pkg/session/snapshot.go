@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"nekobot/pkg/config"
+	"nekobot/pkg/message"
 )
 
 // MessageSnapshot is a simplified message structure for snapshot storage.
@@ -449,6 +450,34 @@ func ToMessageSnapshot(role, content, toolCallID string, toolCalls []interface{}
 		}
 	}
 	return snapshot
+}
+
+// MessageSnapshotsToMessages converts snapshot messages back to runtime messages.
+func MessageSnapshotsToMessages(snapshots []MessageSnapshot) []message.Message {
+	messages := make([]message.Message, len(snapshots))
+	for i, snap := range snapshots {
+		msg := message.Message{
+			Role:       snap.Role,
+			Content:    snap.Content,
+			ToolCallID: snap.ToolCallID,
+		}
+		if len(snap.ToolCalls) > 0 {
+			msg.ToolCalls = make([]message.ToolCall, len(snap.ToolCalls))
+			for j, tc := range snap.ToolCalls {
+				args := make(map[string]interface{}, len(tc.Arguments))
+				for key, value := range tc.Arguments {
+					args[key] = value
+				}
+				msg.ToolCalls[j] = message.ToolCall{
+					ID:        tc.ID,
+					Name:      tc.Name,
+					Arguments: args,
+				}
+			}
+		}
+		messages[i] = msg
+	}
+	return messages
 }
 
 // SnapshotManager manages snapshot stores for all sessions.

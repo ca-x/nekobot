@@ -24,6 +24,25 @@ export interface ServiceStatusData {
   status: string;
 }
 
+export interface WatchPattern {
+  file_glob: string;
+  command: string;
+  fail_command?: string;
+}
+
+export interface WatchStatusData {
+  enabled: boolean;
+  running: boolean;
+  debounce_ms: number;
+  patterns: WatchPattern[];
+  last_run_at?: string;
+  last_command?: string;
+  last_file?: string;
+  last_success: boolean;
+  last_error?: string;
+  last_result_preview?: string;
+}
+
 function formatRestartNotice(result: ConfigMutationResult): string | null {
   if (!result.restart_required || !result.restart_sections || result.restart_sections.length === 0) {
     return null;
@@ -103,6 +122,27 @@ export function useServiceStatus() {
     queryKey: ['service-status'],
     queryFn: () => api.get('/api/service'),
     staleTime: 10_000,
+  });
+}
+
+export function useWatchStatus() {
+  return useQuery<WatchStatusData>({
+    queryKey: ['watch-status'],
+    queryFn: () => api.get('/api/harness/watch'),
+    staleTime: 10_000,
+  });
+}
+
+export function useUpdateWatchStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Partial<WatchStatusData>) => api.post('/api/harness/watch', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['watch-status'] });
+      qc.invalidateQueries({ queryKey: ['config'] });
+      toast.success(t('configSaved'));
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 }
 

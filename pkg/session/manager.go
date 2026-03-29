@@ -21,12 +21,12 @@ type ToolCall = message.ToolCall
 
 // Session represents a conversation session with history.
 type Session struct {
-	ID        string          `json:"id"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-	Messages  []Message       `json:"messages"`
-	Summary   string          `json:"summary,omitempty"`
-	Source    string          `json:"source,omitempty"`
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Messages  []Message `json:"messages"`
+	Summary   string    `json:"summary,omitempty"`
+	Source    string    `json:"source,omitempty"`
 	mu        sync.RWMutex
 	manager   *Manager
 }
@@ -255,6 +255,20 @@ func (s *Session) Clear() {
 	defer s.mu.Unlock()
 
 	s.Messages = []Message{}
+	s.UpdatedAt = time.Now()
+	if s.manager != nil {
+		_ = s.manager.saveSnapshot(s.snapshotLocked())
+	}
+}
+
+// ReplaceMessages replaces the full message history atomically.
+func (s *Session) ReplaceMessages(messages []Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	next := make([]Message, len(messages))
+	copy(next, messages)
+	s.Messages = next
 	s.UpdatedAt = time.Now()
 	if s.manager != nil {
 		_ = s.manager.saveSnapshot(s.snapshotLocked())

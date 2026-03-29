@@ -53,6 +53,7 @@ import (
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/userprefs"
 	"nekobot/pkg/version"
+	"nekobot/pkg/watch"
 	"nekobot/pkg/webui/frontend"
 	wxauth "nekobot/pkg/wechat/auth"
 	wxtypes "nekobot/pkg/wechat/types"
@@ -82,8 +83,10 @@ type Server struct {
 	skillsMgr   *skills.Manager
 	workspace   *workspace.Manager
 	entClient   *ent.Client
+	snapshotMgr *session.SnapshotManager
 	ilinkAuth   *ilinkauth.Service
 	serviceCtrl serviceController
+	watcher     *watch.Watcher
 	port        int
 	startedAt   time.Time
 }
@@ -140,6 +143,7 @@ func NewServer(
 	skillsManager *skills.Manager,
 	workspaceManager *workspace.Manager,
 	entClient *ent.Client,
+	watcher *watch.Watcher,
 ) *Server {
 	port := cfg.WebUI.Port
 	if port == 0 {
@@ -170,6 +174,13 @@ func NewServer(
 		skillsMgr:  skillsManager,
 		workspace:  workspaceManager,
 		entClient:  entClient,
+		snapshotMgr: func() *session.SnapshotManager {
+			if ag == nil {
+				return nil
+			}
+			return ag.SnapshotManager()
+		}(),
+		watcher: watcher,
 		serviceCtrl: &gatewayServiceController{
 			configPath: func() string {
 				if loader == nil {
@@ -267,11 +278,14 @@ func (s *Server) setup() {
 	api.GET("/chat/prompts/session/:id", s.handleGetChatSessionPrompts)
 	api.PUT("/chat/prompts/session/:id", s.handlePutChatSessionPrompts)
 	api.DELETE("/chat/prompts/session/:id", s.handleDeleteChatSessionPrompts)
+	api.POST("/chat/session/:id/undo", s.handleUndoChatSession)
 
 	// Status
 	api.GET("/status", s.handleStatus)
 	api.GET("/service", s.handleServiceStatus)
 	api.POST("/service/restart", s.handleServiceRestart)
+	api.GET("/harness/watch", s.handleGetWatchStatus)
+	api.POST("/harness/watch", s.handleUpdateWatchStatus)
 
 	// Cron routes
 	api.GET("/cron/jobs", s.handleListCronJobs)
@@ -3647,6 +3661,11 @@ func (s *Server) handleGetConfig(c *echo.Context) error {
 		"sessions":      s.config.Sessions,
 		"webui":         s.config.WebUI,
 		"transcription": s.config.Transcription,
+		"audit":         s.config.Audit,
+		"undo":          s.config.Undo,
+		"preprocess":    s.config.Preprocess,
+		"learnings":     s.config.Learnings,
+		"watch":         s.config.Watch,
 	})
 }
 
@@ -3672,6 +3691,11 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		Sessions      *config.SessionsConfig      `json:"sessions"`
 		WebUI         *config.WebUIConfig         `json:"webui"`
 		Transcription *config.TranscriptionConfig `json:"transcription"`
+		Audit         *config.AuditConfig         `json:"audit"`
+		Undo          *config.UndoConfig          `json:"undo"`
+		Preprocess    *config.PreprocessConfig    `json:"preprocess"`
+		Learnings     *config.LearningsConfig     `json:"learnings"`
+		Watch         *config.WatchConfig         `json:"watch"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -3733,6 +3757,21 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	if body.Transcription != nil {
 		s.config.Transcription = *body.Transcription
 	}
+	if body.Audit != nil {
+		s.config.Audit = *body.Audit
+	}
+	if body.Undo != nil {
+		s.config.Undo = *body.Undo
+	}
+	if body.Preprocess != nil {
+		s.config.Preprocess = *body.Preprocess
+	}
+	if body.Learnings != nil {
+		s.config.Learnings = *body.Learnings
+	}
+	if body.Watch != nil {
+		s.config.Watch = *body.Watch
+	}
 
 	// Validate
 	if err := config.ValidateConfig(s.config); err != nil {
@@ -3771,7 +3810,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		}
 	}
 
-	sections := make([]string, 0, 14)
+	sections := make([]string, 0, 19)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -3810,6 +3849,21 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.Transcription != nil {
 		sections = append(sections, "transcription")
+	}
+	if body.Audit != nil {
+		sections = append(sections, "audit")
+	}
+	if body.Undo != nil {
+		sections = append(sections, "undo")
+	}
+	if body.Preprocess != nil {
+		sections = append(sections, "preprocess")
+	}
+	if body.Learnings != nil {
+		sections = append(sections, "learnings")
+	}
+	if body.Watch != nil {
+		sections = append(sections, "watch")
 	}
 
 	// Persist runtime config sections to database.
@@ -3854,6 +3908,11 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 		"sessions":      s.config.Sessions,
 		"webui":         s.config.WebUI,
 		"transcription": s.config.Transcription,
+		"audit":         s.config.Audit,
+		"undo":          s.config.Undo,
+		"preprocess":    s.config.Preprocess,
+		"learnings":     s.config.Learnings,
+		"watch":         s.config.Watch,
 		"providers":     providerList,
 	}
 
@@ -3883,6 +3942,11 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		Sessions      *config.SessionsConfig      `json:"sessions"`
 		WebUI         *config.WebUIConfig         `json:"webui"`
 		Transcription *config.TranscriptionConfig `json:"transcription"`
+		Audit         *config.AuditConfig         `json:"audit"`
+		Undo          *config.UndoConfig          `json:"undo"`
+		Preprocess    *config.PreprocessConfig    `json:"preprocess"`
+		Learnings     *config.LearningsConfig     `json:"learnings"`
+		Watch         *config.WatchConfig         `json:"watch"`
 		Providers     []config.ProviderProfile    `json:"providers"`
 	}
 	if err := c.Bind(&body); err != nil {
@@ -3945,6 +4009,21 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	if body.Transcription != nil {
 		s.config.Transcription = *body.Transcription
 	}
+	if body.Audit != nil {
+		s.config.Audit = *body.Audit
+	}
+	if body.Undo != nil {
+		s.config.Undo = *body.Undo
+	}
+	if body.Preprocess != nil {
+		s.config.Preprocess = *body.Preprocess
+	}
+	if body.Learnings != nil {
+		s.config.Learnings = *body.Learnings
+	}
+	if body.Watch != nil {
+		s.config.Watch = *body.Watch
+	}
 
 	// Validate
 	if err := config.ValidateConfig(s.config); err != nil {
@@ -3984,7 +4063,7 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 
 	// Persist runtime sections to database
-	sections := make([]string, 0, 14)
+	sections := make([]string, 0, 19)
 	if body.Agents != nil {
 		sections = append(sections, "agents")
 	}
@@ -4023,6 +4102,21 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 	if body.Transcription != nil {
 		sections = append(sections, "transcription")
+	}
+	if body.Audit != nil {
+		sections = append(sections, "audit")
+	}
+	if body.Undo != nil {
+		sections = append(sections, "undo")
+	}
+	if body.Preprocess != nil {
+		sections = append(sections, "preprocess")
+	}
+	if body.Learnings != nil {
+		sections = append(sections, "learnings")
+	}
+	if body.Watch != nil {
+		sections = append(sections, "watch")
 	}
 	if len(sections) > 0 {
 		if err := config.SaveDatabaseSections(s.config, sections...); err != nil {
@@ -4120,6 +4214,18 @@ type sessionDetailResponse struct {
 	Messages     []sessionMessageResponse `json:"messages"`
 }
 
+func buildSessionMessageResponses(messages []session.Message) []sessionMessageResponse {
+	respMessages := make([]sessionMessageResponse, len(messages))
+	for i, msg := range messages {
+		respMessages[i] = sessionMessageResponse{
+			Role:       msg.Role,
+			Content:    msg.Content,
+			ToolCallID: msg.ToolCallID,
+		}
+	}
+	return respMessages
+}
+
 func (s *Server) handleListSessions(c *echo.Context) error {
 	if s.sessionMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
@@ -4175,14 +4281,6 @@ func (s *Server) handleGetSession(c *echo.Context) error {
 	}
 
 	messages := sess.GetMessages()
-	respMessages := make([]sessionMessageResponse, len(messages))
-	for i, msg := range messages {
-		respMessages[i] = sessionMessageResponse{
-			Role:       msg.Role,
-			Content:    msg.Content,
-			ToolCallID: msg.ToolCallID,
-		}
-	}
 
 	resp := sessionDetailResponse{
 		ID:           sess.GetID(),
@@ -4190,7 +4288,7 @@ func (s *Server) handleGetSession(c *echo.Context) error {
 		UpdatedAt:    sess.GetUpdatedAt(),
 		Summary:      sess.GetSummary(),
 		MessageCount: len(messages),
-		Messages:     respMessages,
+		Messages:     buildSessionMessageResponses(messages),
 	}
 	return c.JSON(http.StatusOK, resp)
 }
@@ -4353,6 +4451,75 @@ func (s *Server) handleServiceRestart(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "restarting"})
 }
 
+func (s *Server) handleGetWatchStatus(c *echo.Context) error {
+	if s.config == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "config unavailable"})
+	}
+
+	if s.watcher == nil {
+		return c.JSON(http.StatusOK, watch.StatusSnapshot{
+			Enabled:    s.config.Watch.Enabled,
+			Running:    false,
+			DebounceMs: s.config.Watch.DebounceMs,
+			Patterns:   append([]config.WatchPattern(nil), s.config.Watch.Patterns...),
+		})
+	}
+
+	return c.JSON(http.StatusOK, s.watcher.Status())
+}
+
+func (s *Server) handleUpdateWatchStatus(c *echo.Context) error {
+	if s.config == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "config unavailable"})
+	}
+
+	var body struct {
+		Enabled    *bool                 `json:"enabled"`
+		DebounceMs *int                  `json:"debounce_ms"`
+		Patterns   []config.WatchPattern `json:"patterns"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if body.Enabled != nil {
+		s.config.Watch.Enabled = *body.Enabled
+	}
+	if body.DebounceMs != nil {
+		s.config.Watch.DebounceMs = *body.DebounceMs
+	}
+	if body.Patterns != nil {
+		s.config.Watch.Patterns = append([]config.WatchPattern(nil), body.Patterns...)
+	}
+
+	if err := config.SaveDatabaseSections(s.config, "watch"); err != nil {
+		if s.logger != nil {
+			s.logger.Error("Failed to persist watch config", zap.Error(err))
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save watch config"})
+	}
+
+	if s.watcher != nil {
+		s.watcher.UpdateConfig(s.config.Watch)
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":           "saved",
+		"restart_required": true,
+		"watch": func() watch.StatusSnapshot {
+			if s.watcher != nil {
+				return s.watcher.Status()
+			}
+			return watch.StatusSnapshot{
+				Enabled:    s.config.Watch.Enabled,
+				Running:    false,
+				DebounceMs: s.config.Watch.DebounceMs,
+				Patterns:   append([]config.WatchPattern(nil), s.config.Watch.Patterns...),
+			}
+		}(),
+	})
+}
+
 // --- Chat WebSocket Playground ---
 
 var wsUpgrader = websocket.Upgrader{
@@ -4377,6 +4544,13 @@ type chatWSResponse struct {
 	Thinking  string          `json:"thinking,omitempty"`  // Model's thinking (if extended thinking enabled)
 	Timestamp int64           `json:"timestamp,omitempty"` // Unix timestamp
 	Route     *chatRouteState `json:"route,omitempty"`
+	Meta      interface{}     `json:"meta,omitempty"`
+}
+
+type fileMentionFeedback struct {
+	Count    int      `json:"count"`
+	Paths    []string `json:"paths,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type chatRouteSettings struct {
@@ -4571,6 +4745,45 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				); err != nil {
 					sendWSError(conn, fmt.Sprintf("save session prompts failed: %v", err))
 					continue
+				}
+			}
+
+			if s.agent != nil {
+				preview, err := s.agent.PreviewPreprocessedInput(content)
+				if err == nil && preview != nil && (len(preview.Mentions) > 0 || len(preview.Warnings) > 0) {
+					paths := make([]string, 0, len(preview.Mentions))
+					for _, mention := range preview.Mentions {
+						path := strings.TrimSpace(mention.Path)
+						if path == "" {
+							continue
+						}
+						if mention.StartLine > 0 && mention.EndLine >= mention.StartLine {
+							path = fmt.Sprintf("%s:%d-%d", path, mention.StartLine, mention.EndLine)
+						}
+						paths = append(paths, path)
+					}
+					feedback := fileMentionFeedback{
+						Count:    len(preview.Mentions),
+						Paths:    paths,
+						Warnings: append([]string(nil), preview.Warnings...),
+					}
+					systemText := fmt.Sprintf("Inlined %d file reference(s)", feedback.Count)
+					if len(feedback.Warnings) > 0 {
+						systemText = fmt.Sprintf("%s (%d warning(s))", systemText, len(feedback.Warnings))
+					}
+					if data, marshalErr := json.Marshal(chatWSResponse{
+						Type:      "system",
+						Content:   systemText,
+						Timestamp: time.Now().Unix(),
+						Meta: map[string]interface{}{
+							"kind": "file_mentions",
+							"data": feedback,
+						},
+					}); marshalErr == nil {
+						if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+							s.logger.Warn("Failed to send file mention feedback", zap.Error(err))
+						}
+					}
 				}
 			}
 
@@ -5163,6 +5376,77 @@ func (s *Server) handleDeleteChatSessionPrompts(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleUndoChatSession(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+	if s.snapshotMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "undo is not available"})
+	}
+
+	sessionID, err := s.resolveWebUIChatSessionAlias(c, c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	}
+
+	var body struct {
+		Steps int `json:"steps"`
+	}
+	if err := c.Bind(&body); err != nil && !errors.Is(err, io.EOF) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	steps := body.Steps
+	if steps <= 0 {
+		steps = 1
+	}
+
+	sess, err := s.sessionMgr.GetExisting(sessionID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load session: %v", err)})
+	}
+
+	store := s.snapshotMgr.GetStore(sessionID)
+	if err := store.LoadSnapshots(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load undo snapshots: %v", err)})
+	}
+
+	undone := 0
+	var reverted []session.MessageSnapshot
+	for undone < steps && store.CanUndo() {
+		reverted, err = store.Undo()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("undo failed: %v", err)})
+		}
+		undone++
+	}
+
+	if undone == 0 {
+		current := sess.GetMessages()
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"undone_steps":    0,
+			"remaining_turns": store.GetTurnCount(),
+			"message_count":   len(current),
+			"messages":        buildSessionMessageResponses(current),
+		})
+	}
+
+	messages := session.MessageSnapshotsToMessages(reverted)
+	sess.ReplaceMessages(messages)
+	if err := s.sessionMgr.Save(sess); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to save reverted session: %v", err)})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"undone_steps":    undone,
+		"remaining_turns": store.GetTurnCount(),
+		"message_count":   len(messages),
+		"messages":        buildSessionMessageResponses(messages),
+	})
 }
 
 // --- Approval Handlers ---

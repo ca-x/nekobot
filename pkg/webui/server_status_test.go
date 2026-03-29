@@ -15,6 +15,7 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/watch"
 	"nekobot/pkg/workspace"
 )
 
@@ -151,6 +152,7 @@ func TestNewServer_AllowsNilLoader(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 		)
 		if server == nil {
 			t.Fatalf("expected server")
@@ -245,6 +247,92 @@ func TestHandleServiceRestartReturnsError(t *testing.T) {
 	}
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusInternalServerError, rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleGetWatchStatus(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Watch.Enabled = true
+	cfg.Watch.DebounceMs = 650
+	cfg.Watch.Patterns = []config.WatchPattern{{
+		FileGlob: "**/*.go",
+		Command:  "go test ./...",
+	}}
+
+	watcher := &watch.Watcher{}
+	watcher.UpdateConfig(cfg.Watch)
+
+	s := &Server{
+		config:  cfg,
+		watcher: watcher,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/harness/watch", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleGetWatchStatus(ctx); err != nil {
+		t.Fatalf("handleGetWatchStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload watch.StatusSnapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal watch status failed: %v", err)
+	}
+	if !payload.Enabled || payload.DebounceMs != 650 || len(payload.Patterns) != 1 {
+		t.Fatalf("unexpected watch status payload: %+v", payload)
+	}
+}
+
+func TestHandleUpdateWatchStatusPersistsConfig(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	watcher := &watch.Watcher{}
+	watcher.UpdateConfig(cfg.Watch)
+
+	s := &Server{
+		config:  cfg,
+		logger:  newTestLogger(t),
+		watcher: watcher,
+	}
+
+	body := `{"enabled":true,"debounce_ms":910,"patterns":[{"file_glob":"frontend/src/**/*.tsx","command":"npm run build","fail_command":"echo fail"}]}`
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/harness/watch", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleUpdateWatchStatus(ctx); err != nil {
+		t.Fatalf("handleUpdateWatchStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	if !s.config.Watch.Enabled || s.config.Watch.DebounceMs != 910 || len(s.config.Watch.Patterns) != 1 {
+		t.Fatalf("watch config not applied: %+v", s.config.Watch)
+	}
+
+	reloaded := config.DefaultConfig()
+	reloaded.Storage.DBDir = cfg.Storage.DBDir
+	reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
+	if err := config.ApplyDatabaseOverrides(reloaded); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides failed: %v", err)
+	}
+	if !reloaded.Watch.Enabled || reloaded.Watch.DebounceMs != 910 || len(reloaded.Watch.Patterns) != 1 {
+		t.Fatalf("watch config not persisted: %+v", reloaded.Watch)
+	}
+
+	status := watcher.Status()
+	if !status.Enabled || status.DebounceMs != 910 || len(status.Patterns) != 1 {
+		t.Fatalf("watcher runtime not updated: %+v", status)
 	}
 }
 
