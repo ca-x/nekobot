@@ -586,6 +586,13 @@ func DefaultConfig() *Config {
 				MaxCount: 20,
 			},
 		},
+		Learnings: LearningsConfig{
+			Enabled:           true,
+			MaxRawEntries:     500,
+			CompressedMaxSize: 10000,
+			HalfLifeDays:      30,
+			CompressInterval:  "1h",
+		},
 	}
 }
 
@@ -885,7 +892,6 @@ type WatchPattern struct {
 	Command     string `mapstructure:"command" json:"command"`
 	FailCommand string `mapstructure:"fail_command" json:"fail_command"`
 }
-
 
 // ApplyFrom copies runtime-reloadable fields from another Config into this one.
 func (c *Config) ApplyFrom(other *Config) {

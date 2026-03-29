@@ -416,6 +416,9 @@ func TestBuildSystemPrompt_IncludesLayeredMemoryContext(t *testing.T) {
 	if err := store.AppendToday("today note"); err != nil {
 		t.Fatalf("append today note: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(workspace, "memory", "active_learnings.md"), []byte("active learning"), 0644); err != nil {
+		t.Fatalf("write active learnings: %v", err)
+	}
 
 	cb := NewContextBuilderWithMemory(workspace, store)
 	cb.SetToolDescriptionsFunc(func() []string { return nil })
@@ -432,6 +435,9 @@ func TestBuildSystemPrompt_IncludesLayeredMemoryContext(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "today note") {
 		t.Fatalf("expected today's note content in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "## Active Learnings\n\nactive learning") {
+		t.Fatalf("expected active learnings in prompt, got %q", prompt)
 	}
 }
 

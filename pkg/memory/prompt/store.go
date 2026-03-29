@@ -28,6 +28,7 @@ type Store struct {
 type ContextOptions struct {
 	IncludeWorkspaceMemory bool
 	IncludeLongTerm        bool
+	IncludeActiveLearnings bool
 	RecentDailyNoteDays    int
 	MaxChars               int
 }
@@ -66,6 +67,7 @@ func DefaultContextOptions() ContextOptions {
 	return ContextOptions{
 		IncludeWorkspaceMemory: true,
 		IncludeLongTerm:        true,
+		IncludeActiveLearnings: true,
 		RecentDailyNoteDays:    1,
 		MaxChars:               8000,
 	}
@@ -88,6 +90,20 @@ func (s *Store) ReadWorkspaceMemory() string {
 	}
 
 	path := filepath.Join(s.workspace, "MEMORY.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// ReadActiveLearnings reads active learnings from workspace/memory/active_learnings.md.
+func (s *Store) ReadActiveLearnings() string {
+	if strings.TrimSpace(s.workspace) == "" {
+		return ""
+	}
+
+	path := filepath.Join(s.workspace, "memory", "active_learnings.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ""

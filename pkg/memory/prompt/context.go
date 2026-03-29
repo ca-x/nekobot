@@ -9,6 +9,7 @@ import (
 type ContextSource interface {
 	ReadWorkspaceMemory() string
 	ReadLongTerm() string
+	ReadActiveLearnings() string
 	GetRecentDailyNotes(days int) string
 }
 
@@ -32,7 +33,7 @@ func (c *ContextComposer) Build() string {
 		return ""
 	}
 
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
 
 	if c.options.IncludeWorkspaceMemory {
 		workspaceMemory := strings.TrimSpace(c.source.ReadWorkspaceMemory())
@@ -45,6 +46,16 @@ func (c *ContextComposer) Build() string {
 		longTerm := strings.TrimSpace(c.source.ReadLongTerm())
 		if longTerm != "" {
 			parts = append(parts, "## Long-term Memory\n\n"+longTerm)
+		}
+	}
+
+	if c.options.IncludeActiveLearnings {
+		activeLearnings := strings.TrimSpace(c.source.ReadActiveLearnings())
+		if activeLearnings != "" {
+			if !strings.HasPrefix(activeLearnings, "#") {
+				activeLearnings = "## Active Learnings\n\n" + activeLearnings
+			}
+			parts = append(parts, activeLearnings)
 		}
 	}
 

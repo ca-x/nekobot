@@ -80,13 +80,13 @@ type ChatRouteResult struct {
 
 // acpSessionState stores ACP session-scoped routing and cancellation state.
 type acpSessionState struct {
-	session     SessionInterface
-	provider    string
-	model       string
-	fallback    []string
-	modeID      string
-	cancel      context.CancelFunc
-	mcpServers  []config.MCPServerConfig
+	session    SessionInterface
+	provider   string
+	model      string
+	fallback   []string
+	modeID     string
+	cancel     context.CancelFunc
+	mcpServers []config.MCPServerConfig
 }
 
 // Config holds agent configuration.
@@ -198,12 +198,23 @@ func New(
 		}
 	}
 
+	if cfg.Learnings.Enabled {
+		learningsMgr, err := memory.NewLearningsManager(cfg)
+		if err != nil {
+			log.Warn("Failed to initialize learning tool", zap.Error(err))
+		} else {
+			toolRegistry.MustRegister(tools.NewLearningTool(learningsMgr))
+			log.Info("Learning tool enabled")
+		}
+	}
+
 	// Create context builder.
 	memoryStore := newMemoryStoreFromConfig(cfg, workspace, kvStore, runtimeEntClient)
 	contextBuilder := NewContextBuilderWithMemory(workspace, memoryStore)
 	contextBuilder.SetMemoryContextOptions(promptmemory.ContextOptions{
 		IncludeWorkspaceMemory: cfg.Memory.Context.Enabled && cfg.Memory.Context.IncludeWorkspaceMemory,
 		IncludeLongTerm:        cfg.Memory.Context.Enabled && cfg.Memory.Context.IncludeLongTerm,
+		IncludeActiveLearnings: cfg.Learnings.Enabled,
 		RecentDailyNoteDays:    cfg.Memory.Context.RecentDailyNoteDays,
 		MaxChars:               cfg.Memory.Context.MaxChars,
 	})
