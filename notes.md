@@ -58,6 +58,27 @@
 - `go test -count=1 ./cmd/nekobot/...`
 - `npm --prefix pkg/webui/frontend run build`
 
+## 2026-03-29 补完未提交的 WeChat / conversationbindings 改动
+
+### 发现的不完整点
+- `pkg/conversationbindings/service.go` 已经把底层模型升级成“一个 session 可绑定多个 conversation”，但 WeChat 运行时包装层仍停留在旧接口。
+- `pkg/channels/wechat/control.go` 的 `/bindings` 仍按 `Session.ConversationKey` 渲染，所以只能显示主绑定，遗漏同一 runtime 的其他 chat。
+- `StopRuntime` / `DeleteRuntime` 也只清理一个 `ConversationKey`，在多绑定场景下会留下悬挂 chat 绑定。
+
+### 已补齐修复
+- `pkg/channels/wechat/runtime.go`
+  - 增加 `ListBindingRecords(ctx)` 和 `GetBindingsBySession(ctx, sessionID)`，把 `conversationbindings.Service` 的多绑定能力暴露给 WeChat 控制面。
+- `pkg/channels/wechat/control.go`
+  - `DescribeBindings()` 改为按 binding record 枚举每个 chat -> runtime 的映射。
+  - 新增 `clearRuntimeBindings()`，在 `StopRuntime()` / `DeleteRuntime()` 时清理该 runtime 的全部 WeChat chat 绑定，而不是只清一个主绑定。
+- 测试补强
+  - `pkg/channels/wechat/runtime_test.go` 验证 `ListBindingRecords()` 会返回同一 session 的全部 chat 绑定。
+  - `pkg/channels/wechat/control_test.go` 验证 `/bindings` 会列出每个 chat，并验证 stop/delete 后所有 chat 绑定都会被清空。
+  - `pkg/conversationbindings/service_test.go` 继续覆盖多绑定、promote remaining binding 等底层行为。
+
+### 补充验证
+- `go test -count=1 ./pkg/conversationbindings ./pkg/channels/wechat`
+
 ## 三项目对比总览
 
 | 维度 | nekobot (当前) | picoclaw (Go, 灵感源) | nextclaw (TS, 参考) |

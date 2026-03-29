@@ -80,6 +80,25 @@ func (s *RuntimeBindingService) ListBindings(ctx context.Context) ([]*toolsessio
 	return s.service.List(ctx)
 }
 
+// ListBindingRecords lists all current WeChat conversation binding records.
+func (s *RuntimeBindingService) ListBindingRecords(ctx context.Context) ([]*conversationbindings.BindingRecord, error) {
+	if s == nil || s.service == nil {
+		return nil, fmt.Errorf("conversation binding service is required")
+	}
+	return s.service.ListBindings(ctx)
+}
+
+// GetBindingsBySession returns all WeChat conversation bindings for one runtime session.
+func (s *RuntimeBindingService) GetBindingsBySession(
+	ctx context.Context,
+	sessionID string,
+) ([]*conversationbindings.BindingRecord, error) {
+	if s == nil || s.service == nil {
+		return nil, fmt.Errorf("conversation binding service is required")
+	}
+	return s.service.GetBindingsBySession(ctx, sessionID)
+}
+
 // BuildRuntimePreset normalizes WeChat runtime creation requests.
 func BuildRuntimePreset(cfg *config.Config, spec RuntimeSpec) (RuntimePreset, error) {
 	driver := strings.TrimSpace(strings.ToLower(spec.Driver))

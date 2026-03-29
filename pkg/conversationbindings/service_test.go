@@ -318,6 +318,155 @@ func TestServiceCleanupExpiredBindings(t *testing.T) {
 	}
 }
 
+func TestServiceSupportsMultipleBindingsPerSession(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	mgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	svc := New(mgr, toolsessions.SourceChannel, "wechat", "wx:")
+	ctx := context.Background()
+
+	sess, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "user-1",
+		Source:  toolsessions.SourceChannel,
+		Channel: "wechat",
+		Tool:    "codex",
+		Title:   "Code Assistant",
+		Command: "codex",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if err := svc.BindWithOptions(ctx, "chat-a", sess.ID, BindOptions{
+		Label: "primary",
+	}); err != nil {
+		t.Fatalf("bind chat-a: %v", err)
+	}
+	if err := svc.BindWithOptions(ctx, "chat-b", sess.ID, BindOptions{
+		Label: "secondary",
+	}); err != nil {
+		t.Fatalf("bind chat-b: %v", err)
+	}
+
+	recordA, err := svc.GetBinding(ctx, "chat-a")
+	if err != nil {
+		t.Fatalf("get binding chat-a: %v", err)
+	}
+	if recordA == nil || recordA.TargetSessionID != sess.ID || recordA.Metadata.Label != "primary" {
+		t.Fatalf("unexpected chat-a binding: %+v", recordA)
+	}
+
+	recordB, err := svc.GetBinding(ctx, "chat-b")
+	if err != nil {
+		t.Fatalf("get binding chat-b: %v", err)
+	}
+	if recordB == nil || recordB.TargetSessionID != sess.ID || recordB.Metadata.Label != "secondary" {
+		t.Fatalf("unexpected chat-b binding: %+v", recordB)
+	}
+
+	records, err := svc.ListBindings(ctx)
+	if err != nil {
+		t.Fatalf("list bindings: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 bindings, got %d", len(records))
+	}
+
+	bySession, err := svc.GetBindingsBySession(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("get bindings by session: %v", err)
+	}
+	if len(bySession) != 2 {
+		t.Fatalf("expected 2 bindings for session, got %d", len(bySession))
+	}
+}
+
+func TestServiceClearPromotesRemainingBindingForSession(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	mgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	svc := New(mgr, toolsessions.SourceChannel, "wechat", "wx:")
+	ctx := context.Background()
+
+	sess, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "user-1",
+		Source:  toolsessions.SourceChannel,
+		Channel: "wechat",
+		Tool:    "codex",
+		Command: "codex",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if err := svc.Bind(ctx, "chat-a", sess.ID); err != nil {
+		t.Fatalf("bind chat-a: %v", err)
+	}
+	if err := svc.Bind(ctx, "chat-b", sess.ID); err != nil {
+		t.Fatalf("bind chat-b: %v", err)
+	}
+
+	if err := svc.Clear(ctx, "chat-b"); err != nil {
+		t.Fatalf("clear chat-b: %v", err)
+	}
+
+	resolvedA, err := svc.Resolve(ctx, "chat-a")
+	if err != nil {
+		t.Fatalf("resolve chat-a: %v", err)
+	}
+	if resolvedA == nil || resolvedA.ID != sess.ID {
+		t.Fatalf("expected chat-a to remain bound, got %+v", resolvedA)
+	}
+
+	resolvedB, err := svc.Resolve(ctx, "chat-b")
+	if err != nil {
+		t.Fatalf("resolve chat-b: %v", err)
+	}
+	if resolvedB != nil {
+		t.Fatalf("expected chat-b to be cleared, got %+v", resolvedB)
+	}
+
+	updated, err := mgr.GetSession(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("get updated session: %v", err)
+	}
+	if got := updated.ConversationKey; got != "wx:chat-a" {
+		t.Fatalf("expected primary conversation key wx:chat-a, got %q", got)
+	}
+}
+
 func newTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()

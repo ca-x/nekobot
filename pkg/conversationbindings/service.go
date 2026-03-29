@@ -11,6 +11,19 @@ import (
 
 const bindingMetadataKey = "conversation_binding"
 
+type bindingState struct {
+	ConversationID string
+	TargetKind     string
+	Placement      string
+	ThreadName     string
+	Label          string
+	BoundBy        string
+	IntroText      string
+	SessionCwd     string
+	Details        map[string]interface{}
+	ExpiresAt      *time.Time
+}
+
 // BindOptions describes optional metadata for a conversation binding.
 type BindOptions struct {
 	TargetKind string
@@ -84,28 +97,51 @@ func (s *Service) BindWithOptions(ctx context.Context, conversationID, sessionID
 	if s == nil || s.mgr == nil {
 		return fmt.Errorf("tool session manager is required")
 	}
-	if err := s.mgr.BindSessionConversation(ctx, sessionID, s.source, s.channel, s.ConversationKey(conversationID)); err != nil {
-		return err
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return fmt.Errorf("conversation id is required")
 	}
-
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return fmt.Errorf("session id is required")
+	}
 	session, err := s.mgr.GetSession(ctx, sessionID)
 	if err != nil {
 		return err
 	}
 
-	metadata := cloneMetadata(session.Metadata)
-	metadata[bindingMetadataKey] = map[string]interface{}{
-		"target_kind": normalizeString(opts.TargetKind, "session"),
-		"placement":   normalizeString(opts.Placement, "child"),
-		"thread_name": strings.TrimSpace(opts.ThreadName),
-		"label":       strings.TrimSpace(opts.Label),
-		"bound_by":    strings.TrimSpace(opts.BoundBy),
-		"intro_text":  strings.TrimSpace(opts.IntroText),
-		"session_cwd": strings.TrimSpace(opts.SessionCwd),
-		"details":     cloneMetadata(opts.Details),
-		"expires_at":  formatExpiry(opts.ExpiresAt),
+	if err := s.removeConversationBindingFromOtherSessions(ctx, conversationID, sessionID); err != nil {
+		return err
 	}
-	return s.mgr.UpdateSessionMetadata(ctx, sessionID, metadata)
+
+	states := s.bindingStates(session)
+	state := bindingState{
+		ConversationID: conversationID,
+		TargetKind:     normalizeString(opts.TargetKind, "session"),
+		Placement:      normalizeString(opts.Placement, "child"),
+		ThreadName:     strings.TrimSpace(opts.ThreadName),
+		Label:          strings.TrimSpace(opts.Label),
+		BoundBy:        strings.TrimSpace(opts.BoundBy),
+		IntroText:      strings.TrimSpace(opts.IntroText),
+		SessionCwd:     strings.TrimSpace(opts.SessionCwd),
+		Details:        cloneMetadata(opts.Details),
+		ExpiresAt:      opts.ExpiresAt,
+	}
+
+	replaced := false
+	for i := range states {
+		if states[i].ConversationID != conversationID {
+			continue
+		}
+		states[i] = state
+		replaced = true
+		break
+	}
+	if !replaced {
+		states = append(states, state)
+	}
+
+	return s.persistBindingStates(ctx, session, states, conversationID)
 }
 
 // Resolve resolves the tool session currently bound to a conversation identifier.
@@ -113,7 +149,11 @@ func (s *Service) Resolve(ctx context.Context, conversationID string) (*toolsess
 	if s == nil || s.mgr == nil {
 		return nil, fmt.Errorf("tool session manager is required")
 	}
-	return s.mgr.FindSessionByConversation(ctx, s.source, s.channel, s.ConversationKey(conversationID))
+	session, _, err := s.findBinding(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // Clear removes the binding for a conversation identifier.
@@ -121,18 +161,31 @@ func (s *Service) Clear(ctx context.Context, conversationID string) error {
 	if s == nil || s.mgr == nil {
 		return fmt.Errorf("tool session manager is required")
 	}
-	key := s.ConversationKey(conversationID)
-	session, err := s.mgr.FindSessionByConversation(ctx, s.source, s.channel, key)
+	session, state, err := s.findBinding(ctx, conversationID)
 	if err != nil {
 		return err
 	}
-	if err := s.mgr.ClearConversationBinding(ctx, s.source, s.channel, key); err != nil {
-		return err
+	if session == nil || state == nil {
+		return nil
 	}
-	if session != nil {
-		return s.clearBindingMetadata(ctx, session)
+
+	states := s.bindingStates(session)
+	updated := make([]bindingState, 0, len(states))
+	for _, item := range states {
+		if item.ConversationID == state.ConversationID {
+			continue
+		}
+		updated = append(updated, item)
 	}
-	return nil
+
+	primaryConversationID := s.ConversationID(session.ConversationKey)
+	if primaryConversationID == state.ConversationID {
+		primaryConversationID = ""
+		if len(updated) > 0 {
+			primaryConversationID = updated[0].ConversationID
+		}
+	}
+	return s.persistBindingStates(ctx, session, updated, primaryConversationID)
 }
 
 // List lists sessions currently bound under this service source/channel.
@@ -165,22 +218,18 @@ func (s *Service) ListBindings(ctx context.Context) ([]*BindingRecord, error) {
 	}
 	out := make([]*BindingRecord, 0, len(items))
 	for _, item := range items {
-		record := s.sessionToBindingRecord(item)
-		if record == nil {
-			continue
-		}
-		out = append(out, record)
+		out = append(out, s.sessionToBindingRecords(item)...)
 	}
 	return out, nil
 }
 
 // GetBinding returns the binding record for one conversation identifier.
 func (s *Service) GetBinding(ctx context.Context, conversationID string) (*BindingRecord, error) {
-	session, err := s.Resolve(ctx, conversationID)
-	if err != nil || session == nil {
+	session, state, err := s.findBinding(ctx, conversationID)
+	if err != nil || session == nil || state == nil {
 		return nil, err
 	}
-	return s.sessionToBindingRecord(session), nil
+	return s.bindingRecordFromState(session, *state), nil
 }
 
 // GetBindingsBySession returns binding records for a target session.
@@ -192,14 +241,11 @@ func (s *Service) GetBindingsBySession(ctx context.Context, sessionID string) ([
 	if err != nil {
 		return nil, err
 	}
-	if !s.matchesBinding(session) {
+	records := s.sessionToBindingRecords(session)
+	if len(records) == 0 {
 		return []*BindingRecord{}, nil
 	}
-	record := s.sessionToBindingRecord(session)
-	if record == nil {
-		return []*BindingRecord{}, nil
-	}
-	return []*BindingRecord{record}, nil
+	return records, nil
 }
 
 // CleanupExpired clears expired bindings under this service scope.
@@ -256,44 +302,180 @@ func (s *Service) matchesBinding(session *toolsessions.Session) bool {
 	if s.channel != "" && strings.TrimSpace(session.Channel) != s.channel {
 		return false
 	}
-	return s.ConversationID(session.ConversationKey) != ""
+	return len(s.bindingStates(session)) > 0
 }
 
-func (s *Service) sessionToBindingRecord(session *toolsessions.Session) *BindingRecord {
+func (s *Service) sessionToBindingRecords(session *toolsessions.Session) []*BindingRecord {
 	if !s.matchesBinding(session) {
-		return nil
+		return []*BindingRecord{}
 	}
-	meta := readBindingMetadata(session.Metadata)
+	states := s.bindingStates(session)
+	out := make([]*BindingRecord, 0, len(states))
+	for _, state := range states {
+		out = append(out, s.bindingRecordFromState(session, state))
+	}
+	return out
+}
+
+func (s *Service) bindingRecordFromState(session *toolsessions.Session, state bindingState) *BindingRecord {
 	return &BindingRecord{
 		TargetSessionID: session.ID,
-		TargetKind:      normalizeString(meta["target_kind"], "session"),
-		Placement:       normalizeString(meta["placement"], "child"),
+		TargetKind:      normalizeString(state.TargetKind, "session"),
+		Placement:       normalizeString(state.Placement, "child"),
 		Conversation: BindingConversation{
 			Source:         s.source,
 			Channel:        s.channel,
-			ConversationID: s.ConversationID(session.ConversationKey),
+			ConversationID: state.ConversationID,
 		},
 		Metadata: BindingMetadata{
-			ThreadName: strings.TrimSpace(stringValue(meta["thread_name"])),
-			Label:      strings.TrimSpace(stringValue(meta["label"])),
-			BoundBy:    strings.TrimSpace(stringValue(meta["bound_by"])),
-			IntroText:  strings.TrimSpace(stringValue(meta["intro_text"])),
-			SessionCwd: strings.TrimSpace(stringValue(meta["session_cwd"])),
-			Details:    cloneMetadata(mapValue(meta["details"])),
+			ThreadName: strings.TrimSpace(state.ThreadName),
+			Label:      strings.TrimSpace(state.Label),
+			BoundBy:    strings.TrimSpace(state.BoundBy),
+			IntroText:  strings.TrimSpace(state.IntroText),
+			SessionCwd: strings.TrimSpace(state.SessionCwd),
+			Details:    cloneMetadata(state.Details),
 		},
 		CreatedAt: session.CreatedAt,
 		UpdatedAt: session.UpdatedAt,
-		ExpiresAt: parseExpiry(meta["expires_at"]),
+		ExpiresAt: cloneTime(state.ExpiresAt),
 	}
 }
 
-func (s *Service) clearBindingMetadata(ctx context.Context, session *toolsessions.Session) error {
+func (s *Service) findBinding(
+	ctx context.Context,
+	conversationID string,
+) (*toolsessions.Session, *bindingState, error) {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return nil, nil, nil
+	}
+	items, err := s.List(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, session := range items {
+		for _, state := range s.bindingStates(session) {
+			if state.ConversationID != conversationID {
+				continue
+			}
+			stateCopy := state
+			return session, &stateCopy, nil
+		}
+	}
+	return nil, nil, nil
+}
+
+func (s *Service) removeConversationBindingFromOtherSessions(
+	ctx context.Context,
+	conversationID, keepSessionID string,
+) error {
+	items, err := s.List(ctx)
+	if err != nil {
+		return err
+	}
+	for _, session := range items {
+		if session == nil || strings.TrimSpace(session.ID) == keepSessionID {
+			continue
+		}
+		states := s.bindingStates(session)
+		updated := make([]bindingState, 0, len(states))
+		removed := false
+		for _, state := range states {
+			if state.ConversationID == conversationID {
+				removed = true
+				continue
+			}
+			updated = append(updated, state)
+		}
+		if !removed {
+			continue
+		}
+		primaryConversationID := s.ConversationID(session.ConversationKey)
+		if primaryConversationID == conversationID {
+			primaryConversationID = ""
+			if len(updated) > 0 {
+				primaryConversationID = updated[0].ConversationID
+			}
+		}
+		if err := s.persistBindingStates(ctx, session, updated, primaryConversationID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) persistBindingStates(
+	ctx context.Context,
+	session *toolsessions.Session,
+	states []bindingState,
+	primaryConversationID string,
+) error {
 	if session == nil {
 		return nil
 	}
 	metadata := cloneMetadata(session.Metadata)
-	delete(metadata, bindingMetadataKey)
+	if len(states) == 0 {
+		delete(metadata, bindingMetadataKey)
+		currentPrimary := s.ConversationID(session.ConversationKey)
+		if currentPrimary != "" {
+			if err := s.mgr.ClearConversationBinding(ctx, s.source, s.channel, s.ConversationKey(currentPrimary)); err != nil {
+				return err
+			}
+		}
+		return s.mgr.UpdateSessionMetadata(ctx, session.ID, metadata)
+	}
+
+	primaryConversationID = strings.TrimSpace(primaryConversationID)
+	if primaryConversationID == "" {
+		primaryConversationID = states[0].ConversationID
+	}
+
+	metadata[bindingMetadataKey] = map[string]interface{}{
+		"records": statesToMetadataRecords(states),
+	}
+
+	currentPrimary := s.ConversationID(session.ConversationKey)
+	if currentPrimary != primaryConversationID {
+		if err := s.mgr.BindSessionConversation(
+			ctx,
+			session.ID,
+			s.source,
+			s.channel,
+			s.ConversationKey(primaryConversationID),
+		); err != nil {
+			return err
+		}
+	}
+
 	return s.mgr.UpdateSessionMetadata(ctx, session.ID, metadata)
+}
+
+func (s *Service) bindingStates(session *toolsessions.Session) []bindingState {
+	if session == nil {
+		return []bindingState{}
+	}
+	metadata := readBindingMetadata(session.Metadata)
+	if rawRecords, ok := metadata["records"].([]interface{}); ok {
+		return metadataRecordsToStates(rawRecords)
+	}
+
+	conversationID := s.ConversationID(session.ConversationKey)
+	if conversationID == "" {
+		return []bindingState{}
+	}
+
+	return []bindingState{{
+		ConversationID: conversationID,
+		TargetKind:     normalizeString(metadata["target_kind"], "session"),
+		Placement:      normalizeString(metadata["placement"], "child"),
+		ThreadName:     strings.TrimSpace(stringValue(metadata["thread_name"])),
+		Label:          strings.TrimSpace(stringValue(metadata["label"])),
+		BoundBy:        strings.TrimSpace(stringValue(metadata["bound_by"])),
+		IntroText:      strings.TrimSpace(stringValue(metadata["intro_text"])),
+		SessionCwd:     strings.TrimSpace(stringValue(metadata["session_cwd"])),
+		Details:        cloneMetadata(mapValue(metadata["details"])),
+		ExpiresAt:      parseExpiry(metadata["expires_at"]),
+	}}
 }
 
 func cloneMetadata(src map[string]interface{}) map[string]interface{} {
@@ -358,4 +540,55 @@ func parseExpiry(v interface{}) *time.Time {
 		return nil
 	}
 	return &parsed
+}
+
+func statesToMetadataRecords(states []bindingState) []interface{} {
+	records := make([]interface{}, 0, len(states))
+	for _, state := range states {
+		records = append(records, map[string]interface{}{
+			"conversation_id": strings.TrimSpace(state.ConversationID),
+			"target_kind":     normalizeString(state.TargetKind, "session"),
+			"placement":       normalizeString(state.Placement, "child"),
+			"thread_name":     strings.TrimSpace(state.ThreadName),
+			"label":           strings.TrimSpace(state.Label),
+			"bound_by":        strings.TrimSpace(state.BoundBy),
+			"intro_text":      strings.TrimSpace(state.IntroText),
+			"session_cwd":     strings.TrimSpace(state.SessionCwd),
+			"details":         cloneMetadata(state.Details),
+			"expires_at":      formatExpiry(state.ExpiresAt),
+		})
+	}
+	return records
+}
+
+func metadataRecordsToStates(records []interface{}) []bindingState {
+	states := make([]bindingState, 0, len(records))
+	for _, raw := range records {
+		record := mapValue(raw)
+		conversationID := strings.TrimSpace(stringValue(record["conversation_id"]))
+		if conversationID == "" {
+			continue
+		}
+		states = append(states, bindingState{
+			ConversationID: conversationID,
+			TargetKind:     normalizeString(record["target_kind"], "session"),
+			Placement:      normalizeString(record["placement"], "child"),
+			ThreadName:     strings.TrimSpace(stringValue(record["thread_name"])),
+			Label:          strings.TrimSpace(stringValue(record["label"])),
+			BoundBy:        strings.TrimSpace(stringValue(record["bound_by"])),
+			IntroText:      strings.TrimSpace(stringValue(record["intro_text"])),
+			SessionCwd:     strings.TrimSpace(stringValue(record["session_cwd"])),
+			Details:        cloneMetadata(mapValue(record["details"])),
+			ExpiresAt:      parseExpiry(record["expires_at"]),
+		})
+	}
+	return states
+}
+
+func cloneTime(src *time.Time) *time.Time {
+	if src == nil {
+		return nil
+	}
+	dst := *src
+	return &dst
 }

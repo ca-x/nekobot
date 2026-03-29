@@ -150,6 +150,53 @@ func TestControlServiceCreateBindAndList(t *testing.T) {
 	}
 }
 
+func TestControlServiceDescribeBindingsListsEachChatBinding(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	ctx := context.Background()
+
+	if _, err := controlSvc.CreateRuntime(ctx, "chat-a", RuntimeCreateRequest{
+		Name:   "code1",
+		Driver: "process",
+		Tool:   "cat",
+	}); err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+
+	if err := controlSvc.BindRuntime(ctx, "chat-b", "code1"); err != nil {
+		t.Fatalf("BindRuntime failed: %v", err)
+	}
+
+	bindingText, err := controlSvc.DescribeBindings(ctx)
+	if err != nil {
+		t.Fatalf("DescribeBindings failed: %v", err)
+	}
+	if !strings.Contains(bindingText, "chat-a -> code1") {
+		t.Fatalf("expected bindings output to mention chat-a, got %q", bindingText)
+	}
+	if !strings.Contains(bindingText, "chat-b -> code1") {
+		t.Fatalf("expected bindings output to mention chat-b, got %q", bindingText)
+	}
+}
+
 func TestControlServiceCreateACPRuntimeDoesNotStartPTYAndCanStop(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
@@ -188,6 +235,9 @@ func TestControlServiceCreateACPRuntimeDoesNotStartPTYAndCanStop(t *testing.T) {
 	if _, err := processMgr.GetStatus(created.ID); err == nil {
 		t.Fatalf("expected no PTY process for ACP runtime")
 	}
+	if err := controlSvc.BindRuntime(ctx, "chat-2", "claude1"); err != nil {
+		t.Fatalf("BindRuntime(second chat) failed: %v", err)
+	}
 
 	status, err := controlSvc.GetRuntimeStatus(ctx, "claude1")
 	if err != nil {
@@ -207,6 +257,13 @@ func TestControlServiceCreateACPRuntimeDoesNotStartPTYAndCanStop(t *testing.T) {
 	}
 	if resolved != nil {
 		t.Fatalf("expected binding to be cleared after stop, got %+v", resolved)
+	}
+	resolved, err = bindingSvc.ResolveConversation(ctx, "chat-2")
+	if err != nil {
+		t.Fatalf("ResolveConversation(second chat) failed: %v", err)
+	}
+	if resolved != nil {
+		t.Fatalf("expected second binding to be cleared after stop, got %+v", resolved)
 	}
 }
 
@@ -588,6 +645,9 @@ func TestControlServiceRestartAndDeleteRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRuntime failed: %v", err)
 	}
+	if err := controlSvc.BindRuntime(ctx, "chat-2", "echo4"); err != nil {
+		t.Fatalf("BindRuntime(second chat) failed: %v", err)
+	}
 
 	firstStatus, err := processMgr.GetStatus(created.ID)
 	if err != nil {
@@ -613,6 +673,20 @@ func TestControlServiceRestartAndDeleteRuntime(t *testing.T) {
 	}
 	if _, err := sessionMgr.GetSession(ctx, created.ID); err == nil {
 		t.Fatal("expected session to be deleted")
+	}
+	resolved, err := bindingSvc.ResolveConversation(ctx, "chat-1")
+	if err != nil {
+		t.Fatalf("ResolveConversation(chat-1) failed: %v", err)
+	}
+	if resolved != nil {
+		t.Fatalf("expected chat-1 binding to be cleared after delete, got %+v", resolved)
+	}
+	resolved, err = bindingSvc.ResolveConversation(ctx, "chat-2")
+	if err != nil {
+		t.Fatalf("ResolveConversation(chat-2) failed: %v", err)
+	}
+	if resolved != nil {
+		t.Fatalf("expected chat-2 binding to be cleared after delete, got %+v", resolved)
 	}
 }
 

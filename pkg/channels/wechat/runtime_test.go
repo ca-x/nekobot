@@ -85,6 +85,60 @@ func TestRuntimeBindingServiceBindResolveAndClear(t *testing.T) {
 	}
 }
 
+func TestRuntimeBindingServiceListBindingRecordsReturnsAllChats(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	mgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	svc := NewRuntimeBindingService(mgr, cfg)
+	ctx := context.Background()
+
+	sess, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "wechat-user",
+		Source:  toolsessions.SourceChannel,
+		Channel: "wechat",
+		Tool:    "codex",
+		Title:   "Code Assistant",
+		Command: "codex",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if err := svc.BindConversation(ctx, "chat-a", sess.ID); err != nil {
+		t.Fatalf("bind chat-a: %v", err)
+	}
+	if err := svc.BindConversation(ctx, "chat-b", sess.ID); err != nil {
+		t.Fatalf("bind chat-b: %v", err)
+	}
+
+	records, err := svc.ListBindingRecords(ctx)
+	if err != nil {
+		t.Fatalf("list binding records: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 binding records, got %d", len(records))
+	}
+	if records[0].Conversation.ConversationID != "chat-a" || records[1].Conversation.ConversationID != "chat-b" {
+		t.Fatalf("unexpected binding records: %+v", records)
+	}
+}
+
 func newRuntimeTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()

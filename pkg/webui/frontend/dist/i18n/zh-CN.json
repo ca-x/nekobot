@@ -864,5 +864,20 @@
   "configSectionLearnings": "学习记录",
   "configSectionDescLearnings": "持久化上下文压缩、衰减率和摘要生成。",
   "configSectionWatch": "文件监听",
-  "configSectionDescWatch": "文件系统监听、通配符模式和防抖设置。"
+  "configSectionDescWatch": "文件系统监听、通配符模式和防抖设置。",
+  "watchEnabledTitle": "启用监听模式",
+  "watchEnabledHint": "当匹配文件变化时自动执行监听命令。",
+  "watchDebounceMs": "防抖时间（毫秒）",
+  "watchDebounceMsHint": "检测到变化后等待多久再执行命令。",
+  "watchPatternsTitle": "监听规则",
+  "watchPatternsHint": "每条规则把一个文件通配符映射到要执行的命令。",
+  "watchPatternsEmpty": "还没有配置任何监听规则。",
+  "watchPatternLabel": "规则 {0}",
+  "watchPatternGlob": "文件通配符",
+  "watchPatternGlobHint": "匹配该通配符的文件变化会触发命令。",
+  "watchPatternCommand": "成功命令",
+  "watchPatternCommandHint": "匹配文件变化后执行的主命令。",
+  "watchPatternFailCommand": "失败命令",
+  "watchPatternFailCommandHint": "主命令失败时可选执行的兜底命令。",
+  "remove": "删除"
 }

@@ -389,10 +389,8 @@ func (s *ControlService) StopRuntime(ctx context.Context, runtimeName string) er
 		}
 	}
 
-	if chatID := boundWechatChatID(target); chatID != "" {
-		if err := s.bindings.ClearConversation(ctx, chatID); err != nil {
-			return fmt.Errorf("clear runtime binding: %w", err)
-		}
+	if err := s.clearRuntimeBindings(ctx, target.ID); err != nil {
+		return fmt.Errorf("clear runtime binding: %w", err)
 	}
 
 	if err := s.sessions.TerminateSession(ctx, target.ID, "stopped from wechat control"); err != nil {
@@ -420,10 +418,8 @@ func (s *ControlService) DeleteRuntime(ctx context.Context, runtimeName string) 
 		}
 	}
 
-	if chatID := boundWechatChatID(target); chatID != "" {
-		if err := s.bindings.ClearConversation(ctx, chatID); err != nil {
-			return fmt.Errorf("clear runtime binding: %w", err)
-		}
+	if err := s.clearRuntimeBindings(ctx, target.ID); err != nil {
+		return fmt.Errorf("clear runtime binding: %w", err)
 	}
 	if err := s.process.Reset(target.ID); err != nil {
 		return fmt.Errorf("reset runtime process: %w", err)
@@ -527,19 +523,26 @@ func (s *ControlService) ListRuntimes(ctx context.Context) ([]*toolsessions.Sess
 
 // DescribeBindings renders a short WeChat binding summary.
 func (s *ControlService) DescribeBindings(ctx context.Context) (string, error) {
-	bindings, err := s.bindings.ListBindings(ctx)
+	bindings, err := s.bindings.ListBindingRecords(ctx)
 	if err != nil {
 		return "", err
 	}
 	lines := make([]string, 0, len(bindings))
 	for _, item := range bindings {
-		if item == nil || strings.TrimSpace(item.Channel) != "wechat" || strings.TrimSpace(item.ConversationKey) == "" {
+		if item == nil || strings.TrimSpace(item.Conversation.Channel) != "wechat" {
 			continue
 		}
-		chatID := strings.TrimPrefix(strings.TrimSpace(item.ConversationKey), wechatConversationPrefix)
-		name := strings.TrimSpace(item.Title)
+		chatID := strings.TrimSpace(item.Conversation.ConversationID)
+		if chatID == "" {
+			continue
+		}
+		target, err := s.sessions.GetSession(ctx, item.TargetSessionID)
+		if err != nil {
+			return "", fmt.Errorf("get runtime session for binding: %w", err)
+		}
+		name := strings.TrimSpace(target.Title)
 		if name == "" {
-			name = strings.TrimSpace(item.Tool)
+			name = strings.TrimSpace(target.Tool)
 		}
 		lines = append(lines, fmt.Sprintf("%s -> %s", chatID, name))
 	}
@@ -986,6 +989,29 @@ func (s *ControlService) clearPendingInteraction(chatID string) {
 	s.pendingMu.Unlock()
 }
 
+func (s *ControlService) clearRuntimeBindings(ctx context.Context, sessionID string) error {
+	if s == nil || s.bindings == nil {
+		return fmt.Errorf("conversation binding service is required")
+	}
+	records, err := s.bindings.GetBindingsBySession(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+		chatID := strings.TrimSpace(record.Conversation.ConversationID)
+		if chatID == "" {
+			continue
+		}
+		if err := s.bindings.ClearConversation(ctx, chatID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *ControlService) getACPClient(ctx context.Context, target *toolsessions.Session) (acpConversationClient, error) {
 	if target == nil {
 		return nil, fmt.Errorf("runtime session is nil")
@@ -1049,20 +1075,6 @@ func runtimeDriver(session *toolsessions.Session) string {
 		}
 	}
 	return ""
-}
-
-func boundWechatChatID(session *toolsessions.Session) string {
-	if session == nil {
-		return ""
-	}
-	if strings.TrimSpace(session.Channel) != "wechat" {
-		return ""
-	}
-	conversationKey := strings.TrimSpace(session.ConversationKey)
-	if !strings.HasPrefix(conversationKey, wechatConversationPrefix) {
-		return ""
-	}
-	return strings.TrimPrefix(conversationKey, wechatConversationPrefix)
 }
 
 type rpcRequest struct {

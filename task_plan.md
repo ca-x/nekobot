@@ -37,9 +37,11 @@
   - 处理：补 import 后重新跑红绿测试。
 - `RegisterUndoTool` 重复注册导致 panic。
   - 处理：在 `tools.Registry` 中增加 `Replace`，并让 undo 改用 replace 语义。
+- `pkg/channels/wechat/runtime_test.go` 新增多绑定测试初始失败：`RuntimeBindingService` 缺少 `ListBindingRecords`，控制层仍只认单一 `ConversationKey`。
+  - 处理：补 `ListBindingRecords` / `GetBindingsBySession` 包装，`/bindings` 改为按 binding record 展示，并在 stop/delete 时清理 runtime 的全部 chat 绑定。
 
 ### Status
-**Completed** - 已完成审阅、修复与验证，待提交相关代码。
+**Completed** - 已完成 harness 审阅修复，并补完上一轮遗留的 WeChat/conversationbindings 多绑定收口与验证，待提交并推送相关代码。
 
 ## Goal
 在保持 `nekobot` 现有稳定性的前提下，基于 `~/code/goclaw` 与 `~/code/gua` 的成熟实践，完成：
