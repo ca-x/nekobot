@@ -854,5 +854,15 @@
   "storageMigrationDetail": "空ディレクトリまたは専用ディレクトリを使ってください。既存の非空 runtime DB がある移行先は、無関係なデータを上書きしないため拒否されます。",
   "configSectionDescRedis": "state と bus バックエンドで共有する Redis 接続設定。",
   "configSectionDescState": "キー値 state バックエンドの選択と file/redis prefix 設定。",
-  "configSectionDescBus": "メッセージ bus バックエンドの選択と Redis bus prefix。"
+  "configSectionDescBus": "メッセージ bus バックエンドの選択と Redis bus prefix。",
+  "configSectionAudit": "監査ログ",
+  "configSectionDescAudit": "ツール呼び出し監査ログ、保持ポリシーと引数長制限。",
+  "configSectionUndo": "元に戻す",
+  "configSectionDescUndo": "ターンレベルの元に戻すスナップショット、最大ターン数と永続化設定。",
+  "configSectionPreprocess": "ファイル参照",
+  "configSectionDescPreprocess": "ファイル参照展開、サイズ制限とインラインファイル注入。",
+  "configSectionLearnings": "学習記録",
+  "configSectionDescLearnings": "永続的コンテキスト圧縮、減衰率と要約生成。",
+  "configSectionWatch": "ファイル監視",
+  "configSectionDescWatch": "ファイルシステム監視、グロブパターンとデバウンス設定。"
 }

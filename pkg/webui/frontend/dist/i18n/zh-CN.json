@@ -854,5 +854,15 @@
   "storageMigrationDetail": "请使用空目录或专用目录。若目标位置已经存在非空 runtime DB，将拒绝覆盖，避免误伤无关数据。",
   "configSectionDescRedis": "供 state 与 bus 后端复用的 Redis 连接配置。",
   "configSectionDescState": "键值状态后端选择，以及文件路径或 Redis 前缀设置。",
-  "configSectionDescBus": "消息总线后端选择，以及 Redis 总线前缀。"
+  "configSectionDescBus": "消息总线后端选择，以及 Redis 总线前缀。",
+  "configSectionAudit": "审计日志",
+  "configSectionDescAudit": "工具调用审计日志、保留策略和参数长度限制。",
+  "configSectionUndo": "撤销",
+  "configSectionDescUndo": "会话级别撤销快照、最大回退轮次和持久化设置。",
+  "configSectionPreprocess": "文件引用",
+  "configSectionDescPreprocess": "文件引用展开、大小限制和内联文件注入。",
+  "configSectionLearnings": "学习记录",
+  "configSectionDescLearnings": "持久化上下文压缩、衰减率和摘要生成。",
+  "configSectionWatch": "文件监听",
+  "configSectionDescWatch": "文件系统监听、通配符模式和防抖设置。"
 }

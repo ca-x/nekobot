@@ -854,5 +854,15 @@
   "storageMigrationDetail": "Use an empty or dedicated target directory. Existing non-empty runtime DB targets are rejected to avoid overwriting unrelated data.",
   "configSectionDescRedis": "Shared Redis connection used by state and bus backends.",
   "configSectionDescState": "Key-value state backend selection and file/redis prefix settings.",
-  "configSectionDescBus": "Message bus backend selection and Redis bus prefix."
+  "configSectionDescBus": "Message bus backend selection and Redis bus prefix.",
+  "configSectionAudit": "Audit",
+  "configSectionDescAudit": "Tool call audit logging, retention policies and arg length limits.",
+  "configSectionUndo": "Undo",
+  "configSectionDescUndo": "Turn-level undo snapshots, max turns and persistence settings.",
+  "configSectionPreprocess": "Preprocess",
+  "configSectionDescPreprocess": "File mention expansion, size limits and inline file injection.",
+  "configSectionLearnings": "Learnings",
+  "configSectionDescLearnings": "Durable context compression, decay rates and summarization.",
+  "configSectionWatch": "Watch",
+  "configSectionDescWatch": "File system watcher, glob patterns and debounce settings."
 }
