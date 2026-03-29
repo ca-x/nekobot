@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
@@ -167,6 +168,7 @@ func runTUI(cmd *cobra.Command, args []string) {
 		config.Module,
 		logger.Module,
 		bus.Module,
+		audit.Module,
 		session.Module,
 		providers.Module,
 		tools.Module,

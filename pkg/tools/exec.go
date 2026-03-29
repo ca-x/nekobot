@@ -130,8 +130,11 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 
 	// Get streaming handler from context if available
 	streamHandler := GetStreamingHandler(ctx)
+	streamSessionID := GetStreamingSessionID(ctx)
+	streamingFallbackNotice := ""
 	if streaming && streamHandler == nil {
-		streaming = false // Disable streaming if no handler
+		streaming = false
+		streamingFallbackNotice = "Streaming requested but no streaming handler was attached; falling back to buffered output.\n\n"
 	}
 
 	// Resolve workdir
@@ -178,7 +181,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 				fallbackMode = "direct PTY execution"
 			}
 			fallback, fallbackErr := fallbackFn(ctx, command, workdir, execTimeout)
-			return "Docker sandbox is disabled for this process, fallback to " + fallbackMode + ".\nReason: " + reason + "\n\n" + fallback, fallbackErr
+			return streamingFallbackNotice + "Docker sandbox is disabled for this process, fallback to " + fallbackMode + ".\nReason: " + reason + "\n\n" + fallback, fallbackErr
 		}
 
 		result, err := t.executeInDocker(ctx, command, workdir, execTimeout)
@@ -195,22 +198,24 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 			fallbackMode = "direct PTY execution"
 		}
 		fallback, fallbackErr := fallbackFn(ctx, command, workdir, execTimeout)
-		return "Docker sandbox unavailable, fallback to " + fallbackMode + ".\nReason: " + err.Error() + "\n\n" + fallback, fallbackErr
+		return streamingFallbackNotice + "Docker sandbox unavailable, fallback to " + fallbackMode + ".\nReason: " + err.Error() + "\n\n" + fallback, fallbackErr
 	}
 
 	// PTY mode (direct execution only).
 	if usePTY {
-		return t.executeWithPTY(ctx, command, workdir, execTimeout)
+		result, err := t.executeWithPTY(ctx, command, workdir, execTimeout)
+		return streamingFallbackNotice + result, err
 	}
 
 	// Standard mode with optional streaming
 	if streaming && streamHandler != nil {
-		streamWriter := NewStreamWriter(streamHandler, 500*time.Millisecond)
+		streamWriter := NewStreamWriter(streamHandler, streamSessionID, 500*time.Millisecond)
 		return t.executeStandardWithStreaming(ctx, command, workdir, execTimeout, streamWriter)
 	}
 
 	// Standard mode
-	return t.executeStandard(ctx, command, workdir, execTimeout)
+	result, err := t.executeStandard(ctx, command, workdir, execTimeout)
+	return streamingFallbackNotice + result, err
 }
 
 func (t *ExecTool) executeInDocker(ctx context.Context, command, workdir string, timeout time.Duration) (string, error) {

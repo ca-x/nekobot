@@ -569,6 +569,34 @@ func TestSessionHistoryUsesSafeWindowWhenAvailable(t *testing.T) {
 	}
 }
 
+func TestContextBuilderPreprocessorCanBeDisabledViaConfig(t *testing.T) {
+	workspace := t.TempDir()
+	target := filepath.Join(workspace, "README.md")
+	if err := os.WriteFile(target, []byte("hello from file"), 0644); err != nil {
+		t.Fatalf("write referenced file: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = workspace
+	cfg.Preprocess.FileMentions.Enabled = false
+
+	store := promptmemory.NewStore(workspace)
+	cb := NewContextBuilderWithMemory(workspace, store)
+	cb.SetToolDescriptionsFunc(func() []string { return nil })
+	cb.SetPreprocessorConfig(preprocessConfigFromConfig(cfg, workspace))
+
+	messages := cb.BuildMessages(nil, "check @README.md")
+	if len(messages) != 2 {
+		t.Fatalf("expected system and user messages, got %d", len(messages))
+	}
+	if strings.Contains(messages[1].Content, "# Referenced Files") {
+		t.Fatalf("expected file references to be disabled, got %q", messages[1].Content)
+	}
+	if messages[1].Content != "check @README.md" {
+		t.Fatalf("expected original user content, got %q", messages[1].Content)
+	}
+}
+
 func TestNewMemoryStoreFromConfig_FileBackendDefaultPath(t *testing.T) {
 	workspace := t.TempDir()
 	cfg := config.DefaultConfig()

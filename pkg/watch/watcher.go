@@ -38,7 +38,7 @@ type Watcher struct {
 	cronScheduler *cron.Cron
 
 	// Debounce tracking: map of watch pattern index to timer
-	mu            sync.Mutex
+	mu            sync.RWMutex
 	debounceTimers map[int]*time.Timer
 	watchedPaths  map[string]int // path -> pattern index
 
@@ -97,7 +97,9 @@ func (w *Watcher) Start() error {
 	}
 
 	if !w.config.Enabled {
-		w.log.Debug("Watch mode is disabled")
+		if w.log != nil {
+			w.log.Debug("Watch mode is disabled")
+		}
 		return nil
 	}
 
@@ -116,7 +118,7 @@ func (w *Watcher) Start() error {
 
 	// Schedule compress job if configured
 	if w.config.DebounceMs > 0 {
-		w.log.Debug("Watch mode started",
+		w.debug("Watch mode started",
 			zap.Int("patterns", len(w.patterns)),
 			zap.Int("debounce_ms", w.config.DebounceMs),
 		)
@@ -125,10 +127,12 @@ func (w *Watcher) Start() error {
 	// Watch all patterns
 	for i, pattern := range w.patterns {
 		if err := w.watchPattern(i, pattern); err != nil {
-			w.log.Warn("Failed to watch pattern",
-				zap.String("glob", pattern.FileGlob),
-				zap.Error(err),
-			)
+			if w.log != nil {
+				w.log.Warn("Failed to watch pattern",
+					zap.String("glob", pattern.FileGlob),
+					zap.Error(err),
+				)
+			}
 		}
 	}
 
@@ -175,7 +179,9 @@ func (w *Watcher) Stop() error {
 	}
 
 	w.running = false
-	w.log.Info("Watch mode stopped")
+	if w.log != nil {
+		w.log.Info("Watch mode stopped")
+	}
 
 	return nil
 }
@@ -201,7 +207,7 @@ func (w *Watcher) watchPattern(idx int, pattern config.WatchPattern) error {
 			if err := w.addWatchPath(baseDir, idx); err != nil {
 				return err
 			}
-			w.log.Debug("Watching directory for glob pattern",
+			w.debug("Watching directory for glob pattern",
 				zap.String("glob", glob),
 				zap.String("dir", baseDir),
 			)
@@ -212,13 +218,15 @@ func (w *Watcher) watchPattern(idx int, pattern config.WatchPattern) error {
 	// Watch each matching path
 	for _, path := range matches {
 		if err := w.addWatchPath(path, idx); err != nil {
-			w.log.Warn("Failed to watch path",
-				zap.String("path", path),
-				zap.Error(err),
-			)
+			if w.log != nil {
+				w.log.Warn("Failed to watch path",
+					zap.String("path", path),
+					zap.Error(err),
+				)
+			}
 			continue
 		}
-		w.log.Debug("Watching path",
+		w.debug("Watching path",
 			zap.String("path", path),
 			zap.String("glob", glob),
 		)
@@ -297,16 +305,15 @@ func (w *Watcher) eventLoop() {
 			if !ok {
 				return
 			}
-			w.log.Error("File watcher error", zap.Error(err))
+			if w.log != nil {
+				w.log.Error("File watcher error", zap.Error(err))
+			}
 		}
 	}
 }
 
 // handleFSEvent processes a single fsnotify event.
 func (w *Watcher) handleFSEvent(event fsnotify.Event) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
 	// Find matching pattern
 	patternIdx, found := w.findMatchingPattern(event.Name)
 	if !found {
@@ -320,7 +327,7 @@ func (w *Watcher) handleFSEvent(event fsnotify.Event) {
 	}
 
 	// Log the event
-	w.log.Debug("File change detected",
+	w.debug("File change detected",
 		zap.String("path", event.Name),
 		zap.String("op", event.Op.String()),
 		zap.String("glob", pattern.FileGlob),
@@ -332,6 +339,9 @@ func (w *Watcher) handleFSEvent(event fsnotify.Event) {
 
 // findMatchingPattern finds the pattern index for a path.
 func (w *Watcher) findMatchingPattern(path string) (int, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
 	// Check direct path matches
 	for watchedPath, idx := range w.watchedPaths {
 		if path == watchedPath || strings.HasPrefix(path, watchedPath+string(filepath.Separator)) {
@@ -412,12 +422,14 @@ func (w *Watcher) executeCommand(patternIdx int, event fsnotify.Event) {
 
 		// Log result
 		if err != nil {
-			w.log.Warn("Watch command failed",
-				zap.String("command", command),
-				zap.String("file", event.Name),
-				zap.Duration("duration", duration),
-				zap.Error(err),
-			)
+			if w.log != nil {
+				w.log.Warn("Watch command failed",
+					zap.String("command", command),
+					zap.String("file", event.Name),
+					zap.Duration("duration", duration),
+					zap.Error(err),
+				)
+			}
 
 			// Execute fail command if configured
 			if pattern.FailCommand != "" {
@@ -427,11 +439,13 @@ func (w *Watcher) executeCommand(patternIdx int, event fsnotify.Event) {
 			auditEntry.Success = false
 			auditEntry.Error = err.Error()
 		} else {
-			w.log.Info("Watch command executed",
-				zap.String("command", command),
-				zap.String("file", event.Name),
-				zap.Duration("duration", duration),
-			)
+			if w.log != nil {
+				w.log.Info("Watch command executed",
+					zap.String("command", command),
+					zap.String("file", event.Name),
+					zap.Duration("duration", duration),
+				)
+			}
 			auditEntry.Success = true
 		}
 
@@ -459,7 +473,7 @@ func (w *Watcher) executeFailCommand(failCommand string, event fsnotify.Event, o
 		return
 	}
 
-	w.log.Debug("Executing fail command",
+	w.debug("Executing fail command",
 		zap.String("command", command),
 		zap.String("original_error", origErr.Error()),
 	)
@@ -469,18 +483,22 @@ func (w *Watcher) executeFailCommand(failCommand string, event fsnotify.Event, o
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
-		w.log.Error("Fail command failed",
-			zap.String("command", command),
-			zap.Error(err),
-		)
+		if w.log != nil {
+			w.log.Error("Fail command failed",
+				zap.String("command", command),
+				zap.Error(err),
+			)
+		}
 	} else {
-		w.log.Info("Fail command executed",
-			zap.String("command", command),
-		)
+		if w.log != nil {
+			w.log.Info("Fail command executed",
+				zap.String("command", command),
+			)
+		}
 	}
 
 	if len(output) > 0 {
-		w.log.Debug("Fail command output",
+		w.debug("Fail command output",
 			zap.String("output", truncateString(string(output), 500)),
 		)
 	}
@@ -499,8 +517,8 @@ func (w *Watcher) IsRunning() bool {
 	if w == nil {
 		return false
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.running
 }
 
@@ -515,4 +533,10 @@ func (w *Watcher) Patterns() []config.WatchPattern {
 // execShellCommand creates and returns a command that executes the given shell command.
 func execShellCommand(ctx context.Context, command string) *exec.Cmd {
 	return exec.CommandContext(ctx, "sh", "-c", command)
+}
+
+func (w *Watcher) debug(msg string, fields ...zap.Field) {
+	if w != nil && w.log != nil {
+		w.log.Debug(msg, fields...)
+	}
 }

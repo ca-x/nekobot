@@ -126,15 +126,15 @@ func (s *SnapshotStore) SaveSnapshot(messages []MessageSnapshot, summary string)
 			prevTurn = -1
 		}
 
-		// Calculate delta: messages since previous snapshot
+		// Calculate delta against the previous fully reconstructed state.
 		var addedMessages []MessageSnapshot
 		if prevTurn >= 0 && prevTurn < len(s.snapshots) {
-			// Get message count from previous snapshot
 			prevSnapshot := s.snapshots[len(s.snapshots)-1]
-			prevMsgCount := len(prevSnapshot.Messages)
-			if isCheckpoint {
-				prevMsgCount = 0
+			prevMessages, err := s.reconstructMessagesLocked(prevSnapshot)
+			if err != nil {
+				return fmt.Errorf("reconstructing previous snapshot: %w", err)
 			}
+			prevMsgCount := len(prevMessages)
 
 			if len(messages) > prevMsgCount {
 				addedMessages = make([]MessageSnapshot, len(messages)-prevMsgCount)
@@ -202,6 +202,30 @@ func (s *SnapshotStore) writeSnapshot(snapshot TurnSnapshot) error {
 	encoder := json.NewEncoder(file)
 	if err := encoder.Encode(snapshot); err != nil {
 		return fmt.Errorf("encoding snapshot: %w", err)
+	}
+
+	return nil
+}
+
+func (s *SnapshotStore) rewriteSnapshotsLocked() error {
+	path := s.getSnapshotPath()
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating snapshot directory: %w", err)
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("creating snapshot file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	encoder := json.NewEncoder(file)
+	for _, snapshot := range s.snapshots {
+		if err := encoder.Encode(snapshot); err != nil {
+			return fmt.Errorf("encoding snapshot: %w", err)
+		}
 	}
 
 	return nil
@@ -275,6 +299,10 @@ func (s *SnapshotStore) Undo() ([]MessageSnapshot, error) {
 	messages, err := s.reconstructMessagesLocked(previousSnapshot)
 	if err != nil {
 		return nil, fmt.Errorf("reconstructing messages: %w", err)
+	}
+
+	if err := s.rewriteSnapshotsLocked(); err != nil {
+		return nil, fmt.Errorf("rewriting snapshots: %w", err)
 	}
 
 	return messages, nil

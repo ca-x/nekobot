@@ -2,6 +2,7 @@ package session
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"nekobot/pkg/config"
@@ -108,5 +109,67 @@ func TestGetHistorySafeExpandsToKeepAssistantToolGroup(t *testing.T) {
 	}
 	if history[2].Role != "assistant" || history[2].Content != "done" {
 		t.Fatalf("expected trailing assistant message retained, got %#v", history[2])
+	}
+}
+
+func TestSnapshotStoreSaveAndUndo(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Undo.Enabled = true
+	cfg.Undo.MaxTurns = 4
+
+	store := NewSnapshotStore("cli:test", t.TempDir(), cfg.Undo)
+	first := []MessageSnapshot{{Role: "user", Content: "hello"}}
+	second := append(append([]MessageSnapshot{}, first...), MessageSnapshot{Role: "assistant", Content: "world"})
+
+	if err := store.SaveSnapshot(first, ""); err != nil {
+		t.Fatalf("SaveSnapshot first failed: %v", err)
+	}
+	if err := store.SaveSnapshot(second, "summary"); err != nil {
+		t.Fatalf("SaveSnapshot second failed: %v", err)
+	}
+	if !store.CanUndo() {
+		t.Fatal("expected CanUndo to be true")
+	}
+
+	messages, err := store.Undo()
+	if err != nil {
+		t.Fatalf("Undo failed: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected 1 message after undo, got %d", len(messages))
+	}
+	if messages[0].Content != "hello" {
+		t.Fatalf("expected reverted message content hello, got %#v", messages[0])
+	}
+}
+
+func TestSnapshotStoreLoadSnapshots(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Undo.Enabled = true
+	cfg.Undo.MaxTurns = 4
+
+	baseDir := t.TempDir()
+	store := NewSnapshotStore("cli:test", baseDir, cfg.Undo)
+	if err := store.SaveSnapshot([]MessageSnapshot{{Role: "user", Content: "one"}}, ""); err != nil {
+		t.Fatalf("SaveSnapshot first failed: %v", err)
+	}
+	if err := store.SaveSnapshot([]MessageSnapshot{
+		{Role: "user", Content: "one"},
+		{Role: "assistant", Content: "two"},
+	}, ""); err != nil {
+		t.Fatalf("SaveSnapshot second failed: %v", err)
+	}
+
+	reloaded := NewSnapshotStore("cli:test", baseDir, cfg.Undo)
+	if err := reloaded.LoadSnapshots(); err != nil {
+		t.Fatalf("LoadSnapshots failed: %v", err)
+	}
+	if got := reloaded.GetTurnCount(); got != 2 {
+		t.Fatalf("expected 2 turns after reload, got %d", got)
+	}
+
+	path := filepath.Join(baseDir, "cli_test.snapshots.jsonl")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected snapshot file %s to exist: %v", path, err)
 	}
 }

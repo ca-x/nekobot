@@ -16,6 +16,7 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
+	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channels"
 	"nekobot/pkg/commands"
@@ -93,6 +94,7 @@ func (s *GatewayService) run() {
 		userprefs.Module,
 		session.Module,
 		approval.Module,
+		audit.Module,
 		skills.Module,
 		process.Module,
 		toolsessions.Module,
@@ -276,6 +278,7 @@ func runGatewayForeground() {
 		userprefs.Module,
 		session.Module,
 		approval.Module,
+		audit.Module,
 		skills.Module,
 		process.Module,
 		toolsessions.Module,

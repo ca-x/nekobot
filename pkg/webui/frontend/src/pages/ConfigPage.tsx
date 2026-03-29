@@ -89,6 +89,11 @@ interface ModelEntry {
   model: string;
 }
 
+interface SectionMeta {
+  labelKey: string;
+  descriptionKey: string;
+}
+
 const MANAGED_AGENT_FIELDS = new Set([
   'defaults.provider',
   'defaults.model',
@@ -96,41 +101,34 @@ const MANAGED_AGENT_FIELDS = new Set([
   'defaults.provider_groups',
 ]);
 
-const SECTION_DESCRIPTIONS: Record<ConfigSection, string> = {
-  storage: t('configSectionDescStorage'),
-  agents: t('configSectionDescAgents'),
-  gateway: t('configSectionDescGateway'),
-  tools: t('configSectionDescTools'),
-  transcription: t('configSectionDescTranscription'),
-  memory: t('configSectionDescMemory'),
-  sessions: t('configSectionDescSessions'),
-  heartbeat: t('configSectionDescHeartbeat'),
-  redis: t('configSectionDescRedis'),
-  state: t('configSectionDescState'),
-  bus: t('configSectionDescBus'),
-  approval: t('configSectionDescApproval'),
-  logger: t('configSectionDescLogger'),
-  webui: t('configSectionDescWebUI'),
+const SECTION_META: Record<ConfigSection, SectionMeta> = {
+  storage: { labelKey: 'configSectionStorage', descriptionKey: 'configSectionDescStorage' },
+  agents: { labelKey: 'configSectionAgents', descriptionKey: 'configSectionDescAgents' },
+  gateway: { labelKey: 'configSectionGateway', descriptionKey: 'configSectionDescGateway' },
+  tools: { labelKey: 'configSectionTools', descriptionKey: 'configSectionDescTools' },
+  transcription: { labelKey: 'configSectionTranscription', descriptionKey: 'configSectionDescTranscription' },
+  memory: { labelKey: 'configSectionMemory', descriptionKey: 'configSectionDescMemory' },
+  sessions: { labelKey: 'configSectionSessions', descriptionKey: 'configSectionDescSessions' },
+  heartbeat: { labelKey: 'configSectionHeartbeat', descriptionKey: 'configSectionDescHeartbeat' },
+  redis: { labelKey: 'configSectionRedis', descriptionKey: 'configSectionDescRedis' },
+  state: { labelKey: 'configSectionState', descriptionKey: 'configSectionDescState' },
+  bus: { labelKey: 'configSectionBus', descriptionKey: 'configSectionDescBus' },
+  approval: { labelKey: 'configSectionApproval', descriptionKey: 'configSectionDescApproval' },
+  logger: { labelKey: 'configSectionLogger', descriptionKey: 'configSectionDescLogger' },
+  webui: { labelKey: 'configSectionWebUI', descriptionKey: 'configSectionDescWebUI' },
+  audit: { labelKey: 'configSectionAudit', descriptionKey: 'configSectionDescAudit' },
+  undo: { labelKey: 'configSectionUndo', descriptionKey: 'configSectionDescUndo' },
+  preprocess: { labelKey: 'configSectionPreprocess', descriptionKey: 'configSectionDescPreprocess' },
+  learnings: { labelKey: 'configSectionLearnings', descriptionKey: 'configSectionDescLearnings' },
+  watch: { labelKey: 'configSectionWatch', descriptionKey: 'configSectionDescWatch' },
 };
 
 function sectionLabel(section: ConfigSection): string {
-  const labels: Record<ConfigSection, string> = {
-    storage: t('configSectionStorage'),
-    agents: t('configSectionAgents'),
-    gateway: t('configSectionGateway'),
-    tools: t('configSectionTools'),
-    transcription: t('configSectionTranscription'),
-    memory: t('configSectionMemory'),
-    sessions: t('configSectionSessions'),
-    heartbeat: t('configSectionHeartbeat'),
-    redis: t('configSectionRedis'),
-    state: t('configSectionState'),
-    bus: t('configSectionBus'),
-    approval: t('configSectionApproval'),
-    logger: t('configSectionLogger'),
-    webui: t('configSectionWebUI'),
-  };
-  return labels[section];
+  return t(SECTION_META[section].labelKey);
+}
+
+function sectionDescription(section: ConfigSection): string {
+  return t(SECTION_META[section].descriptionKey);
 }
 
 function sectionPersistenceHint(section: ConfigSection): string {
@@ -1806,7 +1804,7 @@ export default function ConfigPage() {
                   <div className="text-sm font-semibold text-foreground">{sectionLabel(item)}</div>
                   <DirtyDot dirty={sectionDirty[item]} />
                 </div>
-                <div className="mt-1 text-xs leading-5 text-muted-foreground">{SECTION_DESCRIPTIONS[item]}</div>
+                <div className="mt-1 text-xs leading-5 text-muted-foreground">{sectionDescription(item)}</div>
               </button>
             ))}
           </CardContent>
@@ -1821,7 +1819,7 @@ export default function ConfigPage() {
                   {sectionLabel(section)}
                 </div>
                 <CardTitle className="text-2xl text-foreground">{sectionLabel(section)}</CardTitle>
-                <CardDescription>{SECTION_DESCRIPTIONS[section]}</CardDescription>
+                <CardDescription>{sectionDescription(section)}</CardDescription>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">

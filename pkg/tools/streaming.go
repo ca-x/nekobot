@@ -22,10 +22,16 @@ type StreamingHandler func(update StreamingUpdate)
 
 // streamingKey is the context key for streaming handlers.
 type streamingKey struct{}
+type streamingSessionIDKey struct{}
 
 // WithStreamingHandler attaches a streaming handler to the context.
 func WithStreamingHandler(ctx context.Context, handler StreamingHandler) context.Context {
 	return context.WithValue(ctx, streamingKey{}, handler)
+}
+
+// WithStreamingSessionID attaches a session ID for streaming updates to the context.
+func WithStreamingSessionID(ctx context.Context, sessionID string) context.Context {
+	return context.WithValue(ctx, streamingSessionIDKey{}, sessionID)
 }
 
 // GetStreamingHandler retrieves the streaming handler from context.
@@ -36,9 +42,18 @@ func GetStreamingHandler(ctx context.Context) StreamingHandler {
 	return nil
 }
 
+// GetStreamingSessionID retrieves the streaming session ID from context.
+func GetStreamingSessionID(ctx context.Context) string {
+	if sessionID, ok := ctx.Value(streamingSessionIDKey{}).(string); ok {
+		return sessionID
+	}
+	return ""
+}
+
 // StreamWriter provides real-time output streaming for commands.
 type StreamWriter struct {
 	mu       sync.Mutex
+	sessionID string
 	output   strings.Builder
 	lines    int
 	handler  StreamingHandler
@@ -48,13 +63,14 @@ type StreamWriter struct {
 }
 
 // NewStreamWriter creates a new streaming writer.
-func NewStreamWriter(handler StreamingHandler, interval time.Duration) *StreamWriter {
+func NewStreamWriter(handler StreamingHandler, sessionID string, interval time.Duration) *StreamWriter {
 	if interval <= 0 {
 		interval = 500 * time.Millisecond
 	}
 	return &StreamWriter{
-		handler:  handler,
-		interval: interval,
+		sessionID: sessionID,
+		handler:   handler,
+		interval:  interval,
 	}
 }
 
@@ -98,6 +114,7 @@ func (sw *StreamWriter) Finish(exitCode int, errMsg string) {
 	sw.done = true
 	if sw.handler != nil {
 		update := StreamingUpdate{
+			SessionID: sw.sessionID,
 			Output:   sw.output.String(),
 			Lines:    sw.lines,
 			Done:     true,
@@ -128,6 +145,7 @@ func (sw *StreamWriter) sendUpdate() {
 	}
 	sw.lastSend = time.Now()
 	update := StreamingUpdate{
+		SessionID: sw.sessionID,
 		Output: sw.output.String(),
 		Lines:  sw.lines,
 		Done:   false,

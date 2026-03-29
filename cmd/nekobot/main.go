@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
@@ -153,6 +154,7 @@ func runOneShot(ctx context.Context, cancel context.CancelFunc) {
 		config.Module,
 		logger.Module,
 		bus.Module,
+		audit.Module,
 		session.Module,
 		providers.Module,
 		tools.Module,
@@ -214,6 +216,7 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc) {
 		config.Module,
 		logger.Module,
 		bus.Module,
+		audit.Module,
 		session.Module,
 		providers.Module,
 		tools.Module,

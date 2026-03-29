@@ -241,3 +241,64 @@
 - 开发要求：**功能完成一项就提交和推送代码**；非功能性的评估、计划整理不单独算功能交付。
 - 本轮并行评估已吸收 `goclaw` 与 `gua` 的分析结论，后续实现时继续由主 agent 审批每个子任务结论。
 - 跨设备续写建议起点：微信阶段已完成并推送，优先继续 Batch B 的 Slack 交互闭环，再补 Batch C 的 runtime prompts 回归，随后开始 `goclaw` / `gua` 迁移批次。
+
+---
+
+## 2026-03-29 复审批次：Harness / Learnings / WebUI Config
+
+### Goal
+复审最近 5 次与 harness、undo/watch、learnings、audit log、streaming bash、WebUI config 暴露相关提交，修复确认存在的业务流程问题、前端体验问题与必要架构缝隙。
+
+### Phases
+- [x] Phase 1: 建立复审计划并核对当前工作树状态
+- [x] Phase 2: 逐提交阅读代码与影响面
+- [x] Phase 3: 修复已证实问题并补验证
+- [x] Phase 4: 更新计划、记录结论与剩余风险
+
+### Review Scope
+- `1b7c3d0` `docs: update harness progress tracker`
+- `580741d` `feat: add Turn Undo, @file Mentions, and Watch Mode harness features`
+- `46026ac` `feat: add Learnings JSONL system`
+- `583245d` `feat(webui): add harness config sections to ConfigPage`
+- `c409cf1` `feat: add audit log and streaming bash`
+
+### Confirmed Fixes
+- [x] WebUI ConfigPage 为新增 `audit` / `undo` / `preprocess` / `learnings` / `watch` 分组补齐 label/description 映射，并把 section 元数据收敛为单一映射源，避免再次出现新增分组但漏文案的回归。
+- [x] WebUI i18n 补齐上述 5 个分组的 `en` / `zh-CN` / `ja` 文案，修复分组标题和说明显示不完整问题。
+- [x] `pkg/session/snapshot.go` 修复连续增量快照错误地按空 `Messages` 长度计算 delta 的问题，避免消息重建重复。
+- [x] `pkg/session/snapshot.go` 在 `Undo()` 后重写 `.snapshots.jsonl`，使撤销结果可持久化，不会下次加载又“反弹”。
+- [x] `pkg/tools/streaming.go` 为流式更新补齐 `session_id` 透传。
+- [x] `pkg/tools/exec.go` 对 `streaming=true` 但缺少 handler 的情况增加明确 fallback 提示，避免静默降级。
+- [x] `pkg/watch/watcher.go` 将高频查找路径改为读锁，降低 watch event 串行化开销。
+
+### Verification
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./pkg/session`
+- [x] `go test -count=1 ./pkg/tools ./pkg/watch`
+
+### Remaining Risks / Follow-up
+- [ ] `undo` 当前仍存在架构级缺口：`RegisterUndoTool()` 没有实际调用点，且工具执行不会回写 live session / summary。本轮只修了数据层正确性与持久化，未强行把共享 agent 注册模型改成会话级原子回滚，以避免把多会话串线风险带入主线。
+- `46026ac` `feat: add Learnings JSONL system for durable context compression`
+- `583245d` `feat(webui): add harness config sections to ConfigPage`
+- `c409cf1` `feat: add audit log and streaming bash from yoyo-evolve harness`
+
+### Review Focus
+- 业务流程：
+  - undo 与 session snapshot 写入顺序、session ID 解析、回滚边界
+  - watch mode 的事件匹配、并发锁、日志、安全关闭、重复触发
+  - learnings JSONL 的写入/读取边界和 prompt/context 注入行为
+  - streaming bash / audit log 的注册、输出、失败路径、调用边界
+- 前端体验：
+  - ConfigPage 新增 harness config section 的可理解性、可发现性、显示完整性
+- 架构：
+  - 新增模块是否职责过浅、跨模块编排是否割裂、是否存在更合适的边界收敛点
+
+### Decisions Made
+- 当前工作树存在未提交修改：`pkg/agent/agent.go`、`pkg/watch/watcher.go`；视为现状的一部分一起审，不先回滚。
+- 只修复能通过代码/验证证明的问题，不做泛化“优化”。
+
+### Errors Encountered
+- 待补充
+
+### Status
+**Currently in Phase 2** - 逐提交阅读代码与影响面，先收敛问题清单，再进入定点修复。

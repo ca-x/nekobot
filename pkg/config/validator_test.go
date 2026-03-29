@@ -346,3 +346,53 @@ func TestValidateConfigRejectsInvalidWebUIRecordRetentionConfig(t *testing.T) {
 		t.Fatalf("expected skill version max_count validation error, got %v", err)
 	}
 }
+
+func TestValidateConfigRejectsInvalidHarnessFeatureConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Audit.Enabled = true
+	cfg.Audit.MaxArgLength = 0
+	cfg.Audit.MaxResults = 0
+	cfg.Audit.RetentionDays = 0
+	cfg.Undo.Enabled = true
+	cfg.Undo.MaxTurns = 0
+	cfg.Preprocess.FileMentions.Enabled = true
+	cfg.Preprocess.FileMentions.MaxFileSize = 0
+	cfg.Preprocess.FileMentions.MaxTotalSize = 0
+	cfg.Preprocess.FileMentions.MaxFiles = 0
+	cfg.Learnings.Enabled = true
+	cfg.Learnings.MaxRawEntries = 0
+	cfg.Learnings.CompressedMaxSize = 0
+	cfg.Learnings.HalfLifeDays = 0
+	cfg.Learnings.CompressInterval = "bad"
+	cfg.Watch.Enabled = true
+	cfg.Watch.DebounceMs = -1
+	cfg.Watch.Patterns = []WatchPattern{{}}
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for harness feature config")
+	}
+
+	requiredFields := []string{
+		"audit.max_arg_length",
+		"audit.max_results",
+		"audit.retention_days",
+		"undo.max_turns",
+		"preprocess.file_mentions.max_file_size",
+		"preprocess.file_mentions.max_total_size",
+		"preprocess.file_mentions.max_files",
+		"learnings.max_raw_entries",
+		"learnings.compressed_max_size",
+		"learnings.half_life_days",
+		"learnings.compress_interval",
+		"watch.debounce_ms",
+		"watch.patterns[0].file_glob",
+		"watch.patterns[0].command",
+	}
+	for _, field := range requiredFields {
+		if !strings.Contains(err.Error(), field) {
+			t.Fatalf("expected %s validation error, got %v", field, err)
+		}
+	}
+}

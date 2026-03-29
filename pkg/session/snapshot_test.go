@@ -7,7 +7,7 @@ import (
 	"nekobot/pkg/config"
 )
 
-func TestSnapshotStoreSaveAndUndo(t *testing.T) {
+func TestSnapshotStoreSaveAndUndoBasic(t *testing.T) {
 	// Create temp directory
 	tmpDir := t.TempDir()
 
@@ -330,5 +330,100 @@ func TestSnapshotStoreInMemoryReconstruction(t *testing.T) {
 
 	if len(current) != 2 {
 		t.Errorf("Expected 2 messages after undo, got %d", len(current))
+	}
+}
+
+func TestSnapshotStoreIncrementalSnapshotsDoNotDuplicateMessages(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := config.UndoConfig{
+		Enabled:       true,
+		MaxTurns:      10,
+		SnapshotFiles: true,
+	}
+
+	store := NewSnapshotStore("test-incremental", tmpDir, cfg)
+
+	turn1 := []MessageSnapshot{
+		{Role: "user", Content: "A"},
+	}
+	turn2 := []MessageSnapshot{
+		{Role: "user", Content: "A"},
+		{Role: "assistant", Content: "B"},
+	}
+	turn3 := []MessageSnapshot{
+		{Role: "user", Content: "A"},
+		{Role: "assistant", Content: "B"},
+		{Role: "user", Content: "C"},
+	}
+
+	if err := store.SaveSnapshot(turn1, ""); err != nil {
+		t.Fatalf("SaveSnapshot turn1 failed: %v", err)
+	}
+	if err := store.SaveSnapshot(turn2, ""); err != nil {
+		t.Fatalf("SaveSnapshot turn2 failed: %v", err)
+	}
+	if err := store.SaveSnapshot(turn3, ""); err != nil {
+		t.Fatalf("SaveSnapshot turn3 failed: %v", err)
+	}
+
+	current, err := store.GetCurrentMessages()
+	if err != nil {
+		t.Fatalf("GetCurrentMessages failed: %v", err)
+	}
+
+	if len(current) != 3 {
+		t.Fatalf("expected 3 messages after incremental reconstruction, got %d", len(current))
+	}
+	if current[0].Content != "A" || current[1].Content != "B" || current[2].Content != "C" {
+		t.Fatalf("unexpected reconstructed messages: %#v", current)
+	}
+}
+
+func TestSnapshotStoreUndoPersistsToDisk(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	cfg := config.UndoConfig{
+		Enabled:       true,
+		MaxTurns:      10,
+		SnapshotFiles: true,
+	}
+
+	store := NewSnapshotStore("test-undo-persist", tmpDir, cfg)
+
+	first := []MessageSnapshot{
+		{Role: "user", Content: "hello"},
+	}
+	second := []MessageSnapshot{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "world"},
+	}
+
+	if err := store.SaveSnapshot(first, ""); err != nil {
+		t.Fatalf("SaveSnapshot first failed: %v", err)
+	}
+	if err := store.SaveSnapshot(second, ""); err != nil {
+		t.Fatalf("SaveSnapshot second failed: %v", err)
+	}
+
+	if _, err := store.Undo(); err != nil {
+		t.Fatalf("Undo failed: %v", err)
+	}
+
+	reloaded := NewSnapshotStore("test-undo-persist", tmpDir, cfg)
+	if err := reloaded.LoadSnapshots(); err != nil {
+		t.Fatalf("LoadSnapshots failed: %v", err)
+	}
+
+	if got := reloaded.GetTurnCount(); got != 1 {
+		t.Fatalf("expected 1 snapshot after persisted undo, got %d", got)
+	}
+
+	current, err := reloaded.GetCurrentMessages()
+	if err != nil {
+		t.Fatalf("GetCurrentMessages failed: %v", err)
+	}
+	if len(current) != 1 || current[0].Content != "hello" {
+		t.Fatalf("unexpected messages after reload: %#v", current)
 	}
 }

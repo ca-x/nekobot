@@ -14,6 +14,7 @@ import (
 	"nekobot/pkg/logger"
 	"nekobot/pkg/memory"
 	promptmemory "nekobot/pkg/memory/prompt"
+	"nekobot/pkg/preprocess"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
@@ -228,6 +229,7 @@ func New(
 		RecentDailyNoteDays:    cfg.Memory.Context.RecentDailyNoteDays,
 		MaxChars:               cfg.Memory.Context.MaxChars,
 	})
+	contextBuilder.SetPreprocessorConfig(preprocessConfigFromConfig(cfg, workspace))
 
 	// Set tool descriptions function
 	contextBuilder.SetToolDescriptionsFunc(toolRegistry.GetDescriptions)
@@ -254,6 +256,21 @@ func New(
 	}
 
 	return agent, nil
+}
+
+func preprocessConfigFromConfig(cfg *config.Config, workspace string) preprocess.PreprocessorConfig {
+	preprocessCfg := preprocess.DefaultConfig()
+	preprocessCfg.Workspace = workspace
+	if cfg == nil {
+		return preprocessCfg
+	}
+
+	fileMentions := cfg.Preprocess.FileMentions
+	preprocessCfg.Enabled = fileMentions.Enabled
+	preprocessCfg.MaxFileSize = fileMentions.MaxFileSize
+	preprocessCfg.MaxTotalSize = fileMentions.MaxTotalSize
+	preprocessCfg.MaxFiles = fileMentions.MaxFiles
+	return preprocessCfg
 }
 
 // RegisterSkillTool registers the skill tool with the agent.
@@ -424,7 +441,13 @@ func (a *Agent) chatWithProviderModelDetailed(
 
 	// Save snapshot before each turn (for undo functionality)
 	if a.snapshotMgr != nil && sess != nil {
-		store := a.snapshotMgr.GetStore(promptCtx.SessionID)
+		sessionID := strings.TrimSpace(promptCtx.SessionID)
+		if sessionID == "" {
+			if identifiable, ok := sess.(interface{ GetID() string }); ok {
+				sessionID = strings.TrimSpace(identifiable.GetID())
+			}
+		}
+		store := a.snapshotMgr.GetStore(sessionID)
 		if store != nil {
 			messages := sess.GetMessages()
 			snapshotMessages := convertToSnapshotMessages(messages)
