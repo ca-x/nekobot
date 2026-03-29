@@ -21,6 +21,7 @@ import (
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/subagent"
+	"nekobot/pkg/session"
 	"nekobot/pkg/tools"
 	"nekobot/pkg/toolsessions"
 )
@@ -52,6 +53,7 @@ type Agent struct {
 	skillsManager  *skills.Manager
 	semanticMemory memory.SearchManager
 	promptManager  *prompts.Manager
+	snapshotMgr    *session.SnapshotManager
 
 	acpMu       sync.RWMutex
 	acpSessions map[string]*acpSessionState
@@ -208,6 +210,14 @@ func New(
 		}
 	}
 
+	// Initialize snapshot manager for turn undo functionality
+	var snapshotMgr *session.SnapshotManager
+	if cfg.Undo.Enabled {
+		snapshotDir := filepath.Join(workspace, ".nekobot", "sessions")
+		snapshotMgr = session.NewSnapshotManager(snapshotDir, cfg.Undo)
+		log.Info("Turn undo system enabled", zap.Int("max_turns", cfg.Undo.MaxTurns))
+	}
+
 	// Create context builder.
 	memoryStore := newMemoryStoreFromConfig(cfg, workspace, kvStore, runtimeEntClient)
 	contextBuilder := NewContextBuilderWithMemory(workspace, memoryStore)
@@ -231,6 +241,7 @@ func New(
 		approval:         approvalMgr,
 		semanticMemory:   semanticMemory,
 		promptManager:    promptMgr,
+		snapshotMgr:      snapshotMgr,
 		acpSessions:      make(map[string]*acpSessionState),
 		failoverCooldown: providers.NewCooldownTracker(),
 		providerGroups:   newProviderGroupPlanner(),
@@ -251,6 +262,20 @@ func (a *Agent) RegisterSkillTool(skillsManager *skills.Manager) {
 	a.skillsManager = skillsManager
 	a.tools.MustRegister(tools.NewSkillTool(a.logger, skillsManager))
 	a.logger.Info("Skill tool registered")
+}
+
+// RegisterUndoTool registers the undo tool with the agent.
+// This should be called after agent creation when snapshot manager is available.
+func (a *Agent) RegisterUndoTool(sessionID string) {
+	if a.snapshotMgr == nil {
+		a.logger.Debug("Undo tool not registered - snapshot manager not initialized")
+		return
+	}
+	a.tools.MustRegister(tools.NewUndoTool(tools.UndoToolOptions{
+		SnapshotMgr: a.snapshotMgr,
+		SessionID:   sessionID,
+	}))
+	a.logger.Info("Undo tool registered", zap.String("session_id", sessionID))
 }
 
 // SetApprovalModeForSession overrides approval mode for one chat session.
@@ -397,6 +422,22 @@ func (a *Agent) chatWithProviderModelDetailed(
 	ctx = context.WithValue(ctx, promptContextChannelKey, strings.TrimSpace(promptCtx.Channel))
 	ctx = context.WithValue(ctx, promptContextSessionKey, strings.TrimSpace(promptCtx.SessionID))
 
+	// Save snapshot before each turn (for undo functionality)
+	if a.snapshotMgr != nil && sess != nil {
+		store := a.snapshotMgr.GetStore(promptCtx.SessionID)
+		if store != nil {
+			messages := sess.GetMessages()
+			snapshotMessages := convertToSnapshotMessages(messages)
+			summary := ""
+			if summarizable, ok := sess.(interface{ GetSummary() string }); ok {
+				summary = summarizable.GetSummary()
+			}
+			if err := store.SaveSnapshot(snapshotMessages, summary); err != nil {
+				a.logger.Warn("Failed to save snapshot", zap.Error(err))
+			}
+		}
+	}
+
 	orchestrator, err := a.resolveOrchestrator()
 	if err != nil {
 		return "", ChatRouteResult{}, err
@@ -414,6 +455,29 @@ func (a *Agent) chatWithProviderModelDetailed(
 	default:
 		return "", ChatRouteResult{}, fmt.Errorf("unsupported orchestrator: %s", orchestrator)
 	}
+}
+
+// convertToSnapshotMessages converts agent.Message slice to session.MessageSnapshot slice.
+func convertToSnapshotMessages(messages []Message) []session.MessageSnapshot {
+	result := make([]session.MessageSnapshot, len(messages))
+	for i, msg := range messages {
+		result[i] = session.MessageSnapshot{
+			Role:       msg.Role,
+			Content:    msg.Content,
+			ToolCallID: msg.ToolCallID,
+		}
+		if len(msg.ToolCalls) > 0 {
+			result[i].ToolCalls = make([]session.ToolCallSnapshot, len(msg.ToolCalls))
+			for j, tc := range msg.ToolCalls {
+				result[i].ToolCalls[j] = session.ToolCallSnapshot{
+					ID:        tc.ID,
+					Name:      tc.Name,
+					Arguments: tc.Arguments,
+				}
+			}
+		}
+	}
+	return result
 }
 
 func (a *Agent) sessionHistory(sess SessionInterface) []Message {

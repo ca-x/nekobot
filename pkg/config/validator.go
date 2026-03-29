@@ -84,6 +84,13 @@ func (v *Validator) Validate(cfg *Config) error {
 	// Validate web UI configuration.
 	v.validateWebUI(&cfg.WebUI)
 
+	// Validate harness-ported runtime features.
+	v.validateAudit(&cfg.Audit)
+	v.validateUndo(&cfg.Undo)
+	v.validatePreprocess(&cfg.Preprocess)
+	v.validateLearnings(&cfg.Learnings)
+	v.validateWatch(&cfg.Watch)
+
 	if len(v.errors) > 0 {
 		return v.errors
 	}
@@ -484,6 +491,86 @@ func (v *Validator) validateWebUI(cfg *WebUIConfig) {
 	}
 	if cfg.SkillVersions.Enabled && cfg.SkillVersions.MaxCount < 1 {
 		v.addError("webui.skill_versions.max_count", "max_count must be at least 1 when skill version history is enabled")
+	}
+}
+
+func (v *Validator) validateAudit(cfg *AuditConfig) {
+	if !cfg.Enabled {
+		return
+	}
+	if cfg.MaxArgLength < 1 {
+		v.addError("audit.max_arg_length", "max_arg_length must be at least 1 when audit is enabled")
+	}
+	if cfg.MaxResults < 1 {
+		v.addError("audit.max_results", "max_results must be at least 1 when audit is enabled")
+	}
+	if cfg.RetentionDays < 1 {
+		v.addError("audit.retention_days", "retention_days must be at least 1 when audit is enabled")
+	}
+}
+
+func (v *Validator) validateUndo(cfg *UndoConfig) {
+	if !cfg.Enabled {
+		return
+	}
+	if cfg.MaxTurns < 1 {
+		v.addError("undo.max_turns", "max_turns must be at least 1 when undo is enabled")
+	}
+}
+
+func (v *Validator) validatePreprocess(cfg *PreprocessConfig) {
+	fileMentions := cfg.FileMentions
+	if !fileMentions.Enabled {
+		return
+	}
+	if fileMentions.MaxFileSize < 1 {
+		v.addError("preprocess.file_mentions.max_file_size", "max_file_size must be at least 1 when file mentions are enabled")
+	}
+	if fileMentions.MaxTotalSize < 1 {
+		v.addError("preprocess.file_mentions.max_total_size", "max_total_size must be at least 1 when file mentions are enabled")
+	}
+	if fileMentions.MaxFiles < 1 {
+		v.addError("preprocess.file_mentions.max_files", "max_files must be at least 1 when file mentions are enabled")
+	}
+}
+
+func (v *Validator) validateLearnings(cfg *LearningsConfig) {
+	if !cfg.Enabled {
+		return
+	}
+	if cfg.MaxRawEntries < 1 {
+		v.addError("learnings.max_raw_entries", "max_raw_entries must be at least 1 when learnings are enabled")
+	}
+	if cfg.CompressedMaxSize < 1 {
+		v.addError("learnings.compressed_max_size", "compressed_max_size must be at least 1 when learnings are enabled")
+	}
+	if cfg.HalfLifeDays <= 0 {
+		v.addError("learnings.half_life_days", "half_life_days must be greater than 0 when learnings are enabled")
+	}
+	if strings.TrimSpace(cfg.CompressInterval) == "" {
+		v.addError("learnings.compress_interval", "compress_interval is required when learnings are enabled")
+	} else if _, err := time.ParseDuration(strings.TrimSpace(cfg.CompressInterval)); err != nil {
+		v.addError("learnings.compress_interval", "compress_interval must be a valid duration")
+	}
+}
+
+func (v *Validator) validateWatch(cfg *WatchConfig) {
+	if !cfg.Enabled {
+		return
+	}
+	if cfg.DebounceMs < 0 {
+		v.addError("watch.debounce_ms", "debounce_ms cannot be negative")
+	}
+	if len(cfg.Patterns) == 0 {
+		v.addError("watch.patterns", "at least one watch pattern is required when watch mode is enabled")
+	}
+	for idx, pattern := range cfg.Patterns {
+		if strings.TrimSpace(pattern.FileGlob) == "" {
+			v.addError(fmt.Sprintf("watch.patterns[%d].file_glob", idx), "file_glob is required")
+		}
+		if strings.TrimSpace(pattern.Command) == "" {
+			v.addError(fmt.Sprintf("watch.patterns[%d].command", idx), "command is required")
+		}
 	}
 }
 

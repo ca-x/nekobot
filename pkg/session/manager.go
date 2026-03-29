@@ -9,16 +9,22 @@ import (
 	"sync"
 	"time"
 
-	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
+	"nekobot/pkg/message"
 )
+
+// Message is an alias for message.Message for backward compatibility.
+type Message = message.Message
+
+// ToolCall is an alias for message.ToolCall for backward compatibility.
+type ToolCall = message.ToolCall
 
 // Session represents a conversation session with history.
 type Session struct {
 	ID        string          `json:"id"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
-	Messages  []agent.Message `json:"messages"`
+	Messages  []Message       `json:"messages"`
 	Summary   string          `json:"summary,omitempty"`
 	Source    string          `json:"source,omitempty"`
 	mu        sync.RWMutex
@@ -83,7 +89,7 @@ func (m *Manager) GetWithSource(sessionID, source string) (*Session, error) {
 			ID:        sessionID,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
-			Messages:  []agent.Message{},
+			Messages:  []Message{},
 			Source:    stringsTrimmed(source),
 		}
 	}
@@ -134,7 +140,7 @@ func (m *Manager) Save(session *Session) error {
 	}
 	filteredMessages := m.filterMessages(snapshot.Messages, snapshot.Source)
 
-	if err := m.SaveJSONL(snapshot.ID, sessionJSONMessagesFromAgent(filteredMessages), map[string]interface{}{
+	if err := m.SaveJSONL(snapshot.ID, filteredMessages, map[string]interface{}{
 		"summary": snapshot.Summary,
 		"source":  snapshot.Source,
 	}); err != nil {
@@ -155,7 +161,7 @@ func (m *Manager) load(sessionID string) (*Session, error) {
 		ID:        sessionID,
 		CreatedAt: jsonlSession.CreatedAt,
 		UpdatedAt: jsonlSession.UpdatedAt,
-		Messages:  sessionAgentMessagesFromJSON(jsonlSession.Messages),
+		Messages:  jsonlSession.Messages,
 		manager:   m,
 	}
 	if summary, ok := jsonlSession.Metadata["summary"].(string); ok {
@@ -182,7 +188,7 @@ func (m *Manager) Delete(sessionID string) error {
 }
 
 // AddMessage adds a message to the session.
-func (s *Session) AddMessage(message agent.Message) {
+func (s *Session) AddMessage(message Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -194,22 +200,22 @@ func (s *Session) AddMessage(message agent.Message) {
 }
 
 // GetMessages returns a copy of all messages.
-func (s *Session) GetMessages() []agent.Message {
+func (s *Session) GetMessages() []Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	messages := make([]agent.Message, len(s.Messages))
+	messages := make([]Message, len(s.Messages))
 	copy(messages, s.Messages)
 	return messages
 }
 
 // GetHistorySafe returns the most recent messages without splitting tool-call groups.
-func (s *Session) GetHistorySafe(maxMessages int) []agent.Message {
+func (s *Session) GetHistorySafe(maxMessages int) []Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if maxMessages <= 0 || maxMessages >= len(s.Messages) {
-		messages := make([]agent.Message, len(s.Messages))
+		messages := make([]Message, len(s.Messages))
 		copy(messages, s.Messages)
 		return messages
 	}
@@ -238,7 +244,7 @@ func (s *Session) GetHistorySafe(maxMessages int) []agent.Message {
 		break
 	}
 
-	messages := make([]agent.Message, len(s.Messages)-startIdx)
+	messages := make([]Message, len(s.Messages)-startIdx)
 	copy(messages, s.Messages[startIdx:])
 	return messages
 }
@@ -248,7 +254,7 @@ func (s *Session) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.Messages = []agent.Message{}
+	s.Messages = []Message{}
 	s.UpdatedAt = time.Now()
 	if s.manager != nil {
 		_ = s.manager.saveSnapshot(s.snapshotLocked())
@@ -303,13 +309,13 @@ type sessionSnapshot struct {
 	ID        string
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	Messages  []agent.Message
+	Messages  []Message
 	Summary   string
 	Source    string
 }
 
 func (s *Session) snapshotLocked() sessionSnapshot {
-	messages := make([]agent.Message, len(s.Messages))
+	messages := make([]Message, len(s.Messages))
 	copy(messages, s.Messages)
 	return sessionSnapshot{
 		ID:        s.ID,
@@ -327,7 +333,7 @@ func (m *Manager) saveSnapshot(snapshot sessionSnapshot) error {
 	}
 
 	filtered := m.filterMessages(snapshot.Messages, snapshot.Source)
-	return m.SaveJSONL(snapshot.ID, sessionJSONMessagesFromAgent(filtered), map[string]interface{}{
+	return m.SaveJSONL(snapshot.ID, filtered, map[string]interface{}{
 		"summary":    snapshot.Summary,
 		"source":     snapshot.Source,
 		"created_at": snapshot.CreatedAt.Format(time.RFC3339Nano),
@@ -361,12 +367,12 @@ func (m *Manager) shouldPersist(source string) bool {
 	}
 }
 
-func (m *Manager) filterMessages(messages []agent.Message, source string) []agent.Message {
+func (m *Manager) filterMessages(messages []Message, source string) []Message {
 	if !m.shouldPersist(source) {
 		return nil
 	}
 
-	filtered := make([]agent.Message, 0, len(messages))
+	filtered := make([]Message, 0, len(messages))
 	for _, msg := range messages {
 		keep, trimmed := m.filterMessage(msg)
 		if keep {
@@ -376,14 +382,14 @@ func (m *Manager) filterMessages(messages []agent.Message, source string) []agen
 	return filtered
 }
 
-func (m *Manager) filterMessage(msg agent.Message) (bool, agent.Message) {
+func (m *Manager) filterMessage(msg Message) (bool, Message) {
 	filtered := msg
 	switch msg.Role {
 	case "user":
 		return m.config.Content.UserMessages, filtered
 	case "assistant":
 		if !m.config.Content.AssistantMessages && !m.config.Content.ToolCalls {
-			return false, agent.Message{}
+			return false, Message{}
 		}
 		if !m.config.Content.AssistantMessages {
 			filtered.Content = ""
@@ -392,18 +398,18 @@ func (m *Manager) filterMessage(msg agent.Message) (bool, agent.Message) {
 			filtered.ToolCalls = nil
 		}
 		if stringsTrimmed(filtered.Content) == "" && len(filtered.ToolCalls) == 0 {
-			return false, agent.Message{}
+			return false, Message{}
 		}
 		return true, filtered
 	case "tool":
 		if !m.config.Content.ToolResults {
-			return false, agent.Message{}
+			return false, Message{}
 		}
 		return true, filtered
 	case "system":
 		return m.config.Content.SystemMessages, filtered
 	default:
-		return false, agent.Message{}
+		return false, Message{}
 	}
 }
 
@@ -411,7 +417,7 @@ func stringsTrimmed(v string) string {
 	return strings.TrimSpace(strings.ToLower(v))
 }
 
-func findToolCallAssistant(messages []agent.Message, toolIdx int, toolCallID string) (int, bool) {
+func findToolCallAssistant(messages []Message, toolIdx int, toolCallID string) (int, bool) {
 	if toolCallID == "" || toolIdx <= 0 {
 		return 0, false
 	}
@@ -431,7 +437,7 @@ func findToolCallAssistant(messages []agent.Message, toolIdx int, toolCallID str
 	return 0, false
 }
 
-func assistantToolGroupComplete(messages []agent.Message, assistantIdx int) bool {
+func assistantToolGroupComplete(messages []Message, assistantIdx int) bool {
 	msg := messages[assistantIdx]
 	for _, toolCall := range msg.ToolCalls {
 		found := false

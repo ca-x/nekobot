@@ -52,7 +52,7 @@ func (c *ContextComposer) Build() string {
 	if c.options.IncludeActiveLearnings {
 		activeLearnings := strings.TrimSpace(c.source.ReadActiveLearnings())
 		if activeLearnings != "" {
-			if !strings.HasPrefix(activeLearnings, "#") {
+			if !strings.HasPrefix(activeLearnings, "## ") {
 				activeLearnings = "## Active Learnings\n\n" + activeLearnings
 			}
 			parts = append(parts, activeLearnings)

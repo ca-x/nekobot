@@ -10,10 +10,18 @@ import (
 	"sync"
 	"time"
 
+	"nekobot/pkg/message"
 	promptmemory "nekobot/pkg/memory/prompt"
+	"nekobot/pkg/preprocess"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/skills"
 )
+
+// Message is an alias for message.Message for backward compatibility.
+type Message = message.Message
+
+// ToolCall is an alias for message.ToolCall for backward compatibility.
+type ToolCall = message.ToolCall
 
 const currentTimePlaceholder = "__NEKOBOT_CURRENT_TIME__"
 
@@ -37,6 +45,9 @@ type ContextBuilder struct {
 
 	// Orchestrator mode affects how skills are rendered.
 	orchestratorMode string
+
+	// Preprocessor for @file and @dir mentions
+	preprocessor *preprocess.Preprocessor
 
 	cacheMu             sync.RWMutex
 	cachedStaticReady   bool
@@ -62,9 +73,10 @@ func NewContextBuilderWithMemory(workspace string, memoryStore *promptmemory.Sto
 		memoryStore = promptmemory.NewStore(workspace)
 	}
 	return &ContextBuilder{
-		workspace: workspace,
-		memory:    memoryStore,
-		composer:  promptmemory.NewContextComposer(memoryStore, promptmemory.DefaultContextOptions()),
+		workspace:    workspace,
+		memory:       memoryStore,
+		composer:     promptmemory.NewContextComposer(memoryStore, promptmemory.DefaultContextOptions()),
+		preprocessor: preprocess.NewPreprocessorWithWorkspace(workspace),
 	}
 }
 
@@ -83,6 +95,16 @@ func (cb *ContextBuilder) SetSkillsManager(sm *skills.Manager) {
 // This affects how skills are rendered in the system prompt.
 func (cb *ContextBuilder) SetOrchestratorMode(mode string) {
 	cb.orchestratorMode = mode
+}
+
+// SetPreprocessorConfig configures the preprocessor for @file and @dir mentions.
+func (cb *ContextBuilder) SetPreprocessorConfig(cfg preprocess.PreprocessorConfig) {
+	cb.preprocessor = preprocess.NewPreprocessor(cfg)
+}
+
+// GetPreprocessor returns the preprocessor instance.
+func (cb *ContextBuilder) GetPreprocessor() *preprocess.Preprocessor {
+	return cb.preprocessor
 }
 
 // GetMemory returns the memory store.
@@ -431,6 +453,7 @@ func trimTrailingCurrentUserMessage(history []Message, currentMessage string) []
 
 // BuildMessages builds the message array for the provider.
 // It includes system prompt, sanitized conversation history, and the current message.
+// If the input contains @file or @dir mentions, they are expanded and injected.
 func (cb *ContextBuilder) BuildMessages(history []Message, currentMessage string) []Message {
 	messages := []Message{}
 
@@ -445,16 +468,26 @@ func (cb *ContextBuilder) BuildMessages(history []Message, currentMessage string
 	normalizedHistory := trimTrailingCurrentUserMessage(history, currentMessage)
 	messages = append(messages, sanitizeHistory(normalizedHistory)...)
 
+	// Process @file and @dir mentions
+	userContent := currentMessage
+	if cb.preprocessor != nil {
+		result, err := cb.preprocessor.Process(currentMessage)
+		if err == nil && result.FileReferences != "" {
+			userContent = result.ProcessedInput + result.BuildContextInjection()
+		}
+	}
+
 	// Current user message
 	messages = append(messages, Message{
 		Role:    "user",
-		Content: currentMessage,
+		Content: userContent,
 	})
 
 	return messages
 }
 
 // BuildMessagesWithPromptSet builds messages using injected prompt overlays.
+// It also processes @file and @dir mentions in the current message.
 func (cb *ContextBuilder) BuildMessagesWithPromptSet(
 	history []Message,
 	currentMessage string,
@@ -467,9 +500,19 @@ func (cb *ContextBuilder) BuildMessagesWithPromptSet(
 
 	normalizedHistory := trimTrailingCurrentUserMessage(history, currentMessage)
 	messages = append(messages, sanitizeHistory(normalizedHistory)...)
+
+	// Process @file and @dir mentions
+	userContent := currentMessage
+	if cb.preprocessor != nil {
+		result, err := cb.preprocessor.Process(currentMessage)
+		if err == nil && result.FileReferences != "" {
+			userContent = result.ProcessedInput + result.BuildContextInjection()
+		}
+	}
+
 	messages = append(messages, Message{
 		Role:    "user",
-		Content: prompts.ComposeUserMessage(resolved.UserText, currentMessage),
+		Content: prompts.ComposeUserMessage(resolved.UserText, userContent),
 	})
 	return messages
 }
@@ -534,20 +577,4 @@ func sanitizeHistory(history []Message) []Message {
 	}
 
 	return sanitized
-}
-
-// Message represents a single message in the conversation.
-// This is the agent's internal message format.
-type Message struct {
-	Role       string     // "system", "user", "assistant", "tool"
-	Content    string     // Message content
-	ToolCalls  []ToolCall // Tool calls made by assistant
-	ToolCallID string     // For tool result messages
-}
-
-// ToolCall represents a tool invocation by the LLM.
-type ToolCall struct {
-	ID        string                 // Unique call ID
-	Name      string                 // Tool name
-	Arguments map[string]interface{} // Tool arguments
 }

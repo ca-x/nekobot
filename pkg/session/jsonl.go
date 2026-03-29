@@ -1,3 +1,4 @@
+// Package session manages conversation history and sessions.
 package session
 
 import (
@@ -6,26 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"nekobot/pkg/agent"
 )
-
-// Message represents a single message in a session.
-type Message struct {
-	Role       string                 `json:"role"` // user, assistant, system, tool
-	Content    string                 `json:"content"`
-	Timestamp  time.Time              `json:"timestamp"`
-	Metadata   map[string]interface{} `json:"metadata,omitempty"`
-	ToolCallID string                 `json:"tool_call_id,omitempty"` // For tool role
-	ToolCalls  []ToolCall             `json:"tool_calls,omitempty"`   // For assistant role
-}
-
-// ToolCall represents a tool invocation.
-type ToolCall struct {
-	ID     string                 `json:"id"`
-	Name   string                 `json:"name"`
-	Params map[string]interface{} `json:"params"`
-}
 
 // SessionJSONL represents a session stored in JSONL format.
 type SessionJSONL struct {
@@ -34,53 +16,6 @@ type SessionJSONL struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Metadata  map[string]interface{}
-}
-
-func sessionJSONMessagesFromAgent(messages []agent.Message) []Message {
-	result := make([]Message, 0, len(messages))
-	for _, msg := range messages {
-		item := Message{
-			Role:       msg.Role,
-			Content:    msg.Content,
-			Timestamp:  time.Now(),
-			ToolCallID: msg.ToolCallID,
-		}
-		if len(msg.ToolCalls) > 0 {
-			item.ToolCalls = make([]ToolCall, 0, len(msg.ToolCalls))
-			for _, call := range msg.ToolCalls {
-				item.ToolCalls = append(item.ToolCalls, ToolCall{
-					ID:     call.ID,
-					Name:   call.Name,
-					Params: call.Arguments,
-				})
-			}
-		}
-		result = append(result, item)
-	}
-	return result
-}
-
-func sessionAgentMessagesFromJSON(messages []Message) []agent.Message {
-	result := make([]agent.Message, 0, len(messages))
-	for _, msg := range messages {
-		item := agent.Message{
-			Role:       msg.Role,
-			Content:    msg.Content,
-			ToolCallID: msg.ToolCallID,
-		}
-		if len(msg.ToolCalls) > 0 {
-			item.ToolCalls = make([]agent.ToolCall, 0, len(msg.ToolCalls))
-			for _, call := range msg.ToolCalls {
-				item.ToolCalls = append(item.ToolCalls, agent.ToolCall{
-					ID:        call.ID,
-					Name:      call.Name,
-					Arguments: call.Params,
-				})
-			}
-		}
-		result = append(result, item)
-	}
-	return result
 }
 
 // SaveJSONL saves a session in JSONL format (one JSON object per line).

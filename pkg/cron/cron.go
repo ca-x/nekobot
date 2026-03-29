@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/message"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/storage/ent"
 )
@@ -30,17 +31,17 @@ const (
 
 // simpleSession is a simple session implementation for cron jobs.
 type simpleSession struct {
-	messages []agent.Message
+	messages []message.Message
 	mu       sync.RWMutex
 }
 
-func (s *simpleSession) GetMessages() []agent.Message {
+func (s *simpleSession) GetMessages() []message.Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.messages
 }
 
-func (s *simpleSession) AddMessage(msg agent.Message) {
+func (s *simpleSession) AddMessage(msg message.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = append(s.messages, msg)
@@ -549,7 +550,7 @@ Scheduled task execution at %s:
 		time.Now().Format(time.RFC3339),
 		prompt)
 
-	sess := &simpleSession{messages: make([]agent.Message, 0)}
+	sess := &simpleSession{messages: make([]message.Message, 0)}
 	response, chatErr := m.chatAgent(ctx, sess, fullPrompt, job.Provider, job.Model, job.Fallback)
 
 	finishedAt := time.Now()

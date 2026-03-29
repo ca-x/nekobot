@@ -4,7 +4,6 @@ import (
 	"os"
 	"testing"
 
-	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
 )
 
@@ -27,17 +26,17 @@ func TestSessionPersistsAllowedSourceAndFilteredContent(t *testing.T) {
 		t.Fatalf("GetWithSource failed: %v", err)
 	}
 
-	sess.AddMessage(agent.Message{Role: "user", Content: "hello"})
-	sess.AddMessage(agent.Message{
+	sess.AddMessage(Message{Role: "user", Content: "hello"})
+	sess.AddMessage(Message{
 		Role:    "assistant",
 		Content: "hidden reply",
-		ToolCalls: []agent.ToolCall{{
+		ToolCalls: []ToolCall{{
 			ID:        "call-1",
 			Name:      "read_file",
 			Arguments: map[string]interface{}{"path": "/tmp/demo"},
 		}},
 	})
-	sess.AddMessage(agent.Message{Role: "tool", Content: "tool output", ToolCallID: "call-1"})
+	sess.AddMessage(Message{Role: "tool", Content: "tool output", ToolCallID: "call-1"})
 
 	reloaded := NewManager(manager.baseDir, cfg)
 	loaded, err := reloaded.GetExisting("webui-test")
@@ -72,7 +71,7 @@ func TestSessionDoesNotPersistDisabledSource(t *testing.T) {
 		t.Fatalf("GetWithSource failed: %v", err)
 	}
 
-	sess.AddMessage(agent.Message{Role: "user", Content: "hello"})
+	sess.AddMessage(Message{Role: "user", Content: "hello"})
 
 	reloaded := NewManager(manager.baseDir, cfg)
 	if _, err := reloaded.GetExisting("disabled-webui"); !os.IsNotExist(err) {
@@ -83,12 +82,12 @@ func TestSessionDoesNotPersistDisabledSource(t *testing.T) {
 func TestGetHistorySafeExpandsToKeepAssistantToolGroup(t *testing.T) {
 	sess := &Session{
 		ID: "history-safe",
-		Messages: []agent.Message{
+		Messages: []Message{
 			{Role: "user", Content: "first"},
 			{
 				Role:    "assistant",
 				Content: "",
-				ToolCalls: []agent.ToolCall{
+				ToolCalls: []ToolCall{
 					{ID: "call-1", Name: "read_file", Arguments: map[string]interface{}{"path": "/tmp/a"}},
 				},
 			},

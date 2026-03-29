@@ -586,12 +586,36 @@ func DefaultConfig() *Config {
 				MaxCount: 20,
 			},
 		},
+		Audit: AuditConfig{
+			Enabled:       true,
+			MaxArgLength:  1000,
+			MaxResults:    10000,
+			RetentionDays: 30,
+		},
+		Preprocess: PreprocessConfig{
+			FileMentions: FileMentionsConfig{
+				Enabled:      true,
+				MaxFileSize:  100 * 1024,
+				MaxTotalSize: 500 * 1024,
+				MaxFiles:     10,
+			},
+		},
 		Learnings: LearningsConfig{
 			Enabled:           true,
 			MaxRawEntries:     500,
 			CompressedMaxSize: 10000,
 			HalfLifeDays:      30,
 			CompressInterval:  "1h",
+		},
+		Undo: UndoConfig{
+			Enabled:       true,
+			MaxTurns:      20,
+			SnapshotFiles: true,
+		},
+		Watch: WatchConfig{
+			Enabled:    false,
+			DebounceMs: 300,
+			Patterns:   []WatchPattern{},
 		},
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/message"
 	"nekobot/pkg/config"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/userprefs"
@@ -653,21 +654,21 @@ func parseConfirmedInstallRepo(task string) string {
 }
 
 type commandSession struct {
-	messages []agent.Message
+	messages []message.Message
 	mu       sync.RWMutex
 }
 
 func newCommandSession() *commandSession {
-	return &commandSession{messages: make([]agent.Message, 0, 8)}
+	return &commandSession{messages: make([]message.Message, 0, 8)}
 }
 
-func (s *commandSession) GetMessages() []agent.Message {
+func (s *commandSession) GetMessages() []message.Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]agent.Message(nil), s.messages...)
+	return append([]message.Message(nil), s.messages...)
 }
 
-func (s *commandSession) AddMessage(msg agent.Message) {
+func (s *commandSession) AddMessage(msg message.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = append(s.messages, msg)
