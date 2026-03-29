@@ -347,3 +347,22 @@
 - Added context prompt regression tests in `pkg/agent/agent_test.go` for current-time placeholder replacement plus cache invalidation on bootstrap file and tool-description changes.
 - Verification run: `go test -count=1 ./pkg/agent` passed.
 - Verification run: `go test -count=1 ./...` passed.
+
+## 2026-03-29
+
+- Completed harness feature review and fixes:
+  - Reviewed 5 recent commits: `1b7c3d0`, `580741d`, `46026ac`, `583245d`, `c409cf1`
+  - Fixed snapshot incremental delta calculation to avoid message duplication
+  - Added snapshot JSONL rewrite after `Undo()` for persistence
+  - Added session ID passthrough for streaming updates
+  - Added explicit fallback notice for streaming without handler
+  - Changed watcher path matching to use RLock for better concurrency
+  - Updated ConfigPage section metadata with proper i18n labels
+  - Committed and pushed all fixes as `7412fdd`
+- Verification run:
+  - `GOPROXY=https://goproxy.cn,direct go test -count=1 ./...` passed
+  - `npm --prefix pkg/webui/frontend run build` passed
+- Updated task_plan.md:
+  - Marked Batch A verification complete
+  - Marked Batch C frontend build and backend test complete
+  - Marked 2026-03-29 review batch Phase 4 complete

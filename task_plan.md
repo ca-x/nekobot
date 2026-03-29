@@ -194,8 +194,8 @@
 
 ### Batch A（Backlog 收口与验证）
 - [x] 清理已过期 backlog（`gateway restart/reload`、memory text similarity、skills version compare、cron 多调度类型）。
-- [ ] 跑 `go test -count=1 ./...`
-- [ ] 跑 `npm --prefix pkg/webui/frontend run build`
+- [x] 跑 `go test -count=1 ./...`
+- [x] 跑 `npm --prefix pkg/webui/frontend run build`
 - **验收**: 过期 backlog 移除，验证结果补充到 `progress.md`。
 
 ### Batch B（Channel 交互补齐）
@@ -209,7 +209,7 @@
 ### Batch C（Runtime Admin 收口）
 - [x] prompts CRUD / binding / render 回归与 smoke checklist
 - [x] tool sessions 与 QMD 管理页 smoke test
-- [ ] frontend build 与后端全量测试补跑
+- [x] frontend build 与后端全量测试补跑
 - **验收**: `go test -count=1 ./...` 与 `npm --prefix pkg/webui/frontend run build` 通过。
 
 ### Batch D（goclaw 高价值迁移）
@@ -301,4 +301,4 @@
 - 待补充
 
 ### Status
-**Currently in Phase 2** - 逐提交阅读代码与影响面，先收敛问题清单，再进入定点修复。
+**Phase 4 Complete** - 修复已证实问题并补验证，更新计划、记录结论与剩余风险。所有已确认修复已实施并验证通过。
