@@ -264,10 +264,14 @@ export default function CronPage() {
 
       <Card>
         <CardContent className="p-4 space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             <div className="space-y-1.5">
               <Label>{t('cronName')}</Label>
-              <Input value={form.name} onChange={(e) => setField('name', e.target.value)} />
+              <Input
+                className="h-11"
+                value={form.name}
+                onChange={(e) => setField('name', e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>{t('cronKind')}</Label>
@@ -275,7 +279,7 @@ export default function CronPage() {
                 value={form.schedule_kind}
                 onValueChange={(value) => setField('schedule_kind', value as CronScheduleKind)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-11 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -287,9 +291,10 @@ export default function CronPage() {
             </div>
 
             {form.schedule_kind === 'cron' && (
-              <div className="space-y-1.5 md:col-span-2">
+              <div className="space-y-1.5 xl:col-span-2">
                 <Label>{t('cronExpression')}</Label>
                 <Input
+                  className="h-11 font-mono text-xs sm:text-sm"
                   value={form.schedule}
                   onChange={(e) => setField('schedule', e.target.value)}
                   placeholder="0 * * * *"
@@ -298,10 +303,11 @@ export default function CronPage() {
             )}
 
             {form.schedule_kind === 'at' && (
-              <div className="space-y-1.5 md:col-span-2">
+              <div className="space-y-1.5 xl:col-span-2">
                 <Label>{t('cronAtTime')}</Label>
                 <Input
                   type="datetime-local"
+                  className="h-11"
                   value={form.at_time}
                   onChange={(e) => setField('at_time', e.target.value)}
                 />
@@ -309,9 +315,10 @@ export default function CronPage() {
             )}
 
             {form.schedule_kind === 'every' && (
-              <div className="space-y-1.5 md:col-span-2">
+              <div className="space-y-1.5 xl:col-span-2">
                 <Label>{t('cronEveryDuration')}</Label>
                 <Input
+                  className="h-11 font-mono text-xs sm:text-sm"
                   value={form.every_duration}
                   onChange={(e) => setField('every_duration', e.target.value)}
                   placeholder="5m"
@@ -319,10 +326,10 @@ export default function CronPage() {
               </div>
             )}
 
-            <div className="space-y-1.5 md:col-span-2">
+            <div className="space-y-1.5 xl:col-span-2">
               <Label>{t('cronPrompt')}</Label>
               <textarea
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[84px]"
+                className="min-h-[120px] w-full rounded-2xl border border-border/70 bg-card/90 px-3 py-3 text-sm leading-6"
                 value={form.prompt}
                 onChange={(e) => setField('prompt', e.target.value)}
               />
@@ -331,7 +338,7 @@ export default function CronPage() {
             <div className="space-y-1.5">
               <Label>{t('cronProvider')}</Label>
               <Select value={form.provider || '__default__'} onValueChange={handleProviderChange}>
-                <SelectTrigger>
+                <SelectTrigger className="h-11 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -345,6 +352,18 @@ export default function CronPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {routeTargets.length === 0 ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                  <span>{t('cronNoProvidersWarning')}</span>{' '}
+                  <Link to="/providers" className="font-medium underline underline-offset-4">
+                    {t('cronGoToProviders')}
+                  </Link>
+                </div>
+              ) : (
+                <div className="break-all rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+                  {form.provider || t('cronRouteAuto')}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -353,7 +372,7 @@ export default function CronPage() {
                 value={form.model || '__default__'}
                 onValueChange={(value) => setField('model', value === '__default__' ? '' : value)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-11 w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -367,9 +386,12 @@ export default function CronPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <div className="break-all rounded-md border border-dashed border-border/70 px-3 py-2 font-mono text-xs text-muted-foreground">
+                {form.model || t('cronModelDefault')}
+              </div>
             </div>
 
-            <div className="space-y-2 md:col-span-2">
+            <div className="space-y-2 xl:col-span-2">
               <Label>{t('cronFallback')}</Label>
               <div className="rounded-md border border-input bg-background px-3 py-3">
                 <div className="mb-3 text-xs text-muted-foreground">{t('cronFallbackHint')}</div>
@@ -380,12 +402,12 @@ export default function CronPage() {
                         key={target}
                         type="button"
                         onClick={() => handleToggleFallback(target)}
-                        className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
+                        className="inline-flex max-w-full items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
                       >
                         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] text-[hsl(var(--brand-700))]">
                           {index + 1}
                         </span>
-                        {target}
+                        <span className="break-all text-left">{target}</span>
                       </button>
                     ))}
                   </div>
@@ -394,32 +416,40 @@ export default function CronPage() {
                     {t('cronFallbackEmpty')}
                   </div>
                 )}
-                <div className="flex flex-wrap gap-2">
-                  {fallbackTargets.map((target) => {
-                    const selected = form.fallback.includes(target.name);
-                    return (
-                      <button
-                        key={target.name}
-                        type="button"
-                        onClick={() => handleToggleFallback(target.name)}
-                        className={
-                          selected
-                            ? 'rounded-full border border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]'
-                            : 'rounded-full border border-input bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground'
-                        }
-                      >
-                        {target.type === 'group'
-                          ? `${target.name} (${t('cronRouteTargetGroup')})`
-                          : target.name}
-                      </button>
-                    );
-                  })}
-                </div>
+                {fallbackTargets.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-input px-3 py-3 text-sm text-muted-foreground">
+                    {routeTargets.length === 0 ? t('cronGoToProviders') : t('cronFallbackEmpty')}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {fallbackTargets.map((target) => {
+                      const selected = form.fallback.includes(target.name);
+                      return (
+                        <button
+                          key={target.name}
+                          type="button"
+                          onClick={() => handleToggleFallback(target.name)}
+                          className={
+                            selected
+                              ? 'max-w-full rounded-full border border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] px-3 py-1.5 text-left text-xs font-medium text-[hsl(var(--brand-800))]'
+                              : 'max-w-full rounded-full border border-input bg-white px-3 py-1.5 text-left text-xs font-medium text-muted-foreground'
+                          }
+                        >
+                          <span className="break-all">
+                            {target.type === 'group'
+                              ? `${target.name} (${t('cronRouteTargetGroup')})`
+                              : target.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
             {form.schedule_kind === 'at' && (
-              <div className="flex items-center justify-between border rounded-md px-3 py-2 md:col-span-2">
+              <div className="flex flex-col gap-3 rounded-md border px-3 py-3 xl:col-span-2 sm:flex-row sm:items-center sm:justify-between">
                 <Label>{t('cronDeleteAfterRun')}</Label>
                 <Switch
                   checked={form.delete_after_run}
@@ -429,24 +459,35 @@ export default function CronPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button onClick={handleCreate} disabled={createJob.isPending}>
+          <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
+            <Button className="h-11 sm:min-w-[140px]" onClick={handleCreate} disabled={createJob.isPending}>
               <Plus className="h-4 w-4 mr-1" />
               {t('cronCreate')}
             </Button>
-            <Button variant="outline" onClick={resetForm}>
+            <Button className="h-11 sm:min-w-[110px]" variant="outline" onClick={resetForm}>
               {t('reset')}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw className={`h-4 w-4 mr-1 ${isFetching ? 'animate-spin' : ''}`} />
           {t('refresh')}
         </Button>
         <span className="text-xs text-muted-foreground">{t('cronTotalJobs', String(sortedJobs.length))}</span>
+        </div>
+        {routeTargets.length === 0 && (
+          <Link
+            to="/providers"
+            className="inline-flex items-center gap-1.5 self-start rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            {t('cronGoToProviders')}
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+        )}
       </div>
 
       <ScrollArea className="flex-1">
@@ -457,8 +498,16 @@ export default function CronPage() {
             <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
               <div className="text-sm font-medium text-foreground">{t('cronNoJobs')}</div>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('cronEmptyJobsGuide')}</p>
+              {routeTargets.length === 0 && (
+                <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-400">{t('cronNoProvidersWarning')}</p>
+              )}
               <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 sm:min-w-[120px]"
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                >
                   {t('cronCreate')}
                 </Button>
                 {routeTargets.length === 0 && (
@@ -476,29 +525,61 @@ export default function CronPage() {
             sortedJobs.map((job) => (
               <Card key={job.id}>
                 <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <div className="font-medium text-sm truncate">{job.name}</div>
-                      <div className="text-xs text-muted-foreground break-all">{job.id}</div>
+                      <div className="break-words text-sm font-medium">{job.name}</div>
+                      <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{job.id}</div>
                     </div>
-                    <div className="text-xs px-2 py-1 rounded bg-muted">{job.enabled ? t('on') : t('off')}</div>
+                    <div className="inline-flex w-fit rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
+                      {job.enabled ? t('on') : t('off')}
+                    </div>
                   </div>
 
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    <div>{t('cronKind')}: {job.schedule_kind}</div>
-                    <div>{t('cronSchedule')}: {renderSchedule(job)}</div>
-                    <div>{t('cronProvider')}: {job.provider || t('cronRouteAuto')}</div>
-                    <div>{t('cronModel')}: {job.model || t('cronModelDefault')}</div>
-                    <div>{t('cronFallback')}: {job.fallback && job.fallback.length > 0 ? job.fallback.join(' -> ') : t('cronFallbackEmpty')}</div>
-                    <div>{t('cronNextRun')}: {job.next_run || '-'}</div>
-                    <div>{t('cronLastRun')}: {job.last_run || '-'}</div>
-                    <div>{t('cronRunCount')}: {job.run_count}</div>
-                    <div>{t('cronLastResult')}: {renderLastResult(job)}</div>
+                  <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+                    <div className="rounded-md bg-muted/40 px-3 py-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronKind')}</div>
+                      <div className="mt-1 break-words text-foreground">{job.schedule_kind}</div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronSchedule')}</div>
+                      <div className="mt-1 break-all font-mono text-foreground">{renderSchedule(job)}</div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronProvider')}</div>
+                      <div className="mt-1 break-all text-foreground">{job.provider || t('cronRouteAuto')}</div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronModel')}</div>
+                      <div className="mt-1 break-all font-mono text-foreground">{job.model || t('cronModelDefault')}</div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2 md:col-span-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronFallback')}</div>
+                      <div className="mt-1 break-all text-foreground">
+                        {job.fallback && job.fallback.length > 0 ? job.fallback.join(' -> ') : t('cronFallbackEmpty')}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronNextRun')}</div>
+                      <div className="mt-1 break-all text-foreground">{job.next_run || '-'}</div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronLastRun')}</div>
+                      <div className="mt-1 break-all text-foreground">{job.last_run || '-'}</div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronRunCount')}</div>
+                      <div className="mt-1 text-foreground">{job.run_count}</div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronLastResult')}</div>
+                      <div className="mt-1 break-all text-foreground">{renderLastResult(job)}</div>
+                    </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
                     {job.enabled ? (
                       <Button
+                        className="h-9 sm:min-w-[110px]"
                         size="sm"
                         variant="outline"
                         onClick={() => disableJob.mutate(job.id)}
@@ -508,6 +589,7 @@ export default function CronPage() {
                       </Button>
                     ) : (
                       <Button
+                        className="h-9 sm:min-w-[110px]"
                         size="sm"
                         variant="outline"
                         onClick={() => enableJob.mutate(job.id)}
@@ -517,6 +599,7 @@ export default function CronPage() {
                       </Button>
                     )}
                     <Button
+                      className="h-9 sm:min-w-[120px]"
                       size="sm"
                       variant="secondary"
                       onClick={() => runJob.mutate(job.id)}
@@ -526,6 +609,7 @@ export default function CronPage() {
                       {t('cronRunNow')}
                     </Button>
                     <Button
+                      className="h-9 sm:min-w-[110px]"
                       size="sm"
                       variant="destructive"
                       onClick={() => {

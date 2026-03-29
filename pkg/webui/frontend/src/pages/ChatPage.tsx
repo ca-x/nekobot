@@ -256,9 +256,9 @@ function StatusPill({
 
   return (
     <div className="flex max-w-full flex-col items-start gap-1.5 sm:items-end">
-      <div className="inline-flex h-9 items-center gap-2 rounded-full border border-border/70 bg-card/92 px-3.5 text-xs text-muted-foreground shadow-sm backdrop-blur whitespace-nowrap">
+      <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-border/70 bg-card/92 px-3.5 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur">
         <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', colorClass)} />
-        <span className="whitespace-nowrap font-medium">{label}</span>
+        <span className="min-w-0 break-words font-medium">{label}</span>
       </div>
       {isAwaitingReply && (
         <span className="inline-flex h-7 items-center rounded-full bg-accent px-2.5 text-[11px] font-medium text-accent-foreground whitespace-nowrap">
@@ -462,9 +462,9 @@ export default function ChatPage() {
       <div className="relative flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-5">
         <div className="absolute inset-x-0 top-0 -z-10 h-48 rounded-[2rem] bg-[radial-gradient(circle_at_top_left,rgba(198,104,140,0.22),transparent_48%),radial-gradient(circle_at_top_right,rgba(229,183,107,0.22),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,247,243,0.55))]" />
 
-        <Card className="overflow-hidden border-border/70 bg-card/88 shadow-[0_20px_60px_-36px_rgba(120,55,75,0.45)] backdrop-blur xl:sticky xl:top-2 xl:h-fit">
+        <Card className="overflow-hidden border-border/70 bg-card/88 shadow-[0_20px_60px_-36px_rgba(120,55,75,0.45)] backdrop-blur lg:sticky lg:top-2 lg:h-fit">
           <CardHeader className="space-y-4 border-b border-[hsl(var(--gray-200))]/80 bg-[linear-gradient(135deg,rgba(255,248,246,0.96),rgba(252,239,244,0.9))]">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-[hsl(var(--brand-700))]">
                   <Wand2 className="h-3.5 w-3.5" />
@@ -555,13 +555,13 @@ export default function ChatPage() {
                 {t('chatActiveRoute')}
               </div>
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
+                <span className="max-w-full break-all rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
                   {activeProvider || t('chatRouteAuto')}
                 </span>
-                <span className="rounded-full bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]">
+                <span className="max-w-full break-all rounded-full bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]">
                   {activeModel || t('chatModelUnset')}
                 </span>
-                <span className="rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
+                <span className="max-w-full break-all rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
                   {activeFallback.length > 0
                     ? `${t('fallbackProviders')}: ${activeFallback.join(' -> ')}`
                     : t('chatNoFallback')}
@@ -578,17 +578,17 @@ export default function ChatPage() {
                 {actualProvider || actualModel ? (
                   <>
                     {actualProvider && (
-                      <span className="rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
+                      <span className="max-w-full break-all rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
                         {actualProvider}
                       </span>
                     )}
                     {actualModel && (
-                      <span className="rounded-full bg-card px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))] dark:text-foreground">
+                      <span className="max-w-full break-all rounded-full bg-card px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))] dark:text-foreground">
                         {actualModel}
                       </span>
                     )}
                     {resolvedOrder.length > 0 && (
-                      <span className="rounded-full border border-[hsl(var(--brand-200))] bg-card px-3 py-1.5 text-xs text-[hsl(var(--brand-800))] dark:text-foreground">
+                      <span className="max-w-full break-all rounded-full border border-[hsl(var(--brand-200))] bg-card px-3 py-1.5 text-xs text-[hsl(var(--brand-800))] dark:text-foreground">
                         {t('chatResolvedOrder')}: {resolvedOrder.join(' -> ')}
                       </span>
                     )}
@@ -739,12 +739,12 @@ export default function ChatPage() {
                         key={targetName}
                         type="button"
                         onClick={() => handleToggleFallbackTarget(targetName)}
-                        className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
+                        className="inline-flex max-w-full items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
                       >
                         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-card text-[10px] text-[hsl(var(--brand-700))]">
                           {index + 1}
                         </span>
-                        {targetName}
+                        <span className="break-all text-left">{targetName}</span>
                       </button>
                     ))}
                   </div>
@@ -762,15 +762,17 @@ export default function ChatPage() {
                         type="button"
                         onClick={() => handleToggleFallbackTarget(target.name)}
                         className={cn(
-                          'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                          'max-w-full rounded-full border px-3 py-1.5 text-left text-xs font-medium transition-colors',
                           selected
                             ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
                             : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
                         )}
                       >
-                        {target.type === 'group'
-                          ? `${target.name} (${t('chatRouteTargetGroup')})`
-                          : target.name}
+                        <span className="break-all">
+                          {target.type === 'group'
+                            ? `${target.name} (${t('chatRouteTargetGroup')})`
+                            : target.name}
+                        </span>
                       </button>
                     );
                   })}
@@ -778,14 +780,14 @@ export default function ChatPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 pt-2">
+            <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap">
               {connectionStatus !== 'connected' && (
-                <Button variant="outline" className="rounded-full" onClick={reconnect}>
+                <Button variant="outline" className="h-11 rounded-full sm:min-w-[140px]" onClick={reconnect}>
                   <RefreshCw className="mr-2 h-4 w-4" />
                   {t('reconnect')}
                 </Button>
               )}
-              <Button variant="outline" className="rounded-full" onClick={clearMessages}>
+              <Button variant="outline" className="h-11 rounded-full sm:min-w-[140px]" onClick={clearMessages}>
                 <Trash2 className="mr-2 h-4 w-4" />
                 {t('clearSession')}
               </Button>
@@ -795,7 +797,7 @@ export default function ChatPage() {
 
         <Card className="flex min-h-0 flex-col overflow-hidden border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(255,250,248,0.96))] shadow-[0_24px_80px_-40px_rgba(80,40,45,0.45)] backdrop-blur dark:bg-card/92">
           <CardHeader className="border-b border-[hsl(var(--gray-200))]/80 pb-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
                   {t('chatTranscriptTitle')}
@@ -804,11 +806,15 @@ export default function ChatPage() {
                   {t('chatTranscriptSubtitle')}
                 </div>
               </div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-muted/70 px-3 py-1.5 text-xs text-muted-foreground">
-                <Radio className="h-3.5 w-3.5" />
-                {actualProvider || activeProvider || t('chatRouteAuto')}
-                <span className="text-[hsl(var(--gray-300))]">/</span>
-                {actualModel || activeModel || t('chatModelUnset')}
+              <div className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-full bg-muted/70 px-3 py-1.5 text-xs text-muted-foreground sm:flex-nowrap">
+                <Radio className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 max-w-full break-all sm:max-w-[12rem] sm:truncate">
+                  {actualProvider || activeProvider || t('chatRouteAuto')}
+                </span>
+                <span className="shrink-0 text-[hsl(var(--gray-300))]">/</span>
+                <span className="min-w-0 max-w-full break-all sm:max-w-[14rem] sm:truncate">
+                  {actualModel || activeModel || t('chatModelUnset')}
+                </span>
               </div>
             </div>
           </CardHeader>
@@ -857,12 +863,12 @@ export default function ChatPage() {
                   onKeyDown={handleInputKeyDown}
                   disabled={connectionStatus !== 'connected'}
                 />
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-[hsl(var(--gray-200))]/80 px-2 pt-3">
+                <div className="mt-3 flex flex-col gap-3 border-t border-[hsl(var(--gray-200))]/80 px-2 pt-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-xs text-muted-foreground">
                     {t('chatComposerHint')}
                   </div>
                   <Button
-                    className="rounded-full px-5"
+                    className="h-11 w-full rounded-full px-5 sm:w-auto sm:self-end"
                     onClick={handleSend}
                     disabled={connectionStatus !== 'connected' || !chatInput.trim()}
                   >

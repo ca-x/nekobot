@@ -189,7 +189,7 @@ export default function PromptsPage() {
       <div className="prompts-page flex h-[calc(100dvh-4rem)] flex-col overflow-hidden">
         <Header title={t('tabPrompts')} />
 
-        <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_380px]">
+        <div className="grid min-h-0 flex-1 gap-4 2xl:grid-cols-[minmax(0,1.1fr)_380px]">
           <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <Card className="overflow-hidden border-border/70 bg-card/88 shadow-[0_20px_60px_-42px_rgba(120,55,75,0.28)]">
               <div className="border-b border-border/70 bg-[linear-gradient(135deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.72))] p-5">
@@ -219,7 +219,7 @@ export default function PromptsPage() {
                   </Button>
                 </div>
 
-                <Button className="w-full rounded-2xl" onClick={() => resetPromptForm(null)}>
+                <Button className="h-11 w-full rounded-2xl" onClick={() => resetPromptForm(null)}>
                   <Plus className="mr-2 h-4 w-4" />
                   {t('promptNew')}
                 </Button>
@@ -238,13 +238,15 @@ export default function PromptsPage() {
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-sm font-semibold text-foreground">{item.name}</div>
-                          <div className="mt-1 text-xs uppercase tracking-[0.16em] text-muted-foreground">{item.key}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="break-words text-sm font-semibold text-foreground">{item.name}</div>
+                          <div className="mt-1 break-all text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                            {item.key}
+                          </div>
                         </div>
                         <span
                           className={cn(
-                            'rounded-full px-2.5 py-1 text-[11px] font-medium',
+                            'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium',
                             item.mode === 'system'
                               ? 'bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
                               : 'bg-[hsl(var(--gray-100))] text-[hsl(var(--gray-700))]',
@@ -263,6 +265,20 @@ export default function PromptsPage() {
                     <div className="rounded-[1.4rem] border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                       <p>{t('promptEmpty')}</p>
                       <p className="mt-2 text-xs">{t('promptEmptyGuide')}</p>
+                      <div className="mt-4 flex flex-wrap justify-center gap-2">
+                        <Button size="sm" className="rounded-full" onClick={() => resetPromptForm(null)}>
+                          <Plus className="mr-2 h-3.5 w-3.5" />
+                          {t('promptNew')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-full"
+                          onClick={() => navigate('/chat')}
+                        >
+                          {t('promptGoToChat')}
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -279,15 +295,25 @@ export default function PromptsPage() {
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('promptEditorDescription')}</p>
               </div>
 
-              <div className="space-y-4 p-5">
-                <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-5 p-5">
+                <div className="grid gap-4 xl:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="prompt-key">{t('promptKey')}</Label>
-                    <Input id="prompt-key" value={draft.key} onChange={(event) => setDraft((current) => ({ ...current, key: event.target.value }))} />
+                    <Input
+                      id="prompt-key"
+                      className="h-11 font-mono text-xs sm:text-sm"
+                      value={draft.key}
+                      onChange={(event) => setDraft((current) => ({ ...current, key: event.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="prompt-name">{t('promptName')}</Label>
-                    <Input id="prompt-name" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} />
+                    <Input
+                      id="prompt-name"
+                      className="h-11"
+                      value={draft.name}
+                      onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                    />
                   </div>
                 </div>
 
@@ -295,19 +321,20 @@ export default function PromptsPage() {
                   <Label htmlFor="prompt-description">{t('promptDescription')}</Label>
                   <Input
                     id="prompt-description"
+                    className="h-11"
                     value={draft.description}
                     onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
                   />
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 xl:grid-cols-2">
                   <div className="space-y-2">
                     <Label>{t('promptMode')}</Label>
                     <Select
                       value={draft.mode}
                       onValueChange={(value: PromptMode) => setDraft((current) => ({ ...current, mode: value }))}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-11 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -317,8 +344,8 @@ export default function PromptsPage() {
                     </Select>
                   </div>
 
-                  <div className="flex items-center justify-between rounded-[1.2rem] border border-border/70 bg-muted/20 px-4 py-3">
-                    <div>
+                  <div className="flex flex-col gap-3 rounded-[1.2rem] border border-border/70 bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
                       <div className="text-sm font-medium text-foreground">{t('enabled')}</div>
                       <div className="text-xs text-muted-foreground">{t('promptEnabledHint')}</div>
                     </div>
@@ -331,7 +358,12 @@ export default function PromptsPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="prompt-tags">{t('promptTags')}</Label>
-                  <Input id="prompt-tags" value={tagsInput} onChange={(event) => setTagsInput(event.target.value)} />
+                  <Input
+                    id="prompt-tags"
+                    className="h-11"
+                    value={tagsInput}
+                    onChange={(event) => setTagsInput(event.target.value)}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -339,15 +371,15 @@ export default function PromptsPage() {
                   <Textarea
                     id="prompt-template"
                     rows={14}
-                    className="min-h-[280px]"
+                    className="min-h-[320px] resize-y font-mono text-xs leading-6 sm:text-sm"
                     value={draft.template}
                     onChange={(event) => setDraft((current) => ({ ...current, template: event.target.value }))}
                   />
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
                   <Button
-                    className="rounded-full"
+                    className="h-11 rounded-full px-5"
                     onClick={() => void handleSavePrompt()}
                     disabled={createPrompt.isPending || updatePrompt.isPending}
                   >
@@ -356,7 +388,7 @@ export default function PromptsPage() {
                   {selectedPrompt && (
                     <Button
                       variant="outline"
-                      className="rounded-full text-destructive hover:text-destructive"
+                      className="h-11 rounded-full text-destructive hover:text-destructive sm:min-w-[120px]"
                       onClick={() => handleDeletePromptRecord(selectedPrompt.id)}
                       disabled={deletePrompt.isPending}
                     >
@@ -381,7 +413,7 @@ export default function PromptsPage() {
 
             <div className="space-y-5 p-5">
               <div className="space-y-4 rounded-[1.6rem] border border-border/70 bg-muted/30 p-4">
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 xl:grid-cols-2">
                   <div className="space-y-2">
                     <Label>{t('promptBindingScope')}</Label>
                     <Select
@@ -394,7 +426,7 @@ export default function PromptsPage() {
                         }))
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-11 w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -416,7 +448,7 @@ export default function PromptsPage() {
                         }))
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="h-11 w-full">
                         <SelectValue placeholder={t('promptBindingPrompt')} />
                       </SelectTrigger>
                       <SelectContent>
@@ -436,6 +468,7 @@ export default function PromptsPage() {
                     <Label htmlFor="binding-target">{t('promptBindingTarget')}</Label>
                     <Input
                       id="binding-target"
+                      className="h-11"
                       value={bindingDraft.target}
                       onChange={(event) => setBindingDraft((current) => ({ ...current, target: event.target.value }))}
                       placeholder={bindingDraft.scope === 'channel' ? 'wechat' : 'webui-chat:...'}
@@ -443,12 +476,13 @@ export default function PromptsPage() {
                   </div>
                 )}
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 xl:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="binding-priority">{t('promptBindingPriority')}</Label>
                     <Input
                       id="binding-priority"
                       type="number"
+                      className="h-11"
                       value={String(bindingDraft.priority)}
                       onChange={(event) =>
                         setBindingDraft((current) => ({
@@ -459,8 +493,8 @@ export default function PromptsPage() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between rounded-[1.2rem] border border-[hsl(var(--gray-200))] px-4 py-3">
-                    <div>
+                  <div className="flex flex-col gap-3 rounded-[1.2rem] border border-[hsl(var(--gray-200))] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
                       <div className="text-sm font-medium text-[hsl(var(--gray-900))]">{t('enabled')}</div>
                       <div className="text-xs text-muted-foreground">{t('promptBindingEnabledHint')}</div>
                     </div>
@@ -471,7 +505,7 @@ export default function PromptsPage() {
                   </div>
                 </div>
 
-                <Button className="w-full rounded-full" onClick={() => void handleCreateBindingRecord()} disabled={createBinding.isPending}>
+                <Button className="h-11 w-full rounded-full" onClick={() => void handleCreateBindingRecord()} disabled={createBinding.isPending}>
                   <Plus className="mr-2 h-4 w-4" />
                   {t('promptBindingAdd')}
                 </Button>
@@ -492,13 +526,22 @@ export default function PromptsPage() {
                   <div className="rounded-[1.4rem] border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                     <p>{t('promptBindingsEmpty')}</p>
                     <p className="mt-2 text-xs">{t('promptBindingsEmptyGuide')}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-4 rounded-full"
+                      onClick={() => resetPromptForm(null)}
+                    >
+                      <Plus className="mr-2 h-3.5 w-3.5" />
+                      {t('promptNew')}
+                    </Button>
                   </div>
                 )}
 
                 {bindingsWithPrompt.length > 0 && (
                   <Button
                     variant="outline"
-                    className="w-full rounded-full"
+                    className="h-11 w-full rounded-full"
                     onClick={() => navigate('/chat')}
                   >
                     {t('promptGoToChat')}
@@ -555,20 +598,27 @@ function BindingCard({
   return (
     <div className="rounded-[1.4rem] border border-border/70 bg-card p-4">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-foreground">
+        <div className="min-w-0 flex-1">
+          <div className="break-words text-sm font-semibold text-foreground">
             {prompt?.name ?? t('promptBindingMissingPrompt')}
           </div>
-          <div className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <span>{formatScope(binding.scope)}</span>
-            {binding.target && <span>{binding.target}</span>}
-            <span>{t('promptBindingPriority')}: {binding.priority}</span>
+          {prompt?.key && (
+            <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{prompt.key}</div>
+          )}
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full bg-muted px-2.5 py-1">{formatScope(binding.scope)}</span>
+            {binding.target && (
+              <span className="min-w-0 break-all rounded-full bg-muted px-2.5 py-1">{binding.target}</span>
+            )}
+            <span className="rounded-full bg-muted px-2.5 py-1">
+              {t('promptBindingPriority')}: {binding.priority}
+            </span>
           </div>
         </div>
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-full text-muted-foreground hover:text-destructive"
+          className="h-9 w-9 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
           onClick={() => onDelete(binding.id)}
           disabled={deleting}
         >

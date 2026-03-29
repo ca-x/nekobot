@@ -141,10 +141,10 @@ export default function Sidebar() {
   );
 
   const renderActions = () => (
-    <div className={cn('mt-4 space-y-1 border-t border-border/70 pt-4', !sidebarOpen && 'flex flex-col items-center')}>
+    <div className={cn('mt-4 space-y-1 border-t border-border/70 pt-4', !sidebarOpen && 'flex flex-col items-center space-y-2')}>
       <button
         onClick={handleLanguageSwitch}
-        title={`Language: ${langLabel}`}
+        title={sidebarOpen ? `Language: ${langLabel}` : t('language')}
         className={cn(
           'flex w-full items-center gap-3 rounded-2xl text-[13px] font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground',
           sidebarOpen ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
@@ -152,10 +152,10 @@ export default function Sidebar() {
       >
         <Languages className="h-4 w-4 shrink-0" />
         {sidebarOpen && (
-          <>
-            <span className="flex-1 truncate text-left">{t('language')}</span>
-            <span className="text-xs text-muted-foreground">{langLabel}</span>
-          </>
+          <span className="flex-1 truncate text-left">{t('language')}</span>
+        )}
+        {sidebarOpen && (
+          <span className="text-xs text-muted-foreground shrink-0">{langLabel}</span>
         )}
       </button>
 
@@ -258,8 +258,8 @@ export default function Sidebar() {
       >
         <div
           className={cn(
-            'mb-6',
-            sidebarOpen ? 'flex items-center justify-between px-2' : 'flex flex-col items-center gap-2',
+            'mb-6 w-full',
+            sidebarOpen ? 'flex items-center justify-between' : 'flex flex-col items-center gap-2',
           )}
         >
           {sidebarOpen ? (
@@ -280,7 +280,10 @@ export default function Sidebar() {
           )}
           <button
             onClick={toggleSidebar}
-            className="rounded-xl p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className={cn(
+              'rounded-xl p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+              !sidebarOpen && 'mt-1',
+            )}
             title={sidebarOpen ? t('sidebarCollapse') : t('sidebarExpand')}
           >
             {sidebarOpen ? (
