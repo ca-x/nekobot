@@ -30,7 +30,7 @@ func TestLocalBus(t *testing.T) {
 
 	// Register handler
 	received := make(chan *Message, 1)
-	bus.RegisterHandler("test", func(ctx context.Context, msg *Message) error {
+	bus.RegisterInboundHandler("test", func(ctx context.Context, msg *Message) error {
 		received <- msg
 		return nil
 	})
@@ -85,11 +85,11 @@ func TestBusMultipleHandlers(t *testing.T) {
 
 	// Register multiple handlers
 	count := 0
-	bus.RegisterHandler("test", func(ctx context.Context, msg *Message) error {
+	bus.RegisterInboundHandler("test", func(ctx context.Context, msg *Message) error {
 		count++
 		return nil
 	})
-	bus.RegisterHandler("test", func(ctx context.Context, msg *Message) error {
+	bus.RegisterInboundHandler("test", func(ctx context.Context, msg *Message) error {
 		count++
 		return nil
 	})
@@ -125,7 +125,7 @@ func TestBusOutbound(t *testing.T) {
 	})
 
 	received := make(chan *Message, 1)
-	bus.RegisterHandler("test", func(ctx context.Context, msg *Message) error {
+	bus.RegisterOutboundHandler("test", func(ctx context.Context, msg *Message) error {
 		received <- msg
 		return nil
 	})
@@ -169,7 +169,7 @@ func BenchmarkBusThroughput(b *testing.B) {
 	})
 
 	// Register no-op handler
-	bus.RegisterHandler("test", func(ctx context.Context, msg *Message) error {
+	bus.RegisterInboundHandler("test", func(ctx context.Context, msg *Message) error {
 		return nil
 	})
 

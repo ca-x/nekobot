@@ -20,6 +20,7 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
+	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/session"
 	"nekobot/pkg/storage/ent"
@@ -57,6 +58,7 @@ type Server struct {
 	logger     *logger.Logger
 	agent      *agent.Agent
 	bus        bus.Bus
+	router     *inboundrouter.Router
 	sessionMgr *session.Manager
 	entClient  *ent.Client
 	mux        *http.ServeMux
@@ -66,12 +68,21 @@ type Server struct {
 }
 
 // NewServer creates a new gateway server.
-func NewServer(cfg *config.Config, log *logger.Logger, ag *agent.Agent, messageBus bus.Bus, sessionMgr *session.Manager, entClient *ent.Client) *Server {
+func NewServer(
+	cfg *config.Config,
+	log *logger.Logger,
+	ag *agent.Agent,
+	messageBus bus.Bus,
+	router *inboundrouter.Router,
+	sessionMgr *session.Manager,
+	entClient *ent.Client,
+) *Server {
 	s := &Server{
 		config:     cfg,
 		logger:     log,
 		agent:      ag,
 		bus:        messageBus,
+		router:     router,
 		sessionMgr: sessionMgr,
 		entClient:  entClient,
 		clients:    make(map[string]*Client),
@@ -301,12 +312,6 @@ func (s *Server) writePump(client *Client) {
 }
 
 func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
-	// Add user message to session
-	client.session.AddMessage(agent.Message{
-		Role:    "user",
-		Content: wsMsg.Content,
-	})
-
 	// Also send via bus for logging/routing
 	busMsg := &bus.Message{
 		ID:        uuid.New().String(),
@@ -320,14 +325,35 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 	}
 	_ = s.bus.SendInbound(busMsg)
 
-	// Process with agent
-	response, err := s.agent.Chat(context.Background(), client.session, wsMsg.Content)
-	if err != nil {
-		s.sendError(client, fmt.Sprintf("agent error: %v", err))
-		return
+	response := ""
+	if s.router != nil {
+		var err error
+		response, _, err = s.router.ChatWebsocket(
+			context.Background(),
+			client.userID,
+			client.username,
+			client.id,
+			wsMsg.Content,
+		)
+		if err != nil {
+			s.sendError(client, fmt.Sprintf("agent error: %v", err))
+			return
+		}
+	}
+	if response == "" {
+		var err error
+		response, err = s.agent.Chat(context.Background(), client.session, wsMsg.Content)
+		if err != nil {
+			s.sendError(client, fmt.Sprintf("agent error: %v", err))
+			return
+		}
 	}
 
-	// Add assistant response to session
+	// Persist the user-visible gateway transcript after the turn completes.
+	client.session.AddMessage(agent.Message{
+		Role:    "user",
+		Content: wsMsg.Content,
+	})
 	client.session.AddMessage(agent.Message{
 		Role:    "assistant",
 		Content: response,

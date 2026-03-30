@@ -26,6 +26,7 @@ import (
 	"nekobot/pkg/cron"
 	"nekobot/pkg/gateway"
 	"nekobot/pkg/heartbeat"
+	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
@@ -110,6 +111,7 @@ func (s *GatewayService) run() {
 		channelaccounts.Module,
 		accountbindings.Module,
 		runtimetopology.Module,
+		inboundrouter.Module,
 		agent.Module,
 
 		// Gateway modules
@@ -295,6 +297,11 @@ func runGatewayForeground() {
 		toolsessions.Module,
 		prompts.Module,
 		providerstore.Module,
+		runtimeagents.Module,
+		channelaccounts.Module,
+		accountbindings.Module,
+		runtimetopology.Module,
+		inboundrouter.Module,
 		agent.Module,
 
 		// Gateway modules

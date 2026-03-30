@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.uber.org/zap"
@@ -82,6 +83,63 @@ func (m *Manager) Get(ctx context.Context, id string) (*ChannelAccount, error) {
 		return nil, err
 	}
 	return &item, nil
+}
+
+// FindByChannelTypeAndAccountKey returns one channel account by logical channel type and account key.
+func (m *Manager) FindByChannelTypeAndAccountKey(
+	ctx context.Context,
+	channelType, accountKey string,
+) (*ChannelAccount, error) {
+	channelType = strings.TrimSpace(strings.ToLower(channelType))
+	accountKey = strings.TrimSpace(accountKey)
+	if channelType == "" {
+		return nil, fmt.Errorf("channel type is required")
+	}
+	if accountKey == "" {
+		return nil, fmt.Errorf("account key is required")
+	}
+
+	rec, err := m.client.ChannelAccount.Query().
+		Where(
+			channelaccount.ChannelTypeEQ(channelType),
+			channelaccount.AccountKeyEQ(accountKey),
+		).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, ErrAccountNotFound
+		}
+		return nil, fmt.Errorf("find channel account %s/%s: %w", channelType, accountKey, err)
+	}
+
+	item, err := toAccount(rec)
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+// ResolveForChannelID resolves a channel account from a runtime channel identifier.
+func (m *Manager) ResolveForChannelID(ctx context.Context, channelID string) (*ChannelAccount, error) {
+	channelID = strings.TrimSpace(channelID)
+	if channelID == "" {
+		return nil, fmt.Errorf("channel id is required")
+	}
+
+	accounts, err := m.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range accounts {
+		candidates := channelRuntimeCandidates(item)
+		if slices.Contains(candidates, channelID) {
+			account := item
+			return &account, nil
+		}
+	}
+
+	return nil, ErrAccountNotFound
 }
 
 // Create inserts a new channel account.
@@ -245,4 +303,24 @@ func toAccount(rec *ent.ChannelAccount) (ChannelAccount, error) {
 		CreatedAt:   rec.CreatedAt,
 		UpdatedAt:   rec.UpdatedAt,
 	}, nil
+}
+
+func channelRuntimeCandidates(account ChannelAccount) []string {
+	candidates := make([]string, 0, 3)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if slices.Contains(candidates, value) {
+			return
+		}
+		candidates = append(candidates, value)
+	}
+
+	add(account.ChannelType + ":" + account.AccountKey)
+	add(account.AccountKey)
+	add(account.ChannelType)
+
+	return candidates
 }

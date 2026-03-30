@@ -14,9 +14,10 @@ import (
 
 // LocalBus is a local in-process message bus using Go channels.
 type LocalBus struct {
-	log      *logger.Logger
-	handlers map[string][]Handler // Channel ID -> handlers
-	mu       sync.RWMutex
+	log              *logger.Logger
+	inboundHandlers  map[string][]Handler
+	outboundHandlers map[string][]Handler
+	mu               sync.RWMutex
 
 	// Channels for message flow
 	inbound  chan *Message
@@ -43,12 +44,13 @@ func NewLocalBus(log *logger.Logger, bufferSize int) *LocalBus {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &LocalBus{
-		log:      log,
-		handlers: make(map[string][]Handler),
-		inbound:  make(chan *Message, bufferSize),
-		outbound: make(chan *Message, bufferSize),
-		ctx:      ctx,
-		cancel:   cancel,
+		log:              log,
+		inboundHandlers:  make(map[string][]Handler),
+		outboundHandlers: make(map[string][]Handler),
+		inbound:          make(chan *Message, bufferSize),
+		outbound:         make(chan *Message, bufferSize),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 }
 
@@ -85,23 +87,50 @@ func (b *LocalBus) Stop() error {
 	return nil
 }
 
-// RegisterHandler registers a handler for a specific channel.
-// Multiple handlers can be registered for the same channel.
-func (b *LocalBus) RegisterHandler(channelID string, handler Handler) {
+// RegisterInboundHandler registers a handler for inbound messages.
+func (b *LocalBus) RegisterInboundHandler(channelID string, handler Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.handlers[channelID] = append(b.handlers[channelID], handler)
-	b.log.Info("Registered handler", zap.String("channel", channelID))
+	b.inboundHandlers[channelID] = append(b.inboundHandlers[channelID], handler)
+	b.log.Info("Registered inbound handler", zap.String("channel", channelID))
 }
 
-// UnregisterHandlers removes all handlers for a channel.
-func (b *LocalBus) UnregisterHandlers(channelID string) {
+// UnregisterInboundHandlers removes all inbound handlers for a channel.
+func (b *LocalBus) UnregisterInboundHandlers(channelID string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	delete(b.handlers, channelID)
-	b.log.Info("Unregistered handlers", zap.String("channel", channelID))
+	delete(b.inboundHandlers, channelID)
+	b.log.Info("Unregistered inbound handlers", zap.String("channel", channelID))
+}
+
+// RegisterOutboundHandler registers a handler for outbound messages.
+func (b *LocalBus) RegisterOutboundHandler(channelID string, handler Handler) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.outboundHandlers[channelID] = append(b.outboundHandlers[channelID], handler)
+	b.log.Info("Registered outbound handler", zap.String("channel", channelID))
+}
+
+// UnregisterOutboundHandlers removes all outbound handlers for a channel.
+func (b *LocalBus) UnregisterOutboundHandlers(channelID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	delete(b.outboundHandlers, channelID)
+	b.log.Info("Unregistered outbound handlers", zap.String("channel", channelID))
+}
+
+// RegisterHandler registers an outbound handler for backward compatibility.
+func (b *LocalBus) RegisterHandler(channelID string, handler Handler) {
+	b.RegisterOutboundHandler(channelID, handler)
+}
+
+// UnregisterHandlers removes all outbound handlers for backward compatibility.
+func (b *LocalBus) UnregisterHandlers(channelID string) {
+	b.UnregisterOutboundHandlers(channelID)
 }
 
 // SendInbound sends an inbound message (from channel to agent).
@@ -141,7 +170,7 @@ func (b *LocalBus) processInbound() {
 				return
 			}
 
-			b.handleMessage(msg, "inbound")
+			b.handleMessage(msg, "inbound", b.inboundHandlers)
 
 		case <-b.ctx.Done():
 			return
@@ -160,7 +189,7 @@ func (b *LocalBus) processOutbound() {
 				return
 			}
 
-			b.handleMessage(msg, "outbound")
+			b.handleMessage(msg, "outbound", b.outboundHandlers)
 
 		case <-b.ctx.Done():
 			return
@@ -169,9 +198,9 @@ func (b *LocalBus) processOutbound() {
 }
 
 // handleMessage dispatches a message to registered handlers.
-func (b *LocalBus) handleMessage(msg *Message, direction string) {
+func (b *LocalBus) handleMessage(msg *Message, direction string, handlerMap map[string][]Handler) {
 	b.mu.RLock()
-	handlers := b.handlers[msg.ChannelID]
+	handlers := append([]Handler(nil), handlerMap[msg.ChannelID]...)
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {

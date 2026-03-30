@@ -243,6 +243,95 @@
   - 多 agent fan-out 行为。
   - 真实 runtime manager 替换 `pkg/agent` 的执行路径。
 
+## 2026-03-30 Gateway / Channels Round 2: 统一入站路由主干
+
+### 关键发现
+- 当前系统在这轮之前只有“配置面上的 runtime/account/binding”，没有真正消费这些对象的统一入站执行层。
+- `bus` 原模型把 inbound/outbound 都堆在 `ChannelID -> handlers` 单表里，导致：
+  - `channels.Manager` 只是在注册 outbound send handler。
+  - 许多 channel 的 `SendInbound()` 实际没有统一消费者。
+  - `gateway` 更是直接 `agent.Chat(...)`，bus 只做旁路记录。
+- 如果不先补统一入站 router，后续继续做多账号 / 多 agent 绑定只会让配置和执行越走越分裂。
+
+### 本轮已落地
+
+#### 1. bus 正式拆分入站/出站 handler 语义
+- 文件：
+  - `pkg/bus/interface.go`
+  - `pkg/bus/local_bus.go`
+  - `pkg/bus/redis_bus.go`
+  - `pkg/bus/bus_test.go`
+- 变更：
+  - 新增 `RegisterInboundHandler` / `UnregisterInboundHandlers`
+  - 新增 `RegisterOutboundHandler` / `UnregisterOutboundHandlers`
+  - 旧 `RegisterHandler` / `UnregisterHandlers` 保留为 outbound 兼容别名
+  - `LocalBus` / `RedisBus` 各自拆成 `inboundHandlers` 与 `outboundHandlers`
+- 结果：
+  - “谁负责入站消费、谁负责出站发送”终于在 API 层显式区分，不再靠约定猜测。
+
+#### 2. Channel manager 收口为 outbound-only
+- 文件：
+  - `pkg/channels/manager.go`
+- 变更：
+  - channel runtime 注册改用 `RegisterOutboundHandler`
+  - 停止/重载时改用 `UnregisterOutboundHandlers`
+- 结果：
+  - `channels.Manager` 的职责被收回到“把 agent reply 发回 channel”，不再和未来的 inbound router 冲突。
+
+#### 3. 新增 `pkg/inboundrouter`
+- 文件：
+  - `pkg/inboundrouter/router.go`
+  - `pkg/inboundrouter/fx.go`
+  - `pkg/inboundrouter/router_test.go`
+- 能力：
+  - 消费 bus inbound message。
+  - 按 `channelID -> channel account` 解析：
+    - 新增 `channelaccounts.Manager.FindByChannelTypeAndAccountKey()`
+    - 新增 `channelaccounts.Manager.ResolveForChannelID()`
+  - 按 account 加载 enabled bindings：
+    - 新增 `accountbindings.Manager.ListByChannelAccountID()`
+    - 新增 `accountbindings.Manager.ListEnabledByChannelAccountID()`
+  - 解析 runtime provider/model。
+  - 生成 runtime-scoped session：`route:<runtimeID>:<upstreamSessionID>`
+  - 用全局 `*agent.Agent` + `PromptContext` 发起真正调用，并将 `runtime_id`、`binding_id` 等 metadata 注入上下文。
+  - 通过 `bus.SendOutbound()` 把 reply 再发回具体 channel runtime。
+- 当前策略：
+  - `single_agent` 只取优先级最高的一条 binding。
+  - `multi_agent` 会 fan-out 到全部 enabled binding，并在 reply label/runtime name 上做来源标注。
+
+#### 4. gateway 迁移到 router 主链
+- 文件：
+  - `pkg/gateway/server.go`
+  - `cmd/nekobot/service.go`
+- 变更：
+  - gateway server 注入 `*inboundrouter.Router`
+  - websocket 消息先继续 `SendInbound()` 作为统一入站记录
+  - 真正聊天改成优先走 `router.ChatWebsocket(...)`
+  - 若当前尚未配置 `websocket/default` 的 account + binding，则保留原有默认 agent 聊天回退
+- 结果：
+  - 新路由主干已经进入真实入口。
+  - 旧行为没有被这轮强制打断，便于后续逐步把 control plane 从“可选配置”推进到“默认执行模型”。
+
+### 测试与验证
+- 定向验证：
+  - `go test -count=1 ./pkg/inboundrouter ./pkg/gateway ./pkg/bus ./pkg/channels ./pkg/channelaccounts ./pkg/accountbindings`
+- 中层回归：
+  - `go test -count=1 ./pkg/webui ./pkg/gateway ./cmd/nekobot/...`
+- 前端构建：
+  - `npm --prefix pkg/webui/frontend run build`
+- 全量回归：
+  - `go test -count=1 ./...`
+
+### 当前边界与下一步
+- 已经打通：
+  - bus 语义清晰化
+  - runtime/account/binding 第一次真正参与执行
+  - gateway 主入口不再绕过 routing spine
+- 仍未完成：
+  - Telegram / WeChat / ServerChan 等 direct agent call site 还要继续迁。
+  - runtime `PromptID` 仍未真正成为 prompt resolution 输入。
+  - WebUI 目前只有 topology 观察页，没有 account/binding/runtime 的完整交互编辑体验。
+
 #### 前端 Round 1 最小承接面
 - 不重构 `Channels / Config / System` 主体。
 - 新增一个轻量 `Runtime Topology` 页面最合适。

@@ -18,8 +18,9 @@ type RedisBus struct {
 	client *redis.Client
 	prefix string
 
-	handlers map[string][]Handler // Channel ID -> handlers
-	mu       sync.RWMutex
+	inboundHandlers  map[string][]Handler
+	outboundHandlers map[string][]Handler
+	mu               sync.RWMutex
 
 	// Lifecycle
 	ctx    context.Context
@@ -65,12 +66,13 @@ func NewRedisBus(log *logger.Logger, cfg *RedisBusConfig) (*RedisBus, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	b := &RedisBus{
-		log:      log,
-		client:   client,
-		prefix:   cfg.Prefix,
-		handlers: make(map[string][]Handler),
-		ctx:      ctx,
-		cancel:   cancel,
+		log:              log,
+		client:           client,
+		prefix:           cfg.Prefix,
+		inboundHandlers:  make(map[string][]Handler),
+		outboundHandlers: make(map[string][]Handler),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 
 	log.Info("Redis bus initialized",
@@ -117,22 +119,50 @@ func (b *RedisBus) Stop() error {
 	return nil
 }
 
-// RegisterHandler registers a handler for a specific channel.
-func (b *RedisBus) RegisterHandler(channelID string, handler Handler) {
+// RegisterInboundHandler registers a handler for inbound messages.
+func (b *RedisBus) RegisterInboundHandler(channelID string, handler Handler) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.handlers[channelID] = append(b.handlers[channelID], handler)
-	b.log.Info("Registered handler", zap.String("channel", channelID))
+	b.inboundHandlers[channelID] = append(b.inboundHandlers[channelID], handler)
+	b.log.Info("Registered inbound handler", zap.String("channel", channelID))
 }
 
-// UnregisterHandlers removes all handlers for a channel.
-func (b *RedisBus) UnregisterHandlers(channelID string) {
+// UnregisterInboundHandlers removes all inbound handlers for a channel.
+func (b *RedisBus) UnregisterInboundHandlers(channelID string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	delete(b.handlers, channelID)
-	b.log.Info("Unregistered handlers", zap.String("channel", channelID))
+	delete(b.inboundHandlers, channelID)
+	b.log.Info("Unregistered inbound handlers", zap.String("channel", channelID))
+}
+
+// RegisterOutboundHandler registers a handler for outbound messages.
+func (b *RedisBus) RegisterOutboundHandler(channelID string, handler Handler) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.outboundHandlers[channelID] = append(b.outboundHandlers[channelID], handler)
+	b.log.Info("Registered outbound handler", zap.String("channel", channelID))
+}
+
+// UnregisterOutboundHandlers removes all outbound handlers for a channel.
+func (b *RedisBus) UnregisterOutboundHandlers(channelID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	delete(b.outboundHandlers, channelID)
+	b.log.Info("Unregistered outbound handlers", zap.String("channel", channelID))
+}
+
+// RegisterHandler registers an outbound handler for backward compatibility.
+func (b *RedisBus) RegisterHandler(channelID string, handler Handler) {
+	b.RegisterOutboundHandler(channelID, handler)
+}
+
+// UnregisterHandlers removes all outbound handlers for backward compatibility.
+func (b *RedisBus) UnregisterHandlers(channelID string) {
+	b.UnregisterOutboundHandlers(channelID)
 }
 
 // SendInbound sends an inbound message (from channel to agent).
@@ -224,9 +254,15 @@ func (b *RedisBus) handleRedisMessage(redisMsg *redis.Message) {
 		return
 	}
 
-	// Dispatch to handlers
+	// Dispatch to handlers.
 	b.mu.RLock()
-	handlers := b.handlers[msg.ChannelID]
+	var handlers []Handler
+	switch direction {
+	case "inbound":
+		handlers = append([]Handler(nil), b.inboundHandlers[msg.ChannelID]...)
+	case "outbound":
+		handlers = append([]Handler(nil), b.outboundHandlers[msg.ChannelID]...)
+	}
 	b.mu.RUnlock()
 
 	if len(handlers) == 0 {

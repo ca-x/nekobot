@@ -106,7 +106,7 @@ func (m *Manager) Start() error {
 
 		// Register message handler for this channel
 		if m.bus != nil {
-			m.bus.RegisterHandler(channel.ID(), func(ctx context.Context, msg *bus.Message) error {
+			m.bus.RegisterOutboundHandler(channel.ID(), func(ctx context.Context, msg *bus.Message) error {
 				return channel.SendMessage(ctx, msg)
 			})
 		}
@@ -168,7 +168,7 @@ func (m *Manager) Stop() error {
 
 		// Unregister handler from bus
 		if m.bus != nil {
-			m.bus.UnregisterHandlers(ch.ID())
+			m.bus.UnregisterOutboundHandlers(ch.ID())
 		}
 	}
 
@@ -202,7 +202,7 @@ func (m *Manager) StopChannel(channelID string) error {
 	}
 
 	if m.bus != nil {
-		m.bus.UnregisterHandlers(resolvedID)
+		m.bus.UnregisterOutboundHandlers(resolvedID)
 	}
 
 	m.mu.Lock()
@@ -255,7 +255,7 @@ func (m *Manager) ReloadChannel(channel Channel) error {
 	}
 
 	if m.bus != nil {
-		m.bus.RegisterHandler(channel.ID(), func(ctx context.Context, msg *bus.Message) error {
+		m.bus.RegisterOutboundHandler(channel.ID(), func(ctx context.Context, msg *bus.Message) error {
 			return channel.SendMessage(ctx, msg)
 		})
 	}

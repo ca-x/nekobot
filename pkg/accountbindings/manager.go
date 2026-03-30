@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.uber.org/zap"
@@ -112,6 +113,52 @@ func (m *Manager) Get(ctx context.Context, id string) (*AccountBinding, error) {
 		return nil, err
 	}
 	return &item, nil
+}
+
+// ListByChannelAccountID returns all bindings for one account ordered by priority.
+func (m *Manager) ListByChannelAccountID(ctx context.Context, channelAccountID string) ([]AccountBinding, error) {
+	channelAccountID = strings.TrimSpace(channelAccountID)
+	if channelAccountID == "" {
+		return nil, fmt.Errorf("channel account id is required")
+	}
+
+	recs, err := m.client.AccountBinding.Query().
+		Where(accountbinding.ChannelAccountIDEQ(channelAccountID)).
+		Order(
+			ent.Asc(accountbinding.FieldPriority),
+			ent.Asc(accountbinding.FieldAgentRuntimeID),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list account bindings for %s: %w", channelAccountID, err)
+	}
+
+	items := make([]AccountBinding, 0, len(recs))
+	for _, rec := range recs {
+		item, err := toBinding(rec)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+// ListEnabledByChannelAccountID returns enabled bindings for one account ordered by priority.
+func (m *Manager) ListEnabledByChannelAccountID(ctx context.Context, channelAccountID string) ([]AccountBinding, error) {
+	items, err := m.ListByChannelAccountID(ctx, channelAccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	enabled := make([]AccountBinding, 0, len(items))
+	for _, item := range items {
+		if !item.Enabled {
+			continue
+		}
+		enabled = append(enabled, item)
+	}
+	return enabled, nil
 }
 
 // Create inserts a new account binding.
@@ -287,6 +334,25 @@ func marshalMap(values map[string]interface{}) (string, error) {
 		return "", fmt.Errorf("marshal map: %w", err)
 	}
 	return string(payload), nil
+}
+
+func distinctSortedBindings(items []AccountBinding) []AccountBinding {
+	result := make([]AccountBinding, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if _, ok := seen[item.ID]; ok {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		result = append(result, item)
+	}
+	slices.SortFunc(result, func(a, b AccountBinding) int {
+		if a.Priority != b.Priority {
+			return a.Priority - b.Priority
+		}
+		return strings.Compare(a.AgentRuntimeID, b.AgentRuntimeID)
+	})
+	return result
 }
 
 func unmarshalMap(raw string) (map[string]interface{}, error) {

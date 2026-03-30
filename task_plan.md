@@ -142,6 +142,44 @@
 ### Status
 **Completed** - 第 1 轮 `Chat + Config + Harness` 主链修复、前端一致性修补与全量验证已完成，已进入提交推送阶段。
 
+## 2026-03-30 Gateway / Channels 运行时路由主干批次
+
+### Goal
+补齐当前多账号 channel account / runtime agent / account binding 的执行主链，先建立统一入站路由层，消除 gateway 与 bus 在入站路径上的“只记录不路由”状态，并把 gateway 先迁移到新路由主干，同时保持现有默认 agent 行为不回退。
+
+### Phases
+- [x] Phase 1: 核对 bus、gateway、runtime topology 与 direct-call 调用点
+- [x] Phase 2: 完成 bus 入站/出站 handler 语义拆分并收口调用方
+- [x] Phase 3: 实现统一 inbound router 与 runtime/account/binding 解析
+- [x] Phase 4: 迁移 gateway 到 router 主链并保留无 binding 的默认回退
+- [x] Phase 5: 跑定向测试、全量 Go 回归、前端构建并记录结果
+
+### Decisions Made
+- `bus` 正式拆成 `RegisterInboundHandler` / `RegisterOutboundHandler` 两套 handler 注册语义；旧 `RegisterHandler` 保留为 outbound 兼容别名，避免一次性打断所有调用点。
+- `channels.Manager` 只负责 outbound 注册，不再混用同一 handler map 处理入站。
+- 新增 `pkg/inboundrouter` 作为统一入站决策层：
+  - 通过 `channelaccounts.Manager.ResolveForChannelID()` 将运行时 `channel.ID()` 映射回 channel account。
+  - 通过 `accountbindings.Manager.ListEnabledByChannelAccountID()` 选出有效 binding。
+  - 通过 `runtimeagents.Manager.Get()` 解析 provider/model 并生成 runtime-scoped session。
+- `gateway` 先接到 router，但保留兼容行为：
+  - 若存在 `websocket/default` account + binding，则走 runtime routing。
+  - 若不存在，则继续使用现有默认 agent 会话，不要求先手工建拓扑才能聊天。
+- router 第一版先复用全局 `*agent.Agent` + `PromptContext` 注入 provider/model/runtime metadata，不提前引入 runtime 专属 agent 池。
+
+### Verification
+- [x] `go test -count=1 ./pkg/inboundrouter ./pkg/gateway ./pkg/bus ./pkg/channels ./pkg/channelaccounts ./pkg/accountbindings`
+- [x] `go test -count=1 ./pkg/webui ./pkg/gateway ./cmd/nekobot/...`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./...`
+
+### Remaining Follow-up
+- [ ] 继续把 Telegram / WeChat / ServerChan 等仍直接调全局 agent 的 channel 逐步迁到 `pkg/inboundrouter` 主链。
+- [ ] 将 runtime `PromptID` 真正接入 prompt resolution，而不是当前仅透传 runtime metadata。
+- [ ] 为 runtime/account/binding 增加真正可编辑的 WebUI 页面，而不是仅有只读 topology。
+
+### Status
+**Completed** - 已建立统一入站路由主干，完成 bus 语义拆分与 gateway 接线，并通过定向测试、全量 Go 回归和前端构建验证。
+
 ### Round 1 Progress Notes
 - [x] 已为 watch 运行态同步补回归测试，覆盖 `handleUpdateWatchStatus`、`handleSaveConfig`、`handleImportConfig`。
 - [x] 已为 chat clear 与 undo 边界补回归测试，确保 clear 后不会残留 snapshot。

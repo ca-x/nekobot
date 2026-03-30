@@ -67,10 +67,14 @@ type stubBus struct {
 	inbound []*bus.Message
 }
 
-func (b *stubBus) Start() error                                          { return nil }
-func (b *stubBus) Stop() error                                           { return nil }
-func (b *stubBus) RegisterHandler(channelID string, handler bus.Handler) {}
-func (b *stubBus) UnregisterHandlers(channelID string)                   {}
+func (b *stubBus) Start() error                                                  { return nil }
+func (b *stubBus) Stop() error                                                   { return nil }
+func (b *stubBus) RegisterInboundHandler(channelID string, handler bus.Handler)  {}
+func (b *stubBus) UnregisterInboundHandlers(channelID string)                    {}
+func (b *stubBus) RegisterOutboundHandler(channelID string, handler bus.Handler) {}
+func (b *stubBus) UnregisterOutboundHandlers(channelID string)                   {}
+func (b *stubBus) RegisterHandler(channelID string, handler bus.Handler)         {}
+func (b *stubBus) UnregisterHandlers(channelID string)                           {}
 func (b *stubBus) SendInbound(msg *bus.Message) error {
 	b.inbound = append(b.inbound, msg)
 	return nil

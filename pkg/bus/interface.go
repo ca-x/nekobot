@@ -44,10 +44,22 @@ type Bus interface {
 	// Stop stops the message bus.
 	Stop() error
 
-	// RegisterHandler registers a handler for a specific channel.
+	// RegisterInboundHandler registers a handler for inbound messages for a specific channel.
+	RegisterInboundHandler(channelID string, handler Handler)
+
+	// UnregisterInboundHandlers removes all inbound handlers for a channel.
+	UnregisterInboundHandlers(channelID string)
+
+	// RegisterOutboundHandler registers a handler for outbound messages for a specific channel.
+	RegisterOutboundHandler(channelID string, handler Handler)
+
+	// UnregisterOutboundHandlers removes all outbound handlers for a channel.
+	UnregisterOutboundHandlers(channelID string)
+
+	// RegisterHandler registers an outbound handler for backward compatibility.
 	RegisterHandler(channelID string, handler Handler)
 
-	// UnregisterHandlers removes all handlers for a channel.
+	// UnregisterHandlers removes all outbound handlers for a channel for backward compatibility.
 	UnregisterHandlers(channelID string)
 
 	// SendInbound sends an inbound message (from channel to agent).
