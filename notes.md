@@ -258,6 +258,52 @@
 #### 1. bus 正式拆分入站/出站 handler 语义
 - 文件：
   - `pkg/bus/interface.go`
+
+## 2026-03-31 Runtime Topology WebUI 可编辑化补记
+
+### 本轮新增发现
+- `pkg/webui/frontend/src/pages/RuntimeTopologyPage.tsx`
+  - 在上一轮只提供了只读 topology 观察视图，但后端其实已经具备完整 CRUD：
+    - `/api/runtime-agents`
+    - `/api/channel-accounts`
+    - `/api/account-bindings`
+  - 这造成“运行时拓扑模型已经存在，但 Web 控制面不可操作”的明显断层。
+- `pkg/webui/frontend/src/hooks/useTopology.ts`
+  - 只有 `GET /api/runtime-topology` 的 snapshot hook，没有独立 list/mutation hook，页面层无法形成稳定的增删改工作流。
+
+### 本轮已完成
+- 前端数据层
+  - 扩展 `useTopology.ts`：
+    - 新增 `useRuntimeAgents`
+    - 新增 `useChannelAccounts`
+    - 新增 `useAccountBindings`
+    - 新增三类资源的 create/update/delete mutation hooks
+    - 统一失效 `runtime-topology` 与三类列表 query
+- Runtime Topology 页面
+  - 保留 summary metric cards。
+  - 新增控制面 toolbar：
+    - 新建 runtime
+    - 新建 account
+    - 新建 binding
+  - 三个实体区块都补齐：
+    - 编辑入口
+    - 删除入口
+    - 空状态 CTA
+  - 新增三个编辑 dialog：
+    - runtime 表单：name/display/provider/model/prompt/skills/tools/policy
+    - account 表单：channel_type/account_key/display/config/metadata
+    - binding 表单：account/runtime/mode/priority/reply_label/public_reply/metadata
+  - 新增删除确认 dialog。
+- 交互与体验
+  - 列表字段采用“每行一项”与 JSON object 文本框混合方案，先保证真实可维护和低耦合。
+  - binding 创建按钮在 runtime 或 account 缺失时自动禁用，并给出显式引导提示。
+  - API 错误统一从后端 JSON 中提取 `error` 字段后 toast 展示，避免直接把原始 JSON 字符串暴露给用户。
+- 文案
+  - 补齐 `en / zh-CN / ja` 三语 runtime topology 管理页文案与表单提示。
+
+### 本轮验证
+- `npm --prefix pkg/webui/frontend run build`
+- `go test -count=1 ./pkg/webui ./pkg/gateway ./pkg/channels ./cmd/nekobot/...`
   - `pkg/bus/local_bus.go`
   - `pkg/bus/redis_bus.go`
   - `pkg/bus/bus_test.go`

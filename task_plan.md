@@ -1,6 +1,35 @@
 # Task Plan: nekobot 功能评估、迁移与收口
 
-> Last Updated: 2026-03-26
+> Last Updated: 2026-03-31
+
+## 2026-03-31 Runtime Topology WebUI 可编辑化批次
+
+### Goal
+把当前只读的 Runtime Topology 页面升级成可直接管理 runtime agent、channel account、account binding 的控制面，接通已有后端 CRUD，补齐必要交互与文案，并在本轮结束后完成构建、回归、提交与推送。
+
+### Phases
+- [x] Phase 1: 重新核对 topology 后端接口、前端现状与计划
+- [x] Phase 2: 扩展前端 hooks，接入 runtime/account/binding 查询与变更
+- [x] Phase 3: 改造 Runtime Topology 页面为可管理界面并补齐交互细节
+- [x] Phase 4: 更新计划/笔记并完成前端与后端回归验证
+- [x] Phase 5: 提交并推送本轮代码
+
+### Key Questions
+1. 现有后端 CRUD 是否已经足够支撑前端直接编辑，还是还存在 API 级缺口？
+2. 页面是应该先做“可用优先”的轻量管理，还是继续停留在观测面等待更完整 runtime manager？
+3. 运行时拓扑页如何在不引入过重导航重构的前提下，把操作链路补齐到可用状态？
+
+### Decisions Made
+- 本轮优先把 Runtime Topology 从“只读观察”补成“轻量可管理”，不等待后续更重的 runtime manager 重构。
+- 前端直接复用已有 `/api/runtime-agents`、`/api/channel-accounts`、`/api/account-bindings` CRUD 接口，不新增后端 API 形状。
+- 表单层对 `skills/tools/config/metadata/policy` 采用文本 + JSON 的务实输入模式，先保证真实可维护，再考虑更细粒度组件化。
+
+### Verification
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./pkg/webui ./pkg/gateway ./pkg/channels ./cmd/nekobot/...`
+
+### Status
+**Completed** - 已完成 Runtime Topology WebUI 可编辑化、前后端回归验证，并准备提交推送本轮代码。
 
 ## 2026-03-29 Harness 审阅批次
 
