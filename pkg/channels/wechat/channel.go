@@ -34,10 +34,14 @@ type Channel struct {
 	agent     *agent.Agent
 	commands  *commands.Registry
 	auth      *ilinkauth.Service
+	store     *CredentialStore
 	runtime   *ControlService
 	renderer  richtext.MarkdownImageRenderer
 	inbound   *wxmedia.InboundProcessor
 	workspace string
+	id        string
+	channelType string
+	name      string
 
 	mu      sync.RWMutex
 	bot     *wechatbot.Bot
@@ -63,16 +67,51 @@ func NewChannel(
 	rootCfg *config.Config,
 	transcriber transcription.Transcriber,
 ) (*Channel, error) {
+	return NewAccountChannel(
+		log,
+		cfg,
+		b,
+		ag,
+		cmdRegistry,
+		auth,
+		toolSessionMgr,
+		processMgr,
+		rootCfg,
+		transcriber,
+		"wechat",
+		"WeChat",
+	)
+}
+
+// NewAccountChannel creates an account-scoped WeChat channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.WeChatConfig,
+	b bus.Bus,
+	ag *agent.Agent,
+	cmdRegistry *commands.Registry,
+	auth *ilinkauth.Service,
+	toolSessionMgr *toolsessions.Manager,
+	processMgr *process.Manager,
+	rootCfg *config.Config,
+	transcriber transcription.Transcriber,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if auth == nil {
 		return nil, fmt.Errorf("ilink auth service is required")
 	}
-	binding, err := loadChannelBinding(auth)
+	store, err := NewCredentialStore(rootCfg)
 	if err != nil {
-		return nil, fmt.Errorf("load channel binding: %w", err)
+		return nil, fmt.Errorf("create wechat credential store: %w", err)
+	}
+	creds, err := store.LoadCredentials()
+	if err != nil {
+		return nil, fmt.Errorf("load wechat credentials: %w", err)
 	}
 	var bot *wechatbot.Bot
-	if binding != nil {
-		bot = newWeChatBot(&binding.Credentials, auth, binding.UserID)
+	if creds != nil {
+		bot = newWeChatBot(creds, store)
 	}
 
 	var runtimeControl *ControlService
@@ -88,10 +127,14 @@ func NewChannel(
 		agent:                ag,
 		commands:             cmdRegistry,
 		auth:                 auth,
+		store:                store,
 		runtime:              runtimeControl,
 		renderer:             richtext.NewBrowserMarkdownRenderer(log, filepath.Join(rootCfg.WorkspacePath(), "screenshots", "wechat")),
 		inbound:              wxmedia.NewInboundProcessor(wxmedia.NewDownloader(filepath.Join(rootCfg.DatabaseDir(), "wechat", "media")), transcriber),
 		workspace:            rootCfg.WorkspacePath(),
+		id:                   strings.TrimSpace(channelID),
+		channelType:          "wechat",
+		name:                 defaultWeChatName(displayName),
 		bot:                  bot,
 		cursors:              map[string]int{},
 		pendingSkillInstalls: map[string]pendingSkillInstall{},
@@ -100,12 +143,17 @@ func NewChannel(
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "wechat"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "WeChat"
+	return c.name
+}
+
+// ChannelType returns the stable WeChat family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -243,7 +291,7 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 	sess := &simpleSession{messages: make([]agent.Message, 0, 8)}
 	reply, err := c.agent.ChatWithPromptContext(ctx, sess, buildWeChatAgentInput(content, c.workspace), agent.PromptContext{
 		Channel:   c.ID(),
-		SessionID: msg.FromUserID,
+		SessionID: c.sessionID(msg.FromUserID),
 		UserID:    msg.FromUserID,
 		Username:  msg.FromUserID,
 	})
@@ -580,7 +628,10 @@ func (c *Channel) storeCursor(sessionID string, offset int) {
 
 // SendMessage sends a message through WeChat.
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
-	userID := strings.TrimPrefix(msg.SessionID, "wechat:")
+	userID := strings.TrimPrefix(msg.SessionID, c.ChannelType()+":")
+	if strings.TrimSpace(userID) == strings.TrimSpace(msg.SessionID) {
+		userID = strings.TrimPrefix(msg.SessionID, c.ID()+":")
+	}
 	if strings.TrimSpace(userID) == "" {
 		userID = strings.TrimSpace(msg.UserID)
 	}
@@ -761,35 +812,17 @@ func convertCDNMedia(media *wxtypes.CDNMedia) *wxmedia.CDNMedia {
 	}
 }
 
-func newWeChatBot(creds *Credentials, auth *ilinkauth.Service, userID string) *wechatbot.Bot {
+func newWeChatBot(creds *Credentials, store *CredentialStore) *wechatbot.Bot {
 	if creds == nil {
 		return nil
 	}
 
 	opts := make([]wechatbot.BotOption, 0, 1)
-	if auth != nil && strings.TrimSpace(userID) != "" && strings.TrimSpace(creds.ILinkBotID) != "" {
-		opts = append(opts, wechatbot.WithSyncState(wxmonitor.NewFileSyncState(auth.SyncStatePath(userID, creds.ILinkBotID))))
+	if store != nil && strings.TrimSpace(creds.ILinkBotID) != "" {
+		opts = append(opts, wechatbot.WithSyncState(wxmonitor.NewFileSyncState(store.SyncStatePath(creds.ILinkBotID))))
 	}
 
 	return wechatbot.NewBot(creds, opts...)
-}
-
-func loadChannelBinding(auth *ilinkauth.Service) (*ilinkauth.Binding, error) {
-	if auth == nil {
-		return nil, fmt.Errorf("ilink auth service is nil")
-	}
-
-	bindings, err := auth.ListBindings()
-	if err != nil {
-		return nil, err
-	}
-	if len(bindings) == 0 {
-		return nil, nil
-	}
-	if len(bindings) > 1 {
-		return nil, fmt.Errorf("multiple ilink bindings are not supported by the current wechat channel runtime")
-	}
-	return bindings[0], nil
 }
 
 func (c *Channel) setPendingSkillInstall(userID string, pending pendingSkillInstall) {
@@ -818,6 +851,22 @@ func (c *Channel) clearPendingSkillInstall(userID string) {
 	c.pendingSkillMu.Lock()
 	defer c.pendingSkillMu.Unlock()
 	delete(c.pendingSkillInstalls, strings.TrimSpace(userID))
+}
+
+func (c *Channel) sessionID(userID string) string {
+	trimmed := strings.TrimSpace(userID)
+	if c.ID() == c.ChannelType() {
+		return c.ChannelType() + ":" + trimmed
+	}
+	return c.ID() + ":" + trimmed
+}
+
+func defaultWeChatName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "WeChat"
+	}
+	return name
 }
 
 type simpleSession struct {

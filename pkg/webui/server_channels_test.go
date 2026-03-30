@@ -12,6 +12,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/channels"
 	"nekobot/pkg/channels/slack"
 	"nekobot/pkg/config"
@@ -89,6 +90,58 @@ func TestHandleGetChannelsIncludesGotify(t *testing.T) {
 	}
 	if !gotifyCfg.Enabled || gotifyCfg.ServerURL != "https://gotify.example.com" || gotifyCfg.Priority != 8 {
 		t.Fatalf("unexpected gotify config: %+v", gotifyCfg)
+	}
+}
+
+func TestHandleGetChannelsIncludesRuntimeInstances(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newTestLogger(t)
+	manager := channels.NewManager(log, nil)
+	ch, err := channels.BuildChannelFromAccount(channelAccountFixture("gotify", "alerts-a", "Alerts A", map[string]interface{}{
+		"enabled":    true,
+		"server_url": "https://gotify.example.com",
+		"app_token":  "token-1",
+		"priority":   5,
+	}), log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if err := manager.Register(ch); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	s := &Server{config: cfg, channels: manager}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/channels", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleGetChannels(c); err != nil {
+		t.Fatalf("handleGetChannels failed: %v", err)
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+
+	raw, ok := payload["_instances"]
+	if !ok {
+		t.Fatalf("expected _instances in response: %s", rec.Body.String())
+	}
+
+	var instances []map[string]interface{}
+	if err := json.Unmarshal(raw, &instances); err != nil {
+		t.Fatalf("unmarshal instances failed: %v", err)
+	}
+	if len(instances) != 1 {
+		t.Fatalf("expected 1 instance, got %d", len(instances))
+	}
+	if instances[0]["id"] != "gotify:alerts-a" {
+		t.Fatalf("unexpected instance id: %#v", instances[0]["id"])
+	}
+	if instances[0]["type"] != "gotify" {
+		t.Fatalf("unexpected instance type: %#v", instances[0]["type"])
 	}
 }
 
@@ -203,6 +256,21 @@ func TestHandleUpdateChannelRejectsInvalidConfigWithoutMutatingState(t *testing.
 	}
 	if current != original {
 		t.Fatalf("expected original slack channel to remain active")
+	}
+}
+
+func channelAccountFixture(
+	channelType string,
+	accountKey string,
+	displayName string,
+	accountConfig map[string]interface{},
+) channelaccounts.ChannelAccount {
+	return channelaccounts.ChannelAccount{
+		ChannelType: channelType,
+		AccountKey:  accountKey,
+		DisplayName: displayName,
+		Enabled:     true,
+		Config:      accountConfig,
 	}
 }
 

@@ -153,6 +153,14 @@ func (s *Service) DeleteBinding(userID string) error {
 	return nil
 }
 
+// SaveBinding persists one binding directly.
+func (s *Service) SaveBinding(binding *Binding) error {
+	if s.store == nil {
+		return fmt.Errorf("store is nil")
+	}
+	return s.store.SaveBinding(binding)
+}
+
 // LoadBindSession returns the user's current bind session, if any.
 func (s *Service) LoadBindSession(userID string) (*BindSession, error) {
 	if s.store == nil {

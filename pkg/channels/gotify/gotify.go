@@ -23,13 +23,36 @@ const defaultRequestTimeout = 20 * time.Second
 
 // Channel implements the channels.Channel interface for Gotify.
 type Channel struct {
-	log    *logger.Logger
-	config config.GotifyConfig
-	client *http.Client
+	log         *logger.Logger
+	config      config.GotifyConfig
+	client      *http.Client
+	id          string
+	channelType string
+	name        string
 }
 
 // NewChannel creates a new Gotify channel.
 func NewChannel(log *logger.Logger, cfg config.GotifyConfig) (*Channel, error) {
+	return newChannel(log, cfg, "gotify", "gotify", "Gotify")
+}
+
+// NewAccountChannel creates a new account-scoped Gotify channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.GotifyConfig,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
+	return newChannel(log, cfg, channelID, "gotify", displayName)
+}
+
+func newChannel(
+	log *logger.Logger,
+	cfg config.GotifyConfig,
+	channelID string,
+	channelType string,
+	displayName string,
+) (*Channel, error) {
 	serverURL := strings.TrimSpace(cfg.ServerURL)
 	if serverURL == "" {
 		return nil, fmt.Errorf("gotify server_url is required")
@@ -41,18 +64,29 @@ func NewChannel(log *logger.Logger, cfg config.GotifyConfig) (*Channel, error) {
 		return nil, fmt.Errorf("gotify priority must be between 1 and 10")
 	}
 
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		name = "Gotify"
+	}
+
 	return &Channel{
-		log:    log,
-		config: cfg,
-		client: &http.Client{Timeout: defaultRequestTimeout},
+		log:         log,
+		config:      cfg,
+		client:      &http.Client{Timeout: defaultRequestTimeout},
+		id:          strings.TrimSpace(channelID),
+		channelType: strings.TrimSpace(channelType),
+		name:        name,
 	}, nil
 }
 
 // ID returns the stable channel identifier.
-func (c *Channel) ID() string { return "gotify" }
+func (c *Channel) ID() string { return c.id }
+
+// ChannelType returns the stable channel family identifier.
+func (c *Channel) ChannelType() string { return c.channelType }
 
 // Name returns the human-readable channel name.
-func (c *Channel) Name() string { return "Gotify" }
+func (c *Channel) Name() string { return c.name }
 
 // IsEnabled reports whether the channel is enabled.
 func (c *Channel) IsEnabled() bool { return c.config.Enabled }

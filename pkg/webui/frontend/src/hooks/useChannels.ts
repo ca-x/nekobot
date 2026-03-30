@@ -9,6 +9,18 @@ export type ChannelConfig = Record<string, unknown> & { enabled?: boolean };
 /** GET /api/channels returns { channelName: ChannelConfig, ... } */
 export type ChannelsMap = Record<string, ChannelConfig>;
 
+export interface ChannelRuntimeInstance {
+  id: string;
+  type: string;
+  name: string;
+  enabled: boolean;
+}
+
+export interface ChannelsResponse {
+  _instances?: ChannelRuntimeInstance[];
+  [key: string]: ChannelConfig | ChannelRuntimeInstance[] | undefined;
+}
+
 export interface WechatBindingStatus {
   bound: boolean;
   active_account_id?: string;
@@ -43,7 +55,7 @@ export interface TestChannelResult {
 }
 
 export function useChannels() {
-  return useQuery<ChannelsMap>({
+  return useQuery<ChannelsResponse>({
     queryKey: ['channels'],
     queryFn: () => api.get('/api/channels'),
     staleTime: 30_000,

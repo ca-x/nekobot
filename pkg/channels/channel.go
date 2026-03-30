@@ -28,6 +28,12 @@ type Channel interface {
 	SendMessage(ctx context.Context, msg *bus.Message) error
 }
 
+// TypedChannel exposes the logical channel type separate from the runtime instance ID.
+type TypedChannel interface {
+	// ChannelType returns the stable channel family key such as "telegram" or "wechat".
+	ChannelType() string
+}
+
 // HealthChecker optionally exposes a lightweight runtime probe for a channel.
 type HealthChecker interface {
 	// HealthCheck verifies whether the channel can currently reach its upstream runtime.

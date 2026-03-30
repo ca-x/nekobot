@@ -258,10 +258,267 @@
   - 新增 `pages/RuntimeTopologyPage.tsx`。
   - 补少量 i18n key。
 - 明确延后：
+
+## 2026-03-30 Multi-Agent Runtime / Channel Account Round 2 首批运行链落地
+
+### 本轮目标
+- 把 `pkg/channels` 从“一个 channel type 对应一个 runtime 实例”推进到“一个 channel type 可承载多个 account runtime 实例”。
+- 保留现有 `config.Channels.*` 单实例兼容路径，不中断旧 WebUI/配置流。
+- 至少让一类简单 channel 和一类完整聊天 channel 真正能从 `ChannelAccount` 启动。
+
+### 已完成实现
+
+#### 1. `pkg/channels.Manager` 改成双索引
+- `channels map[id]Channel` 之外，新增：
+  - `channelsByType map[channelType][]instanceID`
+  - `defaultByType map[channelType]instanceID`
+- 效果：
+  - `Register` 允许 `telegram:alpha`、`telegram:beta` 并存。
+  - `GetChannel("telegram")` 仍能取到默认实例，兼容旧控制面与旧测试。
+  - `StopChannel("telegram:alpha")` 后，type 级默认别名会自动切到剩余实例。
+
+#### 2. 引入 `TypedChannel` 与 account-aware builder
+- `pkg/channels/channel.go` 新增 `TypedChannel`，把逻辑 channel family 和 runtime instance ID 区分开。
+- `pkg/channels/registry.go` 为 descriptor 增加 `buildFromAccount(...)`。
+- 新增 `BuildChannelFromAccount(...)`：
+  - 先把 `ChannelAccount.Config` JSON 解到各 channel config struct。
+  - 再按 `channel_type:account_key` 生成实例 ID。
+
+#### 3. `RegisterChannels` 优先注册 `ChannelAccount`
+- 若 runtime DB 中存在启用的 `ChannelAccount`：
+  - 优先用 `BuildChannelFromAccount` 创建实例并注册到 manager。
+- 若某 channel type 没有 account 记录：
+  - 继续按旧 `config.Channels.<Type>` 路径构建默认实例。
+- 当前保持的是“新主链优先、旧单实例兜底”的第二轮兼容模型。
+
+#### 4. 样板适配已接通 `gotify` 与 `telegram`
+- `gotify`
+  - 适合作为低风险出站型样板。
+  - 现在支持 account 实例 ID / 名称。
+- `telegram`
+  - 适合作为完整聊天链样板。
+  - 已支持 account 实例 ID。
+  - 会话 ID 从默认的 `telegram:<chatID>` 扩展为 account 模式下的 `<instanceID>:<chatID>`。
+  - 用户偏好存储改为：
+    - 默认实例继续用旧 key。
+    - account 实例使用 `<instanceID>:<userID>`，避免多账号互相污染偏好状态。
+  - `extractChatID` / `extractMessageID` 已兼容默认实例和 account 实例格式。
+
+#### 5. WebUI 增加最小运行态可见性
+- `GET /api/channels` 现保留原有 `{ [channelType]: config }` 结构。
+- 同时新增 `_instances` 字段，返回当前已注册的 runtime instances：
+  - `id`
+  - `type`
+  - `name`
+  - `enabled`
+- `ChannelsPage` 已新增 `Runtime instances` 区块，显示 account/runtime 实例，不改变现有 channel 配置编辑流。
+
+### 测试与验证
+- 目标测试：
+  - `go test -count=1 ./pkg/channels ./pkg/webui`
+  - `npm --prefix pkg/webui/frontend run build`
+  - `go test -count=1 ./...`
+- 已通过：
+  - manager 多实例/默认别名测试。
+  - `BuildChannelFromAccount` for `gotify` / `telegram`。
+  - `RegisterChannels` 优先 account、缺省回退 legacy config。
+  - `/api/channels` 返回 `_instances` 的 WebUI handler 测试。
+  - 前端构建通过，Channels 页实例可见性已接入。
+
+### 仍未完成的第二轮后续项
+- `wechat` 仍是旧 iLink 单活账号模型，没有真正下沉到 `ChannelAccount` 主链。
+- 绝大多数 channel 还未迁到 `buildFromAccount`，当前只完成 `gotify` / `telegram` 样板。
+- `AccountBinding` 还没有驱动真实消息路由与 agent runtime 选择；本轮主要完成的是 channel runtime/account 化的启动层与可见性层。
+
+## 2026-03-30 下一轮首段：WeChat 绑定控制面桥接到 ChannelAccount
+
+### 发现的问题
+- 第二轮结束后，WeChat 仍有一个关键断层：
+  - WebUI 绑定接口写的是 `ilinkauth` 用户绑定。
+  - channel runtime 启动时读的却是旧单活绑定模型。
+  - 一旦系统里出现多个绑定用户/账号，旧 `loadChannelBinding()` 会因为“多绑定不支持”直接失败。
+
+### 本轮已完成修复
+
+#### 1. WeChat runtime 改成从 `CredentialStore` 读取当前激活账号
+- `pkg/channels/wechat/channel.go`
+  - 不再通过 `ilinkauth.ListBindings()` 假定系统里只能有一个唯一绑定。
+  - 改为初始化 `CredentialStore`，并从其中读取当前激活 credentials。
+  - `newWeChatBot()` 的 sync-state 也改为使用 `CredentialStore.SyncStatePath(botID)`。
+- 结果：
+  - WeChat channel runtime 不会因为存在多用户/多账号绑定记录而直接失效。
+  - 当前激活账号的选择开始和 channel 侧本地账号存储对齐。
+
+#### 2. WebUI 绑定确认后同步落到 `ChannelAccount`
+- `pkg/webui/server.go`
+  - `handlePollWechatBinding()` 在 iLink 确认成功后，会额外执行 `syncWechatBindingToAccounts(...)`。
+  - 该步骤会：
+    - 把 credentials 同步写入 WeChat `CredentialStore` 并设为 active。
+    - 在 runtime DB 中按 `channel_type=wechat + account_key=ILinkBotID` upsert 一个 `ChannelAccount`。
+    - `metadata.owner_user_id` 标记当前绑定用户，便于控制面筛选。
+
+#### 3. 恢复 WeChat 多账号切换/删除接口
+- `handleActivateWechatBinding()`：
+  - 不再返回“multiple wechat accounts are no longer supported”。
+  - 现在会：
+    - 校验该 `ChannelAccount` 属于当前用户。
+    - 把它设为 WeChat `CredentialStore` 的 active account。
+    - 重建当前用户的 `ilinkauth.Binding` 指向该账号。
+    - 热重载 `wechat` channel。
+- `handleDeleteWechatBindingAccount()`：
+  - 现在会：
+    - 删除指定 `ChannelAccount`。
+    - 删除对应 WeChat 本地 credentials/sync-state。
+    - 若它正是当前 active 绑定，则清理当前 binding 并自动切换到剩余账号中的第一个。
+    - 热重载 `wechat` channel。
+
+#### 4. 绑定状态接口开始返回真实 account 列表
+- `buildWechatBindingPayload()` 现在会基于 `ChannelAccount` 返回当前用户名下的 WeChat accounts。
+- `active_account_id` 重新变成真实字段。
+- 前端现有 WeChat binding 卡片无需重构，即可继续展示多账号列表、激活与删除操作。
+
+### 本轮验证
+- 定向回归：
+  - `go test -count=1 ./pkg/webui ./pkg/channels/wechat -run 'TestHandleWechatBindingLifecycle_UsesSharedIlinkAuth|TestHandleWechatBindingActivateAndDeleteAccount|TestHandleGetWechatBindingStatus_NoBinding|TestNewCredentialStoreLoadsActiveCredentials|TestNewCredentialStoreReturnsNilWithoutStoredCredentials'`
+- 扩大验证：
+  - `go test -count=1 ./pkg/channels ./pkg/webui`
+  - `npm --prefix pkg/webui/frontend run build`
+  - `go test -count=1 ./...`
+
+### 仍待继续的下一段
+- WeChat 目前虽然已经把绑定控制面和 runtime 账号存储桥接起来，但 channel runtime 仍以默认 `wechat` 实例存在。
+- 下一步仍需把 WeChat 接入 `BuildChannelFromAccount` / account runtime 实例化主链，真正做到一个 channel type 对应多个并存 WeChat runtime 实例。
+
+## 2026-03-31 下一轮第二段：WeChat 接入 account-aware runtime builder
+
+### 本轮新增完成
+- `pkg/channels/wechat/channel.go`
+  - 新增 `NewAccountChannel(...)`。
+  - `Channel` 现具备：
+    - `id`
+    - `channelType`
+    - `name`
+  - 默认 `NewChannel(...)` 现在只是 `NewAccountChannel(..., "wechat", "WeChat")` 的兼容包装。
+- WeChat session namespace 已具备 account runtime 语义：
+  - 默认实例仍为 `wechat:<userID>`。
+  - account 实例变为 `wechat:<accountKey>:<userID>`。
+- `pkg/channels/registry.go`
+  - `wechat` descriptor 已新增 `buildFromAccount(...)`。
+  - 现在可从 `ChannelAccount` 直接构建 `wechat:<accountKey>` runtime instance。
+
+### 本轮验证
+- 新增测试：
+  - `BuildChannelFromAccount_Wechat`
+  - WeChat session id 在默认实例 / account 实例下的前缀行为
+- 已通过：
+  - `go test -count=1 ./pkg/channels ./pkg/channels/wechat`
+  - `go test -count=1 ./pkg/webui ./pkg/channels ./pkg/channels/wechat`
+  - `npm --prefix pkg/webui/frontend run build`
+
+### 当前剩余问题
+- 虽然 WeChat 已能从 `ChannelAccount` 构建 runtime instance，但控制面和热重载路径仍主要围绕默认 `wechat` 兼容别名。
+- 后续需要继续把 WeChat 的控制/消息路由按具体 runtime instance 落实，而不是只做到“可以构建多个实例”。
   - Agents / Channel Accounts / Bindings 独立管理页。
   - 编辑表单。
   - Chat runtime selector。
   - Harness runtime-scoped 配置页。
+
+## 2026-03-30 Round 2/3 融合修补：Slack account runtime + manager reload 健壮性
+
+### 本轮新增发现
+- Slack 虽然已经有 `id/channelType/name` 字段和 account-aware 构造器，但仍残留单实例假设：
+  - `parseSessionID()` 只会把前缀后的第一段当成 channel ID，无法正确处理 `slack:team-a:C123[:thread]`。
+  - slash command / skill install confirm 请求虽然已改用 `Channel: c.ID()`，但 metadata 里还缺 runtime 维度，后续排障不够直接。
+- `pkg/channels.Manager` 的多实例索引还有两个真实缺口：
+  - `ReloadChannel()` 替换 runtime 后没有回填 `channelsByType/defaultByType`，alias 在 reload 后可能漂移。
+  - `bus == nil` 时 `Start/Stop/StopChannel/ReloadChannel` 直接调用 bus handler 注册/注销，会在测试与纯 registry 路径下崩溃。
+- WeChat 控制面在激活账号时虽然已经完成 `ChannelAccount + CredentialStore + ilinkauth` 同步，但热重载仍走默认 `wechat` 兼容别名，不够精确。
+
+### 已完成修复
+- `pkg/channels/slack/slack.go`
+  - 保持 account-aware runtime 结构继续收口。
+  - 修复多段 runtime ID session 解析。
+  - slash command / skill install confirm metadata 新增 `runtime_id`。
+- `pkg/channels/registry.go`
+  - Slack 已确认接入 `buildFromAccount` 主链，可由 `ChannelAccount` 直接构建 `slack:<account_key>` runtime。
+- `pkg/channels/manager.go`
+  - `ReloadChannel()` 现在会恢复 type 索引与默认 alias。
+  - 所有 bus handler 注册/注销路径都对 `nil bus` 做了防护。
+- `pkg/webui/server.go`
+  - 新增 `reloadChannelForAccount()`。
+  - WeChat 激活账号后优先精确重载对应 account runtime；找不到实例时再退回 type 级兼容重载。
+
+### 新增测试
+- `pkg/channels/manager_test.go`
+  - `TestManagerReloadChannelRestoresTypeAliasIndex`
+  - `TestManagerStopChannelWithoutBusDoesNotPanic`
+- `pkg/channels/slack/slack_test.go`
+  - `TestAccountChannelUsesRuntimeScopedIdentifiers`
+- `pkg/channels/registry_test.go`
+  - `TestBuildChannelFromAccount_Slack`
+
+### 本轮验证
+- `go test -count=1 ./pkg/channels/... ./pkg/webui -run 'TestManagerReloadChannelRestoresTypeAliasIndex|TestBuildChannelFromAccount_Slack|TestAccountChannelUsesRuntimeScopedIdentifiers|TestHandleGetChannelsIncludesRuntimeInstances|TestHandleWechatBindingActivateAndDeleteAccount'`
+- `go test -count=1 ./pkg/channels ./pkg/channels/slack ./pkg/channels/wechat ./pkg/webui`
+- `npm --prefix pkg/webui/frontend run build`
+- `go test -count=1 ./...`
+
+## 2026-03-31 下一轮第三段：Slack account-aware runtime 与 WeChat type-level reload 收口
+
+### 本轮新增完成
+
+#### 1. Slack 接入 account-aware runtime builder
+- `pkg/channels/slack/slack.go`
+  - 新增 `NewAccountChannel(...)`。
+  - `Channel` 现具备：
+    - `id`
+    - `channelType`
+    - `name`
+  - 默认 `NewChannel(...)` 现在只是 `NewAccountChannel(..., "slack", "Slack")` 的兼容包装。
+- `pkg/channels/registry.go`
+  - `slack` descriptor 已新增 `buildFromAccount(...)`。
+  - 现在可从 `ChannelAccount` 直接构建 `slack:<accountKey>` runtime instance。
+
+#### 2. Slack 聊天与命令路径改为 runtime-aware
+- 入站消息：
+  - `handleMessageEvent()` / `handleAppMentionEvent()` 现在使用 `c.ID()` 作为 `bus.Message.ChannelID`。
+  - session namespace 从固定 `slack:<channel>` 扩展为：
+    - 默认实例：`slack:<channel>`
+    - account 实例：`slack:<accountKey>:<channel>`
+    - thread 场景继续附带 `:<thread_ts>`。
+- 命令执行：
+  - slash command 和 skill-install confirm 的 `commands.CommandRequest.Channel` 改为 `c.ID()`。
+  - metadata 补 `runtime_id`，便于后续统一路由/审计。
+- 出站发送：
+  - `parseSessionID()` 改为同时兼容默认前缀和 account runtime 前缀。
+
+#### 3. WeChat 绑定控制面改为按 channel type 重载 account runtimes
+- `pkg/webui/server.go`
+  - 新增 `reloadChannelsByType(channelType)`：
+    - 若存在启用的 `ChannelAccount`，逐个 `BuildChannelFromAccount + ReloadChannel`。
+    - 若存在旧 legacy 默认 runtime，则清掉 legacy runtime，避免与 account runtimes 并存误导控制面。
+    - 若该 type 没有 account 记录，则回退到旧 `reloadChannel(channelType)`。
+- WeChat 绑定相关 handler 已统一改用 `reloadChannelsByType("wechat")`：
+  - `handlePollWechatBinding()`
+  - `handleDeleteWechatBinding()`
+  - `handleActivateWechatBinding()`
+  - `handleDeleteWechatBindingAccount()`
+
+### 本轮验证
+- 新增测试：
+  - `BuildChannelFromAccount_Slack`
+  - Slack account runtime session / command namespace tests
+  - `ReloadChannelsByTypePrefersEnabledWechatAccounts`
+- 已通过：
+  - `go test -count=1 ./pkg/channels/slack ./pkg/channels/wechat ./pkg/webui -run 'Test(BuildChannelFromAccount_Slack|ParseSessionIDSupportsAccountRuntimePrefix|HandleMessageEventUsesAccountRuntimeIdentifiers|ExecuteConfirmedSkillInstallUsesRuntimeChannelID|HandleWechatBindingLifecycle_UsesSharedIlinkAuth|HandleWechatBindingActivateAndDeleteAccount|ReloadChannelsByTypePrefersEnabledWechatAccounts|GetWechatBindingStatus_NoBinding)'`
+  - `go test -count=1 ./...`
+  - `npm --prefix pkg/webui/frontend run build`
+
+### 本轮后仍保留的边界
+- WeChat 当前更像“active account + type 级重载”的桥接模型：
+  - 控制面和运行图已经能按多个 `ChannelAccount` 重建实例。
+  - 但入站实际消费仍主要依赖当前 active credentials，而不是并发消费多个 WeChat 账号事件流。
+- Slack 已完成 account-aware runtime 样板，但 shortcut / modal submission 业务闭环仍未继续扩展。
 
 ### Round 1 实现原则
 - 先跑 TDD：

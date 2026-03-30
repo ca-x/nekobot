@@ -11,16 +11,23 @@ import (
 )
 
 type testChannel struct {
-	id        string
-	name      string
-	enabled   bool
-	started   atomic.Int32
-	stopped   atomic.Int32
-	sendCount atomic.Int32
-	sendCh    chan struct{}
+	id          string
+	channelType string
+	name        string
+	enabled     bool
+	started     atomic.Int32
+	stopped     atomic.Int32
+	sendCount   atomic.Int32
+	sendCh      chan struct{}
 }
 
-func (c *testChannel) ID() string                      { return c.id }
+func (c *testChannel) ID() string { return c.id }
+func (c *testChannel) ChannelType() string {
+	if c.channelType != "" {
+		return c.channelType
+	}
+	return c.id
+}
 func (c *testChannel) Name() string                    { return c.name }
 func (c *testChannel) IsEnabled() bool                 { return c.enabled }
 func (c *testChannel) Start(ctx context.Context) error { c.started.Add(1); return nil }
@@ -48,10 +55,11 @@ func TestManagerStartRoutesOutboundExactlyOnce(t *testing.T) {
 
 	manager := NewManager(log, messageBus)
 	ch := &testChannel{
-		id:      "test",
-		name:    "Test",
-		enabled: true,
-		sendCh:  make(chan struct{}, 4),
+		id:          "test",
+		channelType: "test",
+		name:        "Test",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 4),
 	}
 	if err := manager.Register(ch); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -101,10 +109,11 @@ func TestManagerReloadChannelReplacesOutboundHandler(t *testing.T) {
 
 	manager := NewManager(log, messageBus)
 	original := &testChannel{
-		id:      "test",
-		name:    "Original",
-		enabled: true,
-		sendCh:  make(chan struct{}, 4),
+		id:          "test",
+		channelType: "test",
+		name:        "Original",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 4),
 	}
 	if err := manager.Register(original); err != nil {
 		t.Fatalf("Register failed: %v", err)
@@ -119,10 +128,11 @@ func TestManagerReloadChannelReplacesOutboundHandler(t *testing.T) {
 	}()
 
 	reloaded := &testChannel{
-		id:      "test",
-		name:    "Reloaded",
-		enabled: true,
-		sendCh:  make(chan struct{}, 4),
+		id:          "test",
+		channelType: "test",
+		name:        "Reloaded",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 4),
 	}
 	if err := manager.ReloadChannel(reloaded); err != nil {
 		t.Fatalf("ReloadChannel failed: %v", err)
@@ -152,6 +162,82 @@ func TestManagerReloadChannelReplacesOutboundHandler(t *testing.T) {
 	}
 }
 
+func TestManagerReloadChannelRestoresTypeAliasIndex(t *testing.T) {
+	log := newTestChannelLogger(t)
+	messageBus := bus.NewLocalBus(log, 8)
+	if err := messageBus.Start(); err != nil {
+		t.Fatalf("Start bus failed: %v", err)
+	}
+	defer func() {
+		if err := messageBus.Stop(); err != nil {
+			t.Fatalf("Stop bus failed: %v", err)
+		}
+	}()
+
+	manager := NewManager(log, messageBus)
+	original := &testChannel{
+		id:          "slack:team-a",
+		channelType: "slack",
+		name:        "Slack Team A",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 2),
+	}
+	if err := manager.Register(original); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	reloaded := &testChannel{
+		id:          "slack:team-a",
+		channelType: "slack",
+		name:        "Slack Team A Reloaded",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 2),
+	}
+	if err := manager.ReloadChannel(reloaded); err != nil {
+		t.Fatalf("ReloadChannel failed: %v", err)
+	}
+
+	got, err := manager.GetChannel("slack")
+	if err != nil {
+		t.Fatalf("GetChannel alias failed: %v", err)
+	}
+	if got != reloaded {
+		t.Fatalf("expected alias to resolve reloaded instance")
+	}
+
+	instances := manager.ListChannelsByType("slack")
+	if len(instances) != 1 {
+		t.Fatalf("expected 1 slack instance after reload, got %d", len(instances))
+	}
+	if instances[0] != reloaded {
+		t.Fatalf("expected type index to contain reloaded instance")
+	}
+}
+
+func TestManagerStopChannelWithoutBusDoesNotPanic(t *testing.T) {
+	log := newTestChannelLogger(t)
+	manager := NewManager(log, nil)
+	channel := &testChannel{
+		id:          "wechat:bot-a",
+		channelType: "wechat",
+		name:        "WeChat Bot A",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 1),
+	}
+
+	if err := manager.Register(channel); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	if err := manager.StopChannel("wechat"); err != nil {
+		t.Fatalf("StopChannel failed: %v", err)
+	}
+
+	if _, err := manager.GetChannel("wechat"); err == nil {
+		t.Fatalf("expected channel to be removed after StopChannel")
+	}
+}
+
 func newTestChannelLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()
@@ -162,4 +248,109 @@ func newTestChannelLogger(t *testing.T) *logger.Logger {
 		t.Fatalf("create logger: %v", err)
 	}
 	return log
+}
+
+func TestManagerSupportsMultipleInstancesPerChannelType(t *testing.T) {
+	log := newTestChannelLogger(t)
+	messageBus := bus.NewLocalBus(log, 8)
+	if err := messageBus.Start(); err != nil {
+		t.Fatalf("Start bus failed: %v", err)
+	}
+	defer func() {
+		if err := messageBus.Stop(); err != nil {
+			t.Fatalf("Stop bus failed: %v", err)
+		}
+	}()
+
+	manager := NewManager(log, messageBus)
+	first := &testChannel{
+		id:          "telegram:alpha",
+		channelType: "telegram",
+		name:        "Telegram Alpha",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 2),
+	}
+	second := &testChannel{
+		id:          "telegram:beta",
+		channelType: "telegram",
+		name:        "Telegram Beta",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 2),
+	}
+
+	if err := manager.Register(first); err != nil {
+		t.Fatalf("Register first failed: %v", err)
+	}
+	if err := manager.Register(second); err != nil {
+		t.Fatalf("Register second failed: %v", err)
+	}
+
+	gotFirst, err := manager.GetChannel("telegram:alpha")
+	if err != nil {
+		t.Fatalf("GetChannel instance failed: %v", err)
+	}
+	if gotFirst != first {
+		t.Fatalf("expected first instance by id")
+	}
+
+	gotDefault, err := manager.GetChannel("telegram")
+	if err != nil {
+		t.Fatalf("GetChannel default alias failed: %v", err)
+	}
+	if gotDefault != first {
+		t.Fatalf("expected default alias to resolve first registered instance")
+	}
+
+	instances := manager.ListChannelsByType("telegram")
+	if len(instances) != 2 {
+		t.Fatalf("expected 2 telegram instances, got %d", len(instances))
+	}
+}
+
+func TestManagerStopChannelKeepsTypeAliasForRemainingInstance(t *testing.T) {
+	log := newTestChannelLogger(t)
+	messageBus := bus.NewLocalBus(log, 8)
+	if err := messageBus.Start(); err != nil {
+		t.Fatalf("Start bus failed: %v", err)
+	}
+	defer func() {
+		if err := messageBus.Stop(); err != nil {
+			t.Fatalf("Stop bus failed: %v", err)
+		}
+	}()
+
+	manager := NewManager(log, messageBus)
+	first := &testChannel{
+		id:          "gotify:alpha",
+		channelType: "gotify",
+		name:        "Gotify Alpha",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 2),
+	}
+	second := &testChannel{
+		id:          "gotify:beta",
+		channelType: "gotify",
+		name:        "Gotify Beta",
+		enabled:     true,
+		sendCh:      make(chan struct{}, 2),
+	}
+
+	if err := manager.Register(first); err != nil {
+		t.Fatalf("Register first failed: %v", err)
+	}
+	if err := manager.Register(second); err != nil {
+		t.Fatalf("Register second failed: %v", err)
+	}
+
+	if err := manager.StopChannel("gotify:alpha"); err != nil {
+		t.Fatalf("StopChannel failed: %v", err)
+	}
+
+	gotDefault, err := manager.GetChannel("gotify")
+	if err != nil {
+		t.Fatalf("GetChannel default alias failed: %v", err)
+	}
+	if gotDefault != second {
+		t.Fatalf("expected default alias to move to remaining instance")
+	}
 }

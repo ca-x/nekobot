@@ -8,6 +8,7 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -56,11 +57,52 @@ func RegisterChannels(
 	ag *agent.Agent,
 	cmdRegistry *commands.Registry,
 	cfg *config.Config,
+	accountMgr *channelaccounts.Manager,
 	prefsMgr *userprefs.Manager,
 	toolSessionMgr *toolsessions.Manager,
 	processMgr *process.Manager,
 ) error {
+	accountedTypes := map[string]bool{}
+	if accountMgr != nil {
+		accounts, err := accountMgr.List(context.Background())
+		if err != nil {
+			return err
+		}
+		for _, account := range accounts {
+			if !account.Enabled {
+				continue
+			}
+
+			channel, err := BuildChannelFromAccount(
+				account,
+				log,
+				messageBus,
+				ag,
+				cmdRegistry,
+				prefsMgr,
+				toolSessionMgr,
+				processMgr,
+				cfg,
+			)
+			if err != nil {
+				log.Warn("Failed to create account-scoped channel, skipping",
+					zap.String("channel_type", account.ChannelType),
+					zap.String("account_key", account.AccountKey),
+					zap.Error(err))
+				continue
+			}
+			if err := manager.Register(channel); err != nil {
+				return err
+			}
+			accountedTypes[account.ChannelType] = true
+		}
+	}
+
 	for _, name := range ChannelNames() {
+		if accountedTypes[name] {
+			continue
+		}
+
 		enabled, err := IsChannelEnabled(name, cfg)
 		if err != nil {
 			return err

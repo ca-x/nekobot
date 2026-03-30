@@ -3,9 +3,11 @@ package channels
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/channels/dingtalk"
 	"nekobot/pkg/channels/discord"
 	"nekobot/pkg/channels/feishu"
@@ -46,6 +48,17 @@ type channelDescriptor struct {
 		processMgr *process.Manager,
 		cfg *config.Config,
 	) (Channel, error)
+	buildFromAccount func(
+		account channelaccounts.ChannelAccount,
+		log *logger.Logger,
+		messageBus bus.Bus,
+		ag *agent.Agent,
+		cmdRegistry *commands.Registry,
+		prefsMgr *userprefs.Manager,
+		toolSessionMgr *toolsessions.Manager,
+		processMgr *process.Manager,
+		cfg *config.Config,
+	) (Channel, error)
 }
 
 var channelDescriptors = []channelDescriptor{
@@ -64,6 +77,27 @@ var channelDescriptors = []channelDescriptor{
 			transcriber := transcription.NewFromConfig(log, cfg)
 			return telegram.New(log, messageBus, ag, cmdRegistry, &telegramCfg, transcriber, prefsMgr)
 		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			telegramCfg := cfg.Channels.Telegram
+			if err := decodeAccountConfig(account, &telegramCfg); err != nil {
+				return nil, err
+			}
+			if telegramCfg.TimeoutSeconds <= 0 {
+				telegramCfg.TimeoutSeconds = cfg.Channels.TimeoutSeconds
+			}
+			transcriber := transcription.NewFromConfig(log, cfg)
+			return telegram.NewAccountChannel(
+				log,
+				messageBus,
+				ag,
+				cmdRegistry,
+				&telegramCfg,
+				transcriber,
+				prefsMgr,
+				channelInstanceID(account),
+				channelDisplayName(account, "Telegram"),
+			)
+		},
 	},
 	{
 		name: "gotify",
@@ -74,6 +108,13 @@ var channelDescriptors = []channelDescriptor{
 		enabled: func(cfg *config.Config) bool { return cfg.Channels.Gotify.Enabled },
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return gotify.NewChannel(log, cfg.Channels.Gotify)
+		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			gotifyCfg := cfg.Channels.Gotify
+			if err := decodeAccountConfig(account, &gotifyCfg); err != nil {
+				return nil, err
+			}
+			return gotify.NewAccountChannel(log, gotifyCfg, channelInstanceID(account), channelDisplayName(account, "Gotify"))
 		},
 	},
 	{
@@ -96,6 +137,22 @@ var channelDescriptors = []channelDescriptor{
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			transcriber := transcription.NewFromConfig(log, cfg)
 			return slack.NewChannel(log, cfg.Channels.Slack, messageBus, cmdRegistry, transcriber)
+		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			slackCfg := cfg.Channels.Slack
+			if err := decodeAccountConfig(account, &slackCfg); err != nil {
+				return nil, err
+			}
+			transcriber := transcription.NewFromConfig(log, cfg)
+			return slack.NewAccountChannel(
+				log,
+				slackCfg,
+				messageBus,
+				cmdRegistry,
+				transcriber,
+				channelInstanceID(account),
+				channelDisplayName(account, "Slack"),
+			)
 		},
 	},
 	{
@@ -124,6 +181,32 @@ var channelDescriptors = []channelDescriptor{
 			authSvc := ilinkauth.NewService(store, nil)
 			transcriber := transcription.NewFromConfig(log, cfg)
 			return wechat.NewChannel(log, cfg.Channels.WeChat, messageBus, ag, cmdRegistry, authSvc, toolSessionMgr, processMgr, cfg, transcriber)
+		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			wechatCfg := cfg.Channels.WeChat
+			if err := decodeAccountConfig(account, &wechatCfg); err != nil {
+				return nil, err
+			}
+			store, err := ilinkauth.NewStore(cfg)
+			if err != nil {
+				return nil, err
+			}
+			authSvc := ilinkauth.NewService(store, nil)
+			transcriber := transcription.NewFromConfig(log, cfg)
+			return wechat.NewAccountChannel(
+				log,
+				wechatCfg,
+				messageBus,
+				ag,
+				cmdRegistry,
+				authSvc,
+				toolSessionMgr,
+				processMgr,
+				cfg,
+				transcriber,
+				channelInstanceID(account),
+				channelDisplayName(account, "WeChat"),
+			)
 		},
 	},
 	{
@@ -257,4 +340,50 @@ func ApplyChannelConfig(cfg *config.Config, name string, data json.RawMessage) e
 		return err
 	}
 	return descriptor.set(cfg, data)
+}
+
+func BuildChannelFromAccount(
+	account channelaccounts.ChannelAccount,
+	log *logger.Logger,
+	messageBus bus.Bus,
+	ag *agent.Agent,
+	cmdRegistry *commands.Registry,
+	prefsMgr *userprefs.Manager,
+	toolSessionMgr *toolsessions.Manager,
+	processMgr *process.Manager,
+	cfg *config.Config,
+) (Channel, error) {
+	descriptor, err := getChannelDescriptor(strings.ToLower(strings.TrimSpace(account.ChannelType)))
+	if err != nil {
+		return nil, err
+	}
+	if descriptor.buildFromAccount == nil {
+		return nil, fmt.Errorf("channel %s does not support account-scoped runtime construction yet", account.ChannelType)
+	}
+	return descriptor.buildFromAccount(account, log, messageBus, ag, cmdRegistry, prefsMgr, toolSessionMgr, processMgr, cfg)
+}
+
+func decodeAccountConfig(account channelaccounts.ChannelAccount, target interface{}) error {
+	payload, err := json.Marshal(account.Config)
+	if err != nil {
+		return fmt.Errorf("marshal channel account config: %w", err)
+	}
+	if err := json.Unmarshal(payload, target); err != nil {
+		return fmt.Errorf("decode channel account config for %s/%s: %w", account.ChannelType, account.AccountKey, err)
+	}
+	return nil
+}
+
+func channelInstanceID(account channelaccounts.ChannelAccount) string {
+	return strings.TrimSpace(account.ChannelType) + ":" + strings.TrimSpace(account.AccountKey)
+}
+
+func channelDisplayName(account channelaccounts.ChannelAccount, fallback string) string {
+	if name := strings.TrimSpace(account.DisplayName); name != "" {
+		return name
+	}
+	if key := strings.TrimSpace(account.AccountKey); key != "" {
+		return key
+	}
+	return fallback
 }

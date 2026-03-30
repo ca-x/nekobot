@@ -39,6 +39,7 @@ import (
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/channels"
+	channelwechat "nekobot/pkg/channels/wechat"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
@@ -3444,7 +3445,12 @@ func nonNilStrings(values []string) []string {
 // --- Channel Handlers ---
 
 func (s *Server) handleGetChannels(c *echo.Context) error {
-	return c.JSON(http.StatusOK, channels.ListChannelConfigs(s.config))
+	payload := map[string]interface{}{}
+	for name, cfg := range channels.ListChannelConfigs(s.config) {
+		payload[name] = cfg
+	}
+	payload["_instances"] = s.listChannelInstances()
+	return c.JSON(http.StatusOK, payload)
 }
 
 func (s *Server) handleUpdateChannel(c *echo.Context) error {
@@ -3522,6 +3528,28 @@ func (s *Server) handleUpdateChannel(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated", "channel": name, "reload": "ok"})
 }
 
+func (s *Server) listChannelInstances() []map[string]interface{} {
+	if s.channels == nil {
+		return []map[string]interface{}{}
+	}
+
+	items := s.channels.ListChannels()
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		entry := map[string]interface{}{
+			"id":      item.ID(),
+			"name":    item.Name(),
+			"enabled": item.IsEnabled(),
+			"type":    item.ID(),
+		}
+		if typed, ok := item.(channels.TypedChannel); ok {
+			entry["type"] = typed.ChannelType()
+		}
+		result = append(result, entry)
+	}
+	return result
+}
+
 func (s *Server) reloadChannel(name string) error {
 	enabled, err := channels.IsChannelEnabled(name, s.config)
 	if err != nil {
@@ -3533,6 +3561,89 @@ func (s *Server) reloadChannel(name string) error {
 	}
 
 	ch, err := channels.BuildChannel(name, s.logger, s.bus, s.agent, s.commands, s.prefs, s.toolSess, s.processMgr, s.config)
+	if err != nil {
+		return err
+	}
+
+	return s.channels.ReloadChannel(ch)
+}
+
+func (s *Server) reloadChannelsByType(channelType string) error {
+	if s == nil || s.channels == nil {
+		return fmt.Errorf("channel manager is unavailable")
+	}
+
+	channelType = strings.TrimSpace(channelType)
+	if channelType == "" {
+		return fmt.Errorf("channel type is required")
+	}
+
+	if s.accountMgr != nil {
+		accounts, err := s.accountMgr.List(context.Background())
+		if err != nil {
+			return fmt.Errorf("list channel accounts for %s: %w", channelType, err)
+		}
+
+		accounted := false
+		for _, account := range accounts {
+			if account.ChannelType != channelType || !account.Enabled {
+				continue
+			}
+			accounted = true
+
+			ch, err := channels.BuildChannelFromAccount(
+				account,
+				s.logger,
+				s.bus,
+				s.agent,
+				s.commands,
+				s.prefs,
+				s.toolSess,
+				s.processMgr,
+				s.config,
+			)
+			if err != nil {
+				return fmt.Errorf("build %s account runtime %s: %w", channelType, account.AccountKey, err)
+			}
+			if err := s.channels.ReloadChannel(ch); err != nil {
+				return fmt.Errorf("reload %s account runtime %s: %w", channelType, ch.ID(), err)
+			}
+		}
+
+		if accounted {
+			if _, err := s.channels.GetChannel(channelType); err == nil {
+				if err := s.channels.StopChannel(channelType); err != nil {
+					return fmt.Errorf("stop legacy %s runtime: %w", channelType, err)
+				}
+			}
+			return nil
+		}
+	}
+
+	return s.reloadChannel(channelType)
+}
+
+func (s *Server) reloadChannelForAccount(channelType, accountID string) error {
+	channelType = strings.TrimSpace(channelType)
+	accountID = strings.TrimSpace(accountID)
+	if channelType == "" || accountID == "" || s.accountMgr == nil {
+		return s.reloadChannel(channelType)
+	}
+
+	account, err := s.accountMgr.Get(context.Background(), accountID)
+	if err != nil {
+		return s.reloadChannel(channelType)
+	}
+	if account == nil || strings.TrimSpace(account.ChannelType) != channelType {
+		return s.reloadChannel(channelType)
+	}
+
+	runtimeID := strings.TrimSpace(account.ChannelType) + ":" + strings.TrimSpace(account.AccountKey)
+	if !account.Enabled {
+		return s.channels.StopChannel(runtimeID)
+	}
+
+	ch, err := channels.BuildChannelFromAccount(*account, s.logger, s.bus, s.agent, s.commands, s.prefs, s.toolSess, s.processMgr, s.config)
 	if err != nil {
 		return err
 	}
@@ -3681,8 +3792,12 @@ func (s *Server) handlePollWechatBinding(c *echo.Context) error {
 		return c.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
 	}
 
+	if err := s.syncWechatBindingToAccounts(c.Request().Context(), authSvc, profile.UserID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
 	if s.config.Channels.WeChat.Enabled {
-		if err := s.reloadChannel("wechat"); err != nil {
+		if err := s.reloadChannelsByType("wechat"); err != nil {
 			s.logger.Error("Failed to reload WeChat after binding", zap.Error(err))
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -3709,8 +3824,12 @@ func (s *Server) handleDeleteWechatBinding(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
+	if err := s.deleteWechatChannelAccount(c.Request().Context(), profile.UserID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
 	if s.config.Channels.WeChat.Enabled {
-		if err := s.reloadChannel("wechat"); err != nil {
+		if err := s.reloadChannelsByType("wechat"); err != nil {
 			s.logger.Error("Failed to reload WeChat after unbind", zap.Error(err))
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
@@ -3720,11 +3839,81 @@ func (s *Server) handleDeleteWechatBinding(c *echo.Context) error {
 }
 
 func (s *Server) handleActivateWechatBinding(c *echo.Context) error {
-	return c.JSON(http.StatusBadRequest, map[string]string{"error": "multiple wechat accounts are no longer supported"})
+	if s.accountMgr == nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "channel account manager is unavailable"})
+	}
+
+	accountID := strings.TrimSpace(c.FormValue("account_id"))
+	if accountID == "" {
+		var body struct {
+			AccountID string `json:"account_id"`
+		}
+		if err := c.Bind(&body); err == nil {
+			accountID = strings.TrimSpace(body.AccountID)
+		}
+	}
+	if accountID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "account_id is required"})
+	}
+
+	profile, err := s.currentAuthUser(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	}
+
+	if err := s.activateWechatChannelAccount(c.Request().Context(), profile.UserID, accountID); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	if s.config.Channels.WeChat.Enabled {
+		if err := s.reloadChannelsByType("wechat"); err != nil {
+			s.logger.Error("Failed to reload WeChat after activation", zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	authSvc, err := s.ilinkAuthService()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	payload, err := s.buildWechatBindingPayload(authSvc, profile.UserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, payload)
 }
 
 func (s *Server) handleDeleteWechatBindingAccount(c *echo.Context) error {
-	return c.JSON(http.StatusBadRequest, map[string]string{"error": "multiple wechat accounts are no longer supported"})
+	if s.accountMgr == nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "channel account manager is unavailable"})
+	}
+
+	accountID := strings.TrimSpace(c.Param("accountId"))
+	if accountID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "accountId is required"})
+	}
+	profile, err := s.currentAuthUser(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
+	}
+	if err := s.removeWechatChannelAccount(c.Request().Context(), profile.UserID, accountID); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	if s.config.Channels.WeChat.Enabled {
+		if err := s.reloadChannelsByType("wechat"); err != nil {
+			s.logger.Error("Failed to reload WeChat after account delete", zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+
+	authSvc, err := s.ilinkAuthService()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	payload, err := s.buildWechatBindingPayload(authSvc, profile.UserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, payload)
 }
 
 func (s *Server) buildWechatBindingPayload(authSvc *ilinkauth.Service, userID string) (map[string]interface{}, error) {
@@ -3738,10 +3927,36 @@ func (s *Server) buildWechatBindingPayload(authSvc *ilinkauth.Service, userID st
 	}
 	if binding != nil {
 		payload["bound"] = true
+		payload["active_account_id"] = binding.Credentials.ILinkBotID
 		payload["account"] = map[string]interface{}{
 			"bot_id":  binding.Credentials.ILinkBotID,
 			"user_id": binding.Credentials.ILinkUserID,
 		}
+	}
+
+	if s.accountMgr != nil {
+		accounts, err := s.accountMgr.List(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("list wechat channel accounts: %w", err)
+		}
+		items := make([]map[string]interface{}, 0, len(accounts))
+		for _, account := range accounts {
+			if account.ChannelType != "wechat" {
+				continue
+			}
+			if owner, _ := account.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+				continue
+			}
+			botID, _ := account.Config["ilink_bot_id"].(string)
+			ilinkUserID, _ := account.Config["ilink_user_id"].(string)
+			items = append(items, map[string]interface{}{
+				"account_id": account.ID,
+				"bot_id":     botID,
+				"user_id":    ilinkUserID,
+				"active":     binding != nil && strings.TrimSpace(botID) == strings.TrimSpace(binding.Credentials.ILinkBotID),
+			})
+		}
+		payload["accounts"] = items
 	}
 
 	state, err := authSvc.LoadBindSession(userID)
@@ -3766,6 +3981,197 @@ func (s *Server) buildWechatBindingPayload(authSvc *ilinkauth.Service, userID st
 	}
 
 	return payload, nil
+}
+
+func (s *Server) syncWechatBindingToAccounts(ctx context.Context, authSvc *ilinkauth.Service, userID string) error {
+	if s == nil || s.accountMgr == nil {
+		return nil
+	}
+
+	binding, err := authSvc.GetBinding(userID)
+	if err != nil {
+		if errors.Is(err, ilinkauth.ErrBindingNotFound) {
+			return nil
+		}
+		return fmt.Errorf("get ilink binding: %w", err)
+	}
+	if binding == nil {
+		return nil
+	}
+
+	store, err := channelwechat.NewCredentialStore(s.config)
+	if err != nil {
+		return fmt.Errorf("create wechat credential store: %w", err)
+	}
+	if err := store.SaveCredentials((*channelwechat.Credentials)(&binding.Credentials), true); err != nil {
+		return fmt.Errorf("save wechat credentials: %w", err)
+	}
+
+	accountKey := strings.TrimSpace(binding.Credentials.ILinkBotID)
+	if accountKey == "" {
+		return fmt.Errorf("ilink bot id is empty")
+	}
+
+	accounts, err := s.accountMgr.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list channel accounts: %w", err)
+	}
+
+	payload := channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  accountKey,
+		DisplayName: accountKey,
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"enabled":       true,
+			"ilink_bot_id":  binding.Credentials.ILinkBotID,
+			"ilink_user_id": binding.Credentials.ILinkUserID,
+			"base_url":      binding.Credentials.BaseURL,
+			"bot_token":     binding.Credentials.BotToken,
+		},
+		Metadata: map[string]interface{}{
+			"owner_user_id": strings.TrimSpace(userID),
+			"source":        "ilinkauth",
+		},
+	}
+
+	for _, item := range accounts {
+		if item.ChannelType != "wechat" || item.AccountKey != accountKey {
+			continue
+		}
+		_, err := s.accountMgr.Update(ctx, item.ID, payload)
+		if err != nil {
+			return fmt.Errorf("update wechat channel account %s: %w", item.ID, err)
+		}
+		return nil
+	}
+
+	if _, err := s.accountMgr.Create(ctx, payload); err != nil {
+		return fmt.Errorf("create wechat channel account: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) deleteWechatChannelAccount(ctx context.Context, userID string) error {
+	if s == nil || s.accountMgr == nil {
+		return nil
+	}
+	accounts, err := s.accountMgr.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list wechat channel accounts: %w", err)
+	}
+	for _, item := range accounts {
+		if item.ChannelType != "wechat" {
+			continue
+		}
+		if owner, _ := item.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+			continue
+		}
+		if err := s.accountMgr.Delete(ctx, item.ID); err != nil {
+			return fmt.Errorf("delete wechat channel account %s: %w", item.ID, err)
+		}
+	}
+	return nil
+}
+
+func (s *Server) activateWechatChannelAccount(ctx context.Context, userID, accountID string) error {
+	authSvc, err := s.ilinkAuthService()
+	if err != nil {
+		return err
+	}
+	account, err := s.accountMgr.Get(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if account == nil || account.ChannelType != "wechat" {
+		return fmt.Errorf("wechat account not found")
+	}
+	if owner, _ := account.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+		return fmt.Errorf("wechat account does not belong to current user")
+	}
+
+	botID, _ := account.Config["ilink_bot_id"].(string)
+	botToken, _ := account.Config["bot_token"].(string)
+	ilinkUserID, _ := account.Config["ilink_user_id"].(string)
+	baseURL, _ := account.Config["base_url"].(string)
+	if strings.TrimSpace(botID) == "" || strings.TrimSpace(botToken) == "" {
+		return fmt.Errorf("wechat account credentials are incomplete")
+	}
+
+	store, err := channelwechat.NewCredentialStore(s.config)
+	if err != nil {
+		return fmt.Errorf("create wechat credential store: %w", err)
+	}
+	if err := store.SetActiveAccount(botID); err != nil {
+		return fmt.Errorf("set active wechat account: %w", err)
+	}
+
+	if err := authSvc.DeleteBinding(userID); err != nil {
+		return err
+	}
+
+	return authSvc.SaveBinding(&ilinkauth.Binding{
+		UserID: strings.TrimSpace(userID),
+		Credentials: wxtypes.Credentials{
+			BotToken:    botToken,
+			ILinkBotID:  botID,
+			BaseURL:     baseURL,
+			ILinkUserID: ilinkUserID,
+		},
+	})
+}
+
+func (s *Server) removeWechatChannelAccount(ctx context.Context, userID, accountID string) error {
+	authSvc, err := s.ilinkAuthService()
+	if err != nil {
+		return err
+	}
+	account, err := s.accountMgr.Get(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if account == nil || account.ChannelType != "wechat" {
+		return fmt.Errorf("wechat account not found")
+	}
+	if owner, _ := account.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+		return fmt.Errorf("wechat account does not belong to current user")
+	}
+	if err := s.accountMgr.Delete(ctx, account.ID); err != nil {
+		return err
+	}
+
+	store, err := channelwechat.NewCredentialStore(s.config)
+	if err != nil {
+		return fmt.Errorf("create wechat credential store: %w", err)
+	}
+	if err := store.DeleteCredentials(account.AccountKey); err != nil {
+		return fmt.Errorf("delete wechat local credentials: %w", err)
+	}
+
+	active, err := authSvc.GetBinding(userID)
+	if err != nil && !errors.Is(err, ilinkauth.ErrBindingNotFound) {
+		return err
+	}
+	if active != nil && strings.TrimSpace(active.Credentials.ILinkBotID) == strings.TrimSpace(account.AccountKey) {
+		if err := authSvc.DeleteBinding(userID); err != nil {
+			return err
+		}
+
+		remaining, listErr := s.accountMgr.List(ctx)
+		if listErr != nil {
+			return listErr
+		}
+		for _, item := range remaining {
+			if item.ChannelType != "wechat" {
+				continue
+			}
+			if owner, _ := item.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+				continue
+			}
+			return s.activateWechatChannelAccount(ctx, userID, item.ID)
+		}
+	}
+	return nil
 }
 
 func encodeQRCodeDataURL(content string) (string, error) {

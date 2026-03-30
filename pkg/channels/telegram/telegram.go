@@ -51,6 +51,9 @@ type Channel struct {
 	config      *config.TelegramConfig
 	transcriber transcription.Transcriber
 	prefs       *userprefs.Manager
+	id          string
+	channelType string
+	name        string
 
 	bot      *tgbotapi.BotAPI
 	stopOnce sync.Once
@@ -83,6 +86,21 @@ func New(
 	transcriber transcription.Transcriber,
 	prefsMgr *userprefs.Manager,
 ) (*Channel, error) {
+	return NewAccountChannel(log, messageBus, ag, cmdRegistry, cfg, transcriber, prefsMgr, "telegram", "Telegram")
+}
+
+// NewAccountChannel creates an account-scoped Telegram channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	messageBus bus.Bus,
+	ag *agent.Agent,
+	cmdRegistry *commands.Registry,
+	cfg *config.TelegramConfig,
+	transcriber transcription.Transcriber,
+	prefsMgr *userprefs.Manager,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.Token == "" {
 		return nil, fmt.Errorf("telegram token is required")
 	}
@@ -97,6 +115,9 @@ func New(
 		config:               cfg,
 		transcriber:          transcriber,
 		prefs:                prefsMgr,
+		id:                   strings.TrimSpace(channelID),
+		channelType:          "telegram",
+		name:                 defaultTelegramName(displayName),
 		ctx:                  ctx,
 		cancel:               cancel,
 		settingsInput:        map[string]string{},
@@ -106,12 +127,17 @@ func New(
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "telegram"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "Telegram"
+	return c.name
+}
+
+// ChannelType returns the stable Telegram family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -461,7 +487,7 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 	busMsg := &bus.Message{
 		ID:        fmt.Sprintf("telegram:%d", message.MessageID),
 		ChannelID: c.ID(),
-		SessionID: fmt.Sprintf("telegram:%d", message.Chat.ID),
+		SessionID: c.sessionID(message.Chat.ID),
 		UserID:    fmt.Sprintf("%d", message.From.ID),
 		Username:  message.From.UserName,
 		Type:      msgType,
@@ -1167,21 +1193,21 @@ func (c *Channel) getProfile(ctx context.Context, userID int64) (userprefs.Profi
 	if c.prefs == nil {
 		return userprefs.Profile{}, false, nil
 	}
-	return c.prefs.Get(ctx, c.ID(), fmt.Sprintf("%d", userID))
+	return c.prefs.Get(ctx, c.ChannelType(), c.profileKey(userID))
 }
 
 func (c *Channel) saveProfile(ctx context.Context, userID int64, profile userprefs.Profile) error {
 	if c.prefs == nil {
 		return nil
 	}
-	return c.prefs.Save(ctx, c.ID(), fmt.Sprintf("%d", userID), profile)
+	return c.prefs.Save(ctx, c.ChannelType(), c.profileKey(userID), profile)
 }
 
 func (c *Channel) clearProfile(ctx context.Context, userID int64) error {
 	if c.prefs == nil {
 		return nil
 	}
-	return c.prefs.Clear(ctx, c.ID(), fmt.Sprintf("%d", userID))
+	return c.prefs.Clear(ctx, c.ChannelType(), c.profileKey(userID))
 }
 
 func (c *Channel) sendThinkingMessage(chatID int64, replyTo int, text string) int {
@@ -1369,14 +1395,20 @@ func (c *Channel) isUserAllowed(userID, chatID int64, username string) bool {
 
 // extractChatID extracts the chat ID from a session ID.
 func (c *Channel) extractChatID(sessionID string) (int64, error) {
-	// Format: "telegram:123456"
 	parts := strings.Split(sessionID, ":")
-	if len(parts) != 2 || parts[0] != "telegram" {
+	if len(parts) < 2 {
 		return 0, fmt.Errorf("invalid telegram session ID format")
 	}
 
+	prefix := parts[0]
+	if prefix != c.ChannelType() && prefix != c.ID() {
+		return 0, fmt.Errorf("invalid telegram session ID format")
+	}
+
+	rawChatID := parts[len(parts)-1]
+
 	var chatID int64
-	if _, err := fmt.Sscanf(parts[1], "%d", &chatID); err != nil {
+	if _, err := fmt.Sscanf(rawChatID, "%d", &chatID); err != nil {
 		return 0, fmt.Errorf("invalid chat ID: %w", err)
 	}
 
@@ -1385,16 +1417,42 @@ func (c *Channel) extractChatID(sessionID string) (int64, error) {
 
 // extractMessageID extracts the message ID from a message reference.
 func (c *Channel) extractMessageID(msgRef string) (int, error) {
-	// Format: "telegram:123456"
 	parts := strings.Split(msgRef, ":")
-	if len(parts) != 2 || parts[0] != "telegram" {
+	if len(parts) < 2 {
+		return 0, fmt.Errorf("invalid telegram message reference format")
+	}
+
+	prefix := parts[0]
+	if prefix != c.ChannelType() && prefix != c.ID() {
 		return 0, fmt.Errorf("invalid telegram message reference format")
 	}
 
 	var msgID int
-	if _, err := fmt.Sscanf(parts[1], "%d", &msgID); err != nil {
+	if _, err := fmt.Sscanf(parts[len(parts)-1], "%d", &msgID); err != nil {
 		return 0, fmt.Errorf("invalid message ID: %w", err)
 	}
 
 	return msgID, nil
+}
+
+func (c *Channel) sessionID(chatID int64) string {
+	if c.ID() == c.ChannelType() {
+		return fmt.Sprintf("%s:%d", c.ChannelType(), chatID)
+	}
+	return fmt.Sprintf("%s:%d", c.ID(), chatID)
+}
+
+func (c *Channel) profileKey(userID int64) string {
+	if c.ID() == c.ChannelType() {
+		return fmt.Sprintf("%d", userID)
+	}
+	return fmt.Sprintf("%s:%d", c.ID(), userID)
+}
+
+func defaultTelegramName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "Telegram"
+	}
+	return name
 }

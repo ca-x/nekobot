@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  type ChannelConfig,
   useActivateWechatBinding,
   useChannels,
   useDeleteWechatBindingAccount,
@@ -79,8 +80,15 @@ export default function ChannelsPage() {
   }, [wechatBinding.data, pollWechatBinding]);
 
   // Derive channel list from the map.
+  const runtimeInstances = channels?._instances ?? [];
+  const channelConfigs: Record<string, ChannelConfig> = Object.fromEntries(
+    Object.entries(channels ?? {}).filter(
+      ([name, value]) => name !== '_instances' && value && !Array.isArray(value),
+    ),
+  ) as Record<string, ChannelConfig>;
   const allChannels = channels
-    ? Object.entries(channels).sort(([a], [b]) => a.localeCompare(b))
+    ? Object.entries(channelConfigs)
+        .sort(([a], [b]) => a.localeCompare(b))
     : [];
 
   const enabledCount = allChannels.filter(([, cfg]) => cfg.enabled).length;
@@ -123,9 +131,54 @@ export default function ChannelsPage() {
       {/* Channel card grid */}
       {!isLoading && filteredChannels.length > 0 && (
         <div className="space-y-4">
-          {channels?.wechat && (
+          {runtimeInstances.length > 0 && (
+            <Card className="border-primary/15 bg-gradient-to-br from-background to-muted/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{t('channelInstancesTitle')}</CardTitle>
+                <CardDescription>{t('channelInstancesDescription')}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {runtimeInstances.map((instance) => (
+                    <div
+                      key={instance.id}
+                      className="rounded-xl border border-border/60 bg-background/80 px-4 py-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-foreground">{instance.name}</div>
+                          <div className="text-xs text-muted-foreground">{instance.id}</div>
+                        </div>
+                        <span
+                          className={cn(
+                            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                            instance.enabled
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                              : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'h-1.5 w-1.5 rounded-full',
+                              instance.enabled ? 'bg-emerald-500' : 'bg-gray-400',
+                            )}
+                          />
+                          {instance.enabled ? t('on') : t('off')}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-xs text-muted-foreground">
+                        {t('channelInstancesTypeLabel')}: <span className="font-medium text-foreground">{instance.type}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {channelConfigs.wechat && (
             <WechatBindingCard
-              enabled={Boolean(channels.wechat.enabled)}
+              enabled={Boolean(channelConfigs.wechat.enabled)}
               binding={wechatBinding.data}
               starting={startWechatBinding.isPending}
               polling={pollWechatBinding.isPending}
@@ -253,7 +306,7 @@ export default function ChannelsPage() {
       <ChannelForm
         open={editingChannel !== null}
         channelName={editingChannel}
-        channelConfig={editingChannel && channels ? channels[editingChannel] ?? null : null}
+        channelConfig={editingChannel ? channelConfigs[editingChannel] ?? null : null}
         onClose={() => setEditingChannel(null)}
       />
     </div>

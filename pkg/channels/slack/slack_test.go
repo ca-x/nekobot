@@ -7,6 +7,7 @@ import (
 	"time"
 
 	slackapi "github.com/slack-go/slack"
+	"github.com/slack-go/slack/slackevents"
 
 	"nekobot/pkg/bus"
 	"nekobot/pkg/commands"
@@ -93,6 +94,9 @@ func newTestChannel(t *testing.T) *Channel {
 		config:               config.SlackConfig{},
 		bus:                  &stubBus{},
 		commands:             commands.NewRegistry(),
+		id:                   "slack",
+		channelType:          "slack",
+		name:                 "Slack",
 		pendingSkillInstalls: map[string]pendingSkillInstall{},
 	}
 }
@@ -233,5 +237,140 @@ func TestPendingSkillInstallExpires(t *testing.T) {
 
 	if _, ok := ch.getPendingSkillInstall("1710000000.000100"); ok {
 		t.Fatal("expected expired pending interaction to be evicted")
+	}
+}
+
+func TestAccountChannelUsesRuntimeScopedIdentifiers(t *testing.T) {
+	log, err := logger.New(&logger.Config{
+		Level:       logger.LevelDebug,
+		Development: true,
+	})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	channel, err := NewAccountChannel(
+		log,
+		config.SlackConfig{Enabled: true, BotToken: "xoxb-test", AppToken: "xapp-test"},
+		&stubBus{},
+		commands.NewRegistry(),
+		nil,
+		"slack:team-a",
+		"Slack Team A",
+	)
+	if err != nil {
+		t.Fatalf("NewAccountChannel failed: %v", err)
+	}
+
+	if channel.ID() != "slack:team-a" {
+		t.Fatalf("unexpected channel id: %s", channel.ID())
+	}
+	if channel.ChannelType() != "slack" {
+		t.Fatalf("unexpected channel type: %s", channel.ChannelType())
+	}
+	if channel.Name() != "Slack Team A" {
+		t.Fatalf("unexpected channel name: %s", channel.Name())
+	}
+
+	sessionID := channel.sessionThreadID("C123", "1710000000.000100")
+	if sessionID != "slack:team-a:C123:1710000000.000100" {
+		t.Fatalf("unexpected session id: %s", sessionID)
+	}
+
+	channelID, threadTS := channel.parseSessionID(sessionID)
+	if channelID != "C123" || threadTS != "1710000000.000100" {
+		t.Fatalf("unexpected parsed session: channel=%q thread=%q", channelID, threadTS)
+	}
+}
+
+func TestParseSessionIDSupportsAccountRuntimePrefix(t *testing.T) {
+	ch := newTestChannel(t)
+	ch.id = "slack:workspace-a"
+
+	channelID, threadTS := ch.parseSessionID("slack:workspace-a:C123:1710000000.000100")
+	if channelID != "C123" || threadTS != "1710000000.000100" {
+		t.Fatalf("unexpected parsed session: channel=%q thread=%q", channelID, threadTS)
+	}
+
+	channelID, threadTS = ch.parseSessionID("slack:C123")
+	if channelID != "C123" || threadTS != "" {
+		t.Fatalf("expected legacy prefix compatibility, got channel=%q thread=%q", channelID, threadTS)
+	}
+}
+
+func TestHandleMessageEventUsesAccountRuntimeIdentifiers(t *testing.T) {
+	ch := newTestChannel(t)
+	ch.id = "slack:workspace-a"
+	b := &stubBus{}
+	ch.bus = b
+
+	ch.handleMessageEvent((&slackapieventsMessageEvent{
+		Channel:         "C123",
+		ThreadTimeStamp: "1710000000.000100",
+		User:            "U123",
+		Text:            "hello",
+		TimeStamp:       "1710000001.000200",
+	}).toSlack())
+
+	if len(b.inbound) != 1 {
+		t.Fatalf("expected one inbound message, got %d", len(b.inbound))
+	}
+	if b.inbound[0].ChannelID != "slack:workspace-a" {
+		t.Fatalf("unexpected inbound channel id: %q", b.inbound[0].ChannelID)
+	}
+	if b.inbound[0].SessionID != "slack:workspace-a:C123:1710000000.000100" {
+		t.Fatalf("unexpected inbound session id: %q", b.inbound[0].SessionID)
+	}
+}
+
+func TestExecuteConfirmedSkillInstallUsesRuntimeChannelID(t *testing.T) {
+	ch := newTestChannel(t)
+	ch.id = "slack:workspace-a"
+	api := &stubSlackAPI{}
+	ch.api = api
+
+	if err := ch.commands.Register(&commands.Command{
+		Name: "find-skills",
+		Handler: func(ctx context.Context, req commands.CommandRequest) (commands.CommandResponse, error) {
+			if req.Channel != "slack:workspace-a" {
+				t.Fatalf("unexpected command channel: %q", req.Channel)
+			}
+			return commands.CommandResponse{Content: "installed"}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register command: %v", err)
+	}
+
+	result := ch.executeConfirmedSkillInstall(slackapi.InteractionCallback{
+		User: slackapi.User{ID: "U123", Name: "alice"},
+		Team: slackapi.Team{ID: "T123"},
+	}, pendingSkillInstall{
+		UserID:    "U123",
+		ChannelID: "C123",
+		MessageTS: "1710000000.000100",
+		Command:   "find-skills",
+		Repo:      "owner/repo",
+		CreatedAt: time.Now(),
+	})
+	if result != "installed" {
+		t.Fatalf("unexpected result: %q", result)
+	}
+}
+
+type slackapieventsMessageEvent struct {
+	Channel         string
+	ThreadTimeStamp string
+	User            string
+	Text            string
+	TimeStamp       string
+}
+
+func (e *slackapieventsMessageEvent) toSlack() *slackevents.MessageEvent {
+	return &slackevents.MessageEvent{
+		Channel:         e.Channel,
+		ThreadTimeStamp: e.ThreadTimeStamp,
+		User:            e.User,
+		Text:            e.Text,
+		TimeStamp:       e.TimeStamp,
 	}
 }

@@ -45,6 +45,9 @@ type Channel struct {
 	cancel               context.CancelFunc
 	transcriber          transcription.Transcriber
 	httpClient           *http.Client
+	id                   string
+	channelType          string
+	name                 string
 	pendingSkillMu       sync.Mutex
 	pendingSkillInstalls map[string]pendingSkillInstall
 }
@@ -68,6 +71,19 @@ func NewChannel(
 	cmdRegistry *commands.Registry,
 	transcriber transcription.Transcriber,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, transcriber, "slack", "Slack")
+}
+
+// NewAccountChannel creates an account-scoped Slack channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.SlackConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	transcriber transcription.Transcriber,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.BotToken == "" || cfg.AppToken == "" {
 		return nil, fmt.Errorf("slack bot_token and app_token are required")
 	}
@@ -90,6 +106,9 @@ func NewChannel(
 		socketClient: socketClient,
 		running:      false,
 		transcriber:  transcriber,
+		id:           strings.TrimSpace(channelID),
+		channelType:  "slack",
+		name:         defaultSlackName(displayName),
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,
 		},
@@ -152,12 +171,17 @@ func (c *Channel) Stop(ctx context.Context) error {
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "slack"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "Slack"
+	return c.name
+}
+
+// ChannelType returns the stable Slack family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -246,15 +270,15 @@ func (c *Channel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	}
 
 	// Determine chat ID (channel_id or channel_id:thread_ts)
-	sessionID := fmt.Sprintf("slack:%s", ev.Channel)
+	sessionID := c.sessionID(ev.Channel)
 	if ev.ThreadTimeStamp != "" {
-		sessionID = fmt.Sprintf("slack:%s:%s", ev.Channel, ev.ThreadTimeStamp)
+		sessionID = c.sessionThreadID(ev.Channel, ev.ThreadTimeStamp)
 	}
 
 	// Create inbound message
 	msg := &bus.Message{
 		ID:        fmt.Sprintf("slack:%s", ev.TimeStamp),
-		ChannelID: "slack",
+		ChannelID: c.ID(),
 		SessionID: sessionID,
 		UserID:    ev.User,
 		Username:  ev.User, // Slack uses user ID
@@ -279,9 +303,9 @@ func (c *Channel) handleAppMentionEvent(ev *slackevents.AppMentionEvent) {
 	}
 
 	// Determine session ID
-	sessionID := fmt.Sprintf("slack:%s", ev.Channel)
+	sessionID := c.sessionID(ev.Channel)
 	if ev.ThreadTimeStamp != "" {
-		sessionID = fmt.Sprintf("slack:%s:%s", ev.Channel, ev.ThreadTimeStamp)
+		sessionID = c.sessionThreadID(ev.Channel, ev.ThreadTimeStamp)
 	}
 
 	// Remove bot mention from text
@@ -290,7 +314,7 @@ func (c *Channel) handleAppMentionEvent(ev *slackevents.AppMentionEvent) {
 	// Create inbound message
 	msg := &bus.Message{
 		ID:        fmt.Sprintf("slack:%s", ev.TimeStamp),
-		ChannelID: "slack",
+		ChannelID: c.ID(),
 		SessionID: sessionID,
 		UserID:    ev.User,
 		Username:  ev.User,
@@ -338,7 +362,7 @@ func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 
 	// Create command request
 	req := commands.CommandRequest{
-		Channel:  "slack",
+		Channel:  c.ID(),
 		ChatID:   cmd.ChannelID,
 		UserID:   cmd.UserID,
 		Username: cmd.UserName,
@@ -349,6 +373,7 @@ func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 			"team_id":      cmd.TeamID,
 			"team_domain":  cmd.TeamDomain,
 			"trigger_id":   cmd.TriggerID,
+			"runtime_id":   c.ID(),
 		},
 	}
 
@@ -590,7 +615,7 @@ func (c *Channel) executeConfirmedSkillInstall(
 	}
 
 	req := commands.CommandRequest{
-		Channel:  "slack",
+		Channel:  c.ID(),
 		ChatID:   pending.ChannelID,
 		UserID:   pending.UserID,
 		Username: callback.User.Name,
@@ -602,6 +627,7 @@ func (c *Channel) executeConfirmedSkillInstall(
 			"channel_id":                   pending.ChannelID,
 			"message_ts":                   pending.MessageTS,
 			"skill_install_confirmed_repo": pending.Repo,
+			"runtime_id":                   c.ID(),
 		},
 	}
 
@@ -701,16 +727,65 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 
 // parseSessionID parses session ID into channel ID and optional thread timestamp.
 func (c *Channel) parseSessionID(sessionID string) (string, string) {
-	// Format: "slack:channel_id" or "slack:channel_id:thread_ts"
-	if !strings.HasPrefix(sessionID, "slack:") {
+	parts := strings.Split(sessionID, ":")
+	if len(parts) < 2 {
 		return "", ""
 	}
 
-	parts := strings.SplitN(sessionID[6:], ":", 2)
-	if len(parts) == 2 {
-		return parts[0], parts[1]
+	prefix := parts[0]
+	if prefix != c.ChannelType() && prefix != c.ID() {
+		return "", ""
 	}
-	return parts[0], ""
+
+	if c.ID() != c.ChannelType() {
+		instanceParts := strings.Split(c.ID(), ":")
+		if len(parts) >= len(instanceParts)+1 {
+			matches := true
+			for idx, want := range instanceParts {
+				if parts[idx] != want {
+					matches = false
+					break
+				}
+			}
+			if matches {
+				channelID := parts[len(instanceParts)]
+				if len(parts) > len(instanceParts)+1 {
+					return channelID, strings.Join(parts[len(instanceParts)+1:], ":")
+				}
+				return channelID, ""
+			}
+		}
+	}
+
+	if len(parts) > 2 {
+		return parts[1], strings.Join(parts[2:], ":")
+	}
+	return parts[1], ""
+}
+
+func (c *Channel) sessionID(channelID string) string {
+	trimmed := strings.TrimSpace(channelID)
+	if c.ID() == c.ChannelType() {
+		return c.ChannelType() + ":" + trimmed
+	}
+	return c.ID() + ":" + trimmed
+}
+
+func (c *Channel) sessionThreadID(channelID, threadTS string) string {
+	base := c.sessionID(channelID)
+	thread := strings.TrimSpace(threadTS)
+	if thread == "" {
+		return base
+	}
+	return base + ":" + thread
+}
+
+func defaultSlackName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "Slack"
+	}
+	return name
 }
 
 // isAllowed checks if a user is allowed to use the bot.
