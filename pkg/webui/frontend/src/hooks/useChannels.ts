@@ -68,11 +68,19 @@ export function useTestChannel() {
     mutationFn: (name: string) =>
       api.post<TestChannelResult>(`/api/channels/${encodeURIComponent(name)}/test`),
     onSuccess: (result) => {
-      if (result?.reachable) {
+      if (result?.status === 'ok' && result?.reachable) {
         toast.success(t('channelTestOk', result.channel));
-      } else {
-        toast.warning(t('channelTestFail', result?.status ?? 'unknown'));
+        return;
       }
+      if (result?.status === 'configured') {
+        toast.info(t('channelTestConfigured', result.channel));
+        return;
+      }
+      if (result?.status === 'disabled') {
+        toast.warning(t('channelTestDisabled', result.channel));
+        return;
+      }
+      toast.warning(t('channelTestFail', result?.error ?? result?.status ?? 'unknown'));
     },
     onError: (err: Error) => toast.error(err.message),
   });

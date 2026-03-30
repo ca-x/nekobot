@@ -103,10 +103,9 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	c.ctx, c.cancel = context.WithCancel(ctx)
 
-	// Test authentication
-	authResp, err := c.api.AuthTest()
+	authResp, err := c.authTest()
 	if err != nil {
-		return fmt.Errorf("slack auth test failed: %w", err)
+		return err
 	}
 	c.botUserID = authResp.UserID
 
@@ -130,6 +129,12 @@ func (c *Channel) Start(ctx context.Context) error {
 	c.log.Info("Slack channel started")
 
 	return nil
+}
+
+// HealthCheck verifies that Slack credentials are accepted by the API.
+func (c *Channel) HealthCheck(ctx context.Context) error {
+	_, err := c.authTest()
+	return err
 }
 
 // Stop stops the Slack bot.
@@ -163,6 +168,14 @@ func (c *Channel) IsEnabled() bool {
 // IsRunning returns whether the channel is running.
 func (c *Channel) IsRunning() bool {
 	return c.running
+}
+
+func (c *Channel) authTest() (*slack.AuthTestResponse, error) {
+	authResp, err := c.api.AuthTest()
+	if err != nil {
+		return nil, fmt.Errorf("slack auth test failed: %w", err)
+	}
+	return authResp, nil
 }
 
 // eventLoop processes Socket Mode events.

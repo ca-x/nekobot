@@ -1,7 +1,9 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -255,5 +257,180 @@ func TestHandleUpdateChannelKeepsExistingRuntimeWhenPrebuildFails(t *testing.T) 
 	}
 	if current != original {
 		t.Fatalf("expected existing runtime channel to remain active")
+	}
+}
+
+type testConfiguredChannel struct {
+	id      string
+	name    string
+	enabled bool
+}
+
+func (c *testConfiguredChannel) ID() string { return c.id }
+
+func (c *testConfiguredChannel) Name() string { return c.name }
+
+func (c *testConfiguredChannel) Start(_ context.Context) error { return nil }
+
+func (c *testConfiguredChannel) Stop(_ context.Context) error { return nil }
+
+func (c *testConfiguredChannel) IsEnabled() bool { return c.enabled }
+
+func (c *testConfiguredChannel) SendMessage(_ context.Context, _ *bus.Message) error { return nil }
+
+type testProbeChannel struct {
+	id        string
+	name      string
+	enabled   bool
+	probeErr  error
+	probeRuns int
+}
+
+func (c *testProbeChannel) ID() string { return c.id }
+
+func (c *testProbeChannel) Name() string { return c.name }
+
+func (c *testProbeChannel) Start(_ context.Context) error { return nil }
+
+func (c *testProbeChannel) Stop(_ context.Context) error { return nil }
+
+func (c *testProbeChannel) IsEnabled() bool { return c.enabled }
+
+func (c *testProbeChannel) SendMessage(_ context.Context, _ *bus.Message) error { return nil }
+
+func (c *testProbeChannel) HealthCheck(_ context.Context) error {
+	c.probeRuns++
+	return c.probeErr
+}
+
+func TestHandleTestChannelReturnsConfiguredWithoutProbe(t *testing.T) {
+	log := newTestLogger(t)
+	messageBus := bus.NewLocalBus(log, 8)
+	manager := channels.NewManager(log, messageBus)
+	ch := &testConfiguredChannel{id: "stub", name: "Stub", enabled: true}
+	if err := manager.Register(ch); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	s := &Server{logger: log, channels: manager}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/channels/stub/test", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/api/channels/:name/test")
+	c.SetPathValues(echo.PathValues{{Name: "name", Value: "stub"}})
+
+	if err := s.handleTestChannel(c); err != nil {
+		t.Fatalf("handleTestChannel failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+
+	if payload["status"] != "configured" {
+		t.Fatalf("expected configured status, got %#v", payload["status"])
+	}
+	if payload["reachable"] != false {
+		t.Fatalf("expected reachable=false, got %#v", payload["reachable"])
+	}
+}
+
+func TestHandleTestChannelUsesHealthCheckFailure(t *testing.T) {
+	log := newTestLogger(t)
+	messageBus := bus.NewLocalBus(log, 8)
+	manager := channels.NewManager(log, messageBus)
+	ch := &testProbeChannel{
+		id:       "probe",
+		name:     "Probe",
+		enabled:  true,
+		probeErr: errors.New("upstream auth failed"),
+	}
+	if err := manager.Register(ch); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	s := &Server{logger: log, channels: manager}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/channels/probe/test", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/api/channels/:name/test")
+	c.SetPathValues(echo.PathValues{{Name: "name", Value: "probe"}})
+
+	if err := s.handleTestChannel(c); err != nil {
+		t.Fatalf("handleTestChannel failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if ch.probeRuns != 1 {
+		t.Fatalf("expected one probe run, got %d", ch.probeRuns)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+
+	if payload["status"] != "unreachable" {
+		t.Fatalf("expected unreachable status, got %#v", payload["status"])
+	}
+	if payload["reachable"] != false {
+		t.Fatalf("expected reachable=false, got %#v", payload["reachable"])
+	}
+	if payload["error"] != "upstream auth failed" {
+		t.Fatalf("expected error to round-trip, got %#v", payload["error"])
+	}
+}
+
+func TestHandleTestChannelUsesHealthCheckSuccess(t *testing.T) {
+	log := newTestLogger(t)
+	messageBus := bus.NewLocalBus(log, 8)
+	manager := channels.NewManager(log, messageBus)
+	ch := &testProbeChannel{
+		id:      "probe",
+		name:    "Probe",
+		enabled: true,
+	}
+	if err := manager.Register(ch); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	s := &Server{logger: log, channels: manager}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/channels/probe/test", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/api/channels/:name/test")
+	c.SetPathValues(echo.PathValues{{Name: "name", Value: "probe"}})
+
+	if err := s.handleTestChannel(c); err != nil {
+		t.Fatalf("handleTestChannel failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if ch.probeRuns != 1 {
+		t.Fatalf("expected one probe run, got %d", ch.probeRuns)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+
+	if payload["status"] != "ok" {
+		t.Fatalf("expected ok status, got %#v", payload["status"])
+	}
+	if payload["reachable"] != true {
+		t.Fatalf("expected reachable=true, got %#v", payload["reachable"])
 	}
 }

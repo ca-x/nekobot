@@ -3507,6 +3507,21 @@ func (s *Server) handleTestChannel(c *echo.Context) error {
 		return c.JSON(http.StatusOK, result)
 	}
 
+	healthChecker, ok := ch.(channels.HealthChecker)
+	if !ok {
+		result["status"] = "configured"
+		return c.JSON(http.StatusOK, result)
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 10*time.Second)
+	defer cancel()
+
+	if err := healthChecker.HealthCheck(ctx); err != nil {
+		result["status"] = "unreachable"
+		result["error"] = err.Error()
+		return c.JSON(http.StatusOK, result)
+	}
+
 	result["reachable"] = true
 	result["status"] = "ok"
 	return c.JSON(http.StatusOK, result)

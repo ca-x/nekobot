@@ -59,6 +59,16 @@ func (c *Channel) IsEnabled() bool { return c.config.Enabled }
 
 // Start verifies that the Gotify server and token are reachable.
 func (c *Channel) Start(ctx context.Context) error {
+	if err := c.HealthCheck(ctx); err != nil {
+		return err
+	}
+
+	c.log.Info("Gotify channel started", zap.String("server_url", strings.TrimSpace(c.config.ServerURL)))
+	return nil
+}
+
+// HealthCheck verifies that the Gotify server and token are reachable.
+func (c *Channel) HealthCheck(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.currentApplicationURL(), nil)
 	if err != nil {
 		return fmt.Errorf("create gotify verify request: %w", err)
@@ -76,8 +86,6 @@ func (c *Channel) Start(ctx context.Context) error {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("gotify verify returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-
-	c.log.Info("Gotify channel started", zap.String("server_url", strings.TrimSpace(c.config.ServerURL)))
 	return nil
 }
 

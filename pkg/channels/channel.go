@@ -28,6 +28,12 @@ type Channel interface {
 	SendMessage(ctx context.Context, msg *bus.Message) error
 }
 
+// HealthChecker optionally exposes a lightweight runtime probe for a channel.
+type HealthChecker interface {
+	// HealthCheck verifies whether the channel can currently reach its upstream runtime.
+	HealthCheck(ctx context.Context) error
+}
+
 // ChannelConfig is the interface for channel-specific configuration.
 type ChannelConfig interface {
 	// IsEnabled returns whether the channel is enabled.

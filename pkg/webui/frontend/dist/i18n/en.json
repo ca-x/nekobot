@@ -894,6 +894,8 @@
   "channelsEmptyTitle": "No channels found",
   "channelsEmptyDescription": "No channels match the current filter. Switch to the All tab to see all available channels.",
   "channelTestOk": "{0} is reachable",
+  "channelTestConfigured": "{0} is configured, but this channel does not expose a runtime health probe yet.",
+  "channelTestDisabled": "{0} is currently disabled.",
   "channelTestFail": "Channel test failed: {0}",
   "channelFormDescription": "Configure the channel parameters below. Toggle Enabled to activate.",
   "channelFieldPasswordHint": "Enter value (leave blank to keep unchanged)",

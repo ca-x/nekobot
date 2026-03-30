@@ -894,6 +894,8 @@
   "channelsEmptyTitle": "チャンネルが見つかりません",
   "channelsEmptyDescription": "現在のフィルターに一致するチャンネルがありません。「すべて」タブに切り替えてください。",
   "channelTestOk": "{0} に到達可能",
+  "channelTestConfigured": "{0} は設定済みですが、このチャンネルはまだランタイムヘルスチェックを公開していません。",
+  "channelTestDisabled": "{0} は現在無効です。",
   "channelTestFail": "チャンネルテスト失敗：{0}",
   "channelFormDescription": "以下のチャンネルパラメータを設定してください。有効スイッチをオンにして起動します。",
   "channelFieldPasswordHint": "値を入力（空白で変更なし）",
