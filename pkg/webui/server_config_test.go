@@ -18,6 +18,7 @@ import (
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/watch"
 )
 
 func TestHandleGetConfigIncludesMemorySection(t *testing.T) {
@@ -366,6 +367,75 @@ func TestHandleSaveConfigPersistsHarnessSections(t *testing.T) {
 	}
 }
 
+func TestHandleSaveConfigSyncsWatcherRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Watch.Enabled = true
+	cfg.Watch.Patterns = []config.WatchPattern{{
+		FileGlob: filepath.Join(t.TempDir(), "*.go"),
+		Command:  "printf 'watch'",
+	}}
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
+
+	watcher, err := watch.New(cfg, log, nil)
+	if err != nil {
+		t.Fatalf("watch.New failed: %v", err)
+	}
+	if err := watcher.Start(); err != nil {
+		t.Fatalf("watcher.Start failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = watcher.Stop()
+	})
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		providers: providers,
+		watcher:   watcher,
+	}
+
+	body := `{"watch":{"enabled":false,"debounce_ms":850,"patterns":[{"file_glob":"**/*.go","command":"go test ./...","fail_command":"notify-send fail"}]}}`
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleSaveConfig(c); err != nil {
+		t.Fatalf("handleSaveConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	status := watcher.Status()
+	if status.Enabled {
+		t.Fatalf("expected watcher to be disabled after save, got %+v", status)
+	}
+	if status.Running {
+		t.Fatalf("expected watcher to stop after save, got %+v", status)
+	}
+}
+
 func TestHandleSaveConfigUpdatesSkillRetentionRuntime(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
@@ -532,6 +602,75 @@ func TestHandleImportConfigPersistsHarnessSections(t *testing.T) {
 	}
 	if !reflect.DeepEqual(reloaded.Watch, s.config.Watch) {
 		t.Fatalf("watch section not persisted by import: got %+v want %+v", reloaded.Watch, s.config.Watch)
+	}
+}
+
+func TestHandleImportConfigSyncsWatcherRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Watch.Enabled = true
+	cfg.Watch.Patterns = []config.WatchPattern{{
+		FileGlob: filepath.Join(t.TempDir(), "*.go"),
+		Command:  "printf 'watch'",
+	}}
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Errorf("close provider manager: %v", err)
+		}
+	})
+
+	watcher, err := watch.New(cfg, log, nil)
+	if err != nil {
+		t.Fatalf("watch.New failed: %v", err)
+	}
+	if err := watcher.Start(); err != nil {
+		t.Fatalf("watcher.Start failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = watcher.Stop()
+	})
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		providers: providers,
+		watcher:   watcher,
+	}
+
+	body := `{"watch":{"enabled":false,"debounce_ms":1500,"patterns":[{"file_glob":"frontend/src/**/*.tsx","command":"npm run build","fail_command":"echo fail"}]}}`
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/config/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleImportConfig(c); err != nil {
+		t.Fatalf("handleImportConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	status := watcher.Status()
+	if status.Enabled {
+		t.Fatalf("expected watcher to be disabled after import, got %+v", status)
+	}
+	if status.Running {
+		t.Fatalf("expected watcher to stop after import, got %+v", status)
 	}
 }
 

@@ -101,3 +101,57 @@ func TestHandleUndoChatSession(t *testing.T) {
 		t.Fatalf("session not rolled back: %#v", messages)
 	}
 }
+
+func TestClearChatSessionRemovesUndoSnapshots(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Sessions.Sources.WebUI = true
+	cfg.Undo.Enabled = true
+	cfg.Undo.MaxTurns = 10
+
+	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+	snapshotMgr := session.NewSnapshotManager(t.TempDir(), cfg.Undo)
+	sess, err := sessionMgr.GetWithSource("webui-chat:tester", session.SourceWebUI)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	store := snapshotMgr.GetStore("webui-chat:tester")
+	first := []session.MessageSnapshot{{Role: "user", Content: "first"}}
+	second := []session.MessageSnapshot{{Role: "user", Content: "first"}, {Role: "assistant", Content: "reply-1"}}
+	if err := store.SaveSnapshot(first, ""); err != nil {
+		t.Fatalf("SaveSnapshot first failed: %v", err)
+	}
+	if err := store.SaveSnapshot(second, ""); err != nil {
+		t.Fatalf("SaveSnapshot second failed: %v", err)
+	}
+	sess.ReplaceMessages(session.MessageSnapshotsToMessages(second))
+
+	s := &Server{
+		config:      cfg,
+		sessionMgr:  sessionMgr,
+		snapshotMgr: snapshotMgr,
+	}
+
+	if err := s.clearChatSession("webui-chat:tester"); err != nil {
+		t.Fatalf("clearChatSession failed: %v", err)
+	}
+
+	cleared, err := sessionMgr.GetExisting("webui-chat:tester")
+	if err != nil {
+		t.Fatalf("GetExisting failed: %v", err)
+	}
+	if len(cleared.GetMessages()) != 0 {
+		t.Fatalf("expected cleared session to have no messages, got %#v", cleared.GetMessages())
+	}
+
+	reloadedStore := snapshotMgr.GetStore("webui-chat:tester")
+	if err := reloadedStore.LoadSnapshots(); err != nil {
+		t.Fatalf("LoadSnapshots failed: %v", err)
+	}
+	if reloadedStore.CanUndo() {
+		t.Fatalf("expected undo snapshots to be cleared")
+	}
+	if got := reloadedStore.GetTurnCount(); got != 0 {
+		t.Fatalf("expected zero snapshots after clear, got %d", got)
+	}
+}

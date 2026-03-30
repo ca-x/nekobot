@@ -80,6 +80,47 @@ func TestWatcherStartStop(t *testing.T) {
 	}
 }
 
+func TestWatcherCanRestartAfterStop(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Watch.Enabled = true
+	cfg.Watch.DebounceMs = 100
+	cfg.Watch.Patterns = []config.WatchPattern{{
+		FileGlob: filepath.Join(t.TempDir(), "*.go"),
+		Command:  "printf 'watch'",
+	}}
+
+	log, err := logger.New(&logger.Config{
+		Level:       logger.LevelDebug,
+		Development: true,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+	auditLogger := audit.NewLogger(audit.DefaultConfig(), t.TempDir(), log)
+
+	watcher, err := New(cfg, log, auditLogger)
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+
+	if err := watcher.Start(); err != nil {
+		t.Fatalf("Failed to start watcher: %v", err)
+	}
+	if err := watcher.Stop(); err != nil {
+		t.Fatalf("Failed to stop watcher: %v", err)
+	}
+	if err := watcher.Start(); err != nil {
+		t.Fatalf("Failed to restart watcher: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = watcher.Stop()
+	})
+
+	if !watcher.IsRunning() {
+		t.Fatal("Watcher should be running after restart")
+	}
+}
+
 func TestWatcherGlobMatching(t *testing.T) {
 	tests := []struct {
 		name     string

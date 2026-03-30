@@ -109,6 +109,52 @@
 ### Status
 **Completed** - 已补齐 Harness Audit 页面与相关 WebUI 体验收口，并完成全量 Go 回归、前端构建与浏览器 smoke test；修复空 audit 数据崩溃后复测通过，未再出现新问题，待提交与推送。
 
+## 2026-03-30 全局交互 / 数据流 / 逻辑性 / 扩展性审查批次
+
+### Goal
+对当前整个软件做一轮完整的系统审查，覆盖交互链路、关键数据流向、业务逻辑一致性、模块边界与可扩展性；沉淀明确缺陷，先完成设计与修复计划，再在后续批次中按优先级落地修复代码与界面问题。
+
+### Phases
+- [ ] Phase 1: 建立审查范围、读当前架构与最近改动
+- [ ] Phase 2: 识别交互、数据流、逻辑、扩展性四类核心问题
+- [ ] Phase 3: 形成候选修复方案与优先级
+- [ ] Phase 4: 与用户确认本轮优先落地范围
+- [ ] Phase 5: 进入实现、验证、提交与推送
+
+### Key Questions
+1. 目前最影响真实可用性的系统缺陷，究竟集中在 WebUI 操作链路、后端状态一致性，还是模块边界与扩展成本？
+2. 哪些问题属于“当前就会造成错误认知或错误行为”的 P0/P1 缺陷，必须优先修？
+3. 哪些问题虽然是架构债，但不应在本轮和用户可见缺陷混做？
+
+### Decisions Made
+- 审查与修复拆为三轮推进：
+  1. 第一轮以 `Chat + Config + Harness` 为主链。
+  2. 第二轮以 `Gateway / Channels` 运行时为主链。
+  3. 第三轮专门处理第一二轮融合后的集成问题。
+- 第一轮先做最小必要修复打通主链，但允许围绕同一主链做小范围边界抽取，避免继续把状态同步逻辑散落在多个 handler 中。
+- `watch` 统一按“配置保存即同步运行态”处理，覆盖 `/api/config`、`/api/config/import`、`/api/harness/watch` 三条入口。
+- `chat clear` 统一按“完整清空会话 + undo snapshot”处理，不允许 clear 后还能通过 undo 找回旧上下文。
+
+### Errors Encountered
+- `pkg/webui` 新增回归测试首轮编译失败：`Server` 缺少独立的 chat clear helper，clear 语义散落在 WS handler 内。
+  - 处理：抽出 `clearChatSession` helper，并让 WS clear 分支复用它。
+
+### Status
+**Completed** - 第 1 轮 `Chat + Config + Harness` 主链修复、前端一致性修补与全量验证已完成，已进入提交推送阶段。
+
+### Round 1 Progress Notes
+- [x] 已为 watch 运行态同步补回归测试，覆盖 `handleUpdateWatchStatus`、`handleSaveConfig`、`handleImportConfig`。
+- [x] 已为 chat clear 与 undo 边界补回归测试，确保 clear 后不会残留 snapshot。
+- [x] `pkg/watch.Watcher` 已补 `ApplyConfig` 与可重启生命周期，修复 stop 后无法可靠 restart 的隐患。
+- [x] `pkg/webui.Server` 已抽出 `syncWatchRuntime` / `clearChatSession`，收口主链状态同步逻辑。
+- [x] 前端 `useSaveConfig` / `useImportConfig` 已同步失效 `watch-status` 查询，修复 Config / Chat 观察面 stale 状态。
+
+### Verification
+- [x] `go test -count=1 ./pkg/watch ./pkg/webui -run 'TestWatcherCanRestartAfterStop|TestHandleUpdateWatchStatusStopsWatcherWhenDisabled|TestHandleSaveConfigSyncsWatcherRuntime|TestHandleImportConfigSyncsWatcherRuntime|TestClearChatSessionRemovesUndoSnapshots'`
+- [x] `go test -count=1 ./pkg/webui ./pkg/watch ./pkg/session`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./...`
+
 ## Goal
 在保持 `nekobot` 现有稳定性的前提下，基于 `~/code/goclaw` 与 `~/code/gua` 的成熟实践，完成：
 1. 准确认定 `nekobot` 当前已完成与待完成功能。

@@ -90,6 +90,7 @@ export function useSaveConfig() {
     mutationFn: (data: ConfigData) => api.put<ConfigMutationResult>('/api/config', data),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['config'] });
+      qc.invalidateQueries({ queryKey: ['watch-status'] });
       toast.success(t('configSaved'));
       const restartNotice = formatRestartNotice(result ?? {});
       if (restartNotice) {
@@ -123,6 +124,7 @@ export function useImportConfig() {
     mutationFn: (data: ConfigData) => api.post<ConfigMutationResult>('/api/config/import', data),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['config'] });
+      qc.invalidateQueries({ queryKey: ['watch-status'] });
       if (result) {
         toast.success(t('imported', String(result.sections_saved ?? 0), String(result.providers_imported ?? 0)));
         const restartNotice = formatRestartNotice(result);

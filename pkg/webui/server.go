@@ -3879,6 +3879,14 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config"})
 		}
 	}
+	if body.Watch != nil {
+		if err := s.syncWatchRuntime(); err != nil {
+			if s.logger != nil {
+				s.logger.Error("Failed to sync watch runtime after config save", zap.Error(err))
+			}
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to sync watch runtime"})
+		}
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":           "saved",
@@ -4130,6 +4138,14 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config sections"})
 		}
 	}
+	if body.Watch != nil {
+		if err := s.syncWatchRuntime(); err != nil {
+			if s.logger != nil {
+				s.logger.Error("Failed to sync watch runtime after config import", zap.Error(err))
+			}
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to sync watch runtime"})
+		}
+	}
 
 	// Import providers
 	importedProviders := 0
@@ -4174,6 +4190,36 @@ func (s *Server) saveBootstrapConfig() error {
 	if err := config.SaveToFile(s.config, configPath); err != nil {
 		return fmt.Errorf("save bootstrap config: %w", err)
 	}
+	return nil
+}
+
+func (s *Server) syncWatchRuntime() error {
+	if s == nil || s.config == nil || s.watcher == nil {
+		return nil
+	}
+	if err := s.watcher.ApplyConfig(s.config.Watch); err != nil {
+		return fmt.Errorf("sync watch runtime: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) clearChatSession(sessionID string) error {
+	if s == nil || s.sessionMgr == nil {
+		return fmt.Errorf("session manager not available")
+	}
+
+	if err := s.sessionMgr.Delete(sessionID); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("delete session %q: %w", sessionID, err)
+	}
+	if s.snapshotMgr != nil {
+		if err := s.snapshotMgr.RemoveStore(sessionID); err != nil {
+			return fmt.Errorf("clear undo snapshots for %q: %w", sessionID, err)
+		}
+	}
+	if _, err := s.getOrCreateChatSession(sessionID); err != nil {
+		return fmt.Errorf("recreate session %q: %w", sessionID, err)
+	}
+
 	return nil
 }
 
@@ -4504,9 +4550,11 @@ func (s *Server) handleUpdateWatchStatus(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save watch config"})
 	}
-
-	if s.watcher != nil {
-		s.watcher.UpdateConfig(s.config.Watch)
+	if err := s.syncWatchRuntime(); err != nil {
+		if s.logger != nil {
+			s.logger.Error("Failed to sync watch runtime", zap.Error(err))
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to sync watch runtime"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
@@ -4778,11 +4826,11 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 
 		case "clear":
-			if err := s.sessionMgr.Delete(sessionID); err != nil && !errors.Is(err, os.ErrNotExist) {
+			if err := s.clearChatSession(sessionID); err != nil {
 				sendWSError(conn, fmt.Sprintf("session reset failed: %v", err))
 				continue
 			}
-			sess, err = s.getOrCreateChatSession(sessionID)
+			sess, err = s.sessionMgr.GetExisting(sessionID)
 			if err != nil {
 				sendWSError(conn, fmt.Sprintf("session error: %v", err))
 				continue

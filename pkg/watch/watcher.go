@@ -111,6 +111,14 @@ func New(cfg *config.Config, log *logger.Logger, auditLogger *audit.Logger) (*Wa
 	return w, nil
 }
 
+func newFSWatcher() (*fsnotify.Watcher, error) {
+	fsWatcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("create fsnotify watcher: %w", err)
+	}
+	return fsWatcher, nil
+}
+
 // Start begins watching configured patterns.
 func (w *Watcher) Start() error {
 	if w == nil {
@@ -129,6 +137,19 @@ func (w *Watcher) Start() error {
 		w.mu.Unlock()
 		return fmt.Errorf("watcher already running")
 	}
+	if w.fsWatcher == nil {
+		fsWatcher, err := newFSWatcher()
+		if err != nil {
+			w.mu.Unlock()
+			return err
+		}
+		w.fsWatcher = fsWatcher
+	}
+	if w.cronScheduler == nil {
+		w.cronScheduler = cron.New()
+	}
+	w.watchedPaths = make(map[string]int)
+	w.debounceTimers = make(map[int]*time.Timer)
 
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 	w.running = true
@@ -197,7 +218,9 @@ func (w *Watcher) Stop() error {
 	// Close fsnotify watcher
 	if w.fsWatcher != nil {
 		_ = w.fsWatcher.Close()
+		w.fsWatcher = nil
 	}
+	w.watchedPaths = make(map[string]int)
 
 	w.running = false
 	if w.log != nil {
@@ -610,6 +633,37 @@ func (w *Watcher) UpdateConfig(cfg config.WatchConfig) {
 	defer w.mu.Unlock()
 	w.config = &cfg
 	w.patterns = append([]config.WatchPattern(nil), cfg.Patterns...)
+}
+
+// ApplyConfig reconciles the watcher runtime with the latest config snapshot.
+func (w *Watcher) ApplyConfig(cfg config.WatchConfig) error {
+	if w == nil {
+		return nil
+	}
+
+	wasRunning := w.IsRunning()
+	w.UpdateConfig(cfg)
+
+	if !cfg.Enabled {
+		if !wasRunning {
+			return nil
+		}
+		if err := w.Stop(); err != nil {
+			return fmt.Errorf("stop watcher: %w", err)
+		}
+		return nil
+	}
+
+	if wasRunning {
+		if err := w.Stop(); err != nil {
+			return fmt.Errorf("stop watcher for reconfigure: %w", err)
+		}
+	}
+	if err := w.Start(); err != nil {
+		return fmt.Errorf("start watcher: %w", err)
+	}
+
+	return nil
 }
 
 // execShellCommand creates and returns a command that executes the given shell command.

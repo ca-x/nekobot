@@ -337,6 +337,55 @@ func TestHandleUpdateWatchStatusPersistsConfig(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateWatchStatusStopsWatcherWhenDisabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Watch.Enabled = true
+	cfg.Watch.Patterns = []config.WatchPattern{{
+		FileGlob: filepath.Join(t.TempDir(), "*.go"),
+		Command:  "printf 'watch'",
+	}}
+
+	watcher, err := watch.New(cfg, newTestLogger(t), nil)
+	if err != nil {
+		t.Fatalf("watch.New failed: %v", err)
+	}
+	if err := watcher.Start(); err != nil {
+		t.Fatalf("watcher.Start failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = watcher.Stop()
+	})
+
+	s := &Server{
+		config:  cfg,
+		logger:  newTestLogger(t),
+		watcher: watcher,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/harness/watch", strings.NewReader(`{"enabled":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleUpdateWatchStatus(ctx); err != nil {
+		t.Fatalf("handleUpdateWatchStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	status := watcher.Status()
+	if status.Enabled {
+		t.Fatalf("expected watcher status to be disabled, got %+v", status)
+	}
+	if status.Running {
+		t.Fatalf("expected watcher to stop when disabled, got %+v", status)
+	}
+}
+
 func TestHandleQMDStatusAndUpdate(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Memory.QMD.Enabled = true
