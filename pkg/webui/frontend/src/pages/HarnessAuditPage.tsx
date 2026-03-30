@@ -73,7 +73,7 @@ export default function HarnessAuditPage() {
         <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(247,250,255,0.95),rgba(241,246,255,0.9))] shadow-[0_24px_60px_-42px_rgba(71,85,132,0.35)]">
           <CardHeader className="pb-3">
             <CardDescription>{t('harnessAuditMetricEntries')}</CardDescription>
-            <CardTitle className="text-3xl">{String(data?.stats.entries ?? 0)}</CardTitle>
+            <CardTitle className="mono-data text-3xl">{String(data?.stats.entries ?? 0)}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
             {t('harnessAuditMetricEntriesHint', String(limit))}
@@ -83,7 +83,7 @@ export default function HarnessAuditPage() {
         <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(246,255,250,0.95),rgba(238,250,244,0.9))] shadow-[0_24px_60px_-42px_rgba(31,94,64,0.28)]">
           <CardHeader className="pb-3">
             <CardDescription>{t('harnessAuditMetricSuccessRate')}</CardDescription>
-            <CardTitle className="text-3xl">{`${successRate}%`}</CardTitle>
+            <CardTitle className="mono-data text-3xl">{`${successRate}%`}</CardTitle>
           </CardHeader>
           <CardContent className="flex items-center gap-3 text-xs text-muted-foreground">
             <span>{t('harnessAuditSuccessCount', String(successCount))}</span>
@@ -94,7 +94,7 @@ export default function HarnessAuditPage() {
         <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(255,249,244,0.95),rgba(252,243,236,0.9))] shadow-[0_24px_60px_-42px_rgba(129,78,36,0.28)]">
           <CardHeader className="pb-3">
             <CardDescription>{t('harnessAuditMetricStorage')}</CardDescription>
-            <CardTitle className="text-3xl">{formatBytes(data?.stats.size)}</CardTitle>
+            <CardTitle className="mono-data text-3xl">{formatBytes(data?.stats.size)}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
             {data?.stats.modified ? t('harnessAuditModifiedAt', formatTimestamp(data.stats.modified)) : t('harnessAuditNoLogYet')}
@@ -106,7 +106,7 @@ export default function HarnessAuditPage() {
         <CardHeader className="pb-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-100))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[hsl(var(--brand-800))]">
+              <div className="eyebrow-label inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-100))] px-3 py-1 text-[hsl(var(--brand-800))]">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {t('tabHarnessAudit')}
               </div>
@@ -115,13 +115,17 @@ export default function HarnessAuditPage() {
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="w-full sm:w-[160px]">
+                <label className="eyebrow-label mb-2 block text-muted-foreground" htmlFor="harness-audit-limit">
+                  {t('harnessAuditMetricEntries')}
+                </label>
                 <Input
+                  id="harness-audit-limit"
                   type="number"
                   min={1}
                   max={500}
                   value={limitInput}
                   onChange={(event) => setLimitInput(event.target.value)}
-                  className="h-11 rounded-xl bg-white"
+                  className="mono-data h-11 rounded-xl bg-white"
                 />
               </div>
               <Button type="button" variant="outline" className="h-11 rounded-xl" onClick={() => refetch()} disabled={isFetching}>
@@ -145,15 +149,15 @@ export default function HarnessAuditPage() {
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-2xl border border-border/70 bg-card/80 p-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{t('harnessAuditLogFile')}</div>
-              <div className="mt-2 break-all text-sm text-foreground">{data?.stats.file || '-'}</div>
+              <div className="eyebrow-label text-muted-foreground">{t('harnessAuditLogFile')}</div>
+              <div className="mono-data mt-2 break-all text-sm text-foreground">{data?.stats.file || '-'}</div>
             </div>
             <div className="rounded-2xl border border-border/70 bg-card/80 p-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{t('harnessAuditLastUpdated')}</div>
-              <div className="mt-2 text-sm text-foreground">{formatTimestamp(data?.stats.modified)}</div>
+              <div className="eyebrow-label text-muted-foreground">{t('harnessAuditLastUpdated')}</div>
+              <div className="mono-data mt-2 text-sm text-foreground">{formatTimestamp(data?.stats.modified)}</div>
             </div>
             <div className="rounded-2xl border border-border/70 bg-card/80 p-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{t('harnessAuditLinks')}</div>
+              <div className="eyebrow-label text-muted-foreground">{t('harnessAuditLinks')}</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button asChild variant="outline" className="rounded-full">
                   <Link to="/chat">
@@ -185,7 +189,7 @@ export default function HarnessAuditPage() {
                             {entry.success ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <CircleAlert className="h-3.5 w-3.5 text-rose-600" />}
                             {entry.tool}
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                          <span className="mono-data inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
                             <Clock3 className="h-3.5 w-3.5" />
                             {t('harnessAuditDuration', String(entry.duration_ms))}
                           </span>
@@ -196,18 +200,18 @@ export default function HarnessAuditPage() {
                           )}
                         </div>
 
-                        <div className="text-xs text-muted-foreground">
+                        <div className="mono-data text-xs text-muted-foreground">
                           {formatTimestamp(entry.ts)}
                         </div>
 
                         {entry.result_preview && (
-                          <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-3 text-sm text-emerald-950">
+                          <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-3 text-sm text-emerald-950 whitespace-pre-wrap break-words">
                             {entry.result_preview}
                           </div>
                         )}
 
                         {entry.error && (
-                          <div className="rounded-2xl border border-rose-200/70 bg-rose-50/80 p-3 text-sm text-rose-950">
+                          <div className="rounded-2xl border border-rose-200/70 bg-rose-50/80 p-3 text-sm text-rose-950 whitespace-pre-wrap break-words">
                             {entry.error}
                           </div>
                         )}

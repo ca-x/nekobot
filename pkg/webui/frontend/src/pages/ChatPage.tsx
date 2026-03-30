@@ -193,10 +193,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     return (
       <div className="flex justify-end">
         <div className="max-w-[82%] space-y-2">
-          <div className="rounded-[1.4rem] rounded-br-md bg-[hsl(var(--gray-900))] px-4 py-3 text-sm leading-6 text-white shadow-[0_16px_40px_-24px_rgba(20,15,10,0.75)]">
+          <div className="rounded-[1.4rem] rounded-br-md bg-[hsl(var(--gray-900))] px-4 py-3 text-sm leading-6 text-white shadow-[0_16px_40px_-24px_rgba(20,15,10,0.75)] whitespace-pre-wrap break-words">
             {message.content}
           </div>
-          <div className="text-right text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">
+          <div className="eyebrow-label mono-data text-right text-muted-foreground/80">
             {formatTime(message.timestamp)}
           </div>
         </div>
@@ -208,10 +208,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     return (
       <div className="flex justify-start">
         <div className="max-w-[88%] space-y-2">
-          <div className="rounded-[1.4rem] rounded-bl-md border border-[hsl(var(--brand-200))] bg-white/90 px-4 py-3 text-sm leading-6 text-foreground shadow-[0_18px_42px_-30px_rgba(120,55,75,0.35)] backdrop-blur">
+          <div className="rounded-[1.4rem] rounded-bl-md border border-[hsl(var(--brand-200))] bg-white/90 px-4 py-3 text-sm leading-6 text-foreground shadow-[0_18px_42px_-30px_rgba(120,55,75,0.35)] backdrop-blur whitespace-pre-wrap break-words">
             {message.content}
           </div>
-          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/80">
+          <div className="eyebrow-label mono-data text-muted-foreground/80">
             {formatTime(message.timestamp)}
           </div>
         </div>
@@ -497,11 +497,11 @@ export default function ChatPage() {
       <div className="relative flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-5">
         <div className="absolute inset-x-0 top-0 -z-10 h-48 rounded-[2rem] bg-[radial-gradient(circle_at_top_left,rgba(198,104,140,0.22),transparent_48%),radial-gradient(circle_at_top_right,rgba(229,183,107,0.22),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,247,243,0.55))]" />
 
-        <Card className="overflow-hidden border-border/70 bg-card/88 shadow-[0_20px_60px_-36px_rgba(120,55,75,0.45)] backdrop-blur lg:sticky lg:top-2 lg:h-fit">
+        <Card className="overflow-hidden border-border/70 bg-card/88 shadow-[0_20px_60px_-36px_rgba(120,55,75,0.45)] backdrop-blur lg:sticky lg:top-3 lg:h-fit">
           <CardHeader className="space-y-4 border-b border-[hsl(var(--gray-200))]/80 bg-[linear-gradient(135deg,rgba(255,248,246,0.96),rgba(252,239,244,0.9))]">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-[hsl(var(--brand-700))]">
+                <div className="eyebrow-label inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[hsl(var(--brand-700))]">
                   <Wand2 className="h-3.5 w-3.5" />
                   {t('chatRouteCardTitle')}
                 </div>
@@ -514,15 +514,15 @@ export default function ChatPage() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-2xl border border-border/70 bg-card/90 p-3">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                <div className="eyebrow-label text-muted-foreground">
                   {t('chatMetricMessages')}
                 </div>
-                <div className="mt-2 text-2xl font-semibold text-[hsl(var(--gray-900))]">
+                <div className="mono-data mt-2 text-2xl font-semibold text-[hsl(var(--gray-900))]">
                   {messageCount}
                 </div>
               </div>
               <div className="rounded-2xl border border-border/70 bg-card/90 p-3">
-                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                <div className="eyebrow-label text-muted-foreground">
                   {t('chatMetricModel')}
                 </div>
                 <div className="mt-2 truncate text-sm font-semibold text-[hsl(var(--gray-900))]">
@@ -535,7 +535,7 @@ export default function ChatPage() {
           <CardContent className="space-y-4 p-4">
             {(!hasProviders || !hasEnabledPrompts) && (
               <div className="rounded-[1.5rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.92),rgba(252,241,245,0.8))] p-4 dark:bg-card/90">
-                <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
+                <div className="eyebrow-label mb-3 flex items-center gap-2 text-[hsl(var(--brand-700))]">
                   <Sparkles className="h-3.5 w-3.5" />
                   {t('chatSetupGuide')}
                 </div>
@@ -585,7 +585,7 @@ export default function ChatPage() {
             )}
 
             <div className="rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(249,244,241,0.92))] p-4 dark:bg-card/90">
-              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="eyebrow-label mb-3 flex items-center gap-2 text-muted-foreground">
                 <Sparkles className="h-3.5 w-3.5" />
                 {t('chatActiveRoute')}
               </div>
@@ -605,7 +605,7 @@ export default function ChatPage() {
             </div>
 
             <div className="rounded-[1.5rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.92),rgba(252,241,245,0.8))] p-4 dark:bg-card/90">
-              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
+              <div className="eyebrow-label mb-3 flex items-center gap-2 text-[hsl(var(--brand-700))]">
                 <Radio className="h-3.5 w-3.5" />
                 {t('chatActualRoute')}
               </div>
@@ -640,7 +640,7 @@ export default function ChatPage() {
             </div>
 
             <div className="rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(245,249,255,0.9),rgba(241,245,255,0.82))] p-4 dark:bg-card/90">
-              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="eyebrow-label mb-3 flex items-center gap-2 text-muted-foreground">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {t('chatHarnessConsoleTitle')}
               </div>
@@ -669,7 +669,7 @@ export default function ChatPage() {
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <label className="eyebrow-label text-muted-foreground">
                 {t('defaultProvider')}
               </label>
               <Select value={toSelectValue(selectedProvider)} onValueChange={handleProviderChange}>
@@ -690,7 +690,7 @@ export default function ChatPage() {
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <label className="eyebrow-label text-muted-foreground">
                 {t('defaultModel')}
               </label>
               <Select value={selectedModelValue} onValueChange={handleModelChange}>
@@ -709,7 +709,7 @@ export default function ChatPage() {
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <label className="eyebrow-label text-muted-foreground">
                 {t('customModel')}
               </label>
               <Input
@@ -721,7 +721,7 @@ export default function ChatPage() {
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <label className="eyebrow-label text-muted-foreground">
                 {t('chatSystemPrompts')}
               </label>
               <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
@@ -756,7 +756,7 @@ export default function ChatPage() {
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <label className="eyebrow-label text-muted-foreground">
                 {t('chatUserPrompts')}
               </label>
               <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
@@ -791,7 +791,7 @@ export default function ChatPage() {
             </div>
 
             <div className="space-y-3">
-              <label className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <label className="eyebrow-label text-muted-foreground">
                 {t('fallbackProviders')}
               </label>
               <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
@@ -863,7 +863,7 @@ export default function ChatPage() {
           <CardHeader className="border-b border-[hsl(var(--gray-200))]/80 pb-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
+                <div className="eyebrow-label text-muted-foreground">
                   {t('chatTranscriptTitle')}
                 </div>
                 <div className="mt-2 text-lg font-semibold text-[hsl(var(--gray-900))]">
@@ -914,7 +914,7 @@ export default function ChatPage() {
                     <div className="rounded-[1.4rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.92),rgba(252,241,245,0.8))] p-4 text-sm">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                          <div className="text-xs font-medium uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
+                          <div className="eyebrow-label text-[hsl(var(--brand-700))]">
                             {t('chatFileMentionsTitle')}
                           </div>
                           <div className="mt-2 text-sm font-medium text-[hsl(var(--gray-900))]">
@@ -945,7 +945,7 @@ export default function ChatPage() {
                         <div className="mt-3 space-y-3">
                           {fileMentionFeedback.paths.length > 0 && (
                             <div className="rounded-2xl border border-border/70 bg-card/80 p-3">
-                              <div className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                              <div className="eyebrow-label mb-2 text-muted-foreground">
                                 {t('chatFileMentionPaths')}
                               </div>
                               <div className="flex flex-wrap gap-2">
@@ -959,7 +959,7 @@ export default function ChatPage() {
                           )}
                           {fileMentionFeedback.warnings.length > 0 && (
                             <div className="rounded-2xl border border-amber-300/60 bg-amber-50/80 p-3 text-amber-900">
-                              <div className="mb-2 text-xs uppercase tracking-[0.16em]">
+                              <div className="eyebrow-label mb-2">
                                 {t('chatFileMentionWarnings')}
                               </div>
                               <div className="space-y-1 text-xs">
@@ -994,6 +994,7 @@ export default function ChatPage() {
                   rows={1}
                   className="min-h-[84px] w-full resize-none border-0 bg-transparent px-2 py-1 text-sm leading-6 text-foreground placeholder:text-muted-foreground focus:outline-none"
                   placeholder={t('chatPlaceholder')}
+                  aria-label={t('chatPlaceholder')}
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
                   onKeyDown={handleInputKeyDown}

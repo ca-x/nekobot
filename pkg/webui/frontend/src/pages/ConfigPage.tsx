@@ -414,8 +414,8 @@ function QMDMetric({
 }) {
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
-      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</div>
-      <div className="mt-2 break-all text-sm font-semibold text-slate-900">{value}</div>
+      <div className="eyebrow-label text-slate-400">{label}</div>
+      <div className="mono-data mt-2 break-all text-sm font-semibold text-slate-900">{value}</div>
     </div>
   );
 }
@@ -2007,13 +2007,13 @@ export default function ConfigPage() {
   return (
     <div className="config-page flex h-full flex-col">
       <Header title={t('tabConfig')} />
-      <div className="grid min-h-0 flex-1 gap-4 px-4 pb-4 md:px-5 md:pb-5 lg:grid-cols-[252px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 gap-4 px-4 pb-4 md:px-5 md:pb-5 xl:grid-cols-[252px_minmax(0,1fr)]">
         <Card className="overflow-hidden border-border/70 bg-card/92 shadow-[0_24px_60px_-42px_rgba(120,55,75,0.28)]">
           <CardHeader className="border-b border-border/70 pb-5">
             <CardTitle className="text-xl text-foreground">{t('configControlTitle')}</CardTitle>
             <CardDescription>{t('configPageDescription')}</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 p-4">
+          <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-1">
             {CONFIG_SECTIONS.map((item) => (
               <button
                 key={item}
@@ -2021,8 +2021,8 @@ export default function ConfigPage() {
                 onClick={() => handleSectionChange(item)}
                 className={
                   item === section
-                    ? 'w-full rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-left shadow-[0_18px_36px_-28px_rgba(120,55,75,0.24)]'
-                    : 'w-full rounded-2xl border border-transparent bg-muted/35 px-4 py-3 text-left transition hover:border-border/70 hover:bg-muted/55'
+                    ? 'min-h-[88px] w-full rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-left shadow-[0_18px_36px_-28px_rgba(120,55,75,0.24)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+                    : 'min-h-[88px] w-full rounded-2xl border border-transparent bg-muted/35 px-4 py-3 text-left transition hover:border-border/70 hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
                 }
               >
                 <div className="flex items-center justify-between gap-3">
@@ -2039,7 +2039,7 @@ export default function ConfigPage() {
           <CardHeader className="border-b border-border/70 bg-[linear-gradient(135deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.7))]">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.22em] text-primary">
+                <div className="eyebrow-label inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-primary">
                   <DirtyDot dirty={sectionDirty[section]} />
                   {sectionLabel(section)}
                 </div>
@@ -2048,9 +2048,10 @@ export default function ConfigPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-[220px] flex-1">
+                <div className="relative min-w-0 flex-1 sm:min-w-[220px]">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
+                    aria-label={t('configSearchPlaceholder')}
                     className="h-10 rounded-full border-border/70 bg-background/80 pl-9"
                     placeholder={t('configSearchPlaceholder')}
                     value={search}
@@ -2105,7 +2106,7 @@ export default function ConfigPage() {
           </CardHeader>
 
           <CardContent className="min-h-0 p-0">
-            <ScrollArea className="h-[calc(100dvh-15rem)] px-4 py-4 md:px-6 md:py-5">
+            <ScrollArea className="h-[calc(100dvh-16rem)] px-4 py-4 md:px-6 md:py-5 xl:h-[calc(100dvh-14.5rem)]">
               {isLoading ? (
                 <div className="py-12 text-center text-sm text-muted-foreground">{t('loading')}</div>
               ) : mode === 'json' ? (
@@ -2114,7 +2115,7 @@ export default function ConfigPage() {
                     {t('configJsonModeHint')}
                   </div>
                   <textarea
-                    className="min-h-[62vh] w-full rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[hsl(var(--gray-950))] px-5 py-4 font-mono text-sm leading-6 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                    className="mono-data min-h-[62vh] w-full rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[hsl(var(--gray-950))] px-5 py-4 text-sm leading-6 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
                     value={currentJSON}
                     onChange={(event) => handleJSONChange(event.target.value)}
                     spellCheck={false}

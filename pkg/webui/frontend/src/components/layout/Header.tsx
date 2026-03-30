@@ -8,14 +8,14 @@ interface HeaderProps {
 
 export default function Header({ title, description, className }: HeaderProps) {
   return (
-    <header className={cn('mb-6', className)}>
+    <header className={cn('mb-5 sm:mb-6', className)}>
       {title && (
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+        <div className="max-w-3xl">
+          <h1 className="text-[1.75rem] font-semibold text-foreground tracking-tight sm:text-[2rem]">
             {title}
           </h1>
           {description && (
-            <p className="text-sm text-muted-foreground mt-1">{description}</p>
+            <p className="mt-1.5 text-sm leading-6 text-muted-foreground sm:text-[15px]">{description}</p>
           )}
         </div>
       )}

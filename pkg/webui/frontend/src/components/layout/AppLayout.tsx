@@ -70,8 +70,8 @@ export default function AppLayout() {
     <div className="flex h-dvh bg-background font-sans text-foreground">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <main className="flex-1 overflow-auto custom-scrollbar px-3 pt-16 pb-4 sm:px-4 sm:pt-[4.5rem] sm:pb-5 lg:px-5 lg:pt-5 lg:pb-6 xl:px-6">
-          <div className="w-full animate-fade-in">
+        <main className="flex-1 overflow-auto custom-scrollbar px-3 pb-4 pt-16 sm:px-4 sm:pb-5 sm:pt-[4.5rem] lg:px-5 lg:pb-6 lg:pt-5 xl:px-6">
+          <div className="mx-auto w-full max-w-[1680px] animate-fade-in">
             <Outlet />
           </div>
         </main>
