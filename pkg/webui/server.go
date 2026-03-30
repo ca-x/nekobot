@@ -40,6 +40,7 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
+	"nekobot/pkg/gateway"
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/logger"
 	memoryqmd "nekobot/pkg/memory/qmd"
@@ -96,9 +97,13 @@ type Server struct {
 type serviceController interface {
 	Status() (map[string]interface{}, error)
 	Restart() error
+	Reload() error
 }
 
 type gatewayServiceController struct {
+	cfg        *config.Config
+	loader     *config.Loader
+	log        *logger.Logger
 	configPath string
 }
 
@@ -119,6 +124,13 @@ func (c *gatewayServiceController) Status() (map[string]interface{}, error) {
 
 func (c *gatewayServiceController) Restart() error {
 	return servicecontrol.RestartGatewayService(c.configPath)
+}
+
+func (c *gatewayServiceController) Reload() error {
+	if c.cfg == nil || c.loader == nil || c.log == nil {
+		return fmt.Errorf("gateway reload is not available")
+	}
+	return gateway.NewController(c.cfg, c.loader, c.log).ReloadConfig()
 }
 
 const defaultQMDNPMPackage = "@tobilu/qmd"
@@ -186,6 +198,9 @@ func NewServer(
 		}(),
 		watcher: watcher,
 		serviceCtrl: &gatewayServiceController{
+			cfg:    cfg,
+			loader: loader,
+			log:    log,
 			configPath: func() string {
 				if loader == nil {
 					return ""
@@ -288,6 +303,7 @@ func (s *Server) setup() {
 	api.GET("/status", s.handleStatus)
 	api.GET("/service", s.handleServiceStatus)
 	api.POST("/service/restart", s.handleServiceRestart)
+	api.POST("/service/reload", s.handleServiceReload)
 	api.GET("/harness/watch", s.handleGetWatchStatus)
 	api.POST("/harness/watch", s.handleUpdateWatchStatus)
 	api.GET("/harness/audit", s.handleGetHarnessAudit)
@@ -3388,22 +3404,63 @@ func (s *Server) handleUpdateChannel(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 
-	if err := channels.ApplyChannelConfig(s.config, name, data); err != nil {
+	nextConfig, err := cloneConfigSnapshot(s.config)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	if err := channels.ApplyChannelConfig(nextConfig, name, data); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	if err := config.ValidateConfig(nextConfig); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
+	enabled, err := channels.IsChannelEnabled(name, nextConfig)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	var rebuilt channels.Channel
+	if enabled {
+		rebuilt, err = channels.BuildChannel(
+			name,
+			s.logger,
+			s.bus,
+			s.agent,
+			s.commands,
+			s.prefs,
+			s.toolSess,
+			s.processMgr,
+			nextConfig,
+		)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	}
+
 	// Persist runtime channel config to database.
-	if err := config.SaveDatabaseSections(s.config, "channels"); err != nil {
+	if err := config.SaveDatabaseSections(nextConfig, "channels"); err != nil {
 		s.logger.Error("Failed to persist channel config", zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save config"})
 	}
 
-	if err := s.reloadChannel(name); err != nil {
-		s.logger.Error("Failed to reload channel", zap.String("channel", name), zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "channel config saved but reload failed: " + err.Error(),
-		})
+	if enabled {
+		if err := s.channels.ReloadChannel(rebuilt); err != nil {
+			s.logger.Error("Failed to reload channel", zap.String("channel", name), zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "channel config saved but reload failed: " + err.Error(),
+			})
+		}
+	} else {
+		if err := s.channels.StopChannel(name); err != nil {
+			s.logger.Error("Failed to stop channel", zap.String("channel", name), zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "channel config saved but reload failed: " + err.Error(),
+			})
+		}
 	}
+	s.config.Channels = nextConfig.Channels
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated", "channel": name, "reload": "ok"})
 }
@@ -4203,6 +4260,24 @@ func (s *Server) syncWatchRuntime() error {
 	return nil
 }
 
+func cloneConfigSnapshot(cfg *config.Config) (*config.Config, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is unavailable")
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshal config snapshot: %w", err)
+	}
+
+	var cloned config.Config
+	if err := json.Unmarshal(data, &cloned); err != nil {
+		return nil, fmt.Errorf("unmarshal config snapshot: %w", err)
+	}
+
+	return &cloned, nil
+}
+
 func (s *Server) clearChatSession(sessionID string) error {
 	if s == nil || s.sessionMgr == nil {
 		return fmt.Errorf("session manager not available")
@@ -4501,6 +4576,17 @@ func (s *Server) handleServiceRestart(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "restarting"})
+}
+
+func (s *Server) handleServiceReload(c *echo.Context) error {
+	if s.serviceCtrl == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "service control not available"})
+	}
+
+	if err := s.serviceCtrl.Reload(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "reloaded"})
 }
 
 func (s *Server) handleGetWatchStatus(c *echo.Context) error {

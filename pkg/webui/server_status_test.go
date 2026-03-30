@@ -24,6 +24,8 @@ type stubGatewayServiceController struct {
 	statusErr    error
 	restartErr   error
 	restartCalls int
+	reloadErr    error
+	reloadCalls  int
 }
 
 func (s *stubGatewayServiceController) Status() (map[string]interface{}, error) {
@@ -36,6 +38,11 @@ func (s *stubGatewayServiceController) Status() (map[string]interface{}, error) 
 func (s *stubGatewayServiceController) Restart() error {
 	s.restartCalls++
 	return s.restartErr
+}
+
+func (s *stubGatewayServiceController) Reload() error {
+	s.reloadCalls++
+	return s.reloadErr
 }
 
 func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
@@ -245,6 +252,47 @@ func TestHandleServiceRestartReturnsError(t *testing.T) {
 
 	if err := s.handleServiceRestart(ctx); err != nil {
 		t.Fatalf("handleServiceRestart failed: %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusInternalServerError, rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleServiceReload(t *testing.T) {
+	controller := &stubGatewayServiceController{}
+	s := &Server{
+		serviceCtrl: controller,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/service/reload", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleServiceReload(ctx); err != nil {
+		t.Fatalf("handleServiceReload failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if controller.reloadCalls != 1 {
+		t.Fatalf("expected reload to be called once, got %d", controller.reloadCalls)
+	}
+}
+
+func TestHandleServiceReloadReturnsError(t *testing.T) {
+	controller := &stubGatewayServiceController{reloadErr: errors.New("reload failed")}
+	s := &Server{
+		serviceCtrl: controller,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/service/reload", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleServiceReload(ctx); err != nil {
+		t.Fatalf("handleServiceReload failed: %v", err)
 	}
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusInternalServerError, rec.Code, rec.Body.String())

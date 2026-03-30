@@ -149,6 +149,16 @@
 - [x] `pkg/webui.Server` 已抽出 `syncWatchRuntime` / `clearChatSession`，收口主链状态同步逻辑。
 - [x] 前端 `useSaveConfig` / `useImportConfig` 已同步失效 `watch-status` 查询，修复 Config / Chat 观察面 stale 状态。
 
+### Round 2 Progress Notes
+- [x] 已修复 `handleUpdateChannel` 的状态分裂问题：改为基于配置副本做 channel 配置预校验、预构建，只有通过后才持久化并切换 live/runtime。
+- [x] 已补 channel 更新回归测试，确保非法配置返回 `400` 且不会污染 live config、runtime DB 或拆掉现有 channel runtime。
+- [x] 已为 System 页接通 gateway config reload 链路：新增 `/api/service/reload`、前端 hook 与按钮，避免只为运行时配置变更强制做 service restart。
+
+### Round 2 Verification
+- [x] `go test -count=1 ./pkg/webui -run 'TestHandleUpdateChannelRejectsInvalidConfigWithoutMutatingState|TestHandleUpdateChannelKeepsExistingRuntimeWhenPrebuildFails|TestHandleGetChannelsIncludesWechat|TestHandleGetChannelsIncludesGotify|TestBuildWechatBindingPayloadIncludesCurrentBinding'`
+- [x] `go test -count=1 ./pkg/webui ./pkg/channels ./pkg/gateway`
+- [x] `npm --prefix pkg/webui/frontend run build`
+
 ### Verification
 - [x] `go test -count=1 ./pkg/watch ./pkg/webui -run 'TestWatcherCanRestartAfterStop|TestHandleUpdateWatchStatusStopsWatcherWhenDisabled|TestHandleSaveConfigSyncsWatcherRuntime|TestHandleImportConfigSyncsWatcherRuntime|TestClearChatSessionRemovesUndoSnapshots'`
 - [x] `go test -count=1 ./pkg/webui ./pkg/watch ./pkg/session`

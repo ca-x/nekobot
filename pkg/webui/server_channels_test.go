@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v5"
 
+	"nekobot/pkg/bus"
+	"nekobot/pkg/channels"
+	"nekobot/pkg/channels/slack"
 	"nekobot/pkg/config"
 	"nekobot/pkg/ilinkauth"
 	wxtypes "nekobot/pkg/wechat/types"
@@ -126,5 +130,130 @@ func TestBuildWechatBindingPayloadIncludesCurrentBinding(t *testing.T) {
 	}
 	if account["user_id"] != "wechat-user-1" {
 		t.Fatalf("unexpected user id: %#v", account["user_id"])
+	}
+}
+
+func TestHandleUpdateChannelRejectsInvalidConfigWithoutMutatingState(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	messageBus := bus.NewLocalBus(log, 8)
+	manager := channels.NewManager(log, messageBus)
+
+	original, err := slack.NewChannel(
+		log,
+		config.SlackConfig{Enabled: true, BotToken: "xoxb-old", AppToken: "xapp-old"},
+		messageBus,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("slack.NewChannel failed: %v", err)
+	}
+	if err := manager.Register(original); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	s := &Server{
+		config:   cfg,
+		logger:   log,
+		channels: manager,
+		bus:      messageBus,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/slack", strings.NewReader(`{"enabled":true,"bot_token":"xoxb-new","app_token":""}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/api/channels/:name")
+	c.SetPathValues(echo.PathValues{{Name: "name", Value: "slack"}})
+
+	if err := s.handleUpdateChannel(c); err != nil {
+		t.Fatalf("handleUpdateChannel failed: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+
+	if s.config.Channels.Slack.Enabled {
+		t.Fatalf("expected live slack config to remain unchanged, got %+v", s.config.Channels.Slack)
+	}
+	if s.config.Channels.Slack.BotToken != "" || s.config.Channels.Slack.AppToken != "" {
+		t.Fatalf("expected live slack credentials to remain empty, got %+v", s.config.Channels.Slack)
+	}
+
+	reloaded := config.DefaultConfig()
+	reloaded.Storage.DBDir = cfg.Storage.DBDir
+	reloaded.Agents.Defaults.Workspace = cfg.Agents.Defaults.Workspace
+	if err := config.ApplyDatabaseOverrides(reloaded); err != nil {
+		t.Fatalf("ApplyDatabaseOverrides failed: %v", err)
+	}
+	if reloaded.Channels.Slack.Enabled {
+		t.Fatalf("expected persisted slack config to remain unchanged, got %+v", reloaded.Channels.Slack)
+	}
+
+	current, err := manager.GetChannel("slack")
+	if err != nil {
+		t.Fatalf("expected original slack channel to remain registered: %v", err)
+	}
+	if current != original {
+		t.Fatalf("expected original slack channel to remain active")
+	}
+}
+
+func TestHandleUpdateChannelKeepsExistingRuntimeWhenPrebuildFails(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	messageBus := bus.NewLocalBus(log, 8)
+	manager := channels.NewManager(log, messageBus)
+
+	original, err := slack.NewChannel(
+		log,
+		config.SlackConfig{Enabled: true, BotToken: "xoxb-old", AppToken: "xapp-old"},
+		messageBus,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("slack.NewChannel failed: %v", err)
+	}
+	if err := manager.Register(original); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	s := &Server{
+		config:   cfg,
+		logger:   log,
+		channels: manager,
+		bus:      messageBus,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/channels/slack", strings.NewReader(`{"enabled":true,"bot_token":"","app_token":"xapp-new"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/api/channels/:name")
+	c.SetPathValues(echo.PathValues{{Name: "name", Value: "slack"}})
+
+	if err := s.handleUpdateChannel(c); err != nil {
+		t.Fatalf("handleUpdateChannel failed: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+
+	current, err := manager.GetChannel("slack")
+	if err != nil {
+		t.Fatalf("expected slack channel to remain registered: %v", err)
+	}
+	if current != original {
+		t.Fatalf("expected existing runtime channel to remain active")
 	}
 }

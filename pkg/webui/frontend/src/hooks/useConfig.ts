@@ -208,6 +208,20 @@ export function useRestartService() {
   });
 }
 
+export function useReloadService() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ status: string }>('/api/service/reload', {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['service-status'] });
+      qc.invalidateQueries({ queryKey: ['status'] });
+      qc.invalidateQueries({ queryKey: ['config'] });
+      toast.success(t('systemServiceReloaded'));
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export function useCleanupSessions() {
   const qc = useQueryClient();
   return useMutation({

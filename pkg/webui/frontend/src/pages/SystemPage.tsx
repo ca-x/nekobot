@@ -1,5 +1,5 @@
 import { t } from '@/lib/i18n';
-import { useRestartService, useServiceStatus, useStatus } from '@/hooks/useConfig';
+import { useReloadService, useRestartService, useServiceStatus, useStatus } from '@/hooks/useConfig';
 import { useInstallQMD, useQMDStatus, useUpdateQMD } from '@/hooks/useQMD';
 import Header from '@/components/layout/Header';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -15,6 +15,7 @@ export default function SystemPage() {
   const updateQMD = useUpdateQMD();
   const installQMD = useInstallQMD();
   const restartService = useRestartService();
+  const reloadService = useReloadService();
   const statusRecord = status as Record<string, unknown> | undefined;
   const serviceInstalled = service?.installed ?? false;
   const serviceStatus = service?.status ?? 'unknown';
@@ -85,15 +86,26 @@ export default function SystemPage() {
                   {t('systemServiceDescription')}
                 </p>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => restartService.mutate()}
-                disabled={restartService.isPending || !serviceInstalled}
-              >
-                <RefreshCw className={cn('mr-2 h-4 w-4', restartService.isPending && 'animate-spin')} />
-                {restartService.isPending ? t('systemServiceRestarting') : t('systemServiceRestart')}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => reloadService.mutate()}
+                  disabled={reloadService.isPending}
+                >
+                  <RefreshCw className={cn('mr-2 h-4 w-4', reloadService.isPending && 'animate-spin')} />
+                  {reloadService.isPending ? t('systemServiceReloading') : t('systemServiceReload')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => restartService.mutate()}
+                  disabled={restartService.isPending || !serviceInstalled}
+                >
+                  <RefreshCw className={cn('mr-2 h-4 w-4', restartService.isPending && 'animate-spin')} />
+                  {restartService.isPending ? t('systemServiceRestarting') : t('systemServiceRestart')}
+                </Button>
+              </div>
             </div>
 
             {serviceLoading ? (
@@ -119,6 +131,11 @@ export default function SystemPage() {
                   {!serviceInstalled ? (
                     <div className="mt-3 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
                       {t('systemServiceNotInstalledHint')}
+                    </div>
+                  ) : null}
+                  {serviceInstalled ? (
+                    <div className="mt-3 rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-sm text-foreground/80">
+                      {t('systemServiceReloadHint')}
                     </div>
                   ) : null}
                   {serviceInstalled && serviceStatus !== 'running' ? (
