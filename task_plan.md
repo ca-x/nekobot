@@ -76,6 +76,39 @@
 ### Status
 **Completed** - 已完成扩展 harness 对照、选定功能继续嵌入、补齐 Web 控制面与体验，并通过 Go/前端构建验证，待提交与推送。
 
+## 2026-03-30 Harness WebUI 审计台与体验收口批次
+
+### Goal
+继续补齐 harness 相关 WebUI 缺失页面与体验，将已有的 watch / undo / @file / audit 能力组织成更清晰的操作面、配置面、可观测面闭环，并完成提交推送。
+
+### Phases
+- [x] Phase 1: 为 WebUI 接入 audit API 与测试
+- [x] Phase 2: 新增 Harness Audit 页面、导航与多语言文案
+- [x] Phase 3: 打磨 Chat / Config 的 harness 体验衔接
+- [x] Phase 4: 运行 Go 测试与前端构建验证
+- [x] Phase 5: 更新计划与说明，准备提交推送
+
+### Decisions Made
+- 不把 audit 混进 System 页，单独提供 `Harness Audit` 页面，避免可观测性信息继续埋在泛系统状态里。
+- 保持 Chat 为操作面、Config 为配置面、Audit 为观测面三分结构，并用显式跳转入口连接三者。
+- Audit API 先提供最近 N 条读取与清空日志，JSON 结构直接复用现有 `pkg/audit` 数据模型，降低前后端映射成本。
+
+### Verification
+- [x] `go test -count=1 ./pkg/webui`
+- [x] `go test -count=1 ./cmd/nekobot/... ./pkg/watch ./pkg/agent`
+- [x] `go test -count=1 ./...`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] 浏览器级 WebUI smoke test（初始化/登录、Chat、Harness Audit、Config/Watch、回到 Chat）
+
+### Errors Encountered
+- 首轮浏览器 smoke test 因本地回归脚本使用错误环境变量与 CLI `PersistentPreRunE` 清空 `NEKOBOT_CONFIG_FILE` 而误读默认配置，导致端口冲突。
+  - 处理：先改为显式 `--config /tmp/nekobot-regression/config.json` 启动临时服务定位问题；随后修复 CLI 行为，使未显式传 `--config` 时不再清空已有 `NEKOBOT_CONFIG_FILE`，并补命令层测试与实证回归。
+- `HarnessAuditPage` 在空审计数据时对 `null` 调用 `.filter()`，导致页面在无 audit 记录的新环境里直接崩溃。
+  - 处理：前端将 `data?.entries` 统一归一化为 `entries = data?.entries ?? []`，再重复构建与浏览器回归确认无新问题。
+
+### Status
+**Completed** - 已补齐 Harness Audit 页面与相关 WebUI 体验收口，并完成全量 Go 回归、前端构建与浏览器 smoke test；修复空 audit 数据崩溃后复测通过，未再出现新问题，待提交与推送。
+
 ## Goal
 在保持 `nekobot` 现有稳定性的前提下，基于 `~/code/goclaw` 与 `~/code/gua` 的成熟实践，完成：
 1. 准确认定 `nekobot` 当前已完成与待完成功能。

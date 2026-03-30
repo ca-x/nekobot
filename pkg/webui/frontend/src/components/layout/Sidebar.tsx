@@ -16,6 +16,7 @@ import {
   Activity,
   Library,
   Clock3,
+  ShieldCheck,
   Sun,
   Moon,
   LogOut,
@@ -55,6 +56,7 @@ export default function Sidebar() {
     { target: '/marketplace', label: t('tabMarketplace'), icon: Store },
     { target: '/prompts', label: t('tabPrompts'), icon: NotebookPen },
     { target: '/config', label: t('tabConfig'), icon: Settings },
+    { target: '/harness/audit', label: t('tabHarnessAudit'), icon: ShieldCheck },
     { target: '/cron', label: t('tabCron'), icon: Clock3 },
     { target: '/system', label: t('tabStatus'), icon: Activity },
   ];

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import Header from '@/components/layout/Header';
 import {
+  useWatchStatus,
   useCleanupSessions,
   useCleanupSkillVersions,
   useCleanupToolSessionEvents,
@@ -41,6 +43,7 @@ import {
   RotateCcw,
   Save,
   Search,
+  ShieldCheck,
   Upload,
 } from 'lucide-react';
 
@@ -1426,6 +1429,7 @@ function WatchSectionForm({
   data: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
 }) {
+  const { data: watchStatus } = useWatchStatus();
   const readBool = (path: string) => Boolean(getNestedValue(data, path));
   const readNumber = (path: string) => Number(getNestedValue(data, path) ?? 0);
   const readPatterns = (): Array<{ file_glob: string; command: string; fail_command: string }> => {
@@ -1473,6 +1477,81 @@ function WatchSectionForm({
           <CardDescription>{t('configSectionDescWatch')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t('watchRuntimeState')}</div>
+              <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--gray-900))]">
+                <span className={cn('h-2.5 w-2.5 rounded-full', watchStatus?.enabled && watchStatus?.running ? 'bg-emerald-500' : watchStatus?.enabled ? 'bg-amber-500' : 'bg-slate-400')} />
+                <span>
+                  {watchStatus?.enabled
+                    ? watchStatus?.running
+                      ? t('watchRuntimeRunning')
+                      : t('watchRuntimeConfigured')
+                    : t('watchRuntimeDisabled')}
+                </span>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t('watchRuntimeLastFile')}</div>
+              <div className="mt-2 break-all text-sm font-semibold text-[hsl(var(--gray-900))]">
+                {watchStatus?.last_file || '-'}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t('watchRuntimeLastCommand')}</div>
+              <div className="mt-2 break-all text-sm font-semibold text-[hsl(var(--gray-900))]">
+                {watchStatus?.last_command || '-'}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t('watchRuntimeLastResult')}</div>
+              <div className="mt-2 text-sm font-semibold text-[hsl(var(--gray-900))]">
+                {watchStatus?.last_error
+                  ? t('watchRuntimeResultFailed')
+                  : watchStatus?.last_result_preview
+                    ? t('watchRuntimeResultSucceeded')
+                    : '-'}
+              </div>
+            </div>
+          </div>
+
+          {(watchStatus?.last_run_at || watchStatus?.last_error || watchStatus?.last_result_preview) && (
+            <Card className="border-white/70 bg-white/80 shadow-none">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-base">{t('watchRuntimeTitle')}</CardTitle>
+                    <CardDescription>{t('watchRuntimeDescription')}</CardDescription>
+                  </div>
+                  <Button asChild type="button" variant="outline" className="rounded-full">
+                    <a href="/harness/audit">
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      {t('watchOpenAudit')}
+                    </a>
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {watchStatus?.last_run_at && (
+                  <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                    <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{t('watchRuntimeLastRunAt')}</div>
+                    <div className="mt-2 text-sm text-[hsl(var(--gray-900))]">{new Date(watchStatus.last_run_at).toLocaleString()}</div>
+                  </div>
+                )}
+                {watchStatus?.last_result_preview && (
+                  <div className="rounded-2xl border border-emerald-200/70 bg-emerald-50/80 p-4 text-sm text-emerald-950">
+                    {watchStatus.last_result_preview}
+                  </div>
+                )}
+                {watchStatus?.last_error && (
+                  <div className="rounded-2xl border border-rose-200/70 bg-rose-50/80 p-4 text-sm text-rose-950">
+                    {watchStatus.last_error}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
             <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
               <div>

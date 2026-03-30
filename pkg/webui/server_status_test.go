@@ -153,6 +153,7 @@ func TestNewServer_AllowsNilLoader(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 		)
 		if server == nil {
 			t.Fatalf("expected server")

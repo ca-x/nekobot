@@ -55,7 +55,7 @@ various tasks including file operations, command execution, and more.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		path := strings.TrimSpace(configPath)
 		if path == "" {
-			return os.Unsetenv(config.ConfigPathEnv)
+			return nil
 		}
 
 		abs, err := filepath.Abs(path)

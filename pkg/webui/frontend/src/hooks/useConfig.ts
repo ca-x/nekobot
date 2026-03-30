@@ -43,6 +43,32 @@ export interface WatchStatusData {
   last_result_preview?: string;
 }
 
+export interface AuditEntry {
+  ts: string;
+  tool: string;
+  args?: Record<string, unknown>;
+  duration_ms: number;
+  success: boolean;
+  result_preview?: string;
+  error?: string;
+  session_id?: string;
+  workspace?: string;
+}
+
+export interface AuditStatsData {
+  exists: boolean;
+  entries: number;
+  size?: number;
+  file?: string;
+  modified?: string;
+}
+
+export interface HarnessAuditData {
+  entries: AuditEntry[];
+  stats: AuditStatsData;
+  limit: number;
+}
+
 function formatRestartNotice(result: ConfigMutationResult): string | null {
   if (!result.restart_required || !result.restart_sections || result.restart_sections.length === 0) {
     return null;
@@ -141,6 +167,27 @@ export function useUpdateWatchStatus() {
       qc.invalidateQueries({ queryKey: ['watch-status'] });
       qc.invalidateQueries({ queryKey: ['config'] });
       toast.success(t('configSaved'));
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useHarnessAudit(limit = 100) {
+  return useQuery<HarnessAuditData>({
+    queryKey: ['harness-audit', limit],
+    queryFn: () => api.get(`/api/harness/audit?limit=${limit}`),
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useClearHarnessAudit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ status: string; stats: AuditStatsData }>('/api/harness/audit/clear', {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['harness-audit'] });
+      toast.success(t('harnessAuditCleared'));
     },
     onError: (err: Error) => toast.error(err.message),
   });

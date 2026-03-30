@@ -13,6 +13,7 @@ const ChannelsPage = lazy(() => import('./pages/ChannelsPage'));
 const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
 const ConfigPage = lazy(() => import('./pages/ConfigPage'));
+const HarnessAuditPage = lazy(() => import('./pages/HarnessAuditPage'));
 const SystemPage = lazy(() => import('./pages/SystemPage'));
 const CronPage = lazy(() => import('./pages/CronPage'));
 
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/config" element={<ConfigPage />} />
+          <Route path="/harness/audit" element={<HarnessAuditPage />} />
           <Route path="/cron" element={<CronPage />} />
           <Route path="/system" element={<SystemPage />} />
           <Route path="/" element={<Navigate to="/chat" replace />} />

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2, AlertCircle, ArrowRight, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2, AlertCircle, ArrowRight, RotateCcw, Eye, EyeOff, ShieldCheck, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { api } from '@/api/client';
@@ -637,6 +637,35 @@ export default function ChatPage() {
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 {t('chatActualRouteHint')}
               </p>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(245,249,255,0.9),rgba(241,245,255,0.82))] p-4 dark:bg-card/90">
+              <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                {t('chatHarnessConsoleTitle')}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
+                  <div className="text-sm font-semibold text-foreground">{t('chatHarnessAuditTitle')}</div>
+                  <div className="mt-2 text-xs leading-5 text-muted-foreground">{t('chatHarnessAuditDescription')}</div>
+                  <Button asChild variant="outline" className="mt-3 rounded-full">
+                    <Link to="/harness/audit">
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      {t('chatOpenAudit')}
+                    </Link>
+                  </Button>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
+                  <div className="text-sm font-semibold text-foreground">{t('chatHarnessWatchTitle')}</div>
+                  <div className="mt-2 text-xs leading-5 text-muted-foreground">{t('chatHarnessWatchDescription')}</div>
+                  <Button asChild variant="outline" className="mt-3 rounded-full">
+                    <Link to="/config">
+                      <Settings2 className="mr-2 h-4 w-4" />
+                      {t('chatOpenWatchConfig')}
+                    </Link>
+                  </Button>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-3">

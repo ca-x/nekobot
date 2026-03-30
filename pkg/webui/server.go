@@ -34,6 +34,7 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
+	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channels"
 	"nekobot/pkg/commands"
@@ -84,6 +85,7 @@ type Server struct {
 	workspace   *workspace.Manager
 	entClient   *ent.Client
 	snapshotMgr *session.SnapshotManager
+	auditLogger *audit.Logger
 	ilinkAuth   *ilinkauth.Service
 	serviceCtrl serviceController
 	watcher     *watch.Watcher
@@ -143,6 +145,7 @@ func NewServer(
 	skillsManager *skills.Manager,
 	workspaceManager *workspace.Manager,
 	entClient *ent.Client,
+	auditLogger *audit.Logger,
 	watcher *watch.Watcher,
 ) *Server {
 	port := cfg.WebUI.Port
@@ -156,24 +159,25 @@ func NewServer(
 	}
 
 	s := &Server{
-		config:     cfg,
-		loader:     loader,
-		logger:     log,
-		agent:      ag,
-		approval:   approvalMgr,
-		channels:   chanMgr,
-		bus:        messageBus,
-		commands:   cmdRegistry,
-		prefs:      prefsMgr,
-		toolSess:   toolSessionMgr,
-		sessionMgr: sessionMgr,
-		processMgr: processManager,
-		prompts:    promptManager,
-		providers:  providerStore,
-		cronMgr:    cronManager,
-		skillsMgr:  skillsManager,
-		workspace:  workspaceManager,
-		entClient:  entClient,
+		config:      cfg,
+		loader:      loader,
+		logger:      log,
+		agent:       ag,
+		approval:    approvalMgr,
+		channels:    chanMgr,
+		bus:         messageBus,
+		commands:    cmdRegistry,
+		prefs:       prefsMgr,
+		toolSess:    toolSessionMgr,
+		sessionMgr:  sessionMgr,
+		processMgr:  processManager,
+		prompts:     promptManager,
+		providers:   providerStore,
+		cronMgr:     cronManager,
+		skillsMgr:   skillsManager,
+		workspace:   workspaceManager,
+		entClient:   entClient,
+		auditLogger: auditLogger,
 		snapshotMgr: func() *session.SnapshotManager {
 			if ag == nil {
 				return nil
@@ -286,6 +290,8 @@ func (s *Server) setup() {
 	api.POST("/service/restart", s.handleServiceRestart)
 	api.GET("/harness/watch", s.handleGetWatchStatus)
 	api.POST("/harness/watch", s.handleUpdateWatchStatus)
+	api.GET("/harness/audit", s.handleGetHarnessAudit)
+	api.POST("/harness/audit/clear", s.handleClearHarnessAudit)
 
 	// Cron routes
 	api.GET("/cron/jobs", s.handleListCronJobs)
@@ -4517,6 +4523,72 @@ func (s *Server) handleUpdateWatchStatus(c *echo.Context) error {
 				Patterns:   append([]config.WatchPattern(nil), s.config.Watch.Patterns...),
 			}
 		}(),
+	})
+}
+
+func (s *Server) handleGetHarnessAudit(c *echo.Context) error {
+	if s.auditLogger == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "audit log unavailable"})
+	}
+
+	limit := 100
+	if rawLimit := strings.TrimSpace(c.QueryParam("limit")); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid limit"})
+		}
+		if parsed > 500 {
+			parsed = 500
+		}
+		limit = parsed
+	}
+
+	entries, err := s.auditLogger.ReadLast(limit)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("Failed to read audit log", zap.Error(err))
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read audit log"})
+	}
+
+	stats, err := s.auditLogger.Stats()
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("Failed to read audit stats", zap.Error(err))
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read audit stats"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"entries": entries,
+		"stats":   stats,
+		"limit":   limit,
+	})
+}
+
+func (s *Server) handleClearHarnessAudit(c *echo.Context) error {
+	if s.auditLogger == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "audit log unavailable"})
+	}
+
+	if err := s.auditLogger.Clear(); err != nil && !os.IsNotExist(err) {
+		if s.logger != nil {
+			s.logger.Error("Failed to clear audit log", zap.Error(err))
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to clear audit log"})
+	}
+
+	stats, err := s.auditLogger.Stats()
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("Failed to refresh audit stats after clear", zap.Error(err))
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read audit stats"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status": "cleared",
+		"stats":  stats,
 	})
 }
 

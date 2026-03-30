@@ -175,6 +175,34 @@
 - `go test -count=1 ./cmd/nekobot/...`
 - `npm --prefix pkg/webui/frontend run build`
 
+## 2026-03-30 Harness WebUI 全面回归补记
+
+### 本轮新增发现
+- `pkg/webui/frontend/src/pages/HarnessAuditPage.tsx`
+  - 在全新环境、尚无任何 audit 记录时，`/api/harness/audit` 返回 `entries: null`，页面首屏会对 `data?.entries.filter(...)` 直接调用 `.filter()`，导致整个审计页白屏。
+  - 这类问题仅靠 `tsc` / `vite build` 不会暴露，必须通过真实浏览器回归才能发现。
+
+### 已修复
+- 将审计页的数据归一化为 `const entries = data?.entries ?? []`，所有统计与列表渲染统一基于 `entries` 计算，消除了空数据首屏崩溃。
+
+### 全面回归结果
+- 自动化回归
+  - `go test -count=1 ./...`
+  - `npm --prefix pkg/webui/frontend run build`
+- 浏览器级 smoke test
+  - 使用临时配置启动完整 `gateway + webui`
+  - 覆盖登录后 `Chat -> Harness Audit -> Config(Watch) -> Chat` 主链路
+  - 修复审计页空数据崩溃后重复执行，未再出现新的前端运行时错误或页面级问题
+
+### 回归过程中的环境注意点
+- 现已修复：CLI `rootCmd.PersistentPreRunE` 在未显式传 `--config` 时不再清空 `NEKOBOT_CONFIG_FILE`。
+- 新增命令层测试覆盖：
+  - 未传 `--config` 时保留 `NEKOBOT_CONFIG_FILE`
+  - 显式传 `--config` 时仍覆盖环境变量
+- 实证回归：
+  - `env NEKOBOT_CONFIG_FILE=/tmp/nekobot-regression/config.json go run ./cmd/nekobot gateway run`
+  - 已确认可直接按环境变量配置把服务起到目标端口并返回正确 `/api/auth/init-status`
+
 ## 三项目对比总览
 
 | 维度 | nekobot (当前) | picoclaw (Go, 灵感源) | nextclaw (TS, 参考) |
