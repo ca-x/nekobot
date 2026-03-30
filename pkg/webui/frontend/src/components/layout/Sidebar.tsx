@@ -17,6 +17,7 @@ import {
   Library,
   Clock3,
   ShieldCheck,
+  Waypoints,
   Sun,
   Moon,
   LogOut,
@@ -57,6 +58,7 @@ export default function Sidebar() {
     { target: '/prompts', label: t('tabPrompts'), icon: NotebookPen },
     { target: '/config', label: t('tabConfig'), icon: Settings },
     { target: '/harness/audit', label: t('tabHarnessAudit'), icon: ShieldCheck },
+    { target: '/runtime-topology', label: t('tabRuntimeTopology'), icon: Waypoints },
     { target: '/cron', label: t('tabCron'), icon: Clock3 },
     { target: '/system', label: t('tabStatus'), icon: Activity },
   ];

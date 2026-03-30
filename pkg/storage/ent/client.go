@@ -11,7 +11,10 @@ import (
 
 	"nekobot/pkg/storage/ent/migrate"
 
+	"nekobot/pkg/storage/ent/accountbinding"
+	"nekobot/pkg/storage/ent/agentruntime"
 	"nekobot/pkg/storage/ent/attachtoken"
+	"nekobot/pkg/storage/ent/channelaccount"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
@@ -34,8 +37,14 @@ type Client struct {
 	config
 	// Schema is the client for creating, migrating and dropping schema.
 	Schema *migrate.Schema
+	// AccountBinding is the client for interacting with the AccountBinding builders.
+	AccountBinding *AccountBindingClient
+	// AgentRuntime is the client for interacting with the AgentRuntime builders.
+	AgentRuntime *AgentRuntimeClient
 	// AttachToken is the client for interacting with the AttachToken builders.
 	AttachToken *AttachTokenClient
+	// ChannelAccount is the client for interacting with the ChannelAccount builders.
+	ChannelAccount *ChannelAccountClient
 	// ConfigSection is the client for interacting with the ConfigSection builders.
 	ConfigSection *ConfigSectionClient
 	// CronJob is the client for interacting with the CronJob builders.
@@ -67,7 +76,10 @@ func NewClient(opts ...Option) *Client {
 
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
+	c.AccountBinding = NewAccountBindingClient(c.config)
+	c.AgentRuntime = NewAgentRuntimeClient(c.config)
 	c.AttachToken = NewAttachTokenClient(c.config)
+	c.ChannelAccount = NewChannelAccountClient(c.config)
 	c.ConfigSection = NewConfigSectionClient(c.config)
 	c.CronJob = NewCronJobClient(c.config)
 	c.Membership = NewMembershipClient(c.config)
@@ -168,19 +180,22 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:           ctx,
-		config:        cfg,
-		AttachToken:   NewAttachTokenClient(cfg),
-		ConfigSection: NewConfigSectionClient(cfg),
-		CronJob:       NewCronJobClient(cfg),
-		Membership:    NewMembershipClient(cfg),
-		Prompt:        NewPromptClient(cfg),
-		PromptBinding: NewPromptBindingClient(cfg),
-		Provider:      NewProviderClient(cfg),
-		Tenant:        NewTenantClient(cfg),
-		ToolEvent:     NewToolEventClient(cfg),
-		ToolSession:   NewToolSessionClient(cfg),
-		User:          NewUserClient(cfg),
+		ctx:            ctx,
+		config:         cfg,
+		AccountBinding: NewAccountBindingClient(cfg),
+		AgentRuntime:   NewAgentRuntimeClient(cfg),
+		AttachToken:    NewAttachTokenClient(cfg),
+		ChannelAccount: NewChannelAccountClient(cfg),
+		ConfigSection:  NewConfigSectionClient(cfg),
+		CronJob:        NewCronJobClient(cfg),
+		Membership:     NewMembershipClient(cfg),
+		Prompt:         NewPromptClient(cfg),
+		PromptBinding:  NewPromptBindingClient(cfg),
+		Provider:       NewProviderClient(cfg),
+		Tenant:         NewTenantClient(cfg),
+		ToolEvent:      NewToolEventClient(cfg),
+		ToolSession:    NewToolSessionClient(cfg),
+		User:           NewUserClient(cfg),
 	}, nil
 }
 
@@ -198,26 +213,29 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:           ctx,
-		config:        cfg,
-		AttachToken:   NewAttachTokenClient(cfg),
-		ConfigSection: NewConfigSectionClient(cfg),
-		CronJob:       NewCronJobClient(cfg),
-		Membership:    NewMembershipClient(cfg),
-		Prompt:        NewPromptClient(cfg),
-		PromptBinding: NewPromptBindingClient(cfg),
-		Provider:      NewProviderClient(cfg),
-		Tenant:        NewTenantClient(cfg),
-		ToolEvent:     NewToolEventClient(cfg),
-		ToolSession:   NewToolSessionClient(cfg),
-		User:          NewUserClient(cfg),
+		ctx:            ctx,
+		config:         cfg,
+		AccountBinding: NewAccountBindingClient(cfg),
+		AgentRuntime:   NewAgentRuntimeClient(cfg),
+		AttachToken:    NewAttachTokenClient(cfg),
+		ChannelAccount: NewChannelAccountClient(cfg),
+		ConfigSection:  NewConfigSectionClient(cfg),
+		CronJob:        NewCronJobClient(cfg),
+		Membership:     NewMembershipClient(cfg),
+		Prompt:         NewPromptClient(cfg),
+		PromptBinding:  NewPromptBindingClient(cfg),
+		Provider:       NewProviderClient(cfg),
+		Tenant:         NewTenantClient(cfg),
+		ToolEvent:      NewToolEventClient(cfg),
+		ToolSession:    NewToolSessionClient(cfg),
+		User:           NewUserClient(cfg),
 	}, nil
 }
 
 // Debug returns a new debug-client. It's used to get verbose logging on specific operations.
 //
 //	client.Debug().
-//		AttachToken.
+//		AccountBinding.
 //		Query().
 //		Count(ctx)
 func (c *Client) Debug() *Client {
@@ -240,8 +258,9 @@ func (c *Client) Close() error {
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
-		c.AttachToken, c.ConfigSection, c.CronJob, c.Membership, c.Prompt,
-		c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
+		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
+		c.ConfigSection, c.CronJob, c.Membership, c.Prompt, c.PromptBinding,
+		c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -251,8 +270,9 @@ func (c *Client) Use(hooks ...Hook) {
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
-		c.AttachToken, c.ConfigSection, c.CronJob, c.Membership, c.Prompt,
-		c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
+		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
+		c.ConfigSection, c.CronJob, c.Membership, c.Prompt, c.PromptBinding,
+		c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -261,8 +281,14 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 // Mutate implements the ent.Mutator interface.
 func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
+	case *AccountBindingMutation:
+		return c.AccountBinding.mutate(ctx, m)
+	case *AgentRuntimeMutation:
+		return c.AgentRuntime.mutate(ctx, m)
 	case *AttachTokenMutation:
 		return c.AttachToken.mutate(ctx, m)
+	case *ChannelAccountMutation:
+		return c.ChannelAccount.mutate(ctx, m)
 	case *ConfigSectionMutation:
 		return c.ConfigSection.mutate(ctx, m)
 	case *CronJobMutation:
@@ -285,6 +311,272 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.User.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
+	}
+}
+
+// AccountBindingClient is a client for the AccountBinding schema.
+type AccountBindingClient struct {
+	config
+}
+
+// NewAccountBindingClient returns a client for the AccountBinding from the given config.
+func NewAccountBindingClient(c config) *AccountBindingClient {
+	return &AccountBindingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `accountbinding.Hooks(f(g(h())))`.
+func (c *AccountBindingClient) Use(hooks ...Hook) {
+	c.hooks.AccountBinding = append(c.hooks.AccountBinding, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `accountbinding.Intercept(f(g(h())))`.
+func (c *AccountBindingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AccountBinding = append(c.inters.AccountBinding, interceptors...)
+}
+
+// Create returns a builder for creating a AccountBinding entity.
+func (c *AccountBindingClient) Create() *AccountBindingCreate {
+	mutation := newAccountBindingMutation(c.config, OpCreate)
+	return &AccountBindingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AccountBinding entities.
+func (c *AccountBindingClient) CreateBulk(builders ...*AccountBindingCreate) *AccountBindingCreateBulk {
+	return &AccountBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AccountBindingClient) MapCreateBulk(slice any, setFunc func(*AccountBindingCreate, int)) *AccountBindingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AccountBindingCreateBulk{err: fmt.Errorf("calling to AccountBindingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AccountBindingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AccountBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AccountBinding.
+func (c *AccountBindingClient) Update() *AccountBindingUpdate {
+	mutation := newAccountBindingMutation(c.config, OpUpdate)
+	return &AccountBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AccountBindingClient) UpdateOne(_m *AccountBinding) *AccountBindingUpdateOne {
+	mutation := newAccountBindingMutation(c.config, OpUpdateOne, withAccountBinding(_m))
+	return &AccountBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AccountBindingClient) UpdateOneID(id string) *AccountBindingUpdateOne {
+	mutation := newAccountBindingMutation(c.config, OpUpdateOne, withAccountBindingID(id))
+	return &AccountBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AccountBinding.
+func (c *AccountBindingClient) Delete() *AccountBindingDelete {
+	mutation := newAccountBindingMutation(c.config, OpDelete)
+	return &AccountBindingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AccountBindingClient) DeleteOne(_m *AccountBinding) *AccountBindingDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AccountBindingClient) DeleteOneID(id string) *AccountBindingDeleteOne {
+	builder := c.Delete().Where(accountbinding.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AccountBindingDeleteOne{builder}
+}
+
+// Query returns a query builder for AccountBinding.
+func (c *AccountBindingClient) Query() *AccountBindingQuery {
+	return &AccountBindingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAccountBinding},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AccountBinding entity by its id.
+func (c *AccountBindingClient) Get(ctx context.Context, id string) (*AccountBinding, error) {
+	return c.Query().Where(accountbinding.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AccountBindingClient) GetX(ctx context.Context, id string) *AccountBinding {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AccountBindingClient) Hooks() []Hook {
+	return c.hooks.AccountBinding
+}
+
+// Interceptors returns the client interceptors.
+func (c *AccountBindingClient) Interceptors() []Interceptor {
+	return c.inters.AccountBinding
+}
+
+func (c *AccountBindingClient) mutate(ctx context.Context, m *AccountBindingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AccountBindingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AccountBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AccountBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AccountBindingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AccountBinding mutation op: %q", m.Op())
+	}
+}
+
+// AgentRuntimeClient is a client for the AgentRuntime schema.
+type AgentRuntimeClient struct {
+	config
+}
+
+// NewAgentRuntimeClient returns a client for the AgentRuntime from the given config.
+func NewAgentRuntimeClient(c config) *AgentRuntimeClient {
+	return &AgentRuntimeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `agentruntime.Hooks(f(g(h())))`.
+func (c *AgentRuntimeClient) Use(hooks ...Hook) {
+	c.hooks.AgentRuntime = append(c.hooks.AgentRuntime, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `agentruntime.Intercept(f(g(h())))`.
+func (c *AgentRuntimeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.AgentRuntime = append(c.inters.AgentRuntime, interceptors...)
+}
+
+// Create returns a builder for creating a AgentRuntime entity.
+func (c *AgentRuntimeClient) Create() *AgentRuntimeCreate {
+	mutation := newAgentRuntimeMutation(c.config, OpCreate)
+	return &AgentRuntimeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of AgentRuntime entities.
+func (c *AgentRuntimeClient) CreateBulk(builders ...*AgentRuntimeCreate) *AgentRuntimeCreateBulk {
+	return &AgentRuntimeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *AgentRuntimeClient) MapCreateBulk(slice any, setFunc func(*AgentRuntimeCreate, int)) *AgentRuntimeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &AgentRuntimeCreateBulk{err: fmt.Errorf("calling to AgentRuntimeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*AgentRuntimeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &AgentRuntimeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for AgentRuntime.
+func (c *AgentRuntimeClient) Update() *AgentRuntimeUpdate {
+	mutation := newAgentRuntimeMutation(c.config, OpUpdate)
+	return &AgentRuntimeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *AgentRuntimeClient) UpdateOne(_m *AgentRuntime) *AgentRuntimeUpdateOne {
+	mutation := newAgentRuntimeMutation(c.config, OpUpdateOne, withAgentRuntime(_m))
+	return &AgentRuntimeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *AgentRuntimeClient) UpdateOneID(id string) *AgentRuntimeUpdateOne {
+	mutation := newAgentRuntimeMutation(c.config, OpUpdateOne, withAgentRuntimeID(id))
+	return &AgentRuntimeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for AgentRuntime.
+func (c *AgentRuntimeClient) Delete() *AgentRuntimeDelete {
+	mutation := newAgentRuntimeMutation(c.config, OpDelete)
+	return &AgentRuntimeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *AgentRuntimeClient) DeleteOne(_m *AgentRuntime) *AgentRuntimeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *AgentRuntimeClient) DeleteOneID(id string) *AgentRuntimeDeleteOne {
+	builder := c.Delete().Where(agentruntime.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &AgentRuntimeDeleteOne{builder}
+}
+
+// Query returns a query builder for AgentRuntime.
+func (c *AgentRuntimeClient) Query() *AgentRuntimeQuery {
+	return &AgentRuntimeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeAgentRuntime},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a AgentRuntime entity by its id.
+func (c *AgentRuntimeClient) Get(ctx context.Context, id string) (*AgentRuntime, error) {
+	return c.Query().Where(agentruntime.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *AgentRuntimeClient) GetX(ctx context.Context, id string) *AgentRuntime {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *AgentRuntimeClient) Hooks() []Hook {
+	return c.hooks.AgentRuntime
+}
+
+// Interceptors returns the client interceptors.
+func (c *AgentRuntimeClient) Interceptors() []Interceptor {
+	return c.inters.AgentRuntime
+}
+
+func (c *AgentRuntimeClient) mutate(ctx context.Context, m *AgentRuntimeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&AgentRuntimeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&AgentRuntimeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&AgentRuntimeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&AgentRuntimeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown AgentRuntime mutation op: %q", m.Op())
 	}
 }
 
@@ -418,6 +710,139 @@ func (c *AttachTokenClient) mutate(ctx context.Context, m *AttachTokenMutation) 
 		return (&AttachTokenDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AttachToken mutation op: %q", m.Op())
+	}
+}
+
+// ChannelAccountClient is a client for the ChannelAccount schema.
+type ChannelAccountClient struct {
+	config
+}
+
+// NewChannelAccountClient returns a client for the ChannelAccount from the given config.
+func NewChannelAccountClient(c config) *ChannelAccountClient {
+	return &ChannelAccountClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `channelaccount.Hooks(f(g(h())))`.
+func (c *ChannelAccountClient) Use(hooks ...Hook) {
+	c.hooks.ChannelAccount = append(c.hooks.ChannelAccount, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `channelaccount.Intercept(f(g(h())))`.
+func (c *ChannelAccountClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ChannelAccount = append(c.inters.ChannelAccount, interceptors...)
+}
+
+// Create returns a builder for creating a ChannelAccount entity.
+func (c *ChannelAccountClient) Create() *ChannelAccountCreate {
+	mutation := newChannelAccountMutation(c.config, OpCreate)
+	return &ChannelAccountCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ChannelAccount entities.
+func (c *ChannelAccountClient) CreateBulk(builders ...*ChannelAccountCreate) *ChannelAccountCreateBulk {
+	return &ChannelAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ChannelAccountClient) MapCreateBulk(slice any, setFunc func(*ChannelAccountCreate, int)) *ChannelAccountCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ChannelAccountCreateBulk{err: fmt.Errorf("calling to ChannelAccountClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ChannelAccountCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ChannelAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ChannelAccount.
+func (c *ChannelAccountClient) Update() *ChannelAccountUpdate {
+	mutation := newChannelAccountMutation(c.config, OpUpdate)
+	return &ChannelAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ChannelAccountClient) UpdateOne(_m *ChannelAccount) *ChannelAccountUpdateOne {
+	mutation := newChannelAccountMutation(c.config, OpUpdateOne, withChannelAccount(_m))
+	return &ChannelAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ChannelAccountClient) UpdateOneID(id string) *ChannelAccountUpdateOne {
+	mutation := newChannelAccountMutation(c.config, OpUpdateOne, withChannelAccountID(id))
+	return &ChannelAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ChannelAccount.
+func (c *ChannelAccountClient) Delete() *ChannelAccountDelete {
+	mutation := newChannelAccountMutation(c.config, OpDelete)
+	return &ChannelAccountDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ChannelAccountClient) DeleteOne(_m *ChannelAccount) *ChannelAccountDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ChannelAccountClient) DeleteOneID(id string) *ChannelAccountDeleteOne {
+	builder := c.Delete().Where(channelaccount.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ChannelAccountDeleteOne{builder}
+}
+
+// Query returns a query builder for ChannelAccount.
+func (c *ChannelAccountClient) Query() *ChannelAccountQuery {
+	return &ChannelAccountQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeChannelAccount},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ChannelAccount entity by its id.
+func (c *ChannelAccountClient) Get(ctx context.Context, id string) (*ChannelAccount, error) {
+	return c.Query().Where(channelaccount.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ChannelAccountClient) GetX(ctx context.Context, id string) *ChannelAccount {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ChannelAccountClient) Hooks() []Hook {
+	return c.hooks.ChannelAccount
+}
+
+// Interceptors returns the client interceptors.
+func (c *ChannelAccountClient) Interceptors() []Interceptor {
+	return c.inters.ChannelAccount
+}
+
+func (c *ChannelAccountClient) mutate(ctx context.Context, m *ChannelAccountMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ChannelAccountCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ChannelAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ChannelAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ChannelAccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ChannelAccount mutation op: %q", m.Op())
 	}
 }
 
@@ -1818,11 +2243,13 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AttachToken, ConfigSection, CronJob, Membership, Prompt, PromptBinding,
-		Provider, Tenant, ToolEvent, ToolSession, User []ent.Hook
+		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
+		CronJob, Membership, Prompt, PromptBinding, Provider, Tenant, ToolEvent,
+		ToolSession, User []ent.Hook
 	}
 	inters struct {
-		AttachToken, ConfigSection, CronJob, Membership, Prompt, PromptBinding,
-		Provider, Tenant, ToolEvent, ToolSession, User []ent.Interceptor
+		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
+		CronJob, Membership, Prompt, PromptBinding, Provider, Tenant, ToolEvent,
+		ToolSession, User []ent.Interceptor
 	}
 )

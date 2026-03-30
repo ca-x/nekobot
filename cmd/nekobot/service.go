@@ -14,10 +14,12 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
+	"nekobot/pkg/accountbindings"
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
 	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/channels"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
@@ -28,6 +30,8 @@ import (
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providerstore"
+	"nekobot/pkg/runtimeagents"
+	"nekobot/pkg/runtimetopology"
 	"nekobot/pkg/servicecontrol"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
@@ -102,6 +106,10 @@ func (s *GatewayService) run() {
 		toolsessions.Module,
 		prompts.Module,
 		providerstore.Module,
+		runtimeagents.Module,
+		channelaccounts.Module,
+		accountbindings.Module,
+		runtimetopology.Module,
 		agent.Module,
 
 		// Gateway modules

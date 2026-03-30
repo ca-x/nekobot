@@ -203,6 +203,119 @@
   - `env NEKOBOT_CONFIG_FILE=/tmp/nekobot-regression/config.json go run ./cmd/nekobot gateway run`
   - 已确认可直接按环境变量配置把服务起到目标端口并返回正确 `/api/auth/init-status`
 
+## 2026-03-30 Multi-Agent Runtime / Channel Account Round 1 收敛结论
+
+### 现有代码形态观察
+- 后端最适合复用的模式是：
+  - Ent schema + shared runtime DB。
+  - 深模块 manager，例如 `pkg/prompts/manager.go`、`pkg/providerstore/manager.go`。
+  - `pkg/webui/server.go` 只保留薄 handler，调用 manager 返回 JSON。
+- 当前运行态仍以单一 `*agent.Agent` 和 channel type 配置为中心：
+  - `pkg/agent/fx.go` 只注入一个全局 agent。
+  - `pkg/channels/registry.go` 的 build 入口仍把单个 agent 直接下发给各 channel。
+- 当前 WebUI 结构仍以 `Channels / Config / System` 为中心：
+  - 最适合作为 Round 1 承接面的不是重做导航，而是补一个低侵入只读观察页。
+
+### codeagent 辅助分析结论
+
+#### 后端 Round 1 最小可交付切片
+- 新增三个深模块：
+  - `pkg/runtimeagents`
+  - `pkg/channelaccounts`
+  - `pkg/accountbindings`
+- 每个模块先做：
+  - JSON 类型定义。
+  - normalize/validate。
+  - Ent-backed `Manager`。
+  - `List/Get/Create/Update/Delete`。
+  - 对应单元测试。
+- 新增一个 topology 聚合层：
+  - 聚合 runtime/account/binding，输出给 WebUI 和后续 runtime manager 骨架使用。
+  - Round 1 只读，不接入真实消息路由。
+- Round 1 API 形态：
+  - `GET/POST/PUT/DELETE /api/runtime-agents`
+  - `GET/POST/PUT/DELETE /api/channel-accounts`
+  - `GET/POST/PUT/DELETE /api/account-bindings`
+  - `GET /api/runtime-topology`
+- 明确延后：
+  - WeChat/iLink account-aware 路由。
+  - harness 下沉到 agent policy。
+  - 多 agent fan-out 行为。
+  - 真实 runtime manager 替换 `pkg/agent` 的执行路径。
+
+#### 前端 Round 1 最小承接面
+- 不重构 `Channels / Config / System` 主体。
+- 新增一个轻量 `Runtime Topology` 页面最合适。
+- 页面内容只做只读观察：
+  - runtimes 列表。
+  - channel accounts 列表。
+  - bindings 关系图/关系卡片。
+  - 顶部 summary metric。
+- 推荐最小改动面：
+  - `App.tsx` 新增 route。
+  - `Sidebar.tsx` 新增单个导航项。
+  - `hooks/useTopology.ts` 或在 `useConfig.ts` 补 topology query hook。
+  - 新增 `pages/RuntimeTopologyPage.tsx`。
+  - 补少量 i18n key。
+- 明确延后：
+  - Agents / Channel Accounts / Bindings 独立管理页。
+  - 编辑表单。
+  - Chat runtime selector。
+  - Harness runtime-scoped 配置页。
+
+### Round 1 实现原则
+- 先跑 TDD：
+  - manager 行为测试先行。
+  - server handler 测试先行。
+- 先做存储和聚合，再补 API，再补最小前端。
+- WebUI 首轮的目标是“truthful visibility”，不是“完整运营面”。
+- 用户新约束：
+  - 多账号不是 WeChat 特性，而是全 channel 通用能力。
+  - 因此 `ChannelAccount` 不能绑定到 WeChat 数据结构；Round 2 只是先接 WeChat adapter，不是只支持 WeChat。
+
+### Round 1 已落地实现
+- 新增 Ent schema：
+  - `pkg/storage/ent/schema/agentruntime.go`
+  - `pkg/storage/ent/schema/channelaccount.go`
+  - `pkg/storage/ent/schema/accountbinding.go`
+- 新增数据与规则模块：
+  - `pkg/runtimeagents`
+  - `pkg/channelaccounts`
+  - `pkg/accountbindings`
+- 新增 topology 聚合层：
+  - `pkg/runtimetopology/service.go`
+- 新增 WebUI 后端接口：
+  - `/api/runtime-agents`
+  - `/api/channel-accounts`
+  - `/api/account-bindings`
+  - `/api/runtime-topology`
+- 新增 WebUI 最小观察面：
+  - `pkg/webui/frontend/src/hooks/useTopology.ts`
+  - `pkg/webui/frontend/src/pages/RuntimeTopologyPage.tsx`
+  - `App.tsx` route
+  - `Sidebar.tsx` 导航入口
+
+### Round 1 过程中顺手收口的历史问题
+- 新基础层已接入 CLI / ACP / TUI / Cron / Service 的 FX 图，避免后续第二轮开始时又出现“只有 WebUI 看得到、运行图里没有”的历史包分裂。
+- `ChannelAccount` 字段保持 channel-agnostic，避免重演过去 WeChat runtime/store/control 把通用模型和单通道模型揉在一起的问题。
+
+### Round 1 环境问题
+- `go generate ./pkg/storage/ent` 失败：
+  - 原因：环境里没有 `ent` 二进制。
+  - 处理：改用 `go run entgo.io/ent/cmd/ent generate ./pkg/storage/ent/schema`。
+- 首次 `go run entgo.io/ent/cmd/ent generate` 失败：
+  - 原因：缺少 `ent` 命令依赖的 `go.sum` 记录（`github.com/olekukonko/tablewriter` 等）。
+  - 处理：执行 `go get entgo.io/ent/cmd/ent@v0.14.5` 补齐生成期依赖，再重新生成。
+- 前端回归中一度把 i18n 文件误替换成只含新增键的小文件：
+  - 处理：从 `HEAD` 恢复完整字典，再以最小增量追加 `Runtime Topology` 文案，随后重新构建通过。
+
+### Round 1 验证结果
+- `go test ./pkg/runtimeagents ./pkg/channelaccounts ./pkg/accountbindings ./pkg/runtimetopology`
+- `go test ./pkg/webui -run 'TestRuntimeTopologyHandlers_CRUDAndSnapshot|TestPromptHandlers_CRUDAndResolve'`
+- `go test ./cmd/nekobot/... ./pkg/webui ./pkg/runtimeagents ./pkg/channelaccounts ./pkg/accountbindings ./pkg/runtimetopology`
+- `npm --prefix pkg/webui/frontend run build`
+- `go test -count=1 ./...`
+
 ## 三项目对比总览
 
 | 维度 | nekobot (当前) | picoclaw (Go, 灵感源) | nextclaw (TS, 参考) |

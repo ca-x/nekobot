@@ -3,7 +3,10 @@
 package ent
 
 import (
+	"nekobot/pkg/storage/ent/accountbinding"
+	"nekobot/pkg/storage/ent/agentruntime"
 	"nekobot/pkg/storage/ent/attachtoken"
+	"nekobot/pkg/storage/ent/channelaccount"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
@@ -22,6 +25,106 @@ import (
 // (default values, validators, hooks and policies) and stitches it
 // to their package variables.
 func init() {
+	accountbindingFields := schema.AccountBinding{}.Fields()
+	_ = accountbindingFields
+	// accountbindingDescChannelAccountID is the schema descriptor for channel_account_id field.
+	accountbindingDescChannelAccountID := accountbindingFields[1].Descriptor()
+	// accountbinding.ChannelAccountIDValidator is a validator for the "channel_account_id" field. It is called by the builders before save.
+	accountbinding.ChannelAccountIDValidator = accountbindingDescChannelAccountID.Validators[0].(func(string) error)
+	// accountbindingDescAgentRuntimeID is the schema descriptor for agent_runtime_id field.
+	accountbindingDescAgentRuntimeID := accountbindingFields[2].Descriptor()
+	// accountbinding.AgentRuntimeIDValidator is a validator for the "agent_runtime_id" field. It is called by the builders before save.
+	accountbinding.AgentRuntimeIDValidator = accountbindingDescAgentRuntimeID.Validators[0].(func(string) error)
+	// accountbindingDescEnabled is the schema descriptor for enabled field.
+	accountbindingDescEnabled := accountbindingFields[4].Descriptor()
+	// accountbinding.DefaultEnabled holds the default value on creation for the enabled field.
+	accountbinding.DefaultEnabled = accountbindingDescEnabled.Default.(bool)
+	// accountbindingDescAllowPublicReply is the schema descriptor for allow_public_reply field.
+	accountbindingDescAllowPublicReply := accountbindingFields[5].Descriptor()
+	// accountbinding.DefaultAllowPublicReply holds the default value on creation for the allow_public_reply field.
+	accountbinding.DefaultAllowPublicReply = accountbindingDescAllowPublicReply.Default.(bool)
+	// accountbindingDescReplyLabel is the schema descriptor for reply_label field.
+	accountbindingDescReplyLabel := accountbindingFields[6].Descriptor()
+	// accountbinding.DefaultReplyLabel holds the default value on creation for the reply_label field.
+	accountbinding.DefaultReplyLabel = accountbindingDescReplyLabel.Default.(string)
+	// accountbindingDescPriority is the schema descriptor for priority field.
+	accountbindingDescPriority := accountbindingFields[7].Descriptor()
+	// accountbinding.DefaultPriority holds the default value on creation for the priority field.
+	accountbinding.DefaultPriority = accountbindingDescPriority.Default.(int)
+	// accountbindingDescMetadataJSON is the schema descriptor for metadata_json field.
+	accountbindingDescMetadataJSON := accountbindingFields[8].Descriptor()
+	// accountbinding.DefaultMetadataJSON holds the default value on creation for the metadata_json field.
+	accountbinding.DefaultMetadataJSON = accountbindingDescMetadataJSON.Default.(string)
+	// accountbindingDescCreatedAt is the schema descriptor for created_at field.
+	accountbindingDescCreatedAt := accountbindingFields[9].Descriptor()
+	// accountbinding.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accountbinding.DefaultCreatedAt = accountbindingDescCreatedAt.Default.(func() time.Time)
+	// accountbindingDescUpdatedAt is the schema descriptor for updated_at field.
+	accountbindingDescUpdatedAt := accountbindingFields[10].Descriptor()
+	// accountbinding.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	accountbinding.DefaultUpdatedAt = accountbindingDescUpdatedAt.Default.(func() time.Time)
+	// accountbinding.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	accountbinding.UpdateDefaultUpdatedAt = accountbindingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// accountbindingDescID is the schema descriptor for id field.
+	accountbindingDescID := accountbindingFields[0].Descriptor()
+	// accountbinding.DefaultID holds the default value on creation for the id field.
+	accountbinding.DefaultID = accountbindingDescID.Default.(func() string)
+	agentruntimeFields := schema.AgentRuntime{}.Fields()
+	_ = agentruntimeFields
+	// agentruntimeDescName is the schema descriptor for name field.
+	agentruntimeDescName := agentruntimeFields[1].Descriptor()
+	// agentruntime.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	agentruntime.NameValidator = agentruntimeDescName.Validators[0].(func(string) error)
+	// agentruntimeDescDisplayName is the schema descriptor for display_name field.
+	agentruntimeDescDisplayName := agentruntimeFields[2].Descriptor()
+	// agentruntime.DefaultDisplayName holds the default value on creation for the display_name field.
+	agentruntime.DefaultDisplayName = agentruntimeDescDisplayName.Default.(string)
+	// agentruntimeDescDescription is the schema descriptor for description field.
+	agentruntimeDescDescription := agentruntimeFields[3].Descriptor()
+	// agentruntime.DefaultDescription holds the default value on creation for the description field.
+	agentruntime.DefaultDescription = agentruntimeDescDescription.Default.(string)
+	// agentruntimeDescEnabled is the schema descriptor for enabled field.
+	agentruntimeDescEnabled := agentruntimeFields[4].Descriptor()
+	// agentruntime.DefaultEnabled holds the default value on creation for the enabled field.
+	agentruntime.DefaultEnabled = agentruntimeDescEnabled.Default.(bool)
+	// agentruntimeDescProvider is the schema descriptor for provider field.
+	agentruntimeDescProvider := agentruntimeFields[5].Descriptor()
+	// agentruntime.DefaultProvider holds the default value on creation for the provider field.
+	agentruntime.DefaultProvider = agentruntimeDescProvider.Default.(string)
+	// agentruntimeDescModel is the schema descriptor for model field.
+	agentruntimeDescModel := agentruntimeFields[6].Descriptor()
+	// agentruntime.DefaultModel holds the default value on creation for the model field.
+	agentruntime.DefaultModel = agentruntimeDescModel.Default.(string)
+	// agentruntimeDescPromptID is the schema descriptor for prompt_id field.
+	agentruntimeDescPromptID := agentruntimeFields[7].Descriptor()
+	// agentruntime.DefaultPromptID holds the default value on creation for the prompt_id field.
+	agentruntime.DefaultPromptID = agentruntimeDescPromptID.Default.(string)
+	// agentruntimeDescSkillsJSON is the schema descriptor for skills_json field.
+	agentruntimeDescSkillsJSON := agentruntimeFields[8].Descriptor()
+	// agentruntime.DefaultSkillsJSON holds the default value on creation for the skills_json field.
+	agentruntime.DefaultSkillsJSON = agentruntimeDescSkillsJSON.Default.(string)
+	// agentruntimeDescToolsJSON is the schema descriptor for tools_json field.
+	agentruntimeDescToolsJSON := agentruntimeFields[9].Descriptor()
+	// agentruntime.DefaultToolsJSON holds the default value on creation for the tools_json field.
+	agentruntime.DefaultToolsJSON = agentruntimeDescToolsJSON.Default.(string)
+	// agentruntimeDescPolicyJSON is the schema descriptor for policy_json field.
+	agentruntimeDescPolicyJSON := agentruntimeFields[10].Descriptor()
+	// agentruntime.DefaultPolicyJSON holds the default value on creation for the policy_json field.
+	agentruntime.DefaultPolicyJSON = agentruntimeDescPolicyJSON.Default.(string)
+	// agentruntimeDescCreatedAt is the schema descriptor for created_at field.
+	agentruntimeDescCreatedAt := agentruntimeFields[11].Descriptor()
+	// agentruntime.DefaultCreatedAt holds the default value on creation for the created_at field.
+	agentruntime.DefaultCreatedAt = agentruntimeDescCreatedAt.Default.(func() time.Time)
+	// agentruntimeDescUpdatedAt is the schema descriptor for updated_at field.
+	agentruntimeDescUpdatedAt := agentruntimeFields[12].Descriptor()
+	// agentruntime.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	agentruntime.DefaultUpdatedAt = agentruntimeDescUpdatedAt.Default.(func() time.Time)
+	// agentruntime.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	agentruntime.UpdateDefaultUpdatedAt = agentruntimeDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// agentruntimeDescID is the schema descriptor for id field.
+	agentruntimeDescID := agentruntimeFields[0].Descriptor()
+	// agentruntime.DefaultID holds the default value on creation for the id field.
+	agentruntime.DefaultID = agentruntimeDescID.Default.(func() string)
 	attachtokenFields := schema.AttachToken{}.Fields()
 	_ = attachtokenFields
 	// attachtokenDescOwner is the schema descriptor for owner field.
@@ -36,6 +139,50 @@ func init() {
 	attachtokenDescID := attachtokenFields[0].Descriptor()
 	// attachtoken.DefaultID holds the default value on creation for the id field.
 	attachtoken.DefaultID = attachtokenDescID.Default.(func() string)
+	channelaccountFields := schema.ChannelAccount{}.Fields()
+	_ = channelaccountFields
+	// channelaccountDescChannelType is the schema descriptor for channel_type field.
+	channelaccountDescChannelType := channelaccountFields[1].Descriptor()
+	// channelaccount.ChannelTypeValidator is a validator for the "channel_type" field. It is called by the builders before save.
+	channelaccount.ChannelTypeValidator = channelaccountDescChannelType.Validators[0].(func(string) error)
+	// channelaccountDescAccountKey is the schema descriptor for account_key field.
+	channelaccountDescAccountKey := channelaccountFields[2].Descriptor()
+	// channelaccount.AccountKeyValidator is a validator for the "account_key" field. It is called by the builders before save.
+	channelaccount.AccountKeyValidator = channelaccountDescAccountKey.Validators[0].(func(string) error)
+	// channelaccountDescDisplayName is the schema descriptor for display_name field.
+	channelaccountDescDisplayName := channelaccountFields[3].Descriptor()
+	// channelaccount.DefaultDisplayName holds the default value on creation for the display_name field.
+	channelaccount.DefaultDisplayName = channelaccountDescDisplayName.Default.(string)
+	// channelaccountDescDescription is the schema descriptor for description field.
+	channelaccountDescDescription := channelaccountFields[4].Descriptor()
+	// channelaccount.DefaultDescription holds the default value on creation for the description field.
+	channelaccount.DefaultDescription = channelaccountDescDescription.Default.(string)
+	// channelaccountDescEnabled is the schema descriptor for enabled field.
+	channelaccountDescEnabled := channelaccountFields[5].Descriptor()
+	// channelaccount.DefaultEnabled holds the default value on creation for the enabled field.
+	channelaccount.DefaultEnabled = channelaccountDescEnabled.Default.(bool)
+	// channelaccountDescConfigJSON is the schema descriptor for config_json field.
+	channelaccountDescConfigJSON := channelaccountFields[6].Descriptor()
+	// channelaccount.DefaultConfigJSON holds the default value on creation for the config_json field.
+	channelaccount.DefaultConfigJSON = channelaccountDescConfigJSON.Default.(string)
+	// channelaccountDescMetadataJSON is the schema descriptor for metadata_json field.
+	channelaccountDescMetadataJSON := channelaccountFields[7].Descriptor()
+	// channelaccount.DefaultMetadataJSON holds the default value on creation for the metadata_json field.
+	channelaccount.DefaultMetadataJSON = channelaccountDescMetadataJSON.Default.(string)
+	// channelaccountDescCreatedAt is the schema descriptor for created_at field.
+	channelaccountDescCreatedAt := channelaccountFields[8].Descriptor()
+	// channelaccount.DefaultCreatedAt holds the default value on creation for the created_at field.
+	channelaccount.DefaultCreatedAt = channelaccountDescCreatedAt.Default.(func() time.Time)
+	// channelaccountDescUpdatedAt is the schema descriptor for updated_at field.
+	channelaccountDescUpdatedAt := channelaccountFields[9].Descriptor()
+	// channelaccount.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	channelaccount.DefaultUpdatedAt = channelaccountDescUpdatedAt.Default.(func() time.Time)
+	// channelaccount.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	channelaccount.UpdateDefaultUpdatedAt = channelaccountDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// channelaccountDescID is the schema descriptor for id field.
+	channelaccountDescID := channelaccountFields[0].Descriptor()
+	// channelaccount.DefaultID holds the default value on creation for the id field.
+	channelaccount.DefaultID = channelaccountDescID.Default.(func() string)
 	configsectionFields := schema.ConfigSection{}.Fields()
 	_ = configsectionFields
 	// configsectionDescSection is the schema descriptor for section field.

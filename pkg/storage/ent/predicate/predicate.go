@@ -6,8 +6,17 @@ import (
 	"entgo.io/ent/dialect/sql"
 )
 
+// AccountBinding is the predicate function for accountbinding builders.
+type AccountBinding func(*sql.Selector)
+
+// AgentRuntime is the predicate function for agentruntime builders.
+type AgentRuntime func(*sql.Selector)
+
 // AttachToken is the predicate function for attachtoken builders.
 type AttachToken func(*sql.Selector)
+
+// ChannelAccount is the predicate function for channelaccount builders.
+type ChannelAccount func(*sql.Selector)
 
 // ConfigSection is the predicate function for configsection builders.
 type ConfigSection func(*sql.Selector)

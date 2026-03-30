@@ -8,6 +8,92 @@ import (
 )
 
 var (
+	// AccountBindingsColumns holds the columns for the "account_bindings" table.
+	AccountBindingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "channel_account_id", Type: field.TypeString},
+		{Name: "agent_runtime_id", Type: field.TypeString},
+		{Name: "binding_mode", Type: field.TypeEnum, Enums: []string{"single_agent", "multi_agent"}, Default: "single_agent"},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "allow_public_reply", Type: field.TypeBool, Default: true},
+		{Name: "reply_label", Type: field.TypeString, Default: ""},
+		{Name: "priority", Type: field.TypeInt, Default: 100},
+		{Name: "metadata_json", Type: field.TypeString, Default: "{}"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AccountBindingsTable holds the schema information for the "account_bindings" table.
+	AccountBindingsTable = &schema.Table{
+		Name:       "account_bindings",
+		Columns:    AccountBindingsColumns,
+		PrimaryKey: []*schema.Column{AccountBindingsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "accountbinding_channel_account_id_agent_runtime_id",
+				Unique:  true,
+				Columns: []*schema.Column{AccountBindingsColumns[1], AccountBindingsColumns[2]},
+			},
+			{
+				Name:    "accountbinding_channel_account_id",
+				Unique:  false,
+				Columns: []*schema.Column{AccountBindingsColumns[1]},
+			},
+			{
+				Name:    "accountbinding_agent_runtime_id",
+				Unique:  false,
+				Columns: []*schema.Column{AccountBindingsColumns[2]},
+			},
+			{
+				Name:    "accountbinding_binding_mode",
+				Unique:  false,
+				Columns: []*schema.Column{AccountBindingsColumns[3]},
+			},
+			{
+				Name:    "accountbinding_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{AccountBindingsColumns[4]},
+			},
+		},
+	}
+	// AgentRuntimesColumns holds the columns for the "agent_runtimes" table.
+	AgentRuntimesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "name", Type: field.TypeString},
+		{Name: "display_name", Type: field.TypeString, Default: ""},
+		{Name: "description", Type: field.TypeString, Default: ""},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "provider", Type: field.TypeString, Default: ""},
+		{Name: "model", Type: field.TypeString, Default: ""},
+		{Name: "prompt_id", Type: field.TypeString, Default: ""},
+		{Name: "skills_json", Type: field.TypeString, Default: "[]"},
+		{Name: "tools_json", Type: field.TypeString, Default: "[]"},
+		{Name: "policy_json", Type: field.TypeString, Default: "{}"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// AgentRuntimesTable holds the schema information for the "agent_runtimes" table.
+	AgentRuntimesTable = &schema.Table{
+		Name:       "agent_runtimes",
+		Columns:    AgentRuntimesColumns,
+		PrimaryKey: []*schema.Column{AgentRuntimesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "agentruntime_name",
+				Unique:  true,
+				Columns: []*schema.Column{AgentRuntimesColumns[1]},
+			},
+			{
+				Name:    "agentruntime_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{AgentRuntimesColumns[4]},
+			},
+			{
+				Name:    "agentruntime_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{AgentRuntimesColumns[12]},
+			},
+		},
+	}
 	// AttachTokensColumns holds the columns for the "attach_tokens" table.
 	AttachTokensColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -43,6 +129,47 @@ var (
 				Name:    "attachtoken_expires_at",
 				Unique:  false,
 				Columns: []*schema.Column{AttachTokensColumns[4]},
+			},
+		},
+	}
+	// ChannelAccountsColumns holds the columns for the "channel_accounts" table.
+	ChannelAccountsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "channel_type", Type: field.TypeString},
+		{Name: "account_key", Type: field.TypeString},
+		{Name: "display_name", Type: field.TypeString, Default: ""},
+		{Name: "description", Type: field.TypeString, Default: ""},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "config_json", Type: field.TypeString, Default: "{}"},
+		{Name: "metadata_json", Type: field.TypeString, Default: "{}"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// ChannelAccountsTable holds the schema information for the "channel_accounts" table.
+	ChannelAccountsTable = &schema.Table{
+		Name:       "channel_accounts",
+		Columns:    ChannelAccountsColumns,
+		PrimaryKey: []*schema.Column{ChannelAccountsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "channelaccount_channel_type_account_key",
+				Unique:  true,
+				Columns: []*schema.Column{ChannelAccountsColumns[1], ChannelAccountsColumns[2]},
+			},
+			{
+				Name:    "channelaccount_channel_type",
+				Unique:  false,
+				Columns: []*schema.Column{ChannelAccountsColumns[1]},
+			},
+			{
+				Name:    "channelaccount_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{ChannelAccountsColumns[5]},
+			},
+			{
+				Name:    "channelaccount_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{ChannelAccountsColumns[9]},
 			},
 		},
 	}
@@ -412,7 +539,10 @@ var (
 	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
+		AccountBindingsTable,
+		AgentRuntimesTable,
 		AttachTokensTable,
+		ChannelAccountsTable,
 		ConfigSectionsTable,
 		CronJobsTable,
 		MembershipsTable,

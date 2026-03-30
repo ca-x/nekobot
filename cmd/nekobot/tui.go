@@ -15,9 +15,11 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
+	"nekobot/pkg/accountbindings"
 	"nekobot/pkg/agent"
 	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -25,6 +27,8 @@ import (
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
+	"nekobot/pkg/runtimeagents"
+	"nekobot/pkg/runtimetopology"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
@@ -181,6 +185,10 @@ func runTUI(cmd *cobra.Command, args []string) {
 		watch.Module,
 		prompts.Module,
 		providerstore.Module,
+		runtimeagents.Module,
+		channelaccounts.Module,
+		accountbindings.Module,
+		runtimetopology.Module,
 		agent.Module,
 
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, ag *agent.Agent, sm *session.Manager, cfg *config.Config) {

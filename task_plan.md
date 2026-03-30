@@ -247,6 +247,89 @@
 - [x] WeChat 阶段性收口：共享 SDK、发送链路、登录绑定、首批弱交互与 presenter guidance 已完成并推送，后续只保留通用 presenter/interaction 泛化为次级事项。
 - [x] Conversation/thread binding 首批迁移：在 `pkg/conversationbindings` 上补齐绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理，并保持与 WeChat runtime binding 兼容。
 
+## 2026-03-30 Multi-Agent Runtime / Channel Account 架构调整批次
+
+### Goal
+基于“真正独立的多 agent runtime + channel account + account-agent binding”模型，分多轮完成当前单默认 agent 架构向多 agent 架构的重组；其中 harness 下沉到 agent 层，channel 支持多账户，账户可按单 agent 或多 agent 模式绑定，并为后续 agent 协作预留插槽。
+
+### Phases
+- [x] Phase 1: 输出正式设计文档与多轮实施计划
+- [x] Phase 2: 并行分析现有代码在 runtime/account/binding 三条轴线上的改造切口
+- [x] Phase 3: 确认首轮开发边界并拆成可执行任务
+- [ ] Phase 4: 进入第一轮实现与验证
+- [ ] Phase 5: 按轮次持续更新计划、提交与推送
+
+### Key Questions
+1. 哪些现有模块最应该提升为一等模型：`AgentRuntime`、`ChannelAccount`、`AccountBinding`？
+2. 在不考虑历史迁移的前提下，哪一轮最适合先落地：runtime 域模型、WeChat account 化、还是 harness 下沉？
+3. WebUI 应如何从 `Channels/Config/Harness` 重组为 `Agents / Channel Accounts / Bindings`？
+
+### Decisions Made
+- 采用 in-process multi-runtime 方案，不做单 agent preset 过渡方案，也不直接上多进程 worker。
+- `AgentRuntime` 强隔离，至少独立 `provider/prompt/skills/tools/harness/private memory/session namespace`。
+- `ChannelAccount` 是 transport endpoint 的一等对象，agent 绑定到账户而不是 channel type。
+- 多账号能力必须是全 channel 通用模型，不能把 `ChannelAccount` 设计成 WeChat/iLink 特例。
+- 默认 `single_agent`，允许 `multi_agent`，多 agent 模式下默认 fan-out，并按 agent 来源标注回复。
+- 用户显式指定 agent 时，只允许目标 agent 对外回复。
+- `memory` 采用“共享池 + agent 私有池”双层模型。
+- `harness` 下沉为 agent policy，全局只保留默认值。
+- Round 1 固定为“基础骨架”：
+  - `AgentRuntime / ChannelAccount / AccountBinding` 的 Ent schema、manager、测试。
+  - 一个只读 topology 聚合接口，供 WebUI 观察新架构对象关系。
+  - 基础 CRUD/list API。
+- `ChannelAccount` 的字段和 API 必须 channel-agnostic；后续各 channel 仅实现各自 adapter/driver，不重新定义账户模型。
+- Round 1 明确不做：
+  - WeChat/iLink 路由迁移。
+  - harness runtime 下沉。
+  - 多 agent fan-out / explicit-agent reply 策略。
+  - 大规模 WebUI 导航重组。
+- Round 1 前端只做最小承接：
+  - 新增轻量 `Runtime Topology` 页面。
+  - 保持当前视觉和主导航结构，只增加一个低侵入入口。
+
+### Status
+**In Progress** - 已完成设计、实施计划和 Round 1 边界收敛，正在进入 Round 1 的 schema / manager / API / 最小前端观察面实现。
+
+### Errors Encountered
+- `codeagent-wrapper --backend gemini` 在当前环境不可用：`gemini command not found in PATH`。
+  - 处理：UI 信息架构分析回退到 `codex` backend，继续完成规划，不阻塞本轮设计/计划工作。
+- `codeagent-wrapper --backend claude` 在当前环境不可用：`claude command not found in PATH`。
+  - 处理：本轮并行辅助统一回退到 `codex` backend；如后续需要 `claude-code/opencode` 并行执行，需先补环境。
+
+### Round 1 Execution Boundary
+- [x] 新增 `pkg/runtimeagents/*`：runtime 类型、校验、CRUD manager、测试。
+- [x] 新增 `pkg/channelaccounts/*`：account 类型、校验、CRUD manager、测试。
+- [x] 新增 `pkg/accountbindings/*`：binding 类型、校验、CRUD manager、测试。
+- [x] 新增 topology 聚合服务与 `/api/runtime-topology` 只读接口。
+- [x] 新增基础 API：
+  - `GET/POST/PUT/DELETE /api/runtime-agents`
+  - `GET/POST/PUT/DELETE /api/channel-accounts`
+  - `GET/POST/PUT/DELETE /api/account-bindings`
+- [x] 前端新增最小 `Runtime Topology` 页面与 hooks。
+- [x] 验证：
+  - `go test -count=1 ./pkg/runtimeagents ./pkg/channelaccounts ./pkg/accountbindings ./pkg/webui`
+  - `npm --prefix pkg/webui/frontend run build`
+  - `go test -count=1 ./...`
+
+### Round 1 Progress Notes
+- [x] `ChannelAccount` 已按全 channel 通用模型落地，字段与 API 不再耦合 WeChat。
+- [x] 已新增 Ent schema：`agentruntime`、`channelaccount`、`accountbinding`，并生成运行时代码。
+- [x] 已新增 manager 包与测试：
+  - `pkg/runtimeagents`
+  - `pkg/channelaccounts`
+  - `pkg/accountbindings`
+- [x] 已新增 `pkg/runtimetopology` 聚合服务，输出 summary/runtime/account/binding 四段只读快照。
+- [x] `pkg/webui/server.go` 已接入 Round 1 CRUD 与 topology 接口。
+- [x] WebUI 已新增 `Runtime Topology` 页面、hook、路由和侧边栏入口。
+- [x] CLI / ACP / TUI / Cron / Service 启动图已挂入新模块，避免新基础层只存在于 WebUI 局部初始化。
+
+### Round 1 Verification
+- [x] `go test ./pkg/runtimeagents ./pkg/channelaccounts ./pkg/accountbindings ./pkg/runtimetopology`
+- [x] `go test ./pkg/webui -run 'TestRuntimeTopologyHandlers_CRUDAndSnapshot|TestPromptHandlers_CRUDAndResolve'`
+- [x] `go test ./cmd/nekobot/... ./pkg/webui ./pkg/runtimeagents ./pkg/channelaccounts ./pkg/accountbindings ./pkg/runtimetopology`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./...`
+
 ## 当前项目评估
 
 ### 已完成能力（可视为现阶段稳定基线）

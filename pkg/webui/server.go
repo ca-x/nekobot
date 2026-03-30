@@ -32,10 +32,12 @@ import (
 	"github.com/labstack/echo/v5/middleware"
 	"go.uber.org/zap"
 
+	"nekobot/pkg/accountbindings"
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
 	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/channels"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
@@ -48,6 +50,8 @@ import (
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
+	"nekobot/pkg/runtimeagents"
+	"nekobot/pkg/runtimetopology"
 	"nekobot/pkg/servicecontrol"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
@@ -81,6 +85,10 @@ type Server struct {
 	processMgr  *process.Manager
 	prompts     *prompts.Manager
 	providers   *providerstore.Manager
+	runtimeMgr  *runtimeagents.Manager
+	accountMgr  *channelaccounts.Manager
+	bindingMgr  *accountbindings.Manager
+	topologySvc *runtimetopology.Service
 	cronMgr     *cron.Manager
 	skillsMgr   *skills.Manager
 	workspace   *workspace.Manager
@@ -212,6 +220,40 @@ func NewServer(
 		startedAt: time.Now(),
 	}
 
+	if entClient != nil {
+		runtimeMgr, err := runtimeagents.NewManager(cfg, log, entClient)
+		if err != nil {
+			log.Warn("Failed to initialize runtime agent manager", zap.Error(err))
+		} else {
+			s.runtimeMgr = runtimeMgr
+		}
+
+		accountMgr, err := channelaccounts.NewManager(cfg, log, entClient)
+		if err != nil {
+			log.Warn("Failed to initialize channel account manager", zap.Error(err))
+		} else {
+			s.accountMgr = accountMgr
+		}
+
+		if s.runtimeMgr != nil && s.accountMgr != nil {
+			bindingMgr, err := accountbindings.NewManager(cfg, log, entClient, s.runtimeMgr, s.accountMgr)
+			if err != nil {
+				log.Warn("Failed to initialize account binding manager", zap.Error(err))
+			} else {
+				s.bindingMgr = bindingMgr
+			}
+		}
+
+		if s.runtimeMgr != nil && s.accountMgr != nil && s.bindingMgr != nil {
+			topologySvc, err := runtimetopology.NewService(s.runtimeMgr, s.accountMgr, s.bindingMgr)
+			if err != nil {
+				log.Warn("Failed to initialize runtime topology service", zap.Error(err))
+			} else {
+				s.topologySvc = topologySvc
+			}
+		}
+	}
+
 	ilinkStore, err := ilinkauth.NewStore(cfg)
 	if err != nil {
 		log.Warn("Failed to create iLink auth store", zap.Error(err))
@@ -298,6 +340,21 @@ func (s *Server) setup() {
 	api.PUT("/chat/prompts/session/:id", s.handlePutChatSessionPrompts)
 	api.DELETE("/chat/prompts/session/:id", s.handleDeleteChatSessionPrompts)
 	api.POST("/chat/session/:id/undo", s.handleUndoChatSession)
+
+	// Multi-runtime foundation routes.
+	api.GET("/runtime-agents", s.handleListRuntimeAgents)
+	api.POST("/runtime-agents", s.handleCreateRuntimeAgent)
+	api.PUT("/runtime-agents/:id", s.handleUpdateRuntimeAgent)
+	api.DELETE("/runtime-agents/:id", s.handleDeleteRuntimeAgent)
+	api.GET("/channel-accounts", s.handleListChannelAccounts)
+	api.POST("/channel-accounts", s.handleCreateChannelAccount)
+	api.PUT("/channel-accounts/:id", s.handleUpdateChannelAccount)
+	api.DELETE("/channel-accounts/:id", s.handleDeleteChannelAccount)
+	api.GET("/account-bindings", s.handleListAccountBindings)
+	api.POST("/account-bindings", s.handleCreateAccountBinding)
+	api.PUT("/account-bindings/:id", s.handleUpdateAccountBinding)
+	api.DELETE("/account-bindings/:id", s.handleDeleteAccountBinding)
+	api.GET("/runtime-topology", s.handleGetRuntimeTopology)
 
 	// Status
 	api.GET("/status", s.handleStatus)
@@ -5542,6 +5599,201 @@ func (s *Server) handleResolvePrompts(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, resolved)
+}
+
+func (s *Server) handleListRuntimeAgents(c *echo.Context) error {
+	if s.runtimeMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime agent manager not available"})
+	}
+	items, err := s.runtimeMgr.List(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleCreateRuntimeAgent(c *echo.Context) error {
+	if s.runtimeMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime agent manager not available"})
+	}
+	var body runtimeagents.AgentRuntime
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.runtimeMgr.Create(c.Request().Context(), body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleUpdateRuntimeAgent(c *echo.Context) error {
+	if s.runtimeMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime agent manager not available"})
+	}
+	var body runtimeagents.AgentRuntime
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.runtimeMgr.Update(c.Request().Context(), c.Param("id"), body)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, runtimeagents.ErrRuntimeNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleDeleteRuntimeAgent(c *echo.Context) error {
+	if s.runtimeMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime agent manager not available"})
+	}
+	err := s.runtimeMgr.Delete(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, runtimeagents.ErrRuntimeNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleListChannelAccounts(c *echo.Context) error {
+	if s.accountMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "channel account manager not available"})
+	}
+	items, err := s.accountMgr.List(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleCreateChannelAccount(c *echo.Context) error {
+	if s.accountMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "channel account manager not available"})
+	}
+	var body channelaccounts.ChannelAccount
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.accountMgr.Create(c.Request().Context(), body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleUpdateChannelAccount(c *echo.Context) error {
+	if s.accountMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "channel account manager not available"})
+	}
+	var body channelaccounts.ChannelAccount
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.accountMgr.Update(c.Request().Context(), c.Param("id"), body)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleDeleteChannelAccount(c *echo.Context) error {
+	if s.accountMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "channel account manager not available"})
+	}
+	err := s.accountMgr.Delete(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleListAccountBindings(c *echo.Context) error {
+	if s.bindingMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "account binding manager not available"})
+	}
+	items, err := s.bindingMgr.List(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleCreateAccountBinding(c *echo.Context) error {
+	if s.bindingMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "account binding manager not available"})
+	}
+	var body accountbindings.AccountBinding
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.bindingMgr.Create(c.Request().Context(), body)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, accountbindings.ErrBindingNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleUpdateAccountBinding(c *echo.Context) error {
+	if s.bindingMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "account binding manager not available"})
+	}
+	var body accountbindings.AccountBinding
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	item, err := s.bindingMgr.Update(c.Request().Context(), c.Param("id"), body)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, accountbindings.ErrBindingNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+func (s *Server) handleDeleteAccountBinding(c *echo.Context) error {
+	if s.bindingMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "account binding manager not available"})
+	}
+	err := s.bindingMgr.Delete(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, accountbindings.ErrBindingNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleGetRuntimeTopology(c *echo.Context) error {
+	if s.topologySvc == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime topology service not available"})
+	}
+	snapshot, err := s.topologySvc.Snapshot(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, snapshot)
 }
 
 func (s *Server) handleGetChatSessionPrompts(c *echo.Context) error {

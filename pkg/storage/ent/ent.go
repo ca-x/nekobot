@@ -6,7 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"nekobot/pkg/storage/ent/accountbinding"
+	"nekobot/pkg/storage/ent/agentruntime"
 	"nekobot/pkg/storage/ent/attachtoken"
+	"nekobot/pkg/storage/ent/channelaccount"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
@@ -83,17 +86,20 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			attachtoken.Table:   attachtoken.ValidColumn,
-			configsection.Table: configsection.ValidColumn,
-			cronjob.Table:       cronjob.ValidColumn,
-			membership.Table:    membership.ValidColumn,
-			prompt.Table:        prompt.ValidColumn,
-			promptbinding.Table: promptbinding.ValidColumn,
-			provider.Table:      provider.ValidColumn,
-			tenant.Table:        tenant.ValidColumn,
-			toolevent.Table:     toolevent.ValidColumn,
-			toolsession.Table:   toolsession.ValidColumn,
-			user.Table:          user.ValidColumn,
+			accountbinding.Table: accountbinding.ValidColumn,
+			agentruntime.Table:   agentruntime.ValidColumn,
+			attachtoken.Table:    attachtoken.ValidColumn,
+			channelaccount.Table: channelaccount.ValidColumn,
+			configsection.Table:  configsection.ValidColumn,
+			cronjob.Table:        cronjob.ValidColumn,
+			membership.Table:     membership.ValidColumn,
+			prompt.Table:         prompt.ValidColumn,
+			promptbinding.Table:  promptbinding.ValidColumn,
+			provider.Table:       provider.ValidColumn,
+			tenant.Table:         tenant.ValidColumn,
+			toolevent.Table:      toolevent.ValidColumn,
+			toolsession.Table:    toolsession.ValidColumn,
+			user.Table:           user.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

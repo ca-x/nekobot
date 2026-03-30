@@ -12,8 +12,14 @@ import (
 // Tx is a transactional client that is created by calling Client.Tx().
 type Tx struct {
 	config
+	// AccountBinding is the client for interacting with the AccountBinding builders.
+	AccountBinding *AccountBindingClient
+	// AgentRuntime is the client for interacting with the AgentRuntime builders.
+	AgentRuntime *AgentRuntimeClient
 	// AttachToken is the client for interacting with the AttachToken builders.
 	AttachToken *AttachTokenClient
+	// ChannelAccount is the client for interacting with the ChannelAccount builders.
+	ChannelAccount *ChannelAccountClient
 	// ConfigSection is the client for interacting with the ConfigSection builders.
 	ConfigSection *ConfigSectionClient
 	// CronJob is the client for interacting with the CronJob builders.
@@ -165,7 +171,10 @@ func (tx *Tx) Client() *Client {
 }
 
 func (tx *Tx) init() {
+	tx.AccountBinding = NewAccountBindingClient(tx.config)
+	tx.AgentRuntime = NewAgentRuntimeClient(tx.config)
 	tx.AttachToken = NewAttachTokenClient(tx.config)
+	tx.ChannelAccount = NewChannelAccountClient(tx.config)
 	tx.ConfigSection = NewConfigSectionClient(tx.config)
 	tx.CronJob = NewCronJobClient(tx.config)
 	tx.Membership = NewMembershipClient(tx.config)
@@ -185,7 +194,7 @@ func (tx *Tx) init() {
 // of them in order to commit or rollback the transaction.
 //
 // If a closed transaction is embedded in one of the generated entities, and the entity
-// applies a query, for example: AttachToken.QueryXXX(), the query will be executed
+// applies a query, for example: AccountBinding.QueryXXX(), the query will be executed
 // through the driver which created this transaction.
 //
 // Note that txDriver is not goroutine safe.

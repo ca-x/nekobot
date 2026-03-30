@@ -8,6 +8,30 @@ import (
 	"nekobot/pkg/storage/ent"
 )
 
+// The AccountBindingFunc type is an adapter to allow the use of ordinary
+// function as AccountBinding mutator.
+type AccountBindingFunc func(context.Context, *ent.AccountBindingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AccountBindingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AccountBindingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AccountBindingMutation", m)
+}
+
+// The AgentRuntimeFunc type is an adapter to allow the use of ordinary
+// function as AgentRuntime mutator.
+type AgentRuntimeFunc func(context.Context, *ent.AgentRuntimeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f AgentRuntimeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.AgentRuntimeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AgentRuntimeMutation", m)
+}
+
 // The AttachTokenFunc type is an adapter to allow the use of ordinary
 // function as AttachToken mutator.
 type AttachTokenFunc func(context.Context, *ent.AttachTokenMutation) (ent.Value, error)
@@ -18,6 +42,18 @@ func (f AttachTokenFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AttachTokenMutation", m)
+}
+
+// The ChannelAccountFunc type is an adapter to allow the use of ordinary
+// function as ChannelAccount mutator.
+type ChannelAccountFunc func(context.Context, *ent.ChannelAccountMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ChannelAccountFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ChannelAccountMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ChannelAccountMutation", m)
 }
 
 // The ConfigSectionFunc type is an adapter to allow the use of ordinary

@@ -10,8 +10,10 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
 
+	"nekobot/pkg/accountbindings"
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
@@ -19,6 +21,8 @@ import (
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
+	"nekobot/pkg/runtimeagents"
+	"nekobot/pkg/runtimetopology"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
@@ -375,6 +379,10 @@ func buildCronManagerOrExit() (*cron.Manager, func()) {
 		watch.Module,
 		prompts.Module,
 		providerstore.Module,
+		runtimeagents.Module,
+		channelaccounts.Module,
+		accountbindings.Module,
+		runtimetopology.Module,
 		agent.Module,
 		cron.Module,
 

@@ -11,9 +11,11 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/fx"
 
+	"nekobot/pkg/accountbindings"
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -21,6 +23,8 @@ import (
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
+	"nekobot/pkg/runtimeagents"
+	"nekobot/pkg/runtimetopology"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
@@ -65,6 +69,10 @@ func runACP(cmd *cobra.Command, args []string) {
 		toolsessions.Module,
 		prompts.Module,
 		providerstore.Module,
+		runtimeagents.Module,
+		channelaccounts.Module,
+		accountbindings.Module,
+		runtimetopology.Module,
 		agent.Module,
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, ag *agent.Agent) {
 			lc.Append(fx.Hook{
