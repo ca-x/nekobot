@@ -173,12 +173,49 @@
 - [x] `go test -count=1 ./...`
 
 ### Remaining Follow-up
-- [ ] 继续把 Telegram / WeChat / ServerChan 等仍直接调全局 agent 的 channel 逐步迁到 `pkg/inboundrouter` 主链。
+- [ ] 继续把剩余仍直接调全局 agent 的 channel 路径逐步迁到 `pkg/inboundrouter` 主链。
+- [x] Telegram / WeChat 普通聊天主链已切到 `bus + inboundrouter`，并保留 legacy fallback。
+- [ ] ServerChan 当前主要承担通知/命令通道，不作为本轮入站聊天 blocker，后续按产品定位决定是否纳入 runtime routing。
 - [ ] 将 runtime `PromptID` 真正接入 prompt resolution，而不是当前仅透传 runtime metadata。
 - [ ] 为 runtime/account/binding 增加真正可编辑的 WebUI 页面，而不是仅有只读 topology。
 
 ### Status
 **Completed** - 已建立统一入站路由主干，完成 bus 语义拆分与 gateway 接线，并通过定向测试、全量 Go 回归和前端构建验证。
+
+## 2026-03-31 Gateway / Channels 运行时主链收口批次
+
+### Goal
+沿着上一轮的统一入站 router，继续收口真实 channel 聊天主链，把 Telegram / WeChat 的普通消息执行路径从“channel 内直接调 agent”切到 `bus + inboundrouter`，同时修复在全面回归中暴露出的 `watch` 重启竞态，确保第二轮主链真正稳定。
+
+### Phases
+- [x] Phase 1: 重新核对 Telegram / WeChat / ServerChan / Gateway 的当前消息路径
+- [x] Phase 2: 为 router 增加 legacy channel fallback，避免迁移时强依赖 topology 先配置完整
+- [x] Phase 3: 迁移 Telegram / WeChat 普通聊天到 bus/router 主链
+- [x] Phase 4: 修复全面回归中暴露的 `watch` restart nil-pointer 竞态
+- [x] Phase 5: 跑定向测试、主链回归、前端构建与全量 Go 验证
+
+### Decisions Made
+- `Telegram` / `WeChat` 先迁“普通聊天”主链，不动现有 command / ACP runtime control / pending interaction 分支，降低改动面。
+- `inboundrouter` 增加 legacy fallback：
+  - 若某 channel 还没有 account/binding 配置，则按旧 `sessionID + PromptContext` 直接调用全局 agent。
+  - 这样 channel 可以先切到 `SendInbound()`，而不会因为 topology 尚未配置就失效。
+- `Telegram` 通过 `bus.Message.Data` 透传 `thinking_message_id` / `reply_to_message_id`，继续复用现有消息完成体验。
+- `WeChat` 通过 `bus.Message.Data["context_token"]` 透传回复上下文，避免切到 router 后丢失上下文回复能力。
+- `ServerChan` 本轮不强行纳入 router 聊天主链：
+  - 现有实现更像通知/命令通道而不是持续对话 runtime。
+  - 先避免把“是否要做多轮聊天”与当前运行时主链收口混在一起。
+- `watch` 竞态修复采用最小方式：
+  - event loop 在启动时捕获 `ctx` 与 `fsWatcher` 快照。
+  - 运行期间不再读取可能被 `Stop()` 置空的共享指针。
+
+### Verification
+- [x] `go test -count=1 ./pkg/inboundrouter ./pkg/channels/telegram ./pkg/channels/wechat`
+- [x] `go test -count=1 ./pkg/watch ./pkg/inboundrouter ./pkg/channels ./pkg/gateway ./pkg/webui ./cmd/nekobot/...`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./...`
+
+### Status
+**Completed** - 已将 Telegram / WeChat 普通聊天接入统一 router 主链，修复 `watch` restart 竞态，并通过定向测试、主链回归、前端构建与全量 Go 验证。
 
 ### Round 1 Progress Notes
 - [x] 已为 watch 运行态同步补回归测试，覆盖 `handleUpdateWatchStatus`、`handleSaveConfig`、`handleImportConfig`。

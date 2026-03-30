@@ -214,6 +214,96 @@ func TestChatWebsocketFallsBackWithoutTopologyBinding(t *testing.T) {
 	}
 }
 
+func TestHandleInboundFallsBackForLegacyChannelWithoutTopology(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error", OutputPath: ""})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	messageBus := bus.NewLocalBus(log, 8)
+	if err := messageBus.Start(); err != nil {
+		t.Fatalf("start bus: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := messageBus.Stop(); err != nil {
+			t.Fatalf("stop bus: %v", err)
+		}
+	})
+
+	replyCh := make(chan *bus.Message, 1)
+	messageBus.RegisterOutboundHandler("telegram", func(ctx context.Context, msg *bus.Message) error {
+		replyCh <- msg
+		return nil
+	})
+
+	agentStub := &stubAgent{response: "legacy reply"}
+	router, err := New(
+		log,
+		messageBus,
+		agentStub,
+		session.NewManager(t.TempDir(), cfg.Sessions),
+		accountMgr,
+		bindingMgr,
+		runtimeMgr,
+	)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	err = router.HandleInbound(context.Background(), &bus.Message{
+		ChannelID: "telegram",
+		SessionID: "telegram:123",
+		UserID:    "u-1",
+		Username:  "alice",
+		Type:      bus.MessageTypeText,
+		Content:   "hello",
+		Data: map[string]interface{}{
+			"reply_to_message_id": 7,
+		},
+	})
+	if err != nil {
+		t.Fatalf("handle inbound: %v", err)
+	}
+
+	select {
+	case reply := <-replyCh:
+		if reply.Content != "legacy reply" {
+			t.Fatalf("unexpected reply: %q", reply.Content)
+		}
+		if got, ok := reply.Data["reply_to_message_id"].(int); !ok || got != 7 {
+			t.Fatalf("expected reply_to_message_id=7, got %#v", reply.Data["reply_to_message_id"])
+		}
+		if agentStub.lastPrompt.SessionID != "telegram:123" {
+			t.Fatalf("unexpected legacy session id: %q", agentStub.lastPrompt.SessionID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound reply")
+	}
+}
+
 func newTestEntClient(t *testing.T, cfg *config.Config) *ent.Client {
 	t.Helper()
 	client, err := config.OpenRuntimeEntClient(cfg)

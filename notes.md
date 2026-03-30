@@ -332,6 +332,90 @@
   - runtime `PromptID` 仍未真正成为 prompt resolution 输入。
   - WebUI 目前只有 topology 观察页，没有 account/binding/runtime 的完整交互编辑体验。
 
+## 2026-03-31 Gateway / Channels Round 2 收口
+
+### 新结论
+- 昨天判断里把 Telegram 也列进“仍直接调全局 agent”的集合并不准确：
+  - 它确实还在 channel 内直接调 agent，但其 session/回包结构比 WeChat 更容易平滑迁移。
+  - 真正本轮最值得优先处理的是让 Telegram / WeChat 的普通聊天统一走 `SendInbound -> inboundrouter -> SendOutbound`。
+- `ServerChan` 与其说是聊天 channel，不如说更偏通知/命令入口；本轮不把它当成 runtime routing 的 blocker 更合理。
+
+### 本轮已落地
+
+#### 1. Router 增加 legacy channel fallback
+- 文件：
+  - `pkg/inboundrouter/router.go`
+  - `pkg/inboundrouter/router_test.go`
+- 新行为：
+  - 若 `ResolveForChannelID()` 找不到对应 account，不再直接丢弃 inbound message。
+  - 改为走 legacy fallback：
+    - 使用原 sessionID 获取 session。
+    - 用原 channel/session/user prompt context 调全局 agent。
+    - 将 reply 经 `bus.SendOutbound()` 发回 channel。
+- 价值：
+  - channel 现在可以先统一改成发 inbound bus，而不必要求用户先手工建 account/binding/runtime 拓扑。
+
+#### 2. Telegram 普通聊天切到 `bus + router`
+- 文件：
+  - `pkg/channels/telegram/telegram.go`
+- 变化：
+  - 普通消息不再在 `handleMessage()` 里直接 `agent.ChatWithPromptContext(...)`。
+  - 改为：
+    - 先生成 thinking message。
+    - 构造 `bus.Message`。
+    - 将已套 profile 的输入写入 `busMsg.Content`。
+    - 通过 `busMsg.Data` 透传：
+      - `thinking_message_id`
+      - `reply_to_message_id`
+    - `SendInbound()` 交给 router 处理。
+- 结果：
+  - Telegram 聊天主链已进入统一 routing spine。
+  - 现有 thinking/回复体验仍可保留给 outbound path 消费。
+
+#### 3. WeChat 普通聊天切到 `bus + router`
+- 文件：
+  - `pkg/channels/wechat/channel.go`
+  - `pkg/channels/wechat/channel_auth_test.go`
+- 变化：
+  - 普通聊天在 command / pending interaction / runtime control 分支之后，不再直接 `agent.ChatWithPromptContext(...)`。
+  - 改为构造 `bus.Message` 并 `SendInbound()`。
+  - 通过 `bus.Message.Data["context_token"]` 保留 WeChat 回复上下文。
+  - `SendMessage()` 改为从 message data 中提取 `context_token` 再回发。
+  - 补了 `messageContextToken()` helper 测试。
+- 结果：
+  - WeChat 普通聊天也纳入统一 router 主链。
+  - `context_token` 没因为架构迁移而丢失。
+
+#### 4. 全量回归顺手打出并修掉 `watch` 生命周期竞态
+- 文件：
+  - `pkg/watch/watcher.go`
+- 发现：
+  - `TestWatcherCanRestartAfterStop` 在全量回归时真实触发 panic：
+    - `eventLoop()` 运行中持续解引用 `w.fsWatcher`
+    - `Stop()` 会把 `w.fsWatcher = nil`
+    - goroutine 尚未退出时出现 nil-pointer dereference
+- 修复：
+  - `Start()` 启动 event loop 时，捕获 `ctx` 与 `fsWatcher` 局部快照。
+  - `eventLoop(ctx, fsWatcher)` 生命周期内只使用这两个快照，不再回读共享指针。
+- 结果：
+  - `watch` restart / stop / start 主链现在可稳定回归。
+
+### 回归结果
+- 定向：
+  - `go test -count=1 ./pkg/inboundrouter ./pkg/channels/telegram ./pkg/channels/wechat`
+- 主链：
+  - `go test -count=1 ./pkg/watch ./pkg/inboundrouter ./pkg/channels ./pkg/gateway ./pkg/webui ./cmd/nekobot/...`
+- 前端：
+  - `npm --prefix pkg/webui/frontend run build`
+- 全量：
+  - `go test -count=1 ./...`
+
+### 当前剩余点
+- WeChat / Telegram 的 command / interaction / runtime-control 分支虽然还没统一进 router，但已经不再阻塞普通聊天主链。
+- 还需要继续评估：
+  - 哪些 channel 真正值得建成“多账号 + runtime binding”的持续对话通道。
+  - 哪些像 ServerChan 这类更适合作为通知/命令型 channel，应该保持更轻的控制面模型。
+
 #### 前端 Round 1 最小承接面
 - 不重构 `Channels / Config / System` 主体。
 - 新增一个轻量 `Runtime Topology` 页面最合适。

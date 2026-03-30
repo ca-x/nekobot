@@ -152,6 +152,8 @@ func (w *Watcher) Start() error {
 	w.debounceTimers = make(map[int]*time.Timer)
 
 	w.ctx, w.cancel = context.WithCancel(context.Background())
+	eventCtx := w.ctx
+	fsWatcher := w.fsWatcher
 	w.running = true
 	w.mu.Unlock()
 
@@ -179,7 +181,7 @@ func (w *Watcher) Start() error {
 	}
 
 	// Start event loop
-	go w.eventLoop()
+	go w.eventLoop(eventCtx, fsWatcher)
 
 	return nil
 }
@@ -333,19 +335,23 @@ func (w *Watcher) addWatchPath(path string, patternIdx int) error {
 }
 
 // eventLoop processes fsnotify events with debouncing.
-func (w *Watcher) eventLoop() {
+func (w *Watcher) eventLoop(ctx context.Context, fsWatcher *fsnotify.Watcher) {
+	if ctx == nil || fsWatcher == nil {
+		return
+	}
+
 	for {
 		select {
-		case <-w.ctx.Done():
+		case <-ctx.Done():
 			return
 
-		case event, ok := <-w.fsWatcher.Events:
+		case event, ok := <-fsWatcher.Events:
 			if !ok {
 				return
 			}
 			w.handleFSEvent(event)
 
-		case err, ok := <-w.fsWatcher.Errors:
+		case err, ok := <-fsWatcher.Errors:
 			if !ok {
 				return
 			}

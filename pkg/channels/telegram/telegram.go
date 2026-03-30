@@ -499,34 +499,17 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 		busMsg.ReplyTo = fmt.Sprintf("telegram:%d", message.ReplyToMessage.MessageID)
 	}
 
-	// Send to bus for processing
-	ctx, cancel := context.WithTimeout(context.Background(), c.requestTimeout())
-	defer cancel()
-
-	// Create a simple session for this message
-	sess := &simpleSession{
-		messages: make([]agent.Message, 0),
-	}
-
 	thinkingMsgID := c.sendThinkingMessage(message.Chat.ID, message.MessageID, "🤔 正在思考中...")
-	agentInput := c.applyUserProfile(context.Background(), busMsg.UserID, content)
-
-	// Process with agent
-	response, err := c.agent.ChatWithPromptContext(ctx, sess, agentInput, agent.PromptContext{
-		Channel:   c.ID(),
-		SessionID: busMsg.SessionID,
-		UserID:    busMsg.UserID,
-		Username:  busMsg.Username,
-	})
-	if err != nil {
-		c.log.Error("Agent chat failed", zap.Error(err))
-
-		// Send error message
-		c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, "❌ 抱歉，处理消息时出现错误。")
-		return
+	busMsg.Content = c.applyUserProfile(context.Background(), busMsg.UserID, content)
+	busMsg.Data = map[string]interface{}{
+		"thinking_message_id": thinkingMsgID,
+		"reply_to_message_id": message.MessageID,
 	}
 
-	c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, response)
+	if err := c.bus.SendInbound(busMsg); err != nil {
+		c.log.Error("Failed to route Telegram inbound message", zap.Error(err))
+		c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, "❌ 抱歉，处理消息时出现错误。")
+	}
 }
 
 func (c *Channel) tryTranscribeAudio(message *tgbotapi.Message) (string, bool) {

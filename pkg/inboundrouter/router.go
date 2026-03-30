@@ -195,6 +195,9 @@ func (r *Router) HandleInbound(ctx context.Context, msg *bus.Message) error {
 	account, err := r.accounts.ResolveForChannelID(ctx, msg.ChannelID)
 	if err != nil {
 		if account == nil {
+			if errors.Is(err, channelaccounts.ErrAccountNotFound) {
+				return r.handleLegacyInbound(ctx, msg)
+			}
 			r.log.Debug("No channel account mapping for inbound message",
 				zap.String("channel_id", msg.ChannelID),
 				zap.String("session_id", msg.SessionID),
@@ -233,6 +236,39 @@ func (r *Router) HandleInbound(ctx context.Context, msg *bus.Message) error {
 		if err := r.dispatchToRuntime(ctx, msg, *account, binding, *runtimeItem); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (r *Router) handleLegacyInbound(ctx context.Context, msg *bus.Message) error {
+	sess, err := r.sessionMgr.GetWithSource(msg.SessionID, session.SourceChannels)
+	if err != nil {
+		return fmt.Errorf("get legacy channel session %s: %w", msg.SessionID, err)
+	}
+
+	response, _, err := r.agent.ChatWithPromptContextDetailed(ctx, sess, msg.Content, agent.PromptContext{
+		Channel:   msg.ChannelID,
+		SessionID: msg.SessionID,
+		UserID:    msg.UserID,
+		Username:  msg.Username,
+	})
+	if err != nil {
+		return fmt.Errorf("legacy channel %s chat: %w", msg.ChannelID, err)
+	}
+
+	outbound := &bus.Message{
+		ChannelID: msg.ChannelID,
+		SessionID: msg.SessionID,
+		UserID:    msg.UserID,
+		Username:  msg.Username,
+		Type:      bus.MessageTypeText,
+		Content:   response,
+		Data:      cloneMessageData(msg.Data),
+		ReplyTo:   msg.ReplyTo,
+	}
+	if err := r.bus.SendOutbound(outbound); err != nil {
+		return fmt.Errorf("send legacy outbound reply for %s: %w", msg.ChannelID, err)
 	}
 
 	return nil
@@ -280,7 +316,8 @@ func (r *Router) dispatchToRuntime(
 		Username:  msg.Username,
 		Type:      bus.MessageTypeText,
 		Content:   response,
-		Data:      metadata,
+		Data:      mergeMessageData(msg.Data, metadata),
+		ReplyTo:   msg.ReplyTo,
 	}
 
 	if err := r.bus.SendOutbound(outbound); err != nil {
@@ -359,4 +396,29 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func cloneMessageData(input map[string]interface{}) map[string]interface{} {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string]interface{}, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func mergeMessageData(base, overlay map[string]interface{}) map[string]interface{} {
+	if len(base) == 0 && len(overlay) == 0 {
+		return nil
+	}
+	out := cloneMessageData(base)
+	if out == nil {
+		out = make(map[string]interface{}, len(overlay))
+	}
+	for key, value := range overlay {
+		out[key] = value
+	}
+	return out
 }

@@ -28,20 +28,20 @@ import (
 
 // Channel implements WeChat channel via WeChat iLink.
 type Channel struct {
-	log       *logger.Logger
-	config    config.WeChatConfig
-	bus       bus.Bus
-	agent     *agent.Agent
-	commands  *commands.Registry
-	auth      *ilinkauth.Service
-	store     *CredentialStore
-	runtime   *ControlService
-	renderer  richtext.MarkdownImageRenderer
-	inbound   *wxmedia.InboundProcessor
-	workspace string
-	id        string
+	log         *logger.Logger
+	config      config.WeChatConfig
+	bus         bus.Bus
+	agent       *agent.Agent
+	commands    *commands.Registry
+	auth        *ilinkauth.Service
+	store       *CredentialStore
+	runtime     *ControlService
+	renderer    richtext.MarkdownImageRenderer
+	inbound     *wxmedia.InboundProcessor
+	workspace   string
+	id          string
 	channelType string
-	name      string
+	name        string
 
 	mu      sync.RWMutex
 	bot     *wechatbot.Bot
@@ -273,7 +273,7 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 		}
 	}
 
-	if c.agent == nil {
+	if c.bus == nil && c.agent == nil {
 		sendCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err := c.sendReply(sendCtx, msg.FromUserID, "❌ Agent 不可用（未初始化）", msg.ContextToken); err != nil {
@@ -287,6 +287,29 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 
 	stopTyping := c.startTyping(ctx, msg.FromUserID, msg.ContextToken)
 	defer stopTyping()
+
+	if c.bus != nil {
+		busMsg := &bus.Message{
+			ID:        fmt.Sprintf("%s:%d", c.sessionID(msg.FromUserID), time.Now().UnixNano()),
+			ChannelID: c.ID(),
+			SessionID: c.sessionID(msg.FromUserID),
+			UserID:    msg.FromUserID,
+			Username:  msg.FromUserID,
+			Type:      bus.MessageTypeText,
+			Content:   buildWeChatAgentInput(content, c.workspace),
+			Data: map[string]interface{}{
+				"context_token": msg.ContextToken,
+			},
+			Timestamp: time.Now(),
+		}
+		if err := c.bus.SendInbound(busMsg); err != nil {
+			c.log.Error("Failed to route WeChat inbound message", zap.Error(err))
+			if sendErr := c.sendReply(ctx, msg.FromUserID, "❌ 抱歉，处理消息时出现错误。", msg.ContextToken); sendErr != nil {
+				c.log.Error("Failed to send WeChat error reply", zap.Error(sendErr))
+			}
+		}
+		return
+	}
 
 	sess := &simpleSession{messages: make([]agent.Message, 0, 8)}
 	reply, err := c.agent.ChatWithPromptContext(ctx, sess, buildWeChatAgentInput(content, c.workspace), agent.PromptContext{
@@ -638,7 +661,19 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	if strings.TrimSpace(userID) == "" {
 		return fmt.Errorf("wechat session/user id is empty")
 	}
-	return c.sendReply(ctx, userID, msg.Content, "")
+	contextToken := messageContextToken(msg)
+	return c.sendReply(ctx, userID, msg.Content, contextToken)
+}
+
+func messageContextToken(msg *bus.Message) string {
+	if msg == nil || msg.Data == nil {
+		return ""
+	}
+	raw, ok := msg.Data["context_token"].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(raw)
 }
 
 func (c *Channel) sendReply(ctx context.Context, toUserID, text, contextToken string) error {

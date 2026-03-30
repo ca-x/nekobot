@@ -3,6 +3,7 @@ package wechat
 import (
 	"testing"
 
+	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	wxtypes "nekobot/pkg/wechat/types"
 )
@@ -67,5 +68,20 @@ func TestWeChatSessionIDKeepsLegacyPrefixForDefaultRuntime(t *testing.T) {
 	ch := &Channel{id: "wechat", channelType: "wechat"}
 	if got := ch.sessionID("user-1"); got != "wechat:user-1" {
 		t.Fatalf("unexpected default runtime session id: %s", got)
+	}
+}
+
+func TestWeChatMessageContextTokenFromBusData(t *testing.T) {
+	msg := &bus.Message{
+		Data: map[string]interface{}{
+			"context_token": "ctx-1",
+		},
+	}
+	if got := messageContextToken(msg); got != "ctx-1" {
+		t.Fatalf("unexpected context token: %q", got)
+	}
+
+	if got := messageContextToken(&bus.Message{Data: map[string]interface{}{"context_token": 1}}); got != "" {
+		t.Fatalf("expected empty token for non-string data, got %q", got)
 	}
 }
