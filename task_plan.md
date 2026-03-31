@@ -38,6 +38,48 @@
 ### Status
 **Completed** - 已完成 Chat 显式 runtime 选路、runtime 作用域会话隔离、前后端控制面接通与全量回归验证，待提交推送本轮代码。
 
+## 2026-03-31 Binding 启用态一致性补强批次
+
+### Goal
+阻断控制面写入“enabled binding 指向 disabled runtime/account”的半有效状态，保证 Runtime Topology、Chat 选路与 WebUI 配置语义一致，并完成 API 回归与更大范围验证。
+
+### Phases
+- [x] Phase 1: 确认当前脏状态入口与影响面
+- [x] Phase 2: 先补 manager 级失败测试并修复规范化校验
+- [x] Phase 3: 补 WebUI/API 级回归，锁定请求边界行为
+- [ ] Phase 4: 跑包级/前端/全量回归并记录结果
+- [ ] Phase 5: 提交推送本批修复后继续下一处缺口
+
+### Key Questions
+1. `account_binding.enabled=true` 是否应允许引用 disabled runtime/account，还是只在执行时静默过滤？
+2. 这类非法组合应在 manager、API 还是前端哪一层拦截？
+3. 收紧后是否会打破既有测试或前端假设，暴露更多默认值问题？
+
+### Decisions Made
+- `enabled=true` 的 binding 必须同时指向 enabled 的 `channel_account` 与 `agent_runtime`，否则直接拒绝。
+- `enabled=false` 的 binding 仍允许引用 disabled target，便于预配置或保留草稿拓扑。
+- 约束优先落在 `accountbindings.Manager.normalizeBinding(...)`，确保 CLI/WebUI/其他调用方共享一套规则。
+- WebUI API 层用回归测试锁定 `400` 行为，不额外引入静默 fallback。
+
+### Verification
+- [x] `go test -count=1 ./pkg/accountbindings -run 'TestManagerCRUDAndModeRules|TestManagerRejectsEnabledBindingForDisabledRuntimeOrAccount'`
+- [x] `go test -count=1 ./pkg/webui -run 'TestRuntimeTopologyHandlers_CRUDAndSnapshot|TestHandleCreateChannelAccountRejectsEnabledWechatAccountWithoutCredentials|TestHandleCreateAccountBindingRejectsDisabledTargetsWhenEnabled'`
+- [x] `go test -count=1 ./pkg/accountbindings ./pkg/webui`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./...`
+
+### UI Follow-up
+- [x] Runtime Topology 绑定弹窗只在创建 active binding 时提供 enabled account/runtime 作为候选。
+- [x] 当系统里没有 enabled target 时，前端直接显示提示并禁用保存，而不是把错误完全留给后端 `400`。
+- [x] 三语文案补齐 disabled target 提示与空候选提示。
+
+### Errors Encountered
+- `TestRuntimeTopologyHandlers_CRUDAndSnapshot` 之前默认创建 disabled runtime/account，却尝试创建 enabled binding。
+  - 处理：将测试基线改为显式创建 enabled runtime/account，并为 WeChat account 填入最小合法凭据。
+
+### Status
+**Completed** - 已完成 enabled binding 控制面一致性补强、Runtime Topology 前端候选收口，并通过定向回归、包级回归、前端构建与全量 Go 测试，待提交推送。
+
 ## 2026-03-31 Runtime Prompt 执行链接通批次
 
 ### Goal

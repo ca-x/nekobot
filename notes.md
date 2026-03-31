@@ -1,5 +1,66 @@
 # Notes: nextclaw + picoclaw → nekobot 特性分析
 
+## 2026-03-31 Binding 启用态一致性补记
+
+### 问题确认
+- `pkg/accountbindings/manager.go` 之前只校验 account/runtime 是否存在、binding mode 是否冲突，但没有约束 `Enabled=true` 的 binding 必须指向 enabled target。
+- 这会允许控制面持久化一种“结构存在但执行路径永远不会使用”的半有效状态：
+  - Chat/Router 只会使用 enabled runtime/account。
+  - Runtime Topology 页面却还能显示这条 binding 处于 enabled。
+- 结果是控制面与数据面语义分裂，前端用户很难判断为什么一个“启用的绑定”从不生效。
+
+### 已修复
+- `pkg/accountbindings/manager.go`
+  - `normalizeBinding(...)` 现在会在 `item.Enabled == true` 时额外加载并检查：
+    - `channel_account.enabled`
+    - `agent_runtime.enabled`
+  - 任何一方为 disabled 都会直接返回明确错误，不再允许写入 enabled binding。
+- `pkg/accountbindings/manager_test.go`
+  - 既有 CRUD 正向用例显式把 runtime/account/binding 标成 enabled，避免依赖默认值。
+  - 新增 `TestManagerRejectsEnabledBindingForDisabledRuntimeOrAccount`，覆盖：
+    - enabled binding + disabled runtime => 拒绝
+    - enabled binding + disabled account => 拒绝
+    - disabled binding + disabled runtime/account => 允许
+- `pkg/webui/server_topology_test.go`
+  - 新增 `TestHandleCreateAccountBindingRejectsDisabledTargetsWhenEnabled`，锁定 API 请求边界返回 `400`。
+  - 同时修正 `TestRuntimeTopologyHandlers_CRUDAndSnapshot` 的基线输入：
+    - runtime 显式 `enabled:true`
+    - WeChat channel account 显式 `enabled:true`
+    - 补齐 `bot_token` / `ilink_bot_id`，使其符合当前 account 校验规则
+
+### 当前语义
+- 允许：
+  - disabled binding -> disabled runtime/account
+  - enabled binding -> enabled runtime + enabled account
+- 不允许：
+  - enabled binding -> disabled runtime
+  - enabled binding -> disabled account
+
+### 影响
+- 这次收紧的是控制面写入规则，不改变既有执行路径。
+- 但它让 Runtime Topology / WebUI 不再能制造“看起来已启用、实际上永远不工作”的绑定。
+- 也顺带暴露出一批旧测试依赖默认 disabled 值的隐式假设，后续相关测试都应显式声明 enabled 状态。
+
+### 已完成验证
+- `go test -count=1 ./pkg/accountbindings -run 'TestManagerCRUDAndModeRules|TestManagerRejectsEnabledBindingForDisabledRuntimeOrAccount'`
+- `go test -count=1 ./pkg/webui -run 'TestRuntimeTopologyHandlers_CRUDAndSnapshot|TestHandleCreateChannelAccountRejectsEnabledWechatAccountWithoutCredentials|TestHandleCreateAccountBindingRejectsDisabledTargetsWhenEnabled'`
+- `go test -count=1 ./pkg/accountbindings ./pkg/webui`
+- `npm --prefix pkg/webui/frontend run build`
+- `go test -count=1 ./...`
+
+### 前端一并收口
+- `pkg/webui/frontend/src/pages/RuntimeTopologyPage.tsx`
+  - 新建 binding 时优先默认选 enabled account/runtime；若系统中没有 enabled target，则默认把新 binding 设为 disabled，避免一打开对话框就进入非法状态。
+  - 当 binding 处于 enabled 状态时，候选列表只展示 enabled target。
+  - 若用户切回 enabled 但当前选中的 target 已 disabled，前端会主动修正到可用 target；若无可用 target，则直接提示并禁用保存。
+- `pkg/webui/frontend/public/i18n/{en,zh-CN,ja}.json`
+  - 补齐“没有可用于 active binding 的 enabled target”与“active binding 必须指向 enabled target”的三语提示。
+
+### 结论
+- 这批修复后，Runtime Topology 的控制面、API 边界与实际执行语义已经对齐：
+  - 后端不会再接受半有效 binding。
+  - 前端也不会再默认诱导用户创建这类无效组合。
+
 ## 2026-03-31 Chat 显式 Runtime 选路补记
 
 ### 问题确认

@@ -63,6 +63,7 @@ func TestRuntimeTopologyHandlers_CRUDAndSnapshot(t *testing.T) {
 	runtimeReq := httptest.NewRequest(http.MethodPost, "/api/runtime-agents", strings.NewReader(`{
 		"name":"support-main",
 		"display_name":"Support Main",
+		"enabled":true,
 		"provider":"openai",
 		"model":"gpt-5",
 		"skills":["triage","reply"]
@@ -85,7 +86,12 @@ func TestRuntimeTopologyHandlers_CRUDAndSnapshot(t *testing.T) {
 		"channel_type":"wechat",
 		"account_key":"bot-a",
 		"display_name":"Bot A",
-		"config":{"bot_id":"wx-1"}
+		"enabled":true,
+		"config":{
+			"enabled":true,
+			"bot_token":"token-1",
+			"ilink_bot_id":"wx-1"
+		}
 	}`))
 	accountReq.Header.Set("Content-Type", "application/json")
 	accountRec := httptest.NewRecorder()
@@ -185,6 +191,120 @@ func TestHandleCreateChannelAccountRejectsEnabledWechatAccountWithoutCredentials
 	}
 	if !strings.Contains(rec.Body.String(), "config.bot_token") {
 		t.Fatalf("expected credentials validation error, got %s", rec.Body.String())
+	}
+}
+
+func TestHandleCreateAccountBindingRejectsDisabledTargetsWhenEnabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	disabledRuntime, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:    "support-disabled",
+		Enabled: false,
+	})
+	if err != nil {
+		t.Fatalf("create disabled runtime: %v", err)
+	}
+	enabledRuntime, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:    "support-enabled",
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create enabled runtime: %v", err)
+	}
+	disabledAccount, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-disabled",
+		Enabled:     false,
+	})
+	if err != nil {
+		t.Fatalf("create disabled account: %v", err)
+	}
+	enabledAccount, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-enabled",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create enabled account: %v", err)
+	}
+
+	s := &Server{
+		config:     cfg,
+		logger:     log,
+		entClient:  client,
+		runtimeMgr: runtimeMgr,
+		accountMgr: accountMgr,
+		bindingMgr: bindingMgr,
+	}
+	e := echo.New()
+
+	testCases := []struct {
+		name        string
+		body        string
+		expectError string
+	}{
+		{
+			name: "disabled runtime",
+			body: `{
+				"channel_account_id":"` + enabledAccount.ID + `",
+				"agent_runtime_id":"` + disabledRuntime.ID + `",
+				"binding_mode":"single_agent",
+				"enabled":true
+			}`,
+			expectError: "is disabled",
+		},
+		{
+			name: "disabled account",
+			body: `{
+				"channel_account_id":"` + disabledAccount.ID + `",
+				"agent_runtime_id":"` + enabledRuntime.ID + `",
+				"binding_mode":"single_agent",
+				"enabled":true
+			}`,
+			expectError: "is disabled",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/account-bindings", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			ctx := e.NewContext(req, rec)
+
+			if err := s.handleCreateAccountBinding(ctx); err != nil {
+				t.Fatalf("handleCreateAccountBinding failed: %v", err)
+			}
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tc.expectError) {
+				t.Fatalf("expected error containing %q, got %s", tc.expectError, rec.Body.String())
+			}
+		})
 	}
 }
 

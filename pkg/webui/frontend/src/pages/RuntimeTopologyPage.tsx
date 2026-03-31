@@ -148,10 +148,27 @@ export default function RuntimeTopologyPage() {
   const updateBinding = useUpdateAccountBinding();
   const deleteBinding = useDeleteAccountBinding();
 
+  const [runtimeDialogOpen, setRuntimeDialogOpen] = useState(false);
+  const [runtimeState, setRuntimeState] = useState<RuntimeDialogState>(defaultRuntimeState());
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [accountState, setAccountState] = useState<ChannelAccountDialogState>(defaultChannelAccountState());
+  const [bindingDialogOpen, setBindingDialogOpen] = useState(false);
+  const [bindingState, setBindingState] = useState<BindingDialogState>(defaultBindingState());
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+
   const runtimes = runtimeQuery.data ?? [];
   const accounts = accountQuery.data ?? [];
   const bindings = bindingQuery.data ?? [];
   const snapshot = topologyQuery.data;
+  const enabledRuntimes = runtimes.filter((runtime) => runtime.enabled);
+  const enabledAccounts = accounts.filter((account) => account.enabled);
+  const selectableRuntimes = bindingState.enabled ? enabledRuntimes : runtimes;
+  const selectableAccounts = bindingState.enabled ? enabledAccounts : accounts;
+  const selectedRuntime = runtimes.find((runtime) => runtime.id === bindingState.agent_runtime_id) ?? null;
+  const selectedAccount = accounts.find((account) => account.id === bindingState.channel_account_id) ?? null;
+  const bindingTargetsValid =
+    !bindingState.enabled ||
+    (selectedRuntime !== null && selectedRuntime.enabled && selectedAccount !== null && selectedAccount.enabled);
   const bindingCountByRuntimeID = new Map<string, number>();
   const bindingCountByAccountID = new Map<string, number>();
   for (const binding of bindings) {
@@ -164,14 +181,6 @@ export default function RuntimeTopologyPage() {
       (bindingCountByAccountID.get(binding.channel_account_id) ?? 0) + 1,
     );
   }
-
-  const [runtimeDialogOpen, setRuntimeDialogOpen] = useState(false);
-  const [runtimeState, setRuntimeState] = useState<RuntimeDialogState>(defaultRuntimeState());
-  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
-  const [accountState, setAccountState] = useState<ChannelAccountDialogState>(defaultChannelAccountState());
-  const [bindingDialogOpen, setBindingDialogOpen] = useState(false);
-  const [bindingState, setBindingState] = useState<BindingDialogState>(defaultBindingState());
-  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const isLoading =
     topologyQuery.isLoading ||
@@ -232,6 +241,9 @@ export default function RuntimeTopologyPage() {
   }
 
   async function submitBindingForm() {
+    if (!bindingTargetsValid) {
+      throw new Error(t('runtimeTopologyBindingTargetEnabledHint'));
+    }
     const input: AccountBindingInput = {
       channel_account_id: bindingState.channel_account_id,
       agent_runtime_id: bindingState.agent_runtime_id,
@@ -329,11 +341,16 @@ export default function RuntimeTopologyPage() {
 
   function openNewBindingDialog() {
     const next = defaultBindingState();
-    if (accounts.length > 0) {
-      next.channel_account_id = accounts[0].id;
+    const preferredAccounts = enabledAccounts.length > 0 ? enabledAccounts : accounts;
+    const preferredRuntimes = enabledRuntimes.length > 0 ? enabledRuntimes : runtimes;
+    if (preferredAccounts.length > 0) {
+      next.channel_account_id = preferredAccounts[0].id;
     }
-    if (runtimes.length > 0) {
-      next.agent_runtime_id = runtimes[0].id;
+    if (preferredRuntimes.length > 0) {
+      next.agent_runtime_id = preferredRuntimes[0].id;
+    }
+    if (enabledAccounts.length === 0 || enabledRuntimes.length === 0) {
+      next.enabled = false;
     }
     setBindingState(next);
     setBindingDialogOpen(true);
@@ -352,6 +369,27 @@ export default function RuntimeTopologyPage() {
       metadata_text: JSON.stringify(binding.metadata ?? {}, null, 2),
     });
     setBindingDialogOpen(true);
+  }
+
+  function handleBindingEnabledChange(checked: boolean) {
+    setBindingState((prev) => {
+      const next = { ...prev, enabled: checked };
+      if (!checked) {
+        return next;
+      }
+
+      const preferredAccount = enabledAccounts.find((account) => account.id === prev.channel_account_id) ?? enabledAccounts[0];
+      const preferredRuntime = enabledRuntimes.find((runtime) => runtime.id === prev.agent_runtime_id) ?? enabledRuntimes[0];
+
+      if (preferredAccount) {
+        next.channel_account_id = preferredAccount.id;
+      }
+      if (preferredRuntime) {
+        next.agent_runtime_id = preferredRuntime.id;
+      }
+
+      return next;
+    });
   }
 
   function askDelete(target: DeleteTarget) {
@@ -834,13 +872,20 @@ export default function RuntimeTopologyPage() {
                     <SelectValue placeholder={t('runtimeTopologySelectAccount')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {accounts.map((account) => (
+                    {selectableAccounts.map((account) => (
                       <SelectItem key={account.id} value={account.id}>
-                        {(account.display_name || account.account_key) + ` (${account.channel_type})`}
+                        {formatBindingTargetLabel(
+                          account.display_name || account.account_key,
+                          account.channel_type,
+                          account.enabled,
+                        )}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {bindingState.enabled && selectableAccounts.length === 0 ? (
+                  <p className="text-xs text-amber-600">{t('runtimeTopologyNoEnabledAccountsHint')}</p>
+                ) : null}
               </Field>
               <Field>
                 <Label>{t('runtimeTopologyFieldRuntime')}</Label>
@@ -854,13 +899,20 @@ export default function RuntimeTopologyPage() {
                     <SelectValue placeholder={t('runtimeTopologySelectRuntime')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {runtimes.map((runtime) => (
+                    {selectableRuntimes.map((runtime) => (
                       <SelectItem key={runtime.id} value={runtime.id}>
-                        {runtime.display_name || runtime.name}
+                        {formatBindingTargetLabel(
+                          runtime.display_name || runtime.name,
+                          'runtime',
+                          runtime.enabled,
+                        )}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {bindingState.enabled && selectableRuntimes.length === 0 ? (
+                  <p className="text-xs text-amber-600">{t('runtimeTopologyNoEnabledRuntimesHint')}</p>
+                ) : null}
               </Field>
             </div>
             <div className="grid gap-2 md:grid-cols-2 md:gap-4">
@@ -919,7 +971,7 @@ export default function RuntimeTopologyPage() {
                 label={t('enabled')}
                 description={t('runtimeTopologyEnabledHint')}
                 checked={bindingState.enabled}
-                onCheckedChange={(checked) => setBindingState((prev) => ({ ...prev, enabled: checked }))}
+                onCheckedChange={handleBindingEnabledChange}
               />
               <SwitchField
                 label={t('runtimeTopologyFieldAllowPublicReply')}
@@ -930,6 +982,9 @@ export default function RuntimeTopologyPage() {
                 }
               />
             </div>
+            {bindingState.enabled && !bindingTargetsValid ? (
+              <p className="text-sm text-destructive">{t('runtimeTopologyBindingTargetEnabledHint')}</p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBindingDialogOpen(false)} disabled={isMutating}>
@@ -937,7 +992,7 @@ export default function RuntimeTopologyPage() {
             </Button>
             <Button
               onClick={() => guardedSubmit(submitBindingForm)}
-              disabled={isMutating || accounts.length === 0 || runtimes.length === 0}
+              disabled={isMutating || selectableAccounts.length === 0 || selectableRuntimes.length === 0 || !bindingTargetsValid}
             >
               {t('save')}
             </Button>
@@ -992,6 +1047,13 @@ function MetricCard({
       </CardContent>
     </Card>
   );
+}
+
+function formatBindingTargetLabel(name: string, kind: string, enabled: boolean): string {
+  if (enabled) {
+    return `${name} (${kind})`;
+  }
+  return `${name} (${kind} · ${t('disabled')})`;
 }
 
 function SectionHeading({ title, description }: { title: string; description: string }) {

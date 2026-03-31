@@ -15,17 +15,18 @@ func TestManagerCRUDAndModeRules(t *testing.T) {
 	ctx := context.Background()
 	mgr, runtimes, accounts := newTestManager(t)
 
-	runtimeA, err := runtimes.Create(ctx, runtimeagents.AgentRuntime{Name: "agent-a"})
+	runtimeA, err := runtimes.Create(ctx, runtimeagents.AgentRuntime{Name: "agent-a", Enabled: true})
 	if err != nil {
 		t.Fatalf("create runtime A: %v", err)
 	}
-	runtimeB, err := runtimes.Create(ctx, runtimeagents.AgentRuntime{Name: "agent-b"})
+	runtimeB, err := runtimes.Create(ctx, runtimeagents.AgentRuntime{Name: "agent-b", Enabled: true})
 	if err != nil {
 		t.Fatalf("create runtime B: %v", err)
 	}
 	account, err := accounts.Create(ctx, channelaccounts.ChannelAccount{
 		ChannelType: "wechat",
 		AccountKey:  "bot-a",
+		Enabled:     true,
 	})
 	if err != nil {
 		t.Fatalf("create account: %v", err)
@@ -100,6 +101,69 @@ func TestManagerCRUDAndModeRules(t *testing.T) {
 	}
 	if err := mgr.Delete(ctx, created.ID); !errors.Is(err, ErrBindingNotFound) {
 		t.Fatalf("expected ErrBindingNotFound, got %v", err)
+	}
+}
+
+func TestManagerRejectsEnabledBindingForDisabledRuntimeOrAccount(t *testing.T) {
+	ctx := context.Background()
+	mgr, runtimes, accounts := newTestManager(t)
+
+	disabledRuntime, err := runtimes.Create(ctx, runtimeagents.AgentRuntime{
+		Name:    "agent-disabled",
+		Enabled: false,
+	})
+	if err != nil {
+		t.Fatalf("create disabled runtime: %v", err)
+	}
+	enabledRuntime, err := runtimes.Create(ctx, runtimeagents.AgentRuntime{
+		Name:    "agent-enabled",
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create enabled runtime: %v", err)
+	}
+	disabledAccount, err := accounts.Create(ctx, channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-disabled",
+		Enabled:     false,
+	})
+	if err != nil {
+		t.Fatalf("create disabled account: %v", err)
+	}
+	enabledAccount, err := accounts.Create(ctx, channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-enabled",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create enabled account: %v", err)
+	}
+
+	if _, err := mgr.Create(ctx, AccountBinding{
+		ChannelAccountID: enabledAccount.ID,
+		AgentRuntimeID:   disabledRuntime.ID,
+		BindingMode:      ModeSingleAgent,
+		Enabled:          true,
+	}); err == nil {
+		t.Fatal("expected disabled runtime validation error")
+	}
+
+	if _, err := mgr.Create(ctx, AccountBinding{
+		ChannelAccountID: disabledAccount.ID,
+		AgentRuntimeID:   enabledRuntime.ID,
+		BindingMode:      ModeSingleAgent,
+		Enabled:          true,
+	}); err == nil {
+		t.Fatal("expected disabled account validation error")
+	}
+
+	if _, err := mgr.Create(ctx, AccountBinding{
+		ChannelAccountID: disabledAccount.ID,
+		AgentRuntimeID:   disabledRuntime.ID,
+		BindingMode:      ModeSingleAgent,
+		Enabled:          false,
+	}); err != nil {
+		t.Fatalf("expected disabled binding to allow disabled account/runtime, got %v", err)
 	}
 }
 

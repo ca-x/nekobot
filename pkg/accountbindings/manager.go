@@ -305,17 +305,27 @@ func (m *Manager) normalizeBinding(
 	if item.Metadata == nil {
 		item.Metadata = map[string]interface{}{}
 	}
-	if _, err := m.accounts.Get(ctx, item.ChannelAccountID); err != nil {
+	accountItem, err := m.accounts.Get(ctx, item.ChannelAccountID)
+	if err != nil {
 		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
 			return AccountBinding{}, fmt.Errorf("channel account %s not found", item.ChannelAccountID)
 		}
 		return AccountBinding{}, err
 	}
-	if _, err := m.runtimes.Get(ctx, item.AgentRuntimeID); err != nil {
+	runtimeItem, err := m.runtimes.Get(ctx, item.AgentRuntimeID)
+	if err != nil {
 		if errors.Is(err, runtimeagents.ErrRuntimeNotFound) {
 			return AccountBinding{}, fmt.Errorf("agent runtime %s not found", item.AgentRuntimeID)
 		}
 		return AccountBinding{}, err
+	}
+	if item.Enabled {
+		if accountItem != nil && !accountItem.Enabled {
+			return AccountBinding{}, fmt.Errorf("channel account %s is disabled", item.ChannelAccountID)
+		}
+		if runtimeItem != nil && !runtimeItem.Enabled {
+			return AccountBinding{}, fmt.Errorf("agent runtime %s is disabled", item.AgentRuntimeID)
+		}
 	}
 	if err := m.ensureAccountMode(ctx, currentID, item); err != nil {
 		return AccountBinding{}, err

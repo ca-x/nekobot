@@ -1021,6 +1021,10 @@
   "runtimeTopologyPriorityInvalid": "Priority must be a positive integer.",
   "runtimeTopologySelectAccount": "Select account",
   "runtimeTopologySelectRuntime": "Select runtime",
+  "runtimeTopologyNoEnabledAccountsHint": "No enabled channel account is available for an active binding.",
+  "runtimeTopologyNoEnabledRuntimesHint": "No enabled runtime is available for an active binding.",
+  "runtimeTopologyBindingTargetEnabledHint": "Active bindings must point to enabled channel accounts and runtimes.",
+  "disabled": "Disabled",
   "runtimeTopologyBindingModeSingle": "single_agent",
   "runtimeTopologyBindingModeMulti": "multi_agent",
   "remove": "Remove"

@@ -1021,6 +1021,10 @@
   "runtimeTopologyPriorityInvalid": "Priority は正の整数である必要があります。",
   "runtimeTopologySelectAccount": "account を選択",
   "runtimeTopologySelectRuntime": "runtime を選択",
+  "runtimeTopologyNoEnabledAccountsHint": "有効な binding に使える有効化済み channel account がありません。",
+  "runtimeTopologyNoEnabledRuntimesHint": "有効な binding に使える有効化済み runtime がありません。",
+  "runtimeTopologyBindingTargetEnabledHint": "有効な binding は有効化済みの channel account と runtime を参照する必要があります。",
+  "disabled": "無効",
   "runtimeTopologyBindingModeSingle": "single_agent",
   "runtimeTopologyBindingModeMulti": "multi_agent",
   "remove": "削除"

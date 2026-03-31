@@ -1021,6 +1021,10 @@
   "runtimeTopologyPriorityInvalid": "优先级必须是正整数。",
   "runtimeTopologySelectAccount": "选择账户",
   "runtimeTopologySelectRuntime": "选择 runtime",
+  "runtimeTopologyNoEnabledAccountsHint": "当前没有可用于启用绑定的已启用渠道账户。",
+  "runtimeTopologyNoEnabledRuntimesHint": "当前没有可用于启用绑定的已启用运行体。",
+  "runtimeTopologyBindingTargetEnabledHint": "启用中的绑定必须指向已启用的渠道账户和运行体。",
+  "disabled": "已禁用",
   "runtimeTopologyBindingModeSingle": "single_agent",
   "runtimeTopologyBindingModeMulti": "multi_agent",
   "remove": "删除"
