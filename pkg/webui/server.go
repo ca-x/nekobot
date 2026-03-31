@@ -4090,6 +4090,11 @@ func (s *Server) deleteWechatChannelAccount(ctx context.Context, userID string) 
 		if owner, _ := item.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
 			continue
 		}
+		if s.bindingMgr != nil {
+			if err := s.bindingMgr.DeleteByChannelAccountID(ctx, item.ID); err != nil {
+				return fmt.Errorf("delete wechat bindings for channel account %s: %w", item.ID, err)
+			}
+		}
 		if err := s.accountMgr.Delete(ctx, item.ID); err != nil {
 			return fmt.Errorf("delete wechat channel account %s: %w", item.ID, err)
 		}

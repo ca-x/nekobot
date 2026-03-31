@@ -11,6 +11,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
 
+	"nekobot/pkg/accountbindings"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channelaccounts"
 	pkgchannels "nekobot/pkg/channels"
@@ -18,6 +19,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/runtimeagents"
 	wxtypes "nekobot/pkg/wechat/types"
 )
 
@@ -81,6 +83,14 @@ func TestHandleWechatBindingLifecycle_UsesSharedIlinkAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new account manager: %v", err)
 	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
 
 	login := &wechatLoginStub{
 		qrResp: &wxtypes.QRCodeResponse{
@@ -101,6 +111,7 @@ func TestHandleWechatBindingLifecycle_UsesSharedIlinkAuth(t *testing.T) {
 		logger:     log,
 		ilinkAuth:  ilinkauth.NewService(store, login),
 		accountMgr: accountMgr,
+		bindingMgr: bindingMgr,
 	}
 
 	e := echo.New()
@@ -177,6 +188,25 @@ func TestHandleWechatBindingLifecycle_UsesSharedIlinkAuth(t *testing.T) {
 	if pollPayload.Accounts[0].BotID != "bot-1@im.wechat" {
 		t.Fatalf("unexpected synced channel account: %+v", pollPayload.Accounts[0])
 	}
+	runtimeItem, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "wechat-runtime",
+		DisplayName: "WeChat Runtime",
+		Enabled:     true,
+		Provider:    "openai",
+		Model:       "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("create runtime failed: %v", err)
+	}
+	if _, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: pollPayload.Accounts[0].AccountID,
+		AgentRuntimeID:   runtimeItem.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create binding failed: %v", err)
+	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/channels/wechat/binding", nil)
 	deleteRec := httptest.NewRecorder()
@@ -214,6 +244,13 @@ func TestHandleWechatBindingLifecycle_UsesSharedIlinkAuth(t *testing.T) {
 	if len(accounts) != 0 {
 		t.Fatalf("expected synced wechat channel account to be removed, got %+v", accounts)
 	}
+	bindings, err := bindingMgr.List(context.Background())
+	if err != nil {
+		t.Fatalf("list bindings failed: %v", err)
+	}
+	if len(bindings) != 0 {
+		t.Fatalf("expected bindings to be removed with wechat unbind, got %+v", bindings)
+	}
 }
 
 func TestHandleWechatBindingActivateAndDeleteAccount(t *testing.T) {
@@ -237,6 +274,14 @@ func TestHandleWechatBindingActivateAndDeleteAccount(t *testing.T) {
 	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
 	if err != nil {
 		t.Fatalf("new account manager: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
 	}
 
 	first, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
@@ -315,6 +360,26 @@ func TestHandleWechatBindingActivateAndDeleteAccount(t *testing.T) {
 		logger:     log,
 		ilinkAuth:  authSvc,
 		accountMgr: accountMgr,
+		bindingMgr: bindingMgr,
+	}
+	runtimeItem, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "wechat-runtime",
+		DisplayName: "WeChat Runtime",
+		Enabled:     true,
+		Provider:    "openai",
+		Model:       "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("create runtime failed: %v", err)
+	}
+	if _, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: first.ID,
+		AgentRuntimeID:   runtimeItem.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create binding failed: %v", err)
 	}
 
 	e := echo.New()
@@ -365,6 +430,13 @@ func TestHandleWechatBindingActivateAndDeleteAccount(t *testing.T) {
 	}
 	if len(accounts) != 1 || accounts[0].ID != second.ID {
 		t.Fatalf("expected only second account to remain, got %+v", accounts)
+	}
+	bindings, err := bindingMgr.List(context.Background())
+	if err != nil {
+		t.Fatalf("list bindings failed: %v", err)
+	}
+	if len(bindings) != 0 {
+		t.Fatalf("expected bindings for deleted account to be removed, got %+v", bindings)
 	}
 	if _, err := authSvc.GetBinding("user-1"); err != nil {
 		t.Fatalf("GetBinding after account delete failed: %v", err)
