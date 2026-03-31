@@ -216,6 +216,64 @@ func TestResolveRendersTemplateContextAndSeparatesModes(t *testing.T) {
 	}
 }
 
+func TestResolveIncludesExplicitPromptIDs(t *testing.T) {
+	mgr := newTestManager(t)
+	ctx := context.Background()
+
+	globalPrompt, err := mgr.CreatePrompt(ctx, Prompt{
+		Key:      "global",
+		Name:     "Global",
+		Mode:     ModeSystem,
+		Template: "global",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("create global prompt: %v", err)
+	}
+	runtimePrompt, err := mgr.CreatePrompt(ctx, Prompt{
+		Key:      "runtime",
+		Name:     "Runtime",
+		Mode:     ModeSystem,
+		Template: "runtime={{custom.runtime_name}}",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("create runtime prompt: %v", err)
+	}
+
+	if _, err := mgr.CreateBinding(ctx, Binding{
+		Scope:    ScopeGlobal,
+		PromptID: globalPrompt.ID,
+		Enabled:  true,
+		Priority: 100,
+	}); err != nil {
+		t.Fatalf("create global binding: %v", err)
+	}
+
+	resolved, err := mgr.Resolve(ctx, ResolveInput{
+		Channel:           "wechat",
+		RequestedProvider: "openai",
+		Workspace:         "/workspace/demo",
+		ExplicitPromptIDs: []string{runtimePrompt.ID},
+		Custom: map[string]any{
+			"runtime_name": "Support Main",
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolve prompts: %v", err)
+	}
+
+	if !strings.Contains(resolved.SystemText, "global") {
+		t.Fatalf("expected global prompt to remain applied, got %q", resolved.SystemText)
+	}
+	if !strings.Contains(resolved.SystemText, "runtime=Support Main") {
+		t.Fatalf("expected explicit runtime prompt content, got %q", resolved.SystemText)
+	}
+	if len(resolved.Applied) != 2 {
+		t.Fatalf("expected two applied prompts, got %+v", resolved.Applied)
+	}
+}
+
 func newTestManager(t *testing.T) *Manager {
 	t.Helper()
 

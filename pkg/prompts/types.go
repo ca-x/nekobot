@@ -47,6 +47,7 @@ type ResolveInput struct {
 	RequestedModel    string         `json:"requested_model"`
 	RequestedFallback []string       `json:"requested_fallback"`
 	Workspace         string         `json:"workspace"`
+	ExplicitPromptIDs []string       `json:"explicit_prompt_ids,omitempty"`
 	Custom            map[string]any `json:"custom,omitempty"`
 }
 

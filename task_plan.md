@@ -2,6 +2,36 @@
 
 > Last Updated: 2026-03-31
 
+## 2026-03-31 Runtime Prompt 执行链接通批次
+
+### Goal
+把 `runtime_agents.prompt_id` 从“仅可配置、仅在 metadata 透传”补成真正参与聊天执行的 prompt 解析输入，打通 runtime/account/binding 模型与 prompt 体系之间的执行链，并完成测试、验证、提交与推送。
+
+### Phases
+- [x] Phase 1: 重新核对 runtime prompt、agent prompt resolve 与 inbound router 现状
+- [x] Phase 2: 先补回归测试，证明当前 runtime prompt 尚未生效
+- [x] Phase 3: 修改 agent/prompts/router 执行链，让 runtime prompt 真正进入解析
+- [x] Phase 4: 跑定向与全量回归，更新 notes/task_plan
+- [x] Phase 5: 提交并推送本轮代码
+
+### Key Questions
+1. `runtime.prompt_id` 应该以什么方式进入现有 prompt manager，才能不破坏 global/channel/session 三层语义？
+2. runtime prompt 是补成新的 scope，还是作为显式 prompt override 更合适？
+3. 变更后怎样保证 routed runtime chat 和 legacy chat 的 prompt 行为边界仍然清晰？
+
+### Decisions Made
+- 本轮先不引入新的 prompt binding scope，而是把 `runtime.prompt_id` 作为显式 runtime 级 prompt override 注入现有 prompt resolve 流程。
+- 保持 global/channel/session prompt 语义不变；runtime prompt 作为额外显式 prompt 叠加进入最终 resolved prompt set。
+- 优先修复 routed runtime chat 主链，不把 WeChat 控制面重构混入这一轮。
+
+### Verification
+- [x] `go test -count=1 ./pkg/prompts ./pkg/inboundrouter`
+- [x] `go test -count=1 ./pkg/agent ./pkg/prompts ./pkg/inboundrouter ./pkg/webui ./pkg/channels/wechat`
+- [x] `npm --prefix pkg/webui/frontend run build`
+
+### Status
+**Completed** - 已完成 runtime prompt 执行链接通、全量回归验证，并准备提交推送本轮代码。
+
 ## 2026-03-31 Runtime Topology WebUI 可编辑化批次
 
 ### Goal

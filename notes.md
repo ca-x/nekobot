@@ -304,6 +304,40 @@
 ### 本轮验证
 - `npm --prefix pkg/webui/frontend run build`
 - `go test -count=1 ./pkg/webui ./pkg/gateway ./pkg/channels ./cmd/nekobot/...`
+
+## 2026-03-31 Runtime Prompt 执行链接通补记
+
+### 本轮新增发现
+- `pkg/runtimeagents.AgentRuntime` 已有 `prompt_id` 字段，WebUI 和 CRUD 也都能编辑它。
+- 但 routed runtime chat 之前只把 `runtime_id/runtime_name` 等信息放进 `PromptContext.Custom`：
+  - `pkg/inboundrouter/router.go` 并没有把 `runtime.prompt_id` 传给 agent。
+  - `pkg/agent/resolvePromptSet()` 也没有显式 prompt override 输入。
+- 结果是 runtime topology 虽然能配置 prompt，但执行时实际上仍只吃 global/channel/session prompt binding，runtime prompt 配置是“可保存但不生效”。
+
+### 本轮已完成
+- `pkg/agent/agent.go`
+  - `PromptContext` 新增 `ExplicitPromptIDs`。
+  - `resolvePromptSet()` 把显式 prompt ID 传给 prompt manager。
+- `pkg/inboundrouter/router.go`
+  - routed runtime chat 现在会把 `runtimeItem.PromptID` 转成 `ExplicitPromptIDs` 注入 prompt context。
+- `pkg/prompts/types.go`
+  - `ResolveInput` 新增 `ExplicitPromptIDs`。
+- `pkg/prompts/manager.go`
+  - `Resolve()` 现在支持显式 prompt 叠加。
+  - 显式 prompt 会在现有 global/channel/session resolve 之后追加进 applied set。
+  - 若与已有 prompt ID 重合，则用显式 prompt 覆盖已有应用结果。
+  - 排序上仍沿用现有 scope/priority 逻辑，显式 prompt 以 session 级高优先级进入最终 resolved prompt。
+
+### 测试补强
+- `pkg/prompts/manager_test.go`
+  - 新增 `TestResolveIncludesExplicitPromptIDs`，验证显式 runtime prompt 会进入最终 system prompt。
+- `pkg/inboundrouter/router_test.go`
+  - 现有 routed runtime test 现在同时验证 `runtime.prompt_id` 会进入 `agent.PromptContext.ExplicitPromptIDs`。
+
+### 本轮验证
+- `go test -count=1 ./pkg/prompts ./pkg/inboundrouter`
+- `go test -count=1 ./pkg/agent ./pkg/prompts ./pkg/inboundrouter ./pkg/webui ./pkg/channels/wechat`
+- `npm --prefix pkg/webui/frontend run build`
   - `pkg/bus/local_bus.go`
   - `pkg/bus/redis_bus.go`
   - `pkg/bus/bus_test.go`

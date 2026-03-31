@@ -294,6 +294,10 @@ func (m *Manager) Resolve(ctx context.Context, input ResolveInput) (*ResolvedPro
 		selected = append(selected, applied)
 	}
 
+	if err := appendExplicitPrompts(&selected, indexByPromptID, promptMap, input); err != nil {
+		return nil, err
+	}
+
 	sort.SliceStable(selected, func(i, j int) bool {
 		left := selected[i]
 		right := selected[j]
@@ -325,6 +329,48 @@ func (m *Manager) Resolve(ctx context.Context, input ResolveInput) (*ResolvedPro
 		UserText:   strings.TrimSpace(strings.Join(userParts, "\n\n---\n\n")),
 		Applied:    selected,
 	}, nil
+}
+
+func appendExplicitPrompts(
+	selected *[]AppliedPrompt,
+	indexByPromptID map[string]int,
+	promptMap map[string]Prompt,
+	input ResolveInput,
+) error {
+	explicitPromptIDs := normalizeExplicitPromptIDs(input.ExplicitPromptIDs)
+	if len(explicitPromptIDs) == 0 {
+		return nil
+	}
+
+	for _, promptID := range explicitPromptIDs {
+		item, ok := promptMap[promptID]
+		if !ok || !item.Enabled {
+			continue
+		}
+		rendered, err := renderPromptTemplate(item.Key, item.Template, input)
+		if err != nil {
+			return fmt.Errorf("render explicit prompt %s: %w", item.Key, err)
+		}
+		applied := AppliedPrompt{
+			BindingID: "explicit:" + item.ID,
+			PromptID:  item.ID,
+			PromptKey: item.Key,
+			Name:      item.Name,
+			Mode:      item.Mode,
+			Scope:     ScopeSession,
+			Target:    "explicit",
+			Priority:  -1000,
+			Content:   rendered,
+		}
+		if existingIndex, exists := indexByPromptID[item.ID]; exists {
+			(*selected)[existingIndex] = applied
+			continue
+		}
+		indexByPromptID[item.ID] = len(*selected)
+		*selected = append(*selected, applied)
+	}
+
+	return nil
 }
 
 // GetSessionBindingSet returns the prompt IDs bound to a session.
@@ -516,6 +562,26 @@ func normalizeScope(raw string) string {
 	default:
 		return ""
 	}
+}
+
+func normalizeExplicitPromptIDs(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	return result
 }
 
 func scopeRank(scope string) int {

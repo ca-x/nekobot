@@ -348,6 +348,7 @@ func (r *Router) chatWithRuntime(
 		Username:          msg.Username,
 		RequestedProvider: strings.TrimSpace(runtimeItem.Provider),
 		RequestedModel:    strings.TrimSpace(runtimeItem.Model),
+		ExplicitPromptIDs: runtimePromptIDs(runtimeItem.PromptID),
 		Custom: map[string]any{
 			"runtime_id":         runtimeItem.ID,
 			"runtime_name":       runtimeItem.Name,
@@ -387,6 +388,14 @@ func routedSessionID(runtimeID, upstreamSessionID string) string {
 		return SessionPrefix + ":" + runtimeID
 	}
 	return SessionPrefix + ":" + runtimeID + ":" + upstreamSessionID
+}
+
+func runtimePromptIDs(promptID string) []string {
+	promptID = strings.TrimSpace(promptID)
+	if promptID == "" {
+		return nil
+	}
+	return []string{promptID}
 }
 
 func firstNonEmpty(values ...string) string {

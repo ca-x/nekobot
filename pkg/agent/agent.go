@@ -111,6 +111,7 @@ type PromptContext struct {
 	RequestedProvider string
 	RequestedModel    string
 	RequestedFallback []string
+	ExplicitPromptIDs []string
 	Custom            map[string]any
 }
 
@@ -789,6 +790,7 @@ func (a *Agent) resolvePromptSet(
 		RequestedModel:    firstNonEmpty(strings.TrimSpace(promptCtx.RequestedModel), strings.TrimSpace(model)),
 		RequestedFallback: normalizePromptFallback(promptCtx.RequestedFallback, fallback),
 		Workspace:         a.config.WorkspacePath(),
+		ExplicitPromptIDs: normalizePromptFallback(promptCtx.ExplicitPromptIDs, nil),
 		Custom:            clonePromptCustom(promptCtx.Custom),
 	}
 

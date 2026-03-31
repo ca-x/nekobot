@@ -81,6 +81,7 @@ func TestHandleInboundRoutesSingleAgentBinding(t *testing.T) {
 		Enabled:     true,
 		Provider:    "openai",
 		Model:       "gpt-5",
+		PromptID:    "prompt-runtime-1",
 	})
 	if err != nil {
 		t.Fatalf("create runtime: %v", err)
@@ -146,6 +147,9 @@ func TestHandleInboundRoutesSingleAgentBinding(t *testing.T) {
 		}
 		if got := agentStub.lastPrompt.RequestedModel; got != "gpt-5" {
 			t.Fatalf("unexpected model: %q", got)
+		}
+		if got := agentStub.lastPrompt.ExplicitPromptIDs; len(got) != 1 || got[0] != "prompt-runtime-1" {
+			t.Fatalf("unexpected explicit prompt ids: %+v", got)
 		}
 		if got := agentStub.lastPrompt.SessionID; got != "route:"+runtimeItem.ID+":thread-1" {
 			t.Fatalf("unexpected routed session: %q", got)
