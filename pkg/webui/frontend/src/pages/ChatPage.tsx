@@ -20,7 +20,7 @@ import {
 import { useChat, type ChatMessage } from '@/hooks/useChat';
 import { useWatchStatus } from '@/hooks/useConfig';
 import { usePrompts, usePromptSessionBindings } from '@/hooks/usePrompts';
-import { useRuntimeAgents } from '@/hooks/useTopology';
+import { useAccountBindings, useChannelAccounts, useRuntimeAgents } from '@/hooks/useTopology';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -277,6 +277,8 @@ export default function ChatPage() {
   const { data: config } = useAppConfig();
   const { data: prompts = [] } = usePrompts();
   const { data: runtimes = [] } = useRuntimeAgents();
+  const { data: channelAccounts = [] } = useChannelAccounts();
+  const { data: accountBindings = [] } = useAccountBindings();
   const {
     messages,
     sendMessage,
@@ -379,9 +381,27 @@ export default function ChatPage() {
     () => runtimes.filter((runtime) => runtime.enabled),
     [runtimes],
   );
+  const websocketDefaultAccount = useMemo(
+    () => channelAccounts.find((account) => account.enabled && account.channel_type === 'websocket' && account.account_key === 'default') ?? null,
+    [channelAccounts],
+  );
+  const chatRuntimeIDs = useMemo(() => {
+    if (!websocketDefaultAccount) {
+      return new Set<string>();
+    }
+    return new Set(
+      accountBindings
+        .filter((binding) => binding.enabled && binding.channel_account_id === websocketDefaultAccount.id)
+        .map((binding) => binding.agent_runtime_id),
+    );
+  }, [accountBindings, websocketDefaultAccount]);
+  const chatRuntimes = useMemo(
+    () => enabledRuntimes.filter((runtime) => chatRuntimeIDs.has(runtime.id)),
+    [chatRuntimeIDs, enabledRuntimes],
+  );
   const activeRuntime = useMemo(
-    () => enabledRuntimes.find((runtime) => runtime.id === activeRuntimeID) ?? null,
-    [activeRuntimeID, enabledRuntimes],
+    () => chatRuntimes.find((runtime) => runtime.id === activeRuntimeID) ?? null,
+    [activeRuntimeID, chatRuntimes],
   );
   const runtimeControlsRoute = activeRuntime !== null;
   const effectiveProvider = runtimeControlsRoute ? (activeRuntime.provider || activeProvider) : activeProvider;
@@ -415,11 +435,11 @@ export default function ChatPage() {
     if (!selectedRuntimeID) {
       return;
     }
-    if (enabledRuntimes.some((runtime) => runtime.id === selectedRuntimeID)) {
+    if (chatRuntimes.some((runtime) => runtime.id === selectedRuntimeID)) {
       return;
     }
     setSelectedRuntimeID('');
-  }, [enabledRuntimes, selectedRuntimeID]);
+  }, [chatRuntimes, selectedRuntimeID]);
 
   function handleProviderChange(value: string) {
     const provider = fromSelectValue(value);
@@ -713,7 +733,7 @@ export default function ChatPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={EMPTY_VALUE}>{t('chatRuntimeAuto')}</SelectItem>
-                  {enabledRuntimes.map((runtime) => (
+                  {chatRuntimes.map((runtime) => (
                     <SelectItem key={runtime.id} value={runtime.id}>
                       {runtime.display_name || runtime.name}
                     </SelectItem>
