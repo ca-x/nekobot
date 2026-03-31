@@ -5301,6 +5301,7 @@ func buildWebUIChatPromptContext(
 	provider string,
 	model string,
 	fallback []string,
+	explicitPromptIDs []string,
 	runtimeID string,
 ) agent.PromptContext {
 	promptCtx := agent.PromptContext{
@@ -5311,6 +5312,7 @@ func buildWebUIChatPromptContext(
 		RequestedProvider: strings.TrimSpace(provider),
 		RequestedModel:    strings.TrimSpace(model),
 		RequestedFallback: append([]string(nil), fallback...),
+		ExplicitPromptIDs: append([]string(nil), explicitPromptIDs...),
 	}
 	if strings.TrimSpace(runtimeID) != "" {
 		promptCtx.Custom = map[string]any{
@@ -5318,6 +5320,36 @@ func buildWebUIChatPromptContext(
 		}
 	}
 	return promptCtx
+}
+
+func (s *Server) resolveWebUIRuntimeSelection(
+	ctx context.Context,
+	runtimeID string,
+	provider string,
+	model string,
+	fallback []string,
+) (string, string, []string, []string, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return strings.TrimSpace(provider), strings.TrimSpace(model), append([]string(nil), fallback...), nil, nil
+	}
+	if s == nil || s.runtimeMgr == nil {
+		return "", "", nil, nil, fmt.Errorf("runtime manager not available")
+	}
+
+	runtimeItem, err := s.runtimeMgr.Get(ctx, runtimeID)
+	if err != nil {
+		return "", "", nil, nil, fmt.Errorf("get runtime %s: %w", runtimeID, err)
+	}
+	if runtimeItem == nil || !runtimeItem.Enabled {
+		return "", "", nil, nil, fmt.Errorf("runtime %s is not available", runtimeID)
+	}
+
+	return strings.TrimSpace(runtimeItem.Provider),
+		strings.TrimSpace(runtimeItem.Model),
+		nil,
+		runtimePromptIDs(runtimeItem.PromptID),
+		nil
 }
 
 func (s *Server) handleChatWS(c *echo.Context) error {
@@ -5456,13 +5488,27 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 			runtimeID := strings.TrimSpace(msg.RuntimeID)
 			sessionID := webUIRuntimeChatSessionID(username, runtimeID)
-			model := strings.TrimSpace(msg.Model)
-			provider := strings.TrimSpace(msg.Provider)
-			fallback := normalizeProviderNames(msg.Fallback)
+			requestedModel := strings.TrimSpace(msg.Model)
+			requestedProvider := strings.TrimSpace(msg.Provider)
+			requestedFallback := normalizeProviderNames(msg.Fallback)
 
-			// Keep provider/fallback choices in sync with the saved config so restarts preserve them.
-			if err := s.persistChatRouting(provider, model, fallback); err != nil {
-				sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err))
+			if runtimeID == "" {
+				// Keep provider/fallback choices in sync with the saved config so restarts preserve them.
+				if err := s.persistChatRouting(requestedProvider, requestedModel, requestedFallback); err != nil {
+					sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err))
+					continue
+				}
+			}
+
+			provider, model, fallback, explicitPromptIDs, err := s.resolveWebUIRuntimeSelection(
+				context.Background(),
+				runtimeID,
+				requestedProvider,
+				requestedModel,
+				requestedFallback,
+			)
+			if err != nil {
+				sendWSError(conn, fmt.Sprintf("runtime selection failed: %v", err))
 				continue
 			}
 			if s.prompts != nil {
@@ -5532,7 +5578,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				context.Background(),
 				sess,
 				content,
-				buildWebUIChatPromptContext(sessionID, username, provider, model, fallback, runtimeID),
+				buildWebUIChatPromptContext(sessionID, username, provider, model, fallback, explicitPromptIDs, runtimeID),
 			)
 			if err != nil {
 				sendWSError(conn, fmt.Sprintf("agent error: %v", err))
@@ -6521,3 +6567,11 @@ func (s *Server) generateToken(profile *config.AuthProfile) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.getJWTSecret()))
 }
+func runtimePromptIDs(promptID string) []string {
+	promptID = strings.TrimSpace(promptID)
+	if promptID == "" {
+		return nil
+	}
+	return []string{promptID}
+}
+

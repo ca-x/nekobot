@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/config"
+	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
 )
 
@@ -163,6 +164,7 @@ func TestBuildWebUIChatPromptContextIncludesExplicitRuntimeID(t *testing.T) {
 		"openai",
 		"gpt-5",
 		[]string{"anthropic"},
+		[]string{"prompt-runtime"},
 		"runtime-explicit",
 	)
 
@@ -175,7 +177,90 @@ func TestBuildWebUIChatPromptContextIncludesExplicitRuntimeID(t *testing.T) {
 	if got := ctx.RequestedModel; got != "gpt-5" {
 		t.Fatalf("unexpected model: %q", got)
 	}
+	if got := ctx.ExplicitPromptIDs; len(got) != 1 || got[0] != "prompt-runtime" {
+		t.Fatalf("unexpected explicit prompt ids: %#v", got)
+	}
 	if got := ctx.Custom["runtime_id"]; got != "runtime-explicit" {
 		t.Fatalf("unexpected runtime id: %#v", got)
+	}
+}
+
+func TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	runtimeItem, err := runtimeMgr.Create(t.Context(), runtimeagents.AgentRuntime{
+		Name:        "ops-escalation",
+		DisplayName: "Ops Escalation",
+		Enabled:     true,
+		Provider:    "anthropic",
+		Model:       "claude-sonnet-4",
+		PromptID:    "prompt-runtime-ops",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+
+	s := &Server{runtimeMgr: runtimeMgr}
+	provider, model, fallback, explicitPromptIDs, err := s.resolveWebUIRuntimeSelection(
+		t.Context(),
+		runtimeItem.ID,
+		"openai",
+		"gpt-5",
+		[]string{"backup"},
+	)
+	if err != nil {
+		t.Fatalf("resolveWebUIRuntimeSelection failed: %v", err)
+	}
+	if provider != "anthropic" {
+		t.Fatalf("unexpected provider: %q", provider)
+	}
+	if model != "claude-sonnet-4" {
+		t.Fatalf("unexpected model: %q", model)
+	}
+	if len(fallback) != 0 {
+		t.Fatalf("expected runtime selection to clear fallback, got %#v", fallback)
+	}
+	if len(explicitPromptIDs) != 1 || explicitPromptIDs[0] != "prompt-runtime-ops" {
+		t.Fatalf("unexpected explicit prompt ids: %#v", explicitPromptIDs)
+	}
+}
+
+func TestResolveWebUIRuntimeSelectionFallsBackToRequestedRoute(t *testing.T) {
+	s := &Server{}
+	provider, model, fallback, explicitPromptIDs, err := s.resolveWebUIRuntimeSelection(
+		t.Context(),
+		"",
+		"openai",
+		"gpt-5",
+		[]string{"anthropic"},
+	)
+	if err != nil {
+		t.Fatalf("resolveWebUIRuntimeSelection failed: %v", err)
+	}
+	if provider != "openai" {
+		t.Fatalf("unexpected provider: %q", provider)
+	}
+	if model != "gpt-5" {
+		t.Fatalf("unexpected model: %q", model)
+	}
+	if len(fallback) != 1 || fallback[0] != "anthropic" {
+		t.Fatalf("unexpected fallback: %#v", fallback)
+	}
+	if len(explicitPromptIDs) != 0 {
+		t.Fatalf("expected no explicit prompt ids, got %#v", explicitPromptIDs)
 	}
 }
