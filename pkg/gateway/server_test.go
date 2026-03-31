@@ -17,6 +17,7 @@ import (
 type stubGatewayRouter struct {
 	lastRuntimeID string
 	reply         string
+	err           error
 }
 
 func (s *stubGatewayRouter) RegisterChannel(string) {}
@@ -30,6 +31,9 @@ func (s *stubGatewayRouter) ChatWebsocket(
 	userID, username, upstreamSessionID, content, runtimeID string,
 ) (string, map[string]any, error) {
 	s.lastRuntimeID = runtimeID
+	if s.err != nil {
+		return "", nil, s.err
+	}
 	return s.reply, map[string]any{"runtime_id": runtimeID}, nil
 }
 
@@ -217,5 +221,43 @@ func TestProcessMessagePassesExplicitRuntimeIDToRouter(t *testing.T) {
 
 	if got := router.lastRuntimeID; got != "runtime-explicit" {
 		t.Fatalf("expected runtime id %q, got %q", "runtime-explicit", got)
+	}
+}
+
+func TestProcessMessageDoesNotFallbackWhenExplicitRuntimeFails(t *testing.T) {
+	s := newTestServer(t)
+	router := &stubGatewayRouter{err: context.DeadlineExceeded}
+	s.router = router
+
+	sess, err := s.sessionMgr.GetWithSource("gateway-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	client := &Client{
+		id:       "gateway-session",
+		send:     make(chan []byte, 1),
+		userID:   "user-1",
+		username: "alice",
+		session:  sess,
+	}
+
+	s.processMessage(client, WSMessage{
+		Type:      "message",
+		Content:   "hello",
+		RuntimeID: "runtime-explicit",
+	})
+
+	select {
+	case payload := <-client.send:
+		var msg WSMessage
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			t.Fatalf("unmarshal ws message: %v", err)
+		}
+		if msg.Type != "error" {
+			t.Fatalf("expected error message, got %#v", msg)
+		}
+	default:
+		t.Fatal("expected websocket error message")
 	}
 }

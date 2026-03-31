@@ -250,6 +250,20 @@ func (m *Manager) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// DeleteByRuntimeID removes all bindings that reference one runtime.
+func (m *Manager) DeleteByRuntimeID(ctx context.Context, runtimeID string) error {
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return fmt.Errorf("agent runtime id is required")
+	}
+	if _, err := m.client.AccountBinding.Delete().
+		Where(accountbinding.AgentRuntimeIDEQ(runtimeID)).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("delete account bindings for runtime %s: %w", runtimeID, err)
+	}
+	return nil
+}
+
 func (m *Manager) normalizeBinding(
 	ctx context.Context,
 	currentID string,

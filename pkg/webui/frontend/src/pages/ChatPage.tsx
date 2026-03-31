@@ -383,12 +383,15 @@ export default function ChatPage() {
     () => enabledRuntimes.find((runtime) => runtime.id === activeRuntimeID) ?? null,
     [activeRuntimeID, enabledRuntimes],
   );
+  const runtimeControlsRoute = activeRuntime !== null;
+  const effectiveProvider = runtimeControlsRoute ? (activeRuntime.provider || activeProvider) : activeProvider;
+  const effectiveModel = runtimeControlsRoute ? (activeRuntime.model || activeModel) : activeModel;
   const watchEnabled = !!watchStatus?.enabled;
   const watchRunning = !!watchStatus?.running;
   const watchLabel = watchEnabled ? t('chatWatchOn') : t('chatWatchOff');
   const selectedModelEntry = findModelEntry(filteredModels, selectedProvider, selectedModel);
   const selectedModelValue = selectedModelEntry ? encodeModelValue(selectedModelEntry) : EMPTY_VALUE;
-  const fallbackRouteTargets = routeTargets.filter((target) => target.name !== activeProvider);
+  const fallbackRouteTargets = routeTargets.filter((target) => target.name !== effectiveProvider);
   const systemPrompts = useMemo(
     () => prompts.filter((item) => item.enabled && item.mode === 'system'),
     [prompts],
@@ -407,6 +410,16 @@ export default function ChatPage() {
     setSelectedSystemPromptIDs(sessionPromptBindings.system_prompt_ids ?? []);
     setSelectedUserPromptIDs(sessionPromptBindings.user_prompt_ids ?? []);
   }, [sessionPromptBindings]);
+
+  useEffect(() => {
+    if (!selectedRuntimeID) {
+      return;
+    }
+    if (enabledRuntimes.some((runtime) => runtime.id === selectedRuntimeID)) {
+      return;
+    }
+    setSelectedRuntimeID('');
+  }, [enabledRuntimes, selectedRuntimeID]);
 
   function handleProviderChange(value: string) {
     const provider = fromSelectValue(value);
@@ -611,15 +624,17 @@ export default function ChatPage() {
                     : t('chatRuntimeAuto')}
                 </span>
                 <span className="max-w-full break-all rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
-                  {activeProvider || t('chatRouteAuto')}
+                  {effectiveProvider || t('chatRouteAuto')}
                 </span>
                 <span className="max-w-full break-all rounded-full bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]">
-                  {activeModel || t('chatModelUnset')}
+                  {effectiveModel || t('chatModelUnset')}
                 </span>
                 <span className="max-w-full break-all rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
                   {activeFallback.length > 0
                     ? `${t('fallbackProviders')}: ${activeFallback.join(' -> ')}`
-                    : t('chatNoFallback')}
+                    : runtimeControlsRoute
+                      ? t('chatRuntimeControlsRoute')
+                      : t('chatNoFallback')}
                 </span>
               </div>
             </div>
@@ -705,13 +720,18 @@ export default function ChatPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {runtimeControlsRoute && (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {t('chatRuntimeControlsRoute')}
+                </p>
+              )}
             </div>
 
             <div className="space-y-3">
               <label className="eyebrow-label text-muted-foreground">
                 {t('defaultProvider')}
               </label>
-              <Select value={toSelectValue(selectedProvider)} onValueChange={handleProviderChange}>
+              <Select value={toSelectValue(selectedProvider)} onValueChange={handleProviderChange} disabled={runtimeControlsRoute}>
                 <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
                   <SelectValue placeholder={t('defaultProvider')} />
                 </SelectTrigger>
@@ -732,7 +752,7 @@ export default function ChatPage() {
               <label className="eyebrow-label text-muted-foreground">
                 {t('defaultModel')}
               </label>
-              <Select value={selectedModelValue} onValueChange={handleModelChange}>
+              <Select value={selectedModelValue} onValueChange={handleModelChange} disabled={runtimeControlsRoute}>
                 <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
                   <SelectValue placeholder={t('defaultModel')} />
                 </SelectTrigger>
@@ -755,6 +775,7 @@ export default function ChatPage() {
                 className="h-11 rounded-2xl border-border/70 bg-card/90"
                 placeholder={t('chatCustomModelHint')}
                 value={customModel}
+                disabled={runtimeControlsRoute}
                 onChange={(event) => setCustomModel(event.target.value)}
               />
             </div>
@@ -841,8 +862,12 @@ export default function ChatPage() {
                       <button
                         key={targetName}
                         type="button"
+                        disabled={runtimeControlsRoute}
                         onClick={() => handleToggleFallbackTarget(targetName)}
-                        className="inline-flex max-w-full items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
+                        className={cn(
+                          'inline-flex max-w-full items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]',
+                          runtimeControlsRoute && 'cursor-not-allowed opacity-60',
+                        )}
                       >
                         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-card text-[10px] text-[hsl(var(--brand-700))]">
                           {index + 1}
@@ -863,9 +888,11 @@ export default function ChatPage() {
                       <button
                         key={target.name}
                         type="button"
+                        disabled={runtimeControlsRoute}
                         onClick={() => handleToggleFallbackTarget(target.name)}
                         className={cn(
                           'max-w-full rounded-full border px-3 py-1.5 text-left text-xs font-medium transition-colors',
+                          runtimeControlsRoute && 'cursor-not-allowed opacity-60',
                           selected
                             ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
                             : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',

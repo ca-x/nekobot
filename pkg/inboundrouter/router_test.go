@@ -3,6 +3,7 @@ package inboundrouter
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -331,6 +332,94 @@ func TestChatWebsocketUsesExplicitRuntimeSelection(t *testing.T) {
 	}
 	if metadata["runtime_id"] != secondRuntime.ID {
 		t.Fatalf("expected runtime_id=%q, got %#v", secondRuntime.ID, metadata["runtime_id"])
+	}
+}
+
+func TestChatWebsocketRejectsUnknownExplicitRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error", OutputPath: ""})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	accountItem, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "websocket",
+		AccountKey:  "default",
+		DisplayName: "Gateway Default",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	runtimeItem, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "support-main",
+		DisplayName: "Support Main",
+		Enabled:     true,
+		Provider:    "openai",
+		Model:       "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	if _, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: accountItem.ID,
+		AgentRuntimeID:   runtimeItem.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	agentStub := &stubAgent{response: "should not be used"}
+	router, err := New(
+		log,
+		bus.NewLocalBus(log, 4),
+		agentStub,
+		session.NewManager(t.TempDir(), cfg.Sessions),
+		accountMgr,
+		bindingMgr,
+		runtimeMgr,
+	)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	_, _, err = router.ChatWebsocket(
+		context.Background(),
+		"u-1",
+		"alice",
+		"gateway-session",
+		"hello",
+		"runtime-missing",
+	)
+	if err == nil {
+		t.Fatal("expected explicit runtime selection to fail")
+	}
+	if !strings.Contains(err.Error(), "runtime runtime-missing is not bound") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

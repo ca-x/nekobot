@@ -128,6 +128,9 @@ func (r *Router) ChatWebsocket(
 		if !errors.Is(err, channelaccounts.ErrAccountNotFound) {
 			return "", nil, err
 		}
+		if strings.TrimSpace(runtimeID) != "" {
+			return "", nil, fmt.Errorf("runtime %s is not available for websocket chat", strings.TrimSpace(runtimeID))
+		}
 		sess, sessErr := r.sessionMgr.GetWithSource(upstreamSessionID, session.SourceGateway)
 		if sessErr != nil {
 			return "", nil, fmt.Errorf("get gateway session %s: %w", upstreamSessionID, sessErr)
@@ -144,6 +147,9 @@ func (r *Router) ChatWebsocket(
 		return response, nil, nil
 	}
 	if websocketAccount == nil || !websocketAccount.Enabled {
+		if strings.TrimSpace(runtimeID) != "" {
+			return "", nil, fmt.Errorf("runtime %s is not available for websocket chat", strings.TrimSpace(runtimeID))
+		}
 		return "", nil, nil
 	}
 
@@ -152,6 +158,13 @@ func (r *Router) ChatWebsocket(
 		return "", nil, err
 	}
 	if len(selectedBindings) == 0 {
+		if strings.TrimSpace(runtimeID) != "" {
+			return "", nil, fmt.Errorf(
+				"runtime %s is not bound to websocket account %s",
+				strings.TrimSpace(runtimeID),
+				websocketAccount.ID,
+			)
+		}
 		sess, sessErr := r.sessionMgr.GetWithSource(upstreamSessionID, session.SourceGateway)
 		if sessErr != nil {
 			return "", nil, fmt.Errorf("get gateway session %s: %w", upstreamSessionID, sessErr)
@@ -170,6 +183,9 @@ func (r *Router) ChatWebsocket(
 
 	selection := selectedBindings[0]
 	if !selection.runtime.Enabled {
+		if strings.TrimSpace(runtimeID) != "" {
+			return "", nil, fmt.Errorf("runtime %s is disabled", strings.TrimSpace(runtimeID))
+		}
 		return "", nil, nil
 	}
 

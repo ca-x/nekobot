@@ -6163,7 +6163,16 @@ func (s *Server) handleDeleteRuntimeAgent(c *echo.Context) error {
 	if s.runtimeMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime agent manager not available"})
 	}
-	err := s.runtimeMgr.Delete(c.Request().Context(), c.Param("id"))
+	runtimeID := strings.TrimSpace(c.Param("id"))
+	if runtimeID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "runtime id is required"})
+	}
+	if s.bindingMgr != nil {
+		if err := s.bindingMgr.DeleteByRuntimeID(c.Request().Context(), runtimeID); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+	}
+	err := s.runtimeMgr.Delete(c.Request().Context(), runtimeID)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, runtimeagents.ErrRuntimeNotFound) {

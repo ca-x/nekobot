@@ -318,3 +318,111 @@ func TestChannelAccountHandlersReloadRuntimeInstances(t *testing.T) {
 		t.Fatalf("expected deleted runtime instance to be removed")
 	}
 }
+
+func TestHandleDeleteRuntimeAgentRemovesBindings(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr)
+	if err != nil {
+		t.Fatalf("new topology service: %v", err)
+	}
+
+	runtimeItem, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "ops-runtime",
+		DisplayName: "Ops Runtime",
+		Enabled:     true,
+		Provider:    "openai",
+		Model:       "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	accountItem, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "gotify",
+		AccountKey:  "alerts-a",
+		DisplayName: "Alerts A",
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"enabled":    true,
+			"server_url": "https://gotify.example.com",
+			"app_token":  "token-1",
+			"priority":   5,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	if _, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: accountItem.ID,
+		AgentRuntimeID:   runtimeItem.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	s := &Server{
+		config:      cfg,
+		logger:      log,
+		entClient:   client,
+		runtimeMgr:  runtimeMgr,
+		accountMgr:  accountMgr,
+		bindingMgr:  bindingMgr,
+		topologySvc: topologySvc,
+	}
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/runtime-agents/"+runtimeItem.ID, nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	ctx.SetPath("/api/runtime-agents/:id")
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: runtimeItem.ID}})
+	if err := s.handleDeleteRuntimeAgent(ctx); err != nil {
+		t.Fatalf("handleDeleteRuntimeAgent failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	bindings, err := bindingMgr.List(context.Background())
+	if err != nil {
+		t.Fatalf("list bindings: %v", err)
+	}
+	if len(bindings) != 0 {
+		t.Fatalf("expected bindings to be removed with runtime delete, got %+v", bindings)
+	}
+
+	snapshot, err := topologySvc.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("snapshot topology: %v", err)
+	}
+	if snapshot.Summary.BindingCount != 0 {
+		t.Fatalf("expected zero bindings in topology summary, got %+v", snapshot.Summary)
+	}
+	if len(snapshot.Bindings) != 0 {
+		t.Fatalf("expected zero topology edges, got %+v", snapshot.Bindings)
+	}
+}

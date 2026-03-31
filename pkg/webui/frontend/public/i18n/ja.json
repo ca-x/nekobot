@@ -205,6 +205,7 @@
   "chatRuntimeTarget": "ランタイム対象",
   "chatRuntimeAuto": "自動ランタイム",
   "chatRuntimeSelected": "ランタイム: {0}",
+  "chatRuntimeControlsRoute": "このランタイムが今回の provider・model・prompt ルーティングを制御します。",
   "chatWatchOn": "Watch 有効",
   "chatWatchOff": "Watch 無効",
   "chatWatchHint": "直近の watch コマンド: {0}",
