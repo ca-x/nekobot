@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/config"
+	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/session"
 )
@@ -293,6 +294,153 @@ func TestResolveWebUIChatSessionAlias_UsesServerGeneratedToken(t *testing.T) {
 	}
 	if sessionID != webUIChatSessionID("alice") {
 		t.Fatalf("expected alias to resolve to %q, got %q", webUIChatSessionID("alice"), sessionID)
+	}
+}
+
+func TestResolveWebUIChatSessionAlias_UsesRuntimeAlias(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		entClient: client,
+	}
+
+	token, err := s.generateToken(&config.AuthProfile{
+		UserID:   "u-1",
+		Username: "alice",
+		Role:     "admin",
+	})
+	if err != nil {
+		t.Fatalf("generateToken failed: %v", err)
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/chat/prompts/session/route:runtime-ops:webui-chat", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	sessionID, err := s.resolveWebUIChatSessionAlias(
+		ctx,
+		inboundrouter.SessionPrefix+":runtime-ops:webui-chat",
+	)
+	if err != nil {
+		t.Fatalf("resolveWebUIChatSessionAlias failed: %v", err)
+	}
+
+	want := inboundrouter.SessionPrefix + ":runtime-ops:" + webUIChatSessionID("alice")
+	if sessionID != want {
+		t.Fatalf("expected alias to resolve to %q, got %q", want, sessionID)
+	}
+}
+
+func TestSessionPromptHandlers_RuntimeAliasAndCleanup(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	promptMgr, err := prompts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new prompt manager: %v", err)
+	}
+
+	authProfile := &config.AuthProfile{
+		UserID:   "u-1",
+		Username: "alice",
+		Role:     "admin",
+	}
+
+	s := &Server{
+		config:     cfg,
+		logger:     log,
+		prompts:    promptMgr,
+		entClient:  client,
+		sessionMgr: session.NewManager(t.TempDir(), cfg.Sessions),
+	}
+	token, err := s.generateToken(authProfile)
+	if err != nil {
+		t.Fatalf("generateToken failed: %v", err)
+	}
+	e := echo.New()
+
+	systemPrompt, err := promptMgr.CreatePrompt(context.Background(), prompts.Prompt{
+		Key:      "runtime-system",
+		Name:     "Runtime System",
+		Mode:     prompts.ModeSystem,
+		Template: "runtime on",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("create system prompt: %v", err)
+	}
+
+	aliasID := inboundrouter.SessionPrefix + ":runtime-ops:webui-chat"
+	putReq := httptest.NewRequest(http.MethodPut, "/api/chat/prompts/session/"+aliasID, strings.NewReader(`{
+		"system_prompt_ids":["`+systemPrompt.ID+`"],
+		"user_prompt_ids":[]
+	}`))
+	putReq.Header.Set("Authorization", "Bearer "+token)
+	putReq.Header.Set("Content-Type", "application/json")
+	putRec := httptest.NewRecorder()
+	putCtx := e.NewContext(putReq, putRec)
+	putCtx.SetPath("/api/chat/prompts/session/:id")
+	putCtx.SetPathValues(echo.PathValues{{Name: "id", Value: aliasID}})
+	if err := s.handlePutChatSessionPrompts(putCtx); err != nil {
+		t.Fatalf("handlePutChatSessionPrompts failed: %v", err)
+	}
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, putRec.Code, putRec.Body.String())
+	}
+
+	resolvedSessionID := inboundrouter.SessionPrefix + ":runtime-ops:" + webUIChatSessionID(authProfile.Username)
+	bindingSet, err := promptMgr.GetSessionBindingSet(context.Background(), resolvedSessionID)
+	if err != nil {
+		t.Fatalf("get session binding set failed: %v", err)
+	}
+	if len(bindingSet.SystemPromptIDs) != 1 || bindingSet.SystemPromptIDs[0] != systemPrompt.ID {
+		t.Fatalf("unexpected system prompt ids: %+v", bindingSet.SystemPromptIDs)
+	}
+
+	if _, err := s.sessionMgr.GetWithSource(resolvedSessionID, session.SourceWebUI); err != nil {
+		t.Fatalf("create runtime-scoped session: %v", err)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sessions/"+resolvedSessionID, nil)
+	deleteRec := httptest.NewRecorder()
+	deleteCtx := e.NewContext(deleteReq, deleteRec)
+	deleteCtx.SetPath("/api/sessions/:id")
+	deleteCtx.SetPathValues(echo.PathValues{{Name: "id", Value: resolvedSessionID}})
+	if err := s.handleDeleteSession(deleteCtx); err != nil {
+		t.Fatalf("handleDeleteSession failed: %v", err)
+	}
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, deleteRec.Code, deleteRec.Body.String())
+	}
+
+	remaining, err := promptMgr.GetSessionBindingSet(context.Background(), resolvedSessionID)
+	if err != nil {
+		t.Fatalf("get session binding set after session delete: %v", err)
+	}
+	if len(remaining.Bindings) != 0 {
+		t.Fatalf("expected runtime session prompt bindings to be cleaned, got %+v", remaining.Bindings)
 	}
 }
 

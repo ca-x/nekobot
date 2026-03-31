@@ -6448,7 +6448,8 @@ func (s *Server) parseJWTSubject(tokenStr string) (string, error) {
 
 func (s *Server) resolveWebUIChatSessionAlias(c *echo.Context, rawID string) (string, error) {
 	sessionID := strings.TrimSpace(rawID)
-	if sessionID != "webui-chat" {
+	runtimeID, isAlias := resolveWebUIChatRuntimeAlias(sessionID)
+	if !isAlias {
 		return sessionID, nil
 	}
 	authHeader := strings.TrimSpace(c.Request().Header.Get("Authorization"))
@@ -6463,7 +6464,33 @@ func (s *Server) resolveWebUIChatSessionAlias(c *echo.Context, rawID string) (st
 	if err != nil {
 		return "", fmt.Errorf("invalid token")
 	}
-	return webUIChatSessionID(username), nil
+	return webUIRuntimeChatSessionID(username, runtimeID), nil
+}
+
+func resolveWebUIChatRuntimeAlias(sessionID string) (string, bool) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "webui-chat" {
+		return "", true
+	}
+
+	prefix := inboundrouter.SessionPrefix + ":"
+	if !strings.HasPrefix(sessionID, prefix) {
+		return "", false
+	}
+
+	parts := strings.Split(sessionID, ":")
+	if len(parts) != 3 {
+		return "", false
+	}
+	if parts[0] != inboundrouter.SessionPrefix || parts[2] != "webui-chat" {
+		return "", false
+	}
+
+	runtimeID := strings.TrimSpace(parts[1])
+	if runtimeID == "" {
+		return "", false
+	}
+	return runtimeID, true
 }
 
 func (s *Server) getJWTSecret() string {
