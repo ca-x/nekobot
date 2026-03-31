@@ -2,6 +2,42 @@
 
 > Last Updated: 2026-03-31
 
+## 2026-03-31 Chat 显式 Runtime 选路批次
+
+### Goal
+把 runtime/account 多绑定模型真正接入 WebUI/Gateway 聊天主链，支持用户在聊天时显式指定 `runtime_id`，并让该选择同时影响选路结果、会话隔离、undo/clear 行为与前端控制面展示。
+
+### Phases
+- [x] Phase 1: 核对 gateway websocket、webui chat、inbound router 当前 runtime 选路现状
+- [x] Phase 2: 先补后端测试，锁定显式 runtime 未透传的问题
+- [x] Phase 3: 修改 router / gateway / webui / chat 前端，接通显式 runtime 选路与 runtime 作用域 session
+- [x] Phase 4: 跑定向测试、前端构建与全量 Go 回归
+- [x] Phase 5: 更新 notes/task_plan，并准备提交推送
+
+### Key Questions
+1. 显式 runtime 选择应当挂在哪个聊天协议字段上，才能最小改动接入 Gateway 与 WebUI？
+2. 当一个 channel account 绑定多个 runtime 时，用户指定 runtime 后是否仍应广播给其他 runtime？
+3. WebUI 的 undo / clear / prompt session 绑定，是否需要跟随 runtime 作用域隔离？
+
+### Decisions Made
+- 使用 `runtime_id` 作为聊天协议里的显式选路字段，统一透传到 gateway websocket 与 webui chat websocket。
+- 当显式指定 runtime 时，只路由到该 runtime；不再按 multi-agent 模式广播到其他已绑定 runtime。
+- WebUI chat 的 session、prompt binding、undo、clear 统一切到 runtime 作用域：
+  - 默认：`webui-chat:<username>`
+  - 显式 runtime：`route:<runtimeID>:webui-chat:<username>`
+- 保持当前 multi-agent reply label 语义不变；显式 runtime 命中多 agent binding 时，返回消息仍可带 runtime 名称前缀，避免来源歧义。
+
+### Verification
+- [x] `go test -count=1 ./pkg/inboundrouter -run 'TestChatWebsocketFallsBackWithoutTopologyBinding|TestChatWebsocketUsesExplicitRuntimeSelection'`
+- [x] `go test -count=1 ./pkg/gateway -run TestProcessMessagePassesExplicitRuntimeIDToRouter`
+- [x] `go test -count=1 ./pkg/webui -run 'TestBuildWebUIChatPromptContextIncludesExplicitRuntimeID|TestHandleUndoChatSession|TestClearChatSessionRemovesUndoSnapshots'`
+- [x] `go test -count=1 ./pkg/webui ./pkg/gateway ./pkg/inboundrouter`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./...`
+
+### Status
+**Completed** - 已完成 Chat 显式 runtime 选路、runtime 作用域会话隔离、前后端控制面接通与全量回归验证，待提交推送本轮代码。
+
 ## 2026-03-31 Runtime Prompt 执行链接通批次
 
 ### Goal

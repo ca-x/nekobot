@@ -20,6 +20,7 @@ import {
 import { useChat, type ChatMessage } from '@/hooks/useChat';
 import { useWatchStatus } from '@/hooks/useConfig';
 import { usePrompts, usePromptSessionBindings } from '@/hooks/usePrompts';
+import { useRuntimeAgents } from '@/hooks/useTopology';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -275,7 +276,7 @@ export default function ChatPage() {
   const { data: providers = [] } = useProviders();
   const { data: config } = useAppConfig();
   const { data: prompts = [] } = usePrompts();
-  const { data: sessionPromptBindings } = usePromptSessionBindings('webui-chat');
+  const { data: runtimes = [] } = useRuntimeAgents();
   const {
     messages,
     sendMessage,
@@ -295,6 +296,7 @@ export default function ChatPage() {
   const [selectedProvider, setSelectedProvider] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [customModel, setCustomModel] = useState('');
+  const [selectedRuntimeID, setSelectedRuntimeID] = useState('');
   const [selectedFallbackTargets, setSelectedFallbackTargets] = useState<string[]>([]);
   const [selectedSystemPromptIDs, setSelectedSystemPromptIDs] = useState<string[]>([]);
   const [selectedUserPromptIDs, setSelectedUserPromptIDs] = useState<string[]>([]);
@@ -366,10 +368,21 @@ export default function ChatPage() {
   const messageCount = messages.filter((message) => message.role === 'user' || message.role === 'assistant').length;
   const activeModel = customModel.trim() || selectedModel.trim();
   const activeProvider = selectedProvider.trim();
+  const activeRuntimeID = selectedRuntimeID.trim();
+  const activeSessionBindingID = activeRuntimeID ? `route:${activeRuntimeID}:webui-chat` : 'webui-chat';
+  const { data: sessionPromptBindings } = usePromptSessionBindings(activeSessionBindingID);
   const activeFallback = selectedFallbackTargets.filter((target) => target.trim().length > 0);
   const actualProvider = routeResult?.actual_provider?.trim() || '';
   const actualModel = routeResult?.actual_model?.trim() || '';
   const resolvedOrder = routeResult?.resolved_order ?? [];
+  const enabledRuntimes = useMemo(
+    () => runtimes.filter((runtime) => runtime.enabled),
+    [runtimes],
+  );
+  const activeRuntime = useMemo(
+    () => enabledRuntimes.find((runtime) => runtime.id === activeRuntimeID) ?? null,
+    [activeRuntimeID, enabledRuntimes],
+  );
   const watchEnabled = !!watchStatus?.enabled;
   const watchRunning = !!watchStatus?.running;
   const watchLabel = watchEnabled ? t('chatWatchOn') : t('chatWatchOff');
@@ -454,6 +467,7 @@ export default function ChatPage() {
       fallbackProviders: activeFallback,
       systemPromptIDs: selectedSystemPromptIDs,
       userPromptIDs: selectedUserPromptIDs,
+      runtimeID: activeRuntimeID,
     });
     setChatInput('');
   }
@@ -467,12 +481,13 @@ export default function ChatPage() {
 
   async function handleUndo() {
     try {
+      const undoSessionID = activeRuntimeID ? `route:${activeRuntimeID}:webui-chat` : 'webui-chat';
       const result = await api.post<{
         undone_steps: number;
         remaining_turns: number;
         message_count: number;
         messages: { role: string; content: string }[];
-      }>('/api/chat/session/webui-chat/undo', { steps: 1 });
+      }>(`/api/chat/session/${encodeURIComponent(undoSessionID)}/undo`, { steps: 1 });
       if ((result.undone_steps ?? 0) <= 0) {
         toast.info(t('chatUndoNothing'));
         return;
@@ -590,6 +605,11 @@ export default function ChatPage() {
                 {t('chatActiveRoute')}
               </div>
               <div className="flex flex-wrap gap-2">
+                <span className="max-w-full break-all rounded-full border border-[hsl(var(--brand-200))] bg-card px-3 py-1.5 text-xs text-muted-foreground">
+                  {activeRuntime
+                    ? t('chatRuntimeSelected', activeRuntime.display_name || activeRuntime.name)
+                    : t('chatRuntimeAuto')}
+                </span>
                 <span className="max-w-full break-all rounded-full bg-[hsl(var(--gray-900))] px-3 py-1.5 text-xs font-medium text-white dark:bg-[hsl(var(--gray-100))] dark:text-[hsl(var(--gray-800))]">
                   {activeProvider || t('chatRouteAuto')}
                 </span>
@@ -666,6 +686,25 @@ export default function ChatPage() {
                   </Button>
                 </div>
               </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="eyebrow-label text-muted-foreground">
+                {t('chatRuntimeTarget')}
+              </label>
+              <Select value={toSelectValue(selectedRuntimeID)} onValueChange={(value) => setSelectedRuntimeID(fromSelectValue(value))}>
+                <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
+                  <SelectValue placeholder={t('chatRuntimeTarget')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={EMPTY_VALUE}>{t('chatRuntimeAuto')}</SelectItem>
+                  {enabledRuntimes.map((runtime) => (
+                    <SelectItem key={runtime.id} value={runtime.id}>
+                      {runtime.display_name || runtime.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-3">
@@ -851,7 +890,7 @@ export default function ChatPage() {
                   {t('reconnect')}
                 </Button>
               )}
-              <Button variant="outline" className="h-11 rounded-full sm:min-w-[140px]" onClick={clearMessages}>
+              <Button variant="outline" className="h-11 rounded-full sm:min-w-[140px]" onClick={() => clearMessages(activeRuntimeID)}>
                 <Trash2 className="mr-2 h-4 w-4" />
                 {t('clearSession')}
               </Button>

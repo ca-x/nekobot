@@ -45,6 +45,7 @@ import (
 	"nekobot/pkg/cron"
 	"nekobot/pkg/gateway"
 	"nekobot/pkg/ilinkauth"
+	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/process"
@@ -5224,6 +5225,7 @@ type chatWSMessage struct {
 	Fallback        []string `json:"fallback,omitempty"`          // Optional fallback provider order
 	SystemPromptIDs []string `json:"system_prompt_ids,omitempty"` // Optional session prompt overlays
 	UserPromptIDs   []string `json:"user_prompt_ids,omitempty"`   // Optional session prompt overlays
+	RuntimeID       string   `json:"runtime_id,omitempty"`        // Optional explicit runtime selection
 }
 
 type chatWSResponse struct {
@@ -5254,6 +5256,7 @@ type chatRouteState struct {
 	ResolvedOrder     []string `json:"resolved_order"`
 	ActualProvider    string   `json:"actual_provider"`
 	ActualModel       string   `json:"actual_model"`
+	RuntimeID         string   `json:"runtime_id,omitempty"`
 }
 
 type toolWSMessage struct {
@@ -5282,6 +5285,41 @@ func webUIChatSessionID(username string) string {
 	return "webui-chat:" + username
 }
 
+func webUIRuntimeChatSessionID(username, runtimeID string) string {
+	username = strings.TrimSpace(username)
+	runtimeID = strings.TrimSpace(runtimeID)
+	baseSessionID := webUIChatSessionID(username)
+	if runtimeID == "" {
+		return baseSessionID
+	}
+	return inboundrouter.SessionPrefix + ":" + runtimeID + ":" + baseSessionID
+}
+
+func buildWebUIChatPromptContext(
+	sessionID string,
+	username string,
+	provider string,
+	model string,
+	fallback []string,
+	runtimeID string,
+) agent.PromptContext {
+	promptCtx := agent.PromptContext{
+		Channel:           session.SourceWebUI,
+		SessionID:         strings.TrimSpace(sessionID),
+		UserID:            strings.TrimSpace(username),
+		Username:          strings.TrimSpace(username),
+		RequestedProvider: strings.TrimSpace(provider),
+		RequestedModel:    strings.TrimSpace(model),
+		RequestedFallback: append([]string(nil), fallback...),
+	}
+	if strings.TrimSpace(runtimeID) != "" {
+		promptCtx.Custom = map[string]any{
+			"runtime_id": strings.TrimSpace(runtimeID),
+		}
+	}
+	return promptCtx
+}
+
 func (s *Server) handleChatWS(c *echo.Context) error {
 	// Authenticate via token query param (since WebSocket can't use Authorization header easily)
 	tokenStr := c.QueryParam("token")
@@ -5303,8 +5341,8 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		_ = conn.Close()
 	}()
 
-	sessionID := webUIChatSessionID(username)
-	sess, err := s.getOrCreateChatSession(sessionID)
+	baseSessionID := webUIChatSessionID(username)
+	sess, err := s.getOrCreateChatSession(baseSessionID)
 	if err != nil {
 		sendWSError(conn, fmt.Sprintf("session error: %v", err))
 		return nil
@@ -5394,11 +5432,12 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 
 		case "clear":
-			if err := s.clearChatSession(sessionID); err != nil {
+			clearSessionID := webUIRuntimeChatSessionID(username, msg.RuntimeID)
+			if err := s.clearChatSession(clearSessionID); err != nil {
 				sendWSError(conn, fmt.Sprintf("session reset failed: %v", err))
 				continue
 			}
-			sess, err = s.sessionMgr.GetExisting(sessionID)
+			sess, err = s.sessionMgr.GetExisting(clearSessionID)
 			if err != nil {
 				sendWSError(conn, fmt.Sprintf("session error: %v", err))
 				continue
@@ -5415,6 +5454,8 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			if content == "" {
 				continue
 			}
+			runtimeID := strings.TrimSpace(msg.RuntimeID)
+			sessionID := webUIRuntimeChatSessionID(username, runtimeID)
 			model := strings.TrimSpace(msg.Model)
 			provider := strings.TrimSpace(msg.Provider)
 			fallback := normalizeProviderNames(msg.Fallback)
@@ -5434,6 +5475,11 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 					sendWSError(conn, fmt.Sprintf("save session prompts failed: %v", err))
 					continue
 				}
+			}
+			sess, err = s.getOrCreateChatSession(sessionID)
+			if err != nil {
+				sendWSError(conn, fmt.Sprintf("session error: %v", err))
+				continue
 			}
 
 			if s.agent != nil {
@@ -5486,15 +5532,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				context.Background(),
 				sess,
 				content,
-				agent.PromptContext{
-					Channel:           session.SourceWebUI,
-					SessionID:         sessionID,
-					UserID:            username,
-					Username:          username,
-					RequestedProvider: provider,
-					RequestedModel:    model,
-					RequestedFallback: fallback,
-				},
+				buildWebUIChatPromptContext(sessionID, username, provider, model, fallback, runtimeID),
 			)
 			if err != nil {
 				sendWSError(conn, fmt.Sprintf("agent error: %v", err))
@@ -5531,6 +5569,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 					ResolvedOrder:     append([]string(nil), routeResult.ResolvedOrder...),
 					ActualProvider:    routeResult.ActualProvider,
 					ActualModel:       routeResult.ActualModel,
+					RuntimeID:         runtimeID,
 				},
 			}
 			if data, err := json.Marshal(routeResp); err == nil {

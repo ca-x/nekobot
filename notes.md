@@ -1,5 +1,51 @@
 # Notes: nextclaw + picoclaw → nekobot 特性分析
 
+## 2026-03-31 Chat 显式 Runtime 选路补记
+
+### 问题确认
+- 虽然后端已经有 `channel account -> account bindings -> runtimes` 的模型，但 WebUI / Gateway 的聊天链路此前没有显式 runtime 选择入口。
+- `pkg/inboundrouter/router.go` 的 websocket chat 选路只会按默认 binding mode 取首个或广播全部 binding，无法表达“这次只发给某个 runtime”。
+- WebUI chat 的 session、prompt binding、undo/clear 之前都固定绑定 `webui-chat:<username>`，即使将来前端支持 runtime 选择，也会把不同 runtime 的上下文混在同一个 session 里。
+
+### 已修复
+- `pkg/inboundrouter/router.go`
+  - `ChatWebsocket(...)` 新增 `runtimeID` 参数。
+  - `selectBindings(...)` 支持显式 runtime 过滤；命中后仅选择对应 binding/runtime 对，不再广播到其他 runtime。
+- `pkg/gateway/server.go`
+  - websocket 消息协议新增 `runtime_id` 字段。
+  - `processMessage(...)` 将显式 runtime 原样透传给 router。
+- `pkg/webui/server.go`
+  - chat websocket 消息新增 `runtime_id`。
+  - 新增 `webUIRuntimeChatSessionID(...)`，让 runtime 选择落到独立 session 命名空间。
+  - prompt context 的 `Custom["runtime_id"]` 同步写入，供后续 runtime 级上下文链继续复用。
+  - `route_result` 回包新增 `runtime_id`，便于前端展示真实选路结果。
+- `pkg/webui/frontend/src/pages/ChatPage.tsx`
+  - Route Studio 新增 runtime selector。
+  - 当前生效路由区域新增 runtime badge。
+  - `send / clear / undo / session prompt bindings` 全部改为使用 runtime 作用域 session key。
+- `pkg/webui/frontend/src/hooks/useChat.ts`
+  - 发送消息与清空会话时支持透传 `runtime_id`。
+
+### 当前语义
+- 未显式选择 runtime 时：
+  - 保持现有 binding mode 语义，`single_agent` 走首个 binding，`multi_agent` 走全部 enabled bindings。
+- 显式选择 runtime 时：
+  - 只路由到指定 runtime。
+  - WebUI 会把这次对话写入 `route:<runtimeID>:webui-chat:<username>`，避免不同 runtime 共用同一段历史。
+- 当前 reply label 逻辑保持不变：
+  - 如果命中的 binding/runtime 在多 agent 语义下需要来源标注，回复仍可能带 `[Runtime Name]` 前缀。
+
+### 验证
+- `go test -count=1 ./pkg/inboundrouter -run 'TestChatWebsocketFallsBackWithoutTopologyBinding|TestChatWebsocketUsesExplicitRuntimeSelection'`
+- `go test -count=1 ./pkg/gateway -run TestProcessMessagePassesExplicitRuntimeIDToRouter`
+- `go test -count=1 ./pkg/webui -run 'TestBuildWebUIChatPromptContextIncludesExplicitRuntimeID|TestHandleUndoChatSession|TestClearChatSessionRemovesUndoSnapshots'`
+- `go test -count=1 ./pkg/webui ./pkg/gateway ./pkg/inboundrouter`
+- `npm --prefix pkg/webui/frontend run build`
+- `go test -count=1 ./...`
+
+### 前端验证补充
+- 前端仓库当前没有 `npm test` 脚本，无法做独立单元测试；本轮前端验证仍以 `tsc --noEmit + vite build` 为主。
+
 ## 2026-03-31 WeChat 多账号运行时凭据隔离补记
 
 ### 问题确认

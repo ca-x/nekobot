@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,25 @@ import (
 	"nekobot/pkg/session"
 	"nekobot/pkg/version"
 )
+
+type stubGatewayRouter struct {
+	lastRuntimeID string
+	reply         string
+}
+
+func (s *stubGatewayRouter) RegisterChannel(string) {}
+
+func (s *stubGatewayRouter) UnregisterAll() {}
+
+func (s *stubGatewayRouter) HandleInbound(context.Context, *bus.Message) error { return nil }
+
+func (s *stubGatewayRouter) ChatWebsocket(
+	ctx context.Context,
+	userID, username, upstreamSessionID, content, runtimeID string,
+) (string, map[string]any, error) {
+	s.lastRuntimeID = runtimeID
+	return s.reply, map[string]any{"runtime_id": runtimeID}, nil
+}
 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
@@ -168,5 +188,34 @@ func TestGetOrCreateSessionUsesGatewaySource(t *testing.T) {
 	}
 	if managed.Source != session.SourceGateway {
 		t.Fatalf("expected source %q, got %q", session.SourceGateway, managed.Source)
+	}
+}
+
+func TestProcessMessagePassesExplicitRuntimeIDToRouter(t *testing.T) {
+	s := newTestServer(t)
+	router := &stubGatewayRouter{reply: "router reply"}
+	s.router = router
+
+	sess, err := s.sessionMgr.GetWithSource("gateway-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	client := &Client{
+		id:       "gateway-session",
+		send:     make(chan []byte, 1),
+		userID:   "user-1",
+		username: "alice",
+		session:  sess,
+	}
+
+	s.processMessage(client, WSMessage{
+		Type:      "message",
+		Content:   "hello",
+		RuntimeID: "runtime-explicit",
+	})
+
+	if got := router.lastRuntimeID; got != "runtime-explicit" {
+		t.Fatalf("expected runtime id %q, got %q", "runtime-explicit", got)
 	}
 }

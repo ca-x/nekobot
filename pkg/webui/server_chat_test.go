@@ -155,3 +155,27 @@ func TestClearChatSessionRemovesUndoSnapshots(t *testing.T) {
 		t.Fatalf("expected zero snapshots after clear, got %d", got)
 	}
 }
+
+func TestBuildWebUIChatPromptContextIncludesExplicitRuntimeID(t *testing.T) {
+	ctx := buildWebUIChatPromptContext(
+		"webui-chat:alice",
+		"alice",
+		"openai",
+		"gpt-5",
+		[]string{"anthropic"},
+		"runtime-explicit",
+	)
+
+	if got := ctx.SessionID; got != "webui-chat:alice" {
+		t.Fatalf("unexpected session id: %q", got)
+	}
+	if got := ctx.RequestedProvider; got != "openai" {
+		t.Fatalf("unexpected provider: %q", got)
+	}
+	if got := ctx.RequestedModel; got != "gpt-5" {
+		t.Fatalf("unexpected model: %q", got)
+	}
+	if got := ctx.Custom["runtime_id"]; got != "runtime-explicit" {
+		t.Fatalf("unexpected runtime id: %#v", got)
+	}
+}

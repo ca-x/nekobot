@@ -40,6 +40,14 @@ type WSMessage struct {
 	SessionID string `json:"session_id,omitempty"` // Conversation session
 	MessageID string `json:"message_id,omitempty"` // Unique message ID
 	Timestamp int64  `json:"timestamp,omitempty"`  // Unix timestamp
+	RuntimeID string `json:"runtime_id,omitempty"` // Explicit runtime selection
+}
+
+type websocketRouter interface {
+	ChatWebsocket(
+		ctx context.Context,
+		userID, username, upstreamSessionID, content, runtimeID string,
+	) (string, map[string]any, error)
 }
 
 // Client represents a connected WebSocket client.
@@ -58,7 +66,7 @@ type Server struct {
 	logger     *logger.Logger
 	agent      *agent.Agent
 	bus        bus.Bus
-	router     *inboundrouter.Router
+	router     websocketRouter
 	sessionMgr *session.Manager
 	entClient  *ent.Client
 	mux        *http.ServeMux
@@ -334,6 +342,7 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 			client.username,
 			client.id,
 			wsMsg.Content,
+			wsMsg.RuntimeID,
 		)
 		if err != nil {
 			s.sendError(client, fmt.Sprintf("agent error: %v", err))

@@ -34,6 +34,11 @@ type Router struct {
 	channelKeys []string
 }
 
+type selectedBinding struct {
+	binding accountbindings.AccountBinding
+	runtime runtimeagents.AgentRuntime
+}
+
 type routingAgent interface {
 	ChatWithPromptContextDetailed(
 		ctx context.Context,
@@ -112,7 +117,7 @@ func (r *Router) UnregisterAll() {
 // When no websocket runtime mapping exists yet, it preserves legacy default-agent behavior.
 func (r *Router) ChatWebsocket(
 	ctx context.Context,
-	userID, username, upstreamSessionID, content string,
+	userID, username, upstreamSessionID, content, runtimeID string,
 ) (string, map[string]any, error) {
 	if r == nil {
 		return "", nil, fmt.Errorf("router is nil")
@@ -142,7 +147,7 @@ func (r *Router) ChatWebsocket(
 		return "", nil, nil
 	}
 
-	selectedBindings, err := r.selectBindings(ctx, websocketAccount.ID)
+	selectedBindings, err := r.selectBindings(ctx, websocketAccount.ID, runtimeID)
 	if err != nil {
 		return "", nil, err
 	}
@@ -164,11 +169,7 @@ func (r *Router) ChatWebsocket(
 	}
 
 	selection := selectedBindings[0]
-	runtimeItem, err := r.runtimes.Get(ctx, selection.AgentRuntimeID)
-	if err != nil {
-		return "", nil, fmt.Errorf("get websocket runtime %s: %w", selection.AgentRuntimeID, err)
-	}
-	if runtimeItem == nil || !runtimeItem.Enabled {
+	if !selection.runtime.Enabled {
 		return "", nil, nil
 	}
 
@@ -179,7 +180,7 @@ func (r *Router) ChatWebsocket(
 		Username:  username,
 		Type:      bus.MessageTypeText,
 		Content:   content,
-	}, *websocketAccount, selection, *runtimeItem, session.SourceGateway)
+	}, *websocketAccount, selection.binding, selection.runtime, session.SourceGateway)
 	if err != nil {
 		return "", nil, err
 	}
@@ -213,7 +214,7 @@ func (r *Router) HandleInbound(ctx context.Context, msg *bus.Message) error {
 		return nil
 	}
 
-	selectedBindings, err := r.selectBindings(ctx, account.ID)
+	selectedBindings, err := r.selectBindings(ctx, account.ID, "")
 	if err != nil {
 		return err
 	}
@@ -224,16 +225,12 @@ func (r *Router) HandleInbound(ctx context.Context, msg *bus.Message) error {
 		return nil
 	}
 
-	for _, binding := range selectedBindings {
-		runtimeItem, err := r.runtimes.Get(ctx, binding.AgentRuntimeID)
-		if err != nil {
-			return fmt.Errorf("get runtime %s: %w", binding.AgentRuntimeID, err)
-		}
-		if runtimeItem == nil || !runtimeItem.Enabled {
+	for _, item := range selectedBindings {
+		if !item.runtime.Enabled {
 			continue
 		}
 
-		if err := r.dispatchToRuntime(ctx, msg, *account, binding, *runtimeItem); err != nil {
+		if err := r.dispatchToRuntime(ctx, msg, *account, item.binding, item.runtime); err != nil {
 			return err
 		}
 	}
@@ -274,7 +271,11 @@ func (r *Router) handleLegacyInbound(ctx context.Context, msg *bus.Message) erro
 	return nil
 }
 
-func (r *Router) selectBindings(ctx context.Context, channelAccountID string) ([]accountbindings.AccountBinding, error) {
+func (r *Router) selectBindings(
+	ctx context.Context,
+	channelAccountID string,
+	explicitRuntimeID string,
+) ([]selectedBinding, error) {
 	items, err := r.bindings.ListEnabledByChannelAccountID(ctx, channelAccountID)
 	if err != nil {
 		return nil, err
@@ -283,11 +284,56 @@ func (r *Router) selectBindings(ctx context.Context, channelAccountID string) ([
 		return nil, nil
 	}
 
+	if explicitRuntimeID != "" {
+		for _, item := range items {
+			if item.AgentRuntimeID != explicitRuntimeID {
+				continue
+			}
+			runtimeItem, err := r.runtimes.Get(ctx, item.AgentRuntimeID)
+			if err != nil {
+				return nil, fmt.Errorf("get runtime %s: %w", item.AgentRuntimeID, err)
+			}
+			if runtimeItem == nil {
+				return nil, nil
+			}
+			return []selectedBinding{{
+				binding: item,
+				runtime: *runtimeItem,
+			}}, nil
+		}
+		return nil, nil
+	}
+
 	mode := strings.TrimSpace(items[0].BindingMode)
 	if mode != accountbindings.ModeMultiAgent {
-		return []accountbindings.AccountBinding{items[0]}, nil
+		runtimeItem, err := r.runtimes.Get(ctx, items[0].AgentRuntimeID)
+		if err != nil {
+			return nil, fmt.Errorf("get runtime %s: %w", items[0].AgentRuntimeID, err)
+		}
+		if runtimeItem == nil {
+			return nil, nil
+		}
+		return []selectedBinding{{
+			binding: items[0],
+			runtime: *runtimeItem,
+		}}, nil
 	}
-	return items, nil
+
+	selected := make([]selectedBinding, 0, len(items))
+	for _, item := range items {
+		runtimeItem, err := r.runtimes.Get(ctx, item.AgentRuntimeID)
+		if err != nil {
+			return nil, fmt.Errorf("get runtime %s: %w", item.AgentRuntimeID, err)
+		}
+		if runtimeItem == nil {
+			continue
+		}
+		selected = append(selected, selectedBinding{
+			binding: item,
+			runtime: *runtimeItem,
+		})
+	}
+	return selected, nil
 }
 
 func (r *Router) dispatchToRuntime(

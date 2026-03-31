@@ -28,6 +28,7 @@ export interface ChatRouteResult {
   resolved_order: string[];
   actual_provider: string;
   actual_model: string;
+  runtime_id?: string;
 }
 
 interface SendOptions {
@@ -36,12 +37,13 @@ interface SendOptions {
   fallbackProviders: string[];
   systemPromptIDs?: string[];
   userPromptIDs?: string[];
+  runtimeID?: string;
 }
 
 interface UseChatReturn {
   messages: ChatMessage[];
   sendMessage: (text: string, options: SendOptions) => void;
-  clearMessages: () => void;
+  clearMessages: (runtimeID?: string) => void;
   replaceMessages: (messages: ChatMessage[]) => void;
   connectionStatus: ConnectionStatus;
   reconnect: () => void;
@@ -208,6 +210,7 @@ export function useChat(): UseChatReturn {
         fallback: options.fallbackProviders,
         system_prompt_ids: options.systemPromptIDs ?? [],
         user_prompt_ids: options.userPromptIDs ?? [],
+        runtime_id: options.runtimeID ?? '',
       }),
     );
     setRouteSettings({
@@ -225,10 +228,10 @@ export function useChat(): UseChatReturn {
     ]);
   }, []);
 
-  const clearMessages = useCallback(() => {
+  const clearMessages = useCallback((runtimeID?: string) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'clear' }));
+      ws.send(JSON.stringify({ type: 'clear', runtime_id: runtimeID ?? '' }));
     }
     setIsAwaitingReply(false);
     setRouteResult(null);

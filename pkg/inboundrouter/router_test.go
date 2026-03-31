@@ -202,7 +202,7 @@ func TestChatWebsocketFallsBackWithoutTopologyBinding(t *testing.T) {
 		t.Fatalf("new router: %v", err)
 	}
 
-	reply, metadata, err := router.ChatWebsocket(context.Background(), "u-1", "alice", "gateway-session", "hello")
+	reply, metadata, err := router.ChatWebsocket(context.Background(), "u-1", "alice", "gateway-session", "hello", "")
 	if err != nil {
 		t.Fatalf("chat websocket: %v", err)
 	}
@@ -215,6 +215,122 @@ func TestChatWebsocketFallsBackWithoutTopologyBinding(t *testing.T) {
 	}
 	if agentStub.lastPrompt.SessionID != "gateway-session" {
 		t.Fatalf("unexpected session id: %q", agentStub.lastPrompt.SessionID)
+	}
+}
+
+func TestChatWebsocketUsesExplicitRuntimeSelection(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error", OutputPath: ""})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	accountItem, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "websocket",
+		AccountKey:  "default",
+		DisplayName: "Gateway Default",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	firstRuntime, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "support-main",
+		DisplayName: "Support Main",
+		Enabled:     true,
+		Provider:    "openai",
+		Model:       "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("create first runtime: %v", err)
+	}
+	secondRuntime, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "ops-escalation",
+		DisplayName: "Ops Escalation",
+		Enabled:     true,
+		Provider:    "anthropic",
+		Model:       "claude-sonnet-4",
+	})
+	if err != nil {
+		t.Fatalf("create second runtime: %v", err)
+	}
+	if _, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: accountItem.ID,
+		AgentRuntimeID:   firstRuntime.ID,
+		BindingMode:      accountbindings.ModeMultiAgent,
+		Enabled:          true,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create first binding: %v", err)
+	}
+	if _, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: accountItem.ID,
+		AgentRuntimeID:   secondRuntime.ID,
+		BindingMode:      accountbindings.ModeMultiAgent,
+		Enabled:          true,
+		Priority:         200,
+	}); err != nil {
+		t.Fatalf("create second binding: %v", err)
+	}
+
+	agentStub := &stubAgent{response: "selected runtime reply"}
+	router, err := New(
+		log,
+		bus.NewLocalBus(log, 4),
+		agentStub,
+		session.NewManager(t.TempDir(), cfg.Sessions),
+		accountMgr,
+		bindingMgr,
+		runtimeMgr,
+	)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	reply, metadata, err := router.ChatWebsocket(
+		context.Background(),
+		"u-1",
+		"alice",
+		"gateway-session",
+		"hello",
+		secondRuntime.ID,
+	)
+	if err != nil {
+		t.Fatalf("chat websocket: %v", err)
+	}
+	if reply != "[Ops Escalation] selected runtime reply" {
+		t.Fatalf("unexpected websocket reply: %q", reply)
+	}
+	if got := agentStub.lastPrompt.RequestedProvider; got != "anthropic" {
+		t.Fatalf("unexpected provider: %q", got)
+	}
+	if got := agentStub.lastPrompt.RequestedModel; got != "claude-sonnet-4" {
+		t.Fatalf("unexpected model: %q", got)
+	}
+	if metadata["runtime_id"] != secondRuntime.ID {
+		t.Fatalf("expected runtime_id=%q, got %#v", secondRuntime.ID, metadata["runtime_id"])
 	}
 }
 
