@@ -33,10 +33,12 @@ type AccountNode struct {
 
 // BindingEdge is the topology edge projection.
 type BindingEdge struct {
-	Binding      accountbindings.AccountBinding `json:"binding"`
-	RuntimeName  string                         `json:"runtime_name"`
-	AccountLabel string                         `json:"account_label"`
-	ChannelType  string                         `json:"channel_type"`
+	Binding          accountbindings.AccountBinding `json:"binding"`
+	RuntimeName      string                         `json:"runtime_name"`
+	AccountLabel     string                         `json:"account_label"`
+	ChannelType      string                         `json:"channel_type"`
+	EffectiveEnabled bool                           `json:"effective_enabled"`
+	DisabledReason   string                         `json:"disabled_reason,omitempty"`
 }
 
 // Snapshot is the full Round 1 runtime topology shape.
@@ -92,12 +94,15 @@ func (s *Service) Snapshot(ctx context.Context) (*Snapshot, error) {
 	}
 
 	runtimeNameByID := make(map[string]string, len(runtimeList))
+	runtimeEnabledByID := make(map[string]bool, len(runtimeList))
 	runtimeCountByID := make(map[string]int, len(runtimeList))
 	for _, item := range runtimeList {
 		runtimeNameByID[item.ID] = item.DisplayName
+		runtimeEnabledByID[item.ID] = item.Enabled
 	}
 	accountLabelByID := make(map[string]string, len(accountList))
 	accountTypeByID := make(map[string]string, len(accountList))
+	accountEnabledByID := make(map[string]bool, len(accountList))
 	accountCountByID := make(map[string]int, len(accountList))
 	accountModeByID := make(map[string]string, len(accountList))
 	for _, item := range accountList {
@@ -107,6 +112,7 @@ func (s *Service) Snapshot(ctx context.Context) (*Snapshot, error) {
 		}
 		accountLabelByID[item.ID] = label
 		accountTypeByID[item.ID] = item.ChannelType
+		accountEnabledByID[item.ID] = item.Enabled
 	}
 
 	edges := make([]BindingEdge, 0, len(bindingList))
@@ -116,11 +122,18 @@ func (s *Service) Snapshot(ctx context.Context) (*Snapshot, error) {
 		if accountModeByID[item.ChannelAccountID] == "" {
 			accountModeByID[item.ChannelAccountID] = item.BindingMode
 		}
+		effectiveEnabled, disabledReason := bindingEffectiveState(
+			item,
+			accountEnabledByID[item.ChannelAccountID],
+			runtimeEnabledByID[item.AgentRuntimeID],
+		)
 		edges = append(edges, BindingEdge{
-			Binding:      item,
-			RuntimeName:  runtimeNameByID[item.AgentRuntimeID],
-			AccountLabel: accountLabelByID[item.ChannelAccountID],
-			ChannelType:  accountTypeByID[item.ChannelAccountID],
+			Binding:          item,
+			RuntimeName:      runtimeNameByID[item.AgentRuntimeID],
+			AccountLabel:     accountLabelByID[item.ChannelAccountID],
+			ChannelType:      accountTypeByID[item.ChannelAccountID],
+			EffectiveEnabled: effectiveEnabled,
+			DisabledReason:   disabledReason,
 		})
 	}
 
@@ -161,4 +174,21 @@ func (s *Service) Snapshot(ctx context.Context) (*Snapshot, error) {
 		Accounts: accounts,
 		Bindings: edges,
 	}, nil
+}
+
+func bindingEffectiveState(
+	item accountbindings.AccountBinding,
+	accountEnabled bool,
+	runtimeEnabled bool,
+) (bool, string) {
+	if !item.Enabled {
+		return false, "binding_disabled"
+	}
+	if !accountEnabled {
+		return false, "account_disabled"
+	}
+	if !runtimeEnabled {
+		return false, "runtime_disabled"
+	}
+	return true, ""
 }

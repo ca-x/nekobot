@@ -654,3 +654,132 @@ func TestHandleDeleteChannelAccountRemovesBindings(t *testing.T) {
 		t.Fatalf("expected zero topology edges, got %+v", snapshot.Bindings)
 	}
 }
+
+func TestRuntimeTopologySnapshotMarksBindingsInactiveForDisabledTargets(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr)
+	if err != nil {
+		t.Fatalf("new topology service: %v", err)
+	}
+
+	runtimeItem, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "ops-runtime",
+		DisplayName: "Ops Runtime",
+		Enabled:     true,
+		Provider:    "openai",
+		Model:       "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	accountItem, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "gotify",
+		AccountKey:  "alerts-a",
+		DisplayName: "Alerts A",
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"enabled":    true,
+			"server_url": "https://gotify.example.com",
+			"app_token":  "token-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	bindingItem, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: accountItem.ID,
+		AgentRuntimeID:   runtimeItem.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+		Priority:         100,
+	})
+	if err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	_, err = runtimeMgr.Update(context.Background(), runtimeItem.ID, runtimeagents.AgentRuntime{
+		Name:        runtimeItem.Name,
+		DisplayName: runtimeItem.DisplayName,
+		Enabled:     false,
+		Provider:    runtimeItem.Provider,
+		Model:       runtimeItem.Model,
+	})
+	if err != nil {
+		t.Fatalf("disable runtime: %v", err)
+	}
+
+	snapshot, err := topologySvc.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("snapshot topology after runtime disable: %v", err)
+	}
+	if len(snapshot.Bindings) != 1 {
+		t.Fatalf("expected one binding edge, got %+v", snapshot.Bindings)
+	}
+	if snapshot.Bindings[0].Binding.ID != bindingItem.ID {
+		t.Fatalf("unexpected binding edge: %+v", snapshot.Bindings[0])
+	}
+	if snapshot.Bindings[0].EffectiveEnabled {
+		t.Fatalf("expected binding edge to become inactive when runtime is disabled: %+v", snapshot.Bindings[0])
+	}
+	if snapshot.Bindings[0].DisabledReason == "" {
+		t.Fatalf("expected disabled reason for inactive binding edge: %+v", snapshot.Bindings[0])
+	}
+
+	_, err = runtimeMgr.Update(context.Background(), runtimeItem.ID, runtimeagents.AgentRuntime{
+		Name:        runtimeItem.Name,
+		DisplayName: runtimeItem.DisplayName,
+		Enabled:     true,
+		Provider:    runtimeItem.Provider,
+		Model:       runtimeItem.Model,
+	})
+	if err != nil {
+		t.Fatalf("re-enable runtime: %v", err)
+	}
+	_, err = accountMgr.Update(context.Background(), accountItem.ID, channelaccounts.ChannelAccount{
+		ChannelType: accountItem.ChannelType,
+		AccountKey:  accountItem.AccountKey,
+		DisplayName: accountItem.DisplayName,
+		Enabled:     false,
+		Config:      accountItem.Config,
+	})
+	if err != nil {
+		t.Fatalf("disable account: %v", err)
+	}
+
+	snapshot, err = topologySvc.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("snapshot topology after account disable: %v", err)
+	}
+	if len(snapshot.Bindings) != 1 {
+		t.Fatalf("expected one binding edge, got %+v", snapshot.Bindings)
+	}
+	if snapshot.Bindings[0].EffectiveEnabled {
+		t.Fatalf("expected binding edge to become inactive when account is disabled: %+v", snapshot.Bindings[0])
+	}
+	if snapshot.Bindings[0].DisabledReason == "" {
+		t.Fatalf("expected disabled reason for account-disabled binding edge: %+v", snapshot.Bindings[0])
+	}
+}

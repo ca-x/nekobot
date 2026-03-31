@@ -589,12 +589,13 @@ export default function RuntimeTopologyPage() {
                     const runtime = runtimes.find((item) => item.id === binding.agent_runtime_id);
                     const accountLabel = edge?.account_label || account?.display_name || account?.account_key || binding.channel_account_id;
                     const runtimeLabel = edge?.runtime_name || runtime?.display_name || runtime?.name || binding.agent_runtime_id;
+                    const bindingActive = edge?.effective_enabled ?? binding.enabled;
                     return (
                       <EntityCard
                         key={binding.id}
                         title={`${accountLabel} -> ${runtimeLabel}`}
                         subtitle={`${edge?.channel_type || account?.channel_type || '-'} / ${binding.binding_mode}`}
-                        enabled={binding.enabled}
+                        enabled={bindingActive}
                         chips={[
                           t('runtimeTopologyPriority', String(binding.priority)),
                           binding.allow_public_reply
@@ -603,6 +604,9 @@ export default function RuntimeTopologyPage() {
                           binding.reply_label
                             ? t('runtimeTopologyReplyLabel', binding.reply_label)
                             : t('runtimeTopologyReplyLabelUnset'),
+                          edge?.disabled_reason
+                            ? t(`runtimeTopologyBindingDisabledReason_${edge.disabled_reason}`)
+                            : '',
                         ]}
                         description=""
                         onEdit={() => openEditBindingDialog(binding)}

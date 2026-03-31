@@ -70,6 +70,8 @@ export interface BindingEdge {
   runtime_name: string;
   account_label: string;
   channel_type: string;
+  effective_enabled: boolean;
+  disabled_reason: string;
 }
 
 export interface RuntimeTopologySnapshot {

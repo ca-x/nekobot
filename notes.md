@@ -61,6 +61,55 @@
   - 后端不会再接受半有效 binding。
   - 前端也不会再默认诱导用户创建这类无效组合。
 
+## 2026-03-31 Binding 实际有效态可视化补记
+
+### 问题确认
+- 上一批修复已经阻止创建新的“enabled binding -> disabled target”组合。
+- 但仍然存在第二类错觉：
+  - binding 本身仍存储为 `enabled=true`
+  - 后续用户把 runtime 或 channel account 禁用
+  - 路由层会直接跳过该 binding
+  - Runtime Topology 页面却仍可能把这条 binding 显示为启用
+- 这会继续造成“记录仍亮着，但实际不会路由”的控制面误导。
+
+### 已修复
+- `pkg/runtimetopology/service.go`
+  - `BindingEdge` 新增：
+    - `effective_enabled`
+    - `disabled_reason`
+  - Snapshot 聚合时会基于三层状态计算 binding 的实际有效态：
+    - `binding.enabled`
+    - `channel_account.enabled`
+    - `agent_runtime.enabled`
+- `pkg/webui/server_topology_test.go`
+  - 新增 `TestRuntimeTopologySnapshotMarksBindingsInactiveForDisabledTargets`
+  - 覆盖：
+    - 禁用 runtime 后，binding edge 必须变为 `effective_enabled=false`
+    - 禁用 account 后，binding edge 必须变为 `effective_enabled=false`
+    - 两种情况都必须带 `disabled_reason`
+- `pkg/webui/frontend/src/hooks/useTopology.ts`
+  - 为 topology edge 补齐 `effective_enabled` / `disabled_reason` 类型。
+- `pkg/webui/frontend/src/pages/RuntimeTopologyPage.tsx`
+  - binding 卡片状态 pill 现在优先使用 edge 的 `effective_enabled`
+  - 卡片 chip 新增失效原因提示
+- `pkg/webui/frontend/public/i18n/{en,zh-CN,ja}.json`
+  - 补齐三类失效原因文案：
+    - `binding_disabled`
+    - `account_disabled`
+    - `runtime_disabled`
+
+### 当前语义
+- binding 记录是否存在、是否被启用：仍由 `binding.enabled` 表达。
+- binding 当前是否真的可参与路由：由 `effective_enabled` 表达。
+- 如果 `effective_enabled=false`，前端必须显示明确的失效原因，而不是继续复用“开启/关闭”的存储态错觉。
+
+### 已完成验证
+- `go test -count=1 ./pkg/webui -run 'TestRuntimeTopologyHandlers_CRUDAndSnapshot|TestHandleCreateAccountBindingRejectsDisabledTargetsWhenEnabled|TestRuntimeTopologySnapshotMarksBindingsInactiveForDisabledTargets'`
+- `npm --prefix pkg/webui/frontend run build`
+
+### 待继续验证
+- `go test -count=1 ./...`
+
 ## 2026-03-31 Chat 显式 Runtime 选路补记
 
 ### 问题确认

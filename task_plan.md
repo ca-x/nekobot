@@ -80,6 +80,37 @@
 ### Status
 **Completed** - 已完成 enabled binding 控制面一致性补强、Runtime Topology 前端候选收口，并通过定向回归、包级回归、前端构建与全量 Go 测试，待提交推送。
 
+## 2026-03-31 Binding 实际有效态可视化批次
+
+### Goal
+修正 Runtime Topology 对 binding 状态的展示语义：当 binding 自身仍为 enabled，但其 runtime 或 channel account 已被禁用时，拓扑页必须明确显示该 binding 当前不生效，并给出失效原因，避免控制面继续出现“看起来启用、实际不会路由”的误导。
+
+### Phases
+- [x] Phase 1: 先补失败测试，锁定 disabled target 下的拓扑展示失真
+- [x] Phase 2: 扩展 topology snapshot，计算 binding 的实际有效态与失效原因
+- [x] Phase 3: 改造 Runtime Topology 前端 binding 卡片，按实际有效态展示
+- [ ] Phase 4: 跑更大范围回归并更新记录
+- [ ] Phase 5: 提交推送后继续下一处缺口
+
+### Decisions Made
+- 不在 runtime/account disable 时自动删除或改写 binding 记录；保留配置事实，只修正可观测语义。
+- `runtimetopology.BindingEdge` 新增：
+  - `effective_enabled`
+  - `disabled_reason`
+- 前端 binding 卡片的状态 pill 改为优先依据 `effective_enabled` 渲染，而不是只看 `binding.enabled`。
+- 失效原因先收口为三个稳定枚举值：
+  - `binding_disabled`
+  - `account_disabled`
+  - `runtime_disabled`
+
+### Verification
+- [x] `go test -count=1 ./pkg/webui -run 'TestRuntimeTopologyHandlers_CRUDAndSnapshot|TestHandleCreateAccountBindingRejectsDisabledTargetsWhenEnabled|TestRuntimeTopologySnapshotMarksBindingsInactiveForDisabledTargets'`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [ ] `go test -count=1 ./...`
+
+### Status
+**Phase 4 In Progress** - 拓扑快照和前端展示已收口，正在跑全量 Go 回归并准备提交推送。
+
 ## 2026-03-31 Runtime Prompt 执行链接通批次
 
 ### Goal
