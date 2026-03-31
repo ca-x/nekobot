@@ -32,6 +32,32 @@
 ### Status
 **Completed** - 已完成 runtime prompt 执行链接通、全量回归验证，并准备提交推送本轮代码。
 
+## 2026-03-31 WeChat 控制面与 Channel Account ID 收口批次
+
+### Goal
+修正旧 WeChat 绑定控制面与新 channel-account/runtime-topology 控制面之间的 ID 语义分裂，确保“当前激活账户”使用同一主键模型，并让旧控制面操作能同步刷新新的 topology/account 观察面。
+
+### Phases
+- [x] Phase 1: 审查 WeChat binding payload、ChannelsPage 与 runtime topology 之间的状态边界
+- [x] Phase 2: 先补测试，锁定 `active_account_id` 语义错误
+- [x] Phase 3: 修复 payload 与前端 query 失效链路
+- [x] Phase 4: 跑相关与全量回归，更新 notes/task_plan
+- [x] Phase 5: 提交并推送本轮代码
+
+### Decisions Made
+- `active_account_id` 统一收口为真实的 `channel_accounts.id`，不再复用 `bot_id`。
+- 不在本轮重做 WeChat 控制面 UI；先修正 API 语义与跨页 stale 状态，让旧面和新面至少共享同一事实来源。
+- WeChat binding 相关 mutation 成功后，除旧 `channels` 查询外，也同步失效 `channel-accounts` 与 `runtime-topology` 查询。
+
+### Verification
+- [x] `go test -count=1 ./pkg/webui -run TestBuildWechatBindingPayloadIncludesCurrentBinding`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./pkg/webui ./pkg/channels/wechat ./cmd/nekobot/...`
+- [x] `go test -count=1 ./...`
+
+### Status
+**Completed** - 已完成 WeChat 控制面与 channel account ID 语义收口、前端同步失效与全量回归验证，并准备提交推送本轮代码。
+
 ## 2026-03-31 Runtime Topology WebUI 可编辑化批次
 
 ### Goal

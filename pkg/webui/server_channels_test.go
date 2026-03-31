@@ -149,6 +149,13 @@ func TestBuildWechatBindingPayloadIncludesCurrentBinding(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
 
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+
 	store, err := ilinkauth.NewStore(cfg)
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -167,7 +174,24 @@ func TestBuildWechatBindingPayloadIncludesCurrentBinding(t *testing.T) {
 	}
 
 	authSvc := ilinkauth.NewService(store, nil)
-	s := &Server{config: cfg, ilinkAuth: authSvc}
+	accountItem, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-1@im.wechat",
+		DisplayName: "bot-1@im.wechat",
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"ilink_bot_id":  "bot-1@im.wechat",
+			"ilink_user_id": "wechat-user-1",
+		},
+		Metadata: map[string]interface{}{
+			"owner_user_id": "user-1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create channel account failed: %v", err)
+	}
+
+	s := &Server{config: cfg, ilinkAuth: authSvc, accountMgr: accountMgr}
 	payload, err := s.buildWechatBindingPayload(authSvc, "user-1")
 	if err != nil {
 		t.Fatalf("buildWechatBindingPayload failed: %v", err)
@@ -185,6 +209,9 @@ func TestBuildWechatBindingPayloadIncludesCurrentBinding(t *testing.T) {
 	}
 	if account["user_id"] != "wechat-user-1" {
 		t.Fatalf("unexpected user id: %#v", account["user_id"])
+	}
+	if payload["active_account_id"] != accountItem.ID {
+		t.Fatalf("expected active_account_id=%q, got %#v", accountItem.ID, payload["active_account_id"])
 	}
 }
 

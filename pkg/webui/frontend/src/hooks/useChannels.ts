@@ -112,6 +112,8 @@ export function useStartWechatBinding() {
     mutationFn: () => api.post<WechatBindingStatus>('/api/channels/wechat/binding/start'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
+      qc.invalidateQueries({ queryKey: ['channel-accounts'] });
+      qc.invalidateQueries({ queryKey: ['runtime-topology'] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -124,6 +126,8 @@ export function usePollWechatBinding() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
       qc.invalidateQueries({ queryKey: ['channels'] });
+      qc.invalidateQueries({ queryKey: ['channel-accounts'] });
+      qc.invalidateQueries({ queryKey: ['runtime-topology'] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -136,6 +140,8 @@ export function useDeleteWechatBinding() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
       qc.invalidateQueries({ queryKey: ['channels'] });
+      qc.invalidateQueries({ queryKey: ['channel-accounts'] });
+      qc.invalidateQueries({ queryKey: ['runtime-topology'] });
       toast.success(t('wechatBindingDeleted'));
     },
     onError: (err: Error) => toast.error(err.message),
@@ -152,6 +158,8 @@ export function useActivateWechatBinding() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
       qc.invalidateQueries({ queryKey: ['channels'] });
+      qc.invalidateQueries({ queryKey: ['channel-accounts'] });
+      qc.invalidateQueries({ queryKey: ['runtime-topology'] });
       toast.success(t('wechatAccountActivated'));
     },
     onError: (err: Error) => toast.error(err.message),
@@ -166,6 +174,8 @@ export function useDeleteWechatBindingAccount() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['channels', 'wechat', 'binding'] });
       qc.invalidateQueries({ queryKey: ['channels'] });
+      qc.invalidateQueries({ queryKey: ['channel-accounts'] });
+      qc.invalidateQueries({ queryKey: ['runtime-topology'] });
       toast.success(t('wechatAccountDeleted'));
     },
     onError: (err: Error) => toast.error(err.message),

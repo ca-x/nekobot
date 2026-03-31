@@ -3925,9 +3925,10 @@ func (s *Server) buildWechatBindingPayload(authSvc *ilinkauth.Service, userID st
 	if err != nil && !errors.Is(err, ilinkauth.ErrBindingNotFound) {
 		return nil, fmt.Errorf("load ilink binding: %w", err)
 	}
+	activeAccountBotID := ""
 	if binding != nil {
 		payload["bound"] = true
-		payload["active_account_id"] = binding.Credentials.ILinkBotID
+		activeAccountBotID = strings.TrimSpace(binding.Credentials.ILinkBotID)
 		payload["account"] = map[string]interface{}{
 			"bot_id":  binding.Credentials.ILinkBotID,
 			"user_id": binding.Credentials.ILinkUserID,
@@ -3953,8 +3954,11 @@ func (s *Server) buildWechatBindingPayload(authSvc *ilinkauth.Service, userID st
 				"account_id": account.ID,
 				"bot_id":     botID,
 				"user_id":    ilinkUserID,
-				"active":     binding != nil && strings.TrimSpace(botID) == strings.TrimSpace(binding.Credentials.ILinkBotID),
+				"active":     activeAccountBotID != "" && strings.TrimSpace(botID) == activeAccountBotID,
 			})
+			if activeAccountBotID != "" && strings.TrimSpace(botID) == activeAccountBotID {
+				payload["active_account_id"] = account.ID
+			}
 		}
 		payload["accounts"] = items
 	}

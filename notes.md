@@ -338,6 +338,34 @@
 - `go test -count=1 ./pkg/prompts ./pkg/inboundrouter`
 - `go test -count=1 ./pkg/agent ./pkg/prompts ./pkg/inboundrouter ./pkg/webui ./pkg/channels/wechat`
 - `npm --prefix pkg/webui/frontend run build`
+
+## 2026-03-31 WeChat 账户控制面 ID 语义收口补记
+
+### 本轮新增发现
+- 旧 WeChat 绑定控制面与新 channel-account 模型在“当前激活账户”的 ID 语义上不一致：
+  - `/api/channels/wechat/binding` 的 `active_account_id` 之前返回的是 `bot_id`。
+  - 但同一 payload 里的 `accounts[]` 列表返回的是 runtime channel account 的真实 `account_id`。
+- 这会导致：
+  - 旧控制面与新 topology/account 模型无法用同一个主键对齐。
+  - 用户在 Channels 页和 Runtime Topology 页之间切换时，看到的是两套不同的“当前激活账户”标识。
+
+### 本轮已完成
+- `pkg/webui/server.go`
+  - `buildWechatBindingPayload()` 现在会根据当前激活的 `bot_id` 回填匹配到的真实 channel account ID。
+  - `active_account_id` 语义已收口为真正的 `channel_accounts.id`。
+- `pkg/webui/frontend/src/hooks/useChannels.ts`
+  - WeChat 绑定相关 mutation 在成功后，除了失效旧的 `['channels', 'wechat', 'binding']` 与 `['channels']`，还会同步失效：
+    - `['channel-accounts']`
+    - `['runtime-topology']`
+  - 这样旧 WeChat 控制面动作会立即同步到新的 topology 控制面，不再出现跨页 stale 状态。
+
+### 测试补强
+- `pkg/webui/server_channels_test.go`
+  - 扩展 `TestBuildWechatBindingPayloadIncludesCurrentBinding`，验证 `active_account_id` 返回真实的 channel account ID，而不是 `bot_id`。
+
+### 本轮验证
+- `go test -count=1 ./pkg/webui -run TestBuildWechatBindingPayloadIncludesCurrentBinding`
+- `npm --prefix pkg/webui/frontend run build`
   - `pkg/bus/local_bus.go`
   - `pkg/bus/redis_bus.go`
   - `pkg/bus/bus_test.go`
