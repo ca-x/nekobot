@@ -261,3 +261,45 @@ func TestProcessMessageDoesNotFallbackWhenExplicitRuntimeFails(t *testing.T) {
 		t.Fatal("expected websocket error message")
 	}
 }
+
+func TestProcessMessageDoesNotEmitInboundWhenRouterHandlesWebsocketChat(t *testing.T) {
+	s := newTestServer(t)
+	router := &stubGatewayRouter{reply: "router reply"}
+	s.router = router
+
+	inboundHits := 0
+	s.bus.RegisterInboundHandler("websocket", func(ctx context.Context, msg *bus.Message) error {
+		inboundHits++
+		return nil
+	})
+	if err := s.bus.Start(); err != nil {
+		t.Fatalf("start bus: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := s.bus.Stop(); err != nil {
+			t.Fatalf("stop bus: %v", err)
+		}
+	})
+
+	sess, err := s.sessionMgr.GetWithSource("gateway-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	client := &Client{
+		id:       "gateway-session",
+		send:     make(chan []byte, 1),
+		userID:   "user-1",
+		username: "alice",
+		session:  sess,
+	}
+
+	s.processMessage(client, WSMessage{
+		Type:    "message",
+		Content: "hello",
+	})
+
+	if inboundHits != 0 {
+		t.Fatalf("expected websocket inbound bus path to stay unused, got %d hits", inboundHits)
+	}
+}

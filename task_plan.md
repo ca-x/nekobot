@@ -185,6 +185,28 @@
 ### Status
 **Phase 4 In Progress** - Chat runtime 的服务端绑定约束已补齐并通过定向/包级回归与前端构建，待提交推送。
 
+## 2026-03-31 Gateway Websocket 单路径护栏批次
+
+### Goal
+为 Gateway websocket 聊天链路补一个护栏测试，确认在 `router.ChatWebsocket()` 已接管 websocket chat 的情况下，不会再额外通过 inbound bus 路径重复处理同一条消息。
+
+### Phases
+- [x] Phase 1: 审查 gateway -> bus -> router 代码路径
+- [x] Phase 2: 补 Gateway 定向测试，锁定 websocket 单路径语义
+- [x] Phase 3: 跑 Gateway 定向回归
+- [ ] Phase 4: 提交推送并开始整体流程复盘
+
+### Decisions Made
+- 本批次先不修改实现，只补测试护栏。
+- 当前测试证明：在 `processMessage()` 使用 `router.ChatWebsocket()` 的路径下，没有观测到额外 `websocket` inbound handler 执行。
+- 这条测试作为后续重构 Gateway/Channels 运行时时的回归保护。
+
+### Verification
+- [x] `go test -count=1 ./pkg/gateway -run 'TestProcessMessagePassesExplicitRuntimeIDToRouter|TestProcessMessageDoesNotFallbackWhenExplicitRuntimeFails|TestProcessMessageDoesNotEmitInboundWhenRouterHandlesWebsocketChat'`
+
+### Status
+**Phase 4 In Progress** - Gateway websocket 单路径护栏测试已补齐并通过，待提交推送后转入整体流程与细节复盘。
+
 ## 2026-03-31 Runtime Prompt 执行链接通批次
 
 ### Goal

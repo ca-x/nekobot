@@ -202,6 +202,32 @@
 - `go test -count=1 ./pkg/webui`
 - `npm --prefix pkg/webui/frontend run build`
 
+## 2026-03-31 Gateway Websocket 单路径护栏补记
+
+### 调查目的
+- 在当前架构里，Gateway websocket 消息会先进入 `processMessage()`。
+- 代码里同时存在两条看起来可能重叠的链路：
+  - `s.bus.SendInbound(busMsg)`
+  - `s.router.ChatWebsocket(...)`
+- 需要确认是否存在“同一条 websocket 消息被 runtime 处理两次”的风险。
+
+### 调查结果
+- `pkg/inboundrouter/fx.go` 确实会注册 `router.RegisterChannel("websocket")`。
+- 但对当前 `gateway.processMessage()` 路径补定向测试后，没有观测到额外的 inbound handler 命中。
+- 暂时没有证据表明现状已发生重复执行，因此本批次不改实现，只补护栏测试。
+
+### 已补测试
+- `pkg/gateway/server_test.go`
+  - 新增 `TestProcessMessageDoesNotEmitInboundWhenRouterHandlesWebsocketChat`
+  - 断言当 Gateway 已通过 `router.ChatWebsocket()` 处理 websocket chat 时，不会额外命中 `websocket` inbound bus handler。
+
+### 已完成验证
+- `go test -count=1 ./pkg/gateway -run 'TestProcessMessagePassesExplicitRuntimeIDToRouter|TestProcessMessageDoesNotFallbackWhenExplicitRuntimeFails|TestProcessMessageDoesNotEmitInboundWhenRouterHandlesWebsocketChat'`
+
+### 结论
+- 这条风险目前没有被测试证实为现网问题。
+- 但新增的单路径测试会在后续 Gateway/Channels 运行时重构时提供回归保护。
+
 ## 2026-03-31 Chat 显式 Runtime 选路补记
 
 ### 问题确认
