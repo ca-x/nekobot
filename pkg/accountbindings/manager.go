@@ -264,6 +264,20 @@ func (m *Manager) DeleteByRuntimeID(ctx context.Context, runtimeID string) error
 	return nil
 }
 
+// DeleteByChannelAccountID removes all bindings that reference one channel account.
+func (m *Manager) DeleteByChannelAccountID(ctx context.Context, channelAccountID string) error {
+	channelAccountID = strings.TrimSpace(channelAccountID)
+	if channelAccountID == "" {
+		return fmt.Errorf("channel account id is required")
+	}
+	if _, err := m.client.AccountBinding.Delete().
+		Where(accountbinding.ChannelAccountIDEQ(channelAccountID)).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("delete account bindings for channel account %s: %w", channelAccountID, err)
+	}
+	return nil
+}
+
 func (m *Manager) normalizeBinding(
 	ctx context.Context,
 	currentID string,

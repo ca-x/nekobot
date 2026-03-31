@@ -4159,6 +4159,11 @@ func (s *Server) removeWechatChannelAccount(ctx context.Context, userID, account
 	if owner, _ := account.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
 		return fmt.Errorf("wechat account does not belong to current user")
 	}
+	if s.bindingMgr != nil {
+		if err := s.bindingMgr.DeleteByChannelAccountID(ctx, account.ID); err != nil {
+			return err
+		}
+	}
 	if err := s.accountMgr.Delete(ctx, account.ID); err != nil {
 		return err
 	}
@@ -6282,6 +6287,11 @@ func (s *Server) handleDeleteChannelAccount(c *echo.Context) error {
 	}
 	if existing == nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "channel account not found"})
+	}
+	if s.bindingMgr != nil {
+		if err := s.bindingMgr.DeleteByChannelAccountID(c.Request().Context(), existing.ID); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
 	}
 	err = s.accountMgr.Delete(c.Request().Context(), c.Param("id"))
 	if err != nil {
