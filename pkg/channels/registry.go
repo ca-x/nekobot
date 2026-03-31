@@ -187,6 +187,10 @@ var channelDescriptors = []channelDescriptor{
 			if err := decodeAccountConfig(account, &wechatCfg); err != nil {
 				return nil, err
 			}
+			creds, err := decodeWechatAccountCredentials(account)
+			if err != nil {
+				return nil, err
+			}
 			store, err := ilinkauth.NewStore(cfg)
 			if err != nil {
 				return nil, err
@@ -204,6 +208,7 @@ var channelDescriptors = []channelDescriptor{
 				processMgr,
 				cfg,
 				transcriber,
+				creds,
 				channelInstanceID(account),
 				channelDisplayName(account, "WeChat"),
 			)
@@ -372,6 +377,34 @@ func decodeAccountConfig(account channelaccounts.ChannelAccount, target interfac
 		return fmt.Errorf("decode channel account config for %s/%s: %w", account.ChannelType, account.AccountKey, err)
 	}
 	return nil
+}
+
+func decodeWechatAccountCredentials(account channelaccounts.ChannelAccount) (*wechat.Credentials, error) {
+	type wechatAccountConfig struct {
+		BotToken    string `json:"bot_token"`
+		ILinkBotID  string `json:"ilink_bot_id"`
+		BaseURL     string `json:"base_url"`
+		ILinkUserID string `json:"ilink_user_id"`
+	}
+
+	var input wechatAccountConfig
+	if err := decodeAccountConfig(account, &input); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.BotToken) == "" || strings.TrimSpace(input.ILinkBotID) == "" {
+		return nil, fmt.Errorf(
+			"decode channel account config for %s/%s: wechat bot_token and ilink_bot_id are required",
+			account.ChannelType,
+			account.AccountKey,
+		)
+	}
+
+	return &wechat.Credentials{
+		BotToken:    strings.TrimSpace(input.BotToken),
+		ILinkBotID:  strings.TrimSpace(input.ILinkBotID),
+		BaseURL:     strings.TrimSpace(input.BaseURL),
+		ILinkUserID: strings.TrimSpace(input.ILinkUserID),
+	}, nil
 }
 
 func channelInstanceID(account channelaccounts.ChannelAccount) string {

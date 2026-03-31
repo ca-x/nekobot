@@ -58,6 +58,35 @@
 ### Status
 **Completed** - 已完成 WeChat 控制面与 channel account ID 语义收口、前端同步失效与全量回归验证，并准备提交推送本轮代码。
 
+## 2026-03-31 WeChat 多账号运行时凭据隔离批次
+
+### Goal
+修正 WeChat channel account runtime 在多账号场景下错误复用“当前激活账号”凭据的问题，确保账号级 runtime 始终使用自身 `channel_account.config` 中的凭据启动；同时补上 WebUI channel-account 创建/更新时的最小凭据校验，避免再次写入“已启用但不可启动”的 WeChat 账号。
+
+### Phases
+- [x] Phase 1: 补失败测试，确认账号级 WeChat runtime 会串用 active store 凭据
+- [x] Phase 2: 改造 WeChat runtime 构造路径，区分 legacy active-account 与 account-scoped explicit credentials
+- [x] Phase 3: 为 WebUI channel-account create/update 补 WeChat enabled 约束校验
+- [x] Phase 4: 跑定向回归、WebUI 回归、前端构建与全量 Go 验证
+- [x] Phase 5: 更新计划/笔记并提交推送
+
+### Decisions Made
+- `wechat.NewChannel` 继续保留 legacy 语义，从凭据仓库读取当前 active account。
+- `wechat.NewAccountChannel` 改为强制接收显式凭据，不再回退到 `store.LoadCredentials()`。
+- WeChat account runtime 的显式凭据从 `channel_account.config` 独立解码，显式映射 `base_url -> Credentials.BaseURL`，不复用底层 `baseurl` JSON tag。
+- WebUI 在保存已启用的 WeChat channel account 时，要求至少提供 `config.bot_token` 和 `config.ilink_bot_id`，提前阻断无效运行时配置。
+
+### Verification
+- [x] `go test -count=1 ./pkg/channels -run TestBuildChannelFromAccount_Wechat`
+- [x] `go test -count=1 ./pkg/channels/wechat ./pkg/channels`
+- [x] `go test -count=1 ./pkg/webui -run 'TestReloadChannelsByTypePrefersEnabledWechatAccounts|TestHandleCreateChannelAccountRejectsEnabledWechatAccountWithoutCredentials|TestRuntimeTopologyHandlers_CRUDAndSnapshot'`
+- [x] `go test -count=1 ./pkg/webui ./pkg/channels/wechat ./cmd/nekobot/...`
+- [x] `npm --prefix pkg/webui/frontend run build`
+- [x] `go test -count=1 ./...`
+
+### Status
+**Completed** - 已完成 WeChat 多账号运行时凭据隔离修复、补齐 channel-account 启用校验，并通过定向回归、WebUI 回归、前端构建与全量 Go 测试。
+
 ## 2026-03-31 Runtime Topology WebUI 可编辑化批次
 
 ### Goal

@@ -398,7 +398,11 @@ func TestReloadChannelsByTypePrefersEnabledWechatAccounts(t *testing.T) {
 		DisplayName: "WeChat Bot 1",
 		Enabled:     true,
 		Config: map[string]interface{}{
-			"enabled": true,
+			"enabled":       true,
+			"bot_token":     "token-1",
+			"ilink_bot_id":  "bot-1@im.wechat",
+			"ilink_user_id": "user-1",
+			"base_url":      "https://example.invalid",
 		},
 	})
 	if err != nil {
@@ -410,7 +414,11 @@ func TestReloadChannelsByTypePrefersEnabledWechatAccounts(t *testing.T) {
 		DisplayName: "WeChat Bot 2",
 		Enabled:     true,
 		Config: map[string]interface{}{
-			"enabled": true,
+			"enabled":       true,
+			"bot_token":     "token-2",
+			"ilink_bot_id":  "bot-2@im.wechat",
+			"ilink_user_id": "user-2",
+			"base_url":      "https://example.invalid",
 		},
 	})
 	if err != nil {

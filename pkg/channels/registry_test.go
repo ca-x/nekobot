@@ -5,8 +5,10 @@ import (
 	"testing"
 
 	"nekobot/pkg/channelaccounts"
+	"nekobot/pkg/channels/wechat"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	wechattypes "nekobot/pkg/wechat/types"
 )
 
 func TestApplyChannelConfigAndListChannelConfigsIncludeWechat(t *testing.T) {
@@ -160,6 +162,19 @@ func TestBuildChannelFromAccount_Wechat(t *testing.T) {
 	cfg.Agents.Defaults.Workspace = t.TempDir()
 	log := newRegistryTestLogger(t)
 
+	store, err := wechat.NewCredentialStore(cfg)
+	if err != nil {
+		t.Fatalf("NewCredentialStore failed: %v", err)
+	}
+	if err := store.SaveCredentials(&wechattypes.Credentials{
+		BotToken:    "token-active",
+		ILinkBotID:  "bot-active@im.wechat",
+		BaseURL:     "https://example.invalid",
+		ILinkUserID: "user-active",
+	}, true); err != nil {
+		t.Fatalf("SaveCredentials(active) failed: %v", err)
+	}
+
 	account := channelaccounts.ChannelAccount{
 		ChannelType: "wechat",
 		AccountKey:  "bot-a@im.wechat",
@@ -167,6 +182,10 @@ func TestBuildChannelFromAccount_Wechat(t *testing.T) {
 		Config: map[string]interface{}{
 			"enabled":               true,
 			"poll_interval_seconds": 9,
+			"bot_token":             "token-a",
+			"ilink_bot_id":          "bot-a@im.wechat",
+			"base_url":              "https://example.invalid",
+			"ilink_user_id":         "user-a",
 		},
 	}
 
@@ -182,6 +201,13 @@ func TestBuildChannelFromAccount_Wechat(t *testing.T) {
 	}
 	if channel.Name() != "WeChat Bot A" {
 		t.Fatalf("unexpected wechat account channel name: %s", channel.Name())
+	}
+	typed, ok := channel.(*wechat.Channel)
+	if !ok {
+		t.Fatalf("expected *wechat.Channel, got %T", channel)
+	}
+	if got := typed.CurrentBotIDForTest(); got != "bot-a@im.wechat" {
+		t.Fatalf("expected account-scoped bot id %q, got %q", "bot-a@im.wechat", got)
 	}
 }
 

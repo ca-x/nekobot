@@ -1,5 +1,47 @@
 # Notes: nextclaw + picoclaw → nekobot 特性分析
 
+## 2026-03-31 WeChat 多账号运行时凭据隔离补记
+
+### 问题确认
+- `pkg/channels/registry.go` 在通过 `BuildChannelFromAccount()` 构造 WeChat account runtime 时，虽然先解了 `channel_account.config`，但真正创建 bot 的 `wechat.NewAccountChannel()` 仍会去 `CredentialStore.LoadCredentials()` 读取“当前激活账号”。
+- 这会导致多 WeChat 账号场景下，`wechat:<account_key>` 运行时可能带着别的账号 token / bot id 启动，形成 silent misroute。
+
+### 已修复
+- `pkg/channels/wechat/channel.go`
+  - `NewChannel()` 继续走 legacy 单账号路径，读取 active store credentials。
+  - `NewAccountChannel()` 改为必须显式传入账号凭据，缺少 `bot_token` / `ilink_bot_id` 时直接报错。
+  - 抽出共享 `newChannel(...)`，避免重复初始化逻辑。
+- `pkg/channels/registry.go`
+  - 新增 `decodeWechatAccountCredentials()`，从 `channel_account.config` 独立解码：
+    - `bot_token`
+    - `ilink_bot_id`
+    - `base_url`
+    - `ilink_user_id`
+  - 显式映射到 `wechat.Credentials`，避免被底层 `baseurl` tag 误伤。
+- `pkg/channels/registry_test.go`
+  - 新增回归场景：store 中先放一个 active 账号，再构造另一个 account runtime，断言最终 bot id 必须来自 account config，而不是 active store。
+
+### 额外暴露出的流程缺口
+- `pkg/webui/server.go` 之前允许创建/更新“已启用但没有 `bot_token` / `ilink_bot_id`”的 WeChat channel account。
+- 这类脏数据平时能存进去，但在 `reloadChannelsByType("wechat")` 时会把整条 reload 流程打断。
+
+### 一并补齐
+- `pkg/webui/server.go`
+  - 为 `handleCreateChannelAccount` / `handleUpdateChannelAccount` 增加 `validateChannelAccountInput()`。
+  - 当前先对 enabled WeChat account 执行最小必要校验：必须具备 `config.bot_token` 和 `config.ilink_bot_id`。
+- `pkg/webui/server_topology_test.go`
+  - 新增 API 级回归，确认 WebUI 会拒绝保存无凭据但 enabled 的 WeChat account。
+- `pkg/webui/server_wechat_test.go`
+  - 将 reload 相关测试数据补成真实合法的 WeChat account，和新的运行时约束对齐。
+
+### 验证
+- `go test -count=1 ./pkg/channels -run TestBuildChannelFromAccount_Wechat`
+- `go test -count=1 ./pkg/channels/wechat ./pkg/channels`
+- `go test -count=1 ./pkg/webui -run 'TestReloadChannelsByTypePrefersEnabledWechatAccounts|TestHandleCreateChannelAccountRejectsEnabledWechatAccountWithoutCredentials|TestRuntimeTopologyHandlers_CRUDAndSnapshot'`
+- `go test -count=1 ./pkg/webui ./pkg/channels/wechat ./cmd/nekobot/...`
+- `npm --prefix pkg/webui/frontend run build`
+- `go test -count=1 ./...`
+
 ## 2026-03-29 Harness 审阅批次
 
 ### 审阅范围

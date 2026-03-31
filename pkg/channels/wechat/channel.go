@@ -67,7 +67,19 @@ func NewChannel(
 	rootCfg *config.Config,
 	transcriber transcription.Transcriber,
 ) (*Channel, error) {
-	return NewAccountChannel(
+	if auth == nil {
+		return nil, fmt.Errorf("ilink auth service is required")
+	}
+	store, err := NewCredentialStore(rootCfg)
+	if err != nil {
+		return nil, fmt.Errorf("create wechat credential store: %w", err)
+	}
+	creds, err := store.LoadCredentials()
+	if err != nil {
+		return nil, fmt.Errorf("load wechat credentials: %w", err)
+	}
+
+	return newChannel(
 		log,
 		cfg,
 		b,
@@ -78,6 +90,8 @@ func NewChannel(
 		processMgr,
 		rootCfg,
 		transcriber,
+		creds,
+		store,
 		"wechat",
 		"WeChat",
 	)
@@ -95,6 +109,7 @@ func NewAccountChannel(
 	processMgr *process.Manager,
 	rootCfg *config.Config,
 	transcriber transcription.Transcriber,
+	creds *Credentials,
 	channelID string,
 	displayName string,
 ) (*Channel, error) {
@@ -105,10 +120,47 @@ func NewAccountChannel(
 	if err != nil {
 		return nil, fmt.Errorf("create wechat credential store: %w", err)
 	}
-	creds, err := store.LoadCredentials()
-	if err != nil {
-		return nil, fmt.Errorf("load wechat credentials: %w", err)
+	if creds == nil {
+		return nil, fmt.Errorf("wechat account credentials are required")
 	}
+	if strings.TrimSpace(creds.BotToken) == "" || strings.TrimSpace(creds.ILinkBotID) == "" {
+		return nil, fmt.Errorf("wechat account bot_token and ilink_bot_id are required")
+	}
+
+	return newChannel(
+		log,
+		cfg,
+		b,
+		ag,
+		cmdRegistry,
+		auth,
+		toolSessionMgr,
+		processMgr,
+		rootCfg,
+		transcriber,
+		creds,
+		store,
+		channelID,
+		displayName,
+	)
+}
+
+func newChannel(
+	log *logger.Logger,
+	cfg config.WeChatConfig,
+	b bus.Bus,
+	ag *agent.Agent,
+	cmdRegistry *commands.Registry,
+	auth *ilinkauth.Service,
+	toolSessionMgr *toolsessions.Manager,
+	processMgr *process.Manager,
+	rootCfg *config.Config,
+	transcriber transcription.Transcriber,
+	creds *Credentials,
+	store *CredentialStore,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	var bot *wechatbot.Bot
 	if creds != nil {
 		bot = newWeChatBot(creds, store)
@@ -775,6 +827,14 @@ func (c *Channel) currentBot() *wechatbot.Bot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.bot
+}
+
+func (c *Channel) CurrentBotIDForTest() string {
+	bot := c.currentBot()
+	if bot == nil || bot.Client == nil {
+		return ""
+	}
+	return bot.Client.BotID()
 }
 
 func (c *Channel) isAllowed(userID string) bool {

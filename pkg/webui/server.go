@@ -6090,6 +6090,9 @@ func (s *Server) handleCreateChannelAccount(c *echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
+	if err := validateChannelAccountInput(body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
 	item, err := s.accountMgr.Create(c.Request().Context(), body)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -6104,6 +6107,9 @@ func (s *Server) handleUpdateChannelAccount(c *echo.Context) error {
 	var body channelaccounts.ChannelAccount
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if err := validateChannelAccountInput(body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	item, err := s.accountMgr.Update(c.Request().Context(), c.Param("id"), body)
 	if err != nil {
@@ -6129,6 +6135,23 @@ func (s *Server) handleDeleteChannelAccount(c *echo.Context) error {
 		return c.JSON(status, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func validateChannelAccountInput(item channelaccounts.ChannelAccount) error {
+	if !item.Enabled {
+		return nil
+	}
+
+	switch strings.TrimSpace(strings.ToLower(item.ChannelType)) {
+	case "wechat":
+		botToken, _ := item.Config["bot_token"].(string)
+		botID, _ := item.Config["ilink_bot_id"].(string)
+		if strings.TrimSpace(botToken) == "" || strings.TrimSpace(botID) == "" {
+			return fmt.Errorf("enabled wechat account requires config.bot_token and config.ilink_bot_id")
+		}
+	}
+
+	return nil
 }
 
 func (s *Server) handleListAccountBindings(c *echo.Context) error {
