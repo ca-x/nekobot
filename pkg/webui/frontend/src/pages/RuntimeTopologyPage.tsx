@@ -152,6 +152,18 @@ export default function RuntimeTopologyPage() {
   const accounts = accountQuery.data ?? [];
   const bindings = bindingQuery.data ?? [];
   const snapshot = topologyQuery.data;
+  const bindingCountByRuntimeID = new Map<string, number>();
+  const bindingCountByAccountID = new Map<string, number>();
+  for (const binding of bindings) {
+    bindingCountByRuntimeID.set(
+      binding.agent_runtime_id,
+      (bindingCountByRuntimeID.get(binding.agent_runtime_id) ?? 0) + 1,
+    );
+    bindingCountByAccountID.set(
+      binding.channel_account_id,
+      (bindingCountByAccountID.get(binding.channel_account_id) ?? 0) + 1,
+    );
+  }
 
   const [runtimeDialogOpen, setRuntimeDialogOpen] = useState(false);
   const [runtimeState, setRuntimeState] = useState<RuntimeDialogState>(defaultRuntimeState());
@@ -251,6 +263,27 @@ export default function RuntimeTopologyPage() {
       await deleteBinding.mutateAsync(deleteTarget.id);
     }
     setDeleteTarget(null);
+  }
+
+  function buildDeleteDescription(target: DeleteTarget | null): string {
+    if (!target) {
+      return t('runtimeTopologyDeleteDescription', '');
+    }
+    if (target.kind === 'runtime') {
+      return t(
+        'runtimeTopologyDeleteRuntimeDescription',
+        target.label,
+        String(bindingCountByRuntimeID.get(target.id) ?? 0),
+      );
+    }
+    if (target.kind === 'account') {
+      return t(
+        'runtimeTopologyDeleteAccountDescription',
+        target.label,
+        String(bindingCountByAccountID.get(target.id) ?? 0),
+      );
+    }
+    return t('runtimeTopologyDeleteBindingDescription', target.label);
   }
 
   function openNewRuntimeDialog() {
@@ -917,7 +950,7 @@ export default function RuntimeTopologyPage() {
           <DialogHeader>
             <DialogTitle>{t('runtimeTopologyDeleteTitle')}</DialogTitle>
             <DialogDescription>
-              {t('runtimeTopologyDeleteDescription', deleteTarget?.label ?? '')}
+              {buildDeleteDescription(deleteTarget)}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
