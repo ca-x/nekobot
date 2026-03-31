@@ -206,6 +206,8 @@
   "chatRuntimeAuto": "自动运行时",
   "chatRuntimeSelected": "运行时：{0}",
   "chatRuntimeControlsRoute": "当前运行时会接管本轮的 provider、model 与 prompt 路由。",
+  "chatRuntimeEmptyHint": "当前还没有配置 websocket runtime 绑定，自动路由会继续使用默认聊天路径。",
+  "chatRuntimeUnavailableHint": "已经存在 runtime 绑定，但当前都不处于可用状态。请到 Runtime Topology 重新启用绑定的账户、运行体或绑定记录。",
   "chatWatchOn": "Watch 已开启",
   "chatWatchOff": "Watch 已关闭",
   "chatWatchHint": "最近一次 watch 命令：{0}",

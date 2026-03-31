@@ -110,6 +110,39 @@
 ### 待继续验证
 - `go test -count=1 ./...`
 
+## 2026-03-31 Chat Runtime Selector 空态补记
+
+### 问题确认
+- Chat 页面 runtime selector 当前只展示：
+  - `websocket/default` account 下
+  - `binding.enabled == true`
+  - `runtime.enabled == true`
+  - account 自身 `enabled == true`
+  的 runtime。
+- 这个筛选本身没错，但 UX 上有一个空白区：
+  - 如果一个 runtime 都没有，用户看不到是“从未配置 websocket binding”
+  - 还是“配置过 binding，但 account/runtime/binding 现在都失效了”
+- 两种情况的排查路径完全不同，之前 selector 为空时没有任何说明。
+
+### 已修复
+- `pkg/webui/frontend/src/pages/ChatPage.tsx`
+  - 新增 `hasRuntimeBindings` 判断。
+  - 在 runtime selector 下补两类空态提示：
+    - `chatRuntimeEmptyHint`
+    - `chatRuntimeUnavailableHint`
+- `pkg/webui/frontend/public/i18n/{en,zh-CN,ja}.json`
+  - 补齐上述两条三语文案。
+
+### 当前语义
+- `chatRuntimeIDs.size == 0`
+  - 说明 websocket chat 还没有配置任何 runtime binding。
+- `chatRuntimeIDs.size > 0 && chatRuntimes.length == 0`
+  - 说明 binding 记录存在，但当前没有任何 active runtime 可用于 Chat。
+  - 典型原因是 account/runtime/binding 中至少一层被禁用。
+
+### 已完成验证
+- `npm --prefix pkg/webui/frontend run build`
+
 ## 2026-03-31 Chat 显式 Runtime 选路补记
 
 ### 问题确认

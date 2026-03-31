@@ -206,6 +206,8 @@
   "chatRuntimeAuto": "Auto runtime",
   "chatRuntimeSelected": "Runtime: {0}",
   "chatRuntimeControlsRoute": "This runtime controls provider, model, and prompt routing for the turn.",
+  "chatRuntimeEmptyHint": "No websocket runtime binding is configured yet. Auto route will use the default chat path.",
+  "chatRuntimeUnavailableHint": "Runtime bindings exist, but none are currently active. Re-enable the bound account, runtime, or binding in Runtime Topology.",
   "chatWatchOn": "Watch on",
   "chatWatchOff": "Watch off",
   "chatWatchHint": "Latest watch command: {0}",

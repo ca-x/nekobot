@@ -111,6 +111,28 @@
 ### Status
 **Phase 4 In Progress** - 拓扑快照和前端展示已收口，正在跑全量 Go 回归并准备提交推送。
 
+## 2026-03-31 Chat Runtime Selector 空态提示批次
+
+### Goal
+补齐 Chat 页面 runtime selector 的空态语义，让用户能区分“根本没有 websocket runtime 绑定”和“绑定存在但当前全部失效”，避免 selector 为空时只能靠猜测排查。
+
+### Phases
+- [x] Phase 1: 确认 Chat runtime selector 当前筛选逻辑与缺失提示
+- [x] Phase 2: 补前端空态提示与三语文案
+- [x] Phase 3: 跑前端构建验证
+- [ ] Phase 4: 提交推送并继续下一处缺口
+
+### Decisions Made
+- 不修改后端协议；这轮只补最小必要的前端解释层。
+- 当 `chatRuntimeIDs.size == 0` 时，提示“尚未配置 websocket runtime 绑定”。
+- 当存在 binding 记录但 `chatRuntimes.length == 0` 时，提示“绑定存在但当前都不处于可用状态”，引导用户去 Runtime Topology 重新启用 account/runtime/binding。
+
+### Verification
+- [x] `npm --prefix pkg/webui/frontend run build`
+
+### Status
+**Phase 4 In Progress** - 聊天页 runtime selector 空态提示与三语文案已补齐并通过前端构建，待提交推送。
+
 ## 2026-03-31 Runtime Prompt 执行链接通批次
 
 ### Goal

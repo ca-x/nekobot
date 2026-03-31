@@ -399,6 +399,7 @@ export default function ChatPage() {
     () => enabledRuntimes.filter((runtime) => chatRuntimeIDs.has(runtime.id)),
     [chatRuntimeIDs, enabledRuntimes],
   );
+  const hasRuntimeBindings = chatRuntimeIDs.size > 0;
   const activeRuntime = useMemo(
     () => chatRuntimes.find((runtime) => runtime.id === activeRuntimeID) ?? null,
     [activeRuntimeID, chatRuntimes],
@@ -745,6 +746,11 @@ export default function ChatPage() {
                   {t('chatRuntimeControlsRoute')}
                 </p>
               )}
+              {!runtimeControlsRoute && chatRuntimes.length === 0 ? (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {hasRuntimeBindings ? t('chatRuntimeUnavailableHint') : t('chatRuntimeEmptyHint')}
+                </p>
+              ) : null}
             </div>
 
             <div className="space-y-3">

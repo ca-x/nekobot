@@ -206,6 +206,8 @@
   "chatRuntimeAuto": "自動ランタイム",
   "chatRuntimeSelected": "ランタイム: {0}",
   "chatRuntimeControlsRoute": "このランタイムが今回の provider・model・prompt ルーティングを制御します。",
+  "chatRuntimeEmptyHint": "websocket runtime binding はまだ設定されていません。自動ルートは既定のチャット経路を使います。",
+  "chatRuntimeUnavailableHint": "runtime binding は存在しますが、現在有効なものがありません。Runtime Topology で account・runtime・binding を再度有効化してください。",
   "chatWatchOn": "Watch 有効",
   "chatWatchOff": "Watch 無効",
   "chatWatchHint": "直近の watch コマンド: {0}",
