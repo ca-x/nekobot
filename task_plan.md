@@ -157,6 +157,34 @@
 ### Status
 **Phase 4 In Progress** - Runtime Topology 禁用影响提示与三语文案已补齐并通过前端构建，待提交推送。
 
+## 2026-03-31 Chat Runtime 后端绑定约束批次
+
+### Goal
+把 WebUI Chat 对显式 `runtime_id` 的约束从“仅前端 runtime picker 过滤”补成服务端硬约束，确保后端也只接受绑定到 `websocket/default` 且当前可用的 runtime，避免绕过前端筛选直接命中未绑定 runtime。
+
+### Phases
+- [x] Phase 1: 先补失败测试，证明服务端仍接受未绑定 runtime
+- [x] Phase 2: 收紧 `resolveWebUIRuntimeSelection()` 服务端边界
+- [x] Phase 3: 跑 WebUI 定向回归、包级回归与前端构建
+- [ ] Phase 4: 提交推送并继续下一处缺口
+
+### Decisions Made
+- 复用已有 control-plane 模型，不新增专门 API：
+  - 查找 `websocket/default` account
+  - 校验该 account 已启用
+  - 校验其 enabled bindings 中包含目标 runtime
+- 若任一条件不满足，统一返回：
+  - `runtime <id> is not available for websocket chat`
+- 保持当前前端 picker 逻辑不变，但不再把正确性寄托在前端过滤上。
+
+### Verification
+- [x] `go test -count=1 ./pkg/webui -run 'TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults|TestResolveWebUIRuntimeSelectionRejectsUnboundRuntime'`
+- [x] `go test -count=1 ./pkg/webui`
+- [x] `npm --prefix pkg/webui/frontend run build`
+
+### Status
+**Phase 4 In Progress** - Chat runtime 的服务端绑定约束已补齐并通过定向/包级回归与前端构建，待提交推送。
+
 ## 2026-03-31 Runtime Prompt 执行链接通批次
 
 ### Goal

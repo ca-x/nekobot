@@ -5364,6 +5364,9 @@ func (s *Server) resolveWebUIRuntimeSelection(
 	if s == nil || s.runtimeMgr == nil {
 		return "", "", nil, nil, fmt.Errorf("runtime manager not available")
 	}
+	if s.accountMgr == nil || s.bindingMgr == nil {
+		return "", "", nil, nil, fmt.Errorf("chat runtime topology is not available")
+	}
 
 	runtimeItem, err := s.runtimeMgr.Get(ctx, runtimeID)
 	if err != nil {
@@ -5371,6 +5374,27 @@ func (s *Server) resolveWebUIRuntimeSelection(
 	}
 	if runtimeItem == nil || !runtimeItem.Enabled {
 		return "", "", nil, nil, fmt.Errorf("runtime %s is not available", runtimeID)
+	}
+	websocketAccount, err := s.accountMgr.FindByChannelTypeAndAccountKey(ctx, "websocket", "default")
+	if err != nil {
+		return "", "", nil, nil, fmt.Errorf("runtime %s is not available for websocket chat", runtimeID)
+	}
+	if websocketAccount == nil || !websocketAccount.Enabled {
+		return "", "", nil, nil, fmt.Errorf("runtime %s is not available for websocket chat", runtimeID)
+	}
+	bindings, err := s.bindingMgr.ListEnabledByChannelAccountID(ctx, websocketAccount.ID)
+	if err != nil {
+		return "", "", nil, nil, fmt.Errorf("list websocket bindings: %w", err)
+	}
+	bound := false
+	for _, binding := range bindings {
+		if strings.TrimSpace(binding.AgentRuntimeID) == runtimeID {
+			bound = true
+			break
+		}
+	}
+	if !bound {
+		return "", "", nil, nil, fmt.Errorf("runtime %s is not available for websocket chat", runtimeID)
 	}
 
 	return strings.TrimSpace(runtimeItem.Provider),

@@ -9,6 +9,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"nekobot/pkg/accountbindings"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/config"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
@@ -202,6 +204,14 @@ func TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new runtime manager: %v", err)
 	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
 	runtimeItem, err := runtimeMgr.Create(t.Context(), runtimeagents.AgentRuntime{
 		Name:        "ops-escalation",
 		DisplayName: "Ops Escalation",
@@ -213,8 +223,28 @@ func TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create runtime: %v", err)
 	}
+	websocketAccount, err := accountMgr.Create(t.Context(), channelaccounts.ChannelAccount{
+		ChannelType: "websocket",
+		AccountKey:  "default",
+		DisplayName: "Web Chat",
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"enabled": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("create websocket account: %v", err)
+	}
+	if _, err := bindingMgr.Create(t.Context(), accountbindings.AccountBinding{
+		ChannelAccountID: websocketAccount.ID,
+		AgentRuntimeID:   runtimeItem.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+	}); err != nil {
+		t.Fatalf("create websocket binding: %v", err)
+	}
 
-	s := &Server{runtimeMgr: runtimeMgr}
+	s := &Server{runtimeMgr: runtimeMgr, accountMgr: accountMgr, bindingMgr: bindingMgr}
 	provider, model, fallback, explicitPromptIDs, err := s.resolveWebUIRuntimeSelection(
 		t.Context(),
 		runtimeItem.ID,
@@ -236,6 +266,58 @@ func TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults(t *testing.T) {
 	}
 	if len(explicitPromptIDs) != 1 || explicitPromptIDs[0] != "prompt-runtime-ops" {
 		t.Fatalf("unexpected explicit prompt ids: %#v", explicitPromptIDs)
+	}
+}
+
+func TestResolveWebUIRuntimeSelectionRejectsUnboundRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+	runtimeItem, err := runtimeMgr.Create(t.Context(), runtimeagents.AgentRuntime{
+		Name:        "ops-escalation",
+		DisplayName: "Ops Escalation",
+		Enabled:     true,
+		Provider:    "anthropic",
+		Model:       "claude-sonnet-4",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+
+	s := &Server{runtimeMgr: runtimeMgr, accountMgr: accountMgr, bindingMgr: bindingMgr}
+	_, _, _, _, err = s.resolveWebUIRuntimeSelection(
+		t.Context(),
+		runtimeItem.ID,
+		"",
+		"",
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected unbound runtime validation error")
+	}
+	if !strings.Contains(err.Error(), "not available for websocket chat") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

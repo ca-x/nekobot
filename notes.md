@@ -165,6 +165,43 @@
 ### 已完成验证
 - `npm --prefix pkg/webui/frontend run build`
 
+## 2026-03-31 Chat Runtime 后端绑定约束补记
+
+### 问题确认
+- 之前已经做过两层收口：
+  - 前端 Chat runtime picker 只展示 `websocket/default` 下已绑定且 enabled 的 runtime
+  - Router 执行路径会在真正路由时按 binding 关系工作
+- 但 WebUI chat 服务端的 `resolveWebUIRuntimeSelection()` 仍有一处空档：
+  - 只校验 runtime 是否存在且 enabled
+  - 不校验它是否真的绑定到 `websocket/default`
+- 这意味着只要绕过前端 picker，直接发送 `runtime_id`，后端仍可能接受一个不属于 WebUI chat 面的 runtime。
+
+### 已修复
+- `pkg/webui/server.go`
+  - `resolveWebUIRuntimeSelection()` 现在会进一步校验：
+    - `accountMgr` / `bindingMgr` 可用
+    - 存在 `websocket/default` channel account
+    - 该 account 当前启用
+    - 该 account 的 enabled bindings 中包含目标 runtime
+  - 否则统一返回：
+    - `runtime <id> is not available for websocket chat`
+- `pkg/webui/server_chat_test.go`
+  - `TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults`
+    - 现在补齐真实的 `websocket/default` account + binding，和新的后端语义对齐
+  - 新增 `TestResolveWebUIRuntimeSelectionRejectsUnboundRuntime`
+    - 锁定未绑定 runtime 会被服务端拒绝
+
+### 结果
+- 现在 Chat 显式 runtime 的约束已经形成闭环：
+  - 前端 selector 只显示合法候选
+  - 服务端也只接受合法候选
+  - Router 最终仍按 topology/binding 关系执行
+
+### 已完成验证
+- `go test -count=1 ./pkg/webui -run 'TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults|TestResolveWebUIRuntimeSelectionRejectsUnboundRuntime'`
+- `go test -count=1 ./pkg/webui`
+- `npm --prefix pkg/webui/frontend run build`
+
 ## 2026-03-31 Chat 显式 Runtime 选路补记
 
 ### 问题确认
