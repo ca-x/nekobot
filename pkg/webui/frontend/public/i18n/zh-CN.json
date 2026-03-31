@@ -1019,6 +1019,8 @@
   "runtimeTopologyFieldPriority": "优先级",
   "runtimeTopologyFieldAllowPublicReply": "允许公开回复",
   "runtimeTopologyEnabledHint": "禁用后会保留在拓扑里，但不会参与活动路由。",
+  "runtimeTopologyDisableRuntimeHint": "禁用这个运行体会让相关绑定立即变为 inactive，但不会删除绑定记录。",
+  "runtimeTopologyDisableAccountHint": "禁用这个账户会让相关绑定立即变为 inactive，但不会删除绑定记录。",
   "runtimeTopologyAllowPublicReplyHint": "开启后，这条绑定可以在共享或公开渠道上下文中发回响应。",
   "runtimeTopologyListFieldHint": "每行一项。",
   "runtimeTopologyJsonFieldHint": "这里只接受 JSON 对象。高级路由或 runtime 专属字段放在这里。",

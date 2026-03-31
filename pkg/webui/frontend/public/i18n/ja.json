@@ -1019,6 +1019,8 @@
   "runtimeTopologyFieldPriority": "Priority",
   "runtimeTopologyFieldAllowPublicReply": "Allow public reply",
   "runtimeTopologyEnabledHint": "無効化した項目は topology には残りますが、アクティブなルーティングからは外れます。",
+  "runtimeTopologyDisableRuntimeHint": "この runtime を無効化すると、関連する binding はすぐ inactive になりますが、binding record 自体は削除されません。",
+  "runtimeTopologyDisableAccountHint": "この account を無効化すると、関連する binding はすぐ inactive になりますが、binding record 自体は削除されません。",
   "runtimeTopologyAllowPublicReplyHint": "有効にすると、この binding は共有または公開チャネル文脈で返信できます。",
   "runtimeTopologyListFieldHint": "1 行に 1 項目。",
   "runtimeTopologyJsonFieldHint": "JSON object のみ使用できます。高度な routing や runtime 固有項目はここに入れます。",

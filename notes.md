@@ -143,6 +143,28 @@
 ### 已完成验证
 - `npm --prefix pkg/webui/frontend run build`
 
+## 2026-03-31 Runtime 禁用影响提示补记
+
+### 问题确认
+- Runtime Topology 现在已经能正确显示 binding 的 `effective_enabled` 与失效原因。
+- 但在编辑 runtime/account 时，`enabled` 开关旁边原来只有一条泛化提示：
+  - disabled entries stay in topology but are excluded from active routing
+- 这不足以帮助用户理解两个关键事实：
+  - 禁用 runtime/account 会让相关 binding 立即变成 inactive
+  - 但 binding record 本身不会被删除
+
+### 已修复
+- `pkg/webui/frontend/src/pages/RuntimeTopologyPage.tsx`
+  - runtime 编辑弹窗中，当 `enabled=false` 时，切换为 `runtimeTopologyDisableRuntimeHint`
+  - account 编辑弹窗中，当 `enabled=false` 时，切换为 `runtimeTopologyDisableAccountHint`
+- `pkg/webui/frontend/public/i18n/{en,zh-CN,ja}.json`
+  - 补齐两条三语文案，明确描述：
+    - related bindings immediately become inactive
+    - binding records are retained
+
+### 已完成验证
+- `npm --prefix pkg/webui/frontend run build`
+
 ## 2026-03-31 Chat 显式 Runtime 选路补记
 
 ### 问题确认

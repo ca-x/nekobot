@@ -737,7 +737,11 @@ export default function RuntimeTopologyPage() {
             </Field>
             <SwitchField
               label={t('enabled')}
-              description={t('runtimeTopologyEnabledHint')}
+              description={
+                runtimeState.enabled
+                  ? t('runtimeTopologyEnabledHint')
+                  : t('runtimeTopologyDisableRuntimeHint')
+              }
               checked={runtimeState.enabled}
               onCheckedChange={(checked) => setRuntimeState((prev) => ({ ...prev, enabled: checked }))}
             />
@@ -838,7 +842,11 @@ export default function RuntimeTopologyPage() {
             </Field>
             <SwitchField
               label={t('enabled')}
-              description={t('runtimeTopologyEnabledHint')}
+              description={
+                accountState.enabled
+                  ? t('runtimeTopologyEnabledHint')
+                  : t('runtimeTopologyDisableAccountHint')
+              }
               checked={accountState.enabled}
               onCheckedChange={(checked) => setAccountState((prev) => ({ ...prev, enabled: checked }))}
             />

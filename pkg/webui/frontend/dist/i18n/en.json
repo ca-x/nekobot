@@ -1019,6 +1019,8 @@
   "runtimeTopologyFieldPriority": "Priority",
   "runtimeTopologyFieldAllowPublicReply": "Allow public reply",
   "runtimeTopologyEnabledHint": "Disabled entries stay in topology but are excluded from active routing.",
+  "runtimeTopologyDisableRuntimeHint": "Disabling this runtime immediately makes all related bindings inactive, but keeps the binding records.",
+  "runtimeTopologyDisableAccountHint": "Disabling this account immediately makes all related bindings inactive, but keeps the binding records.",
   "runtimeTopologyAllowPublicReplyHint": "When enabled, this binding may respond in shared/public channel contexts.",
   "runtimeTopologyListFieldHint": "One item per line.",
   "runtimeTopologyJsonFieldHint": "JSON object only. Keep advanced routing or runtime-specific fields here.",

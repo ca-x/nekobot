@@ -133,6 +133,30 @@
 ### Status
 **Phase 4 In Progress** - 聊天页 runtime selector 空态提示与三语文案已补齐并通过前端构建，待提交推送。
 
+## 2026-03-31 Runtime 禁用影响提示批次
+
+### Goal
+补齐 Runtime Topology 编辑弹窗对“禁用 runtime/account”的影响说明，让用户在切换 `enabled=false` 前就能明确知道：相关 binding 会立即失效，但记录不会被删除。
+
+### Phases
+- [x] Phase 1: 核对 Runtime Topology 编辑弹窗中的 enabled 文案是否足够表达副作用
+- [x] Phase 2: 为 runtime/account 禁用态补专门说明文案
+- [x] Phase 3: 跑前端构建验证
+- [ ] Phase 4: 提交推送并继续下一处缺口
+
+### Decisions Made
+- 不新增二次确认弹窗；先用更准确的就地说明降低误操作。
+- 仅在 `enabled=false` 时切换到更具体的提示：
+  - runtime 禁用提示
+  - account 禁用提示
+- 文案明确区分“binding 立即 inactive”和“binding record 仍然保留”。
+
+### Verification
+- [x] `npm --prefix pkg/webui/frontend run build`
+
+### Status
+**Phase 4 In Progress** - Runtime Topology 禁用影响提示与三语文案已补齐并通过前端构建，待提交推送。
+
 ## 2026-03-31 Runtime Prompt 执行链接通批次
 
 ### Goal
