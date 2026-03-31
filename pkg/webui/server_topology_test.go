@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,7 +11,9 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/accountbindings"
+	"nekobot/pkg/bus"
 	"nekobot/pkg/channelaccounts"
+	pkgchannels "nekobot/pkg/channels"
 	"nekobot/pkg/config"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/runtimetopology"
@@ -182,5 +185,136 @@ func TestHandleCreateChannelAccountRejectsEnabledWechatAccountWithoutCredentials
 	}
 	if !strings.Contains(rec.Body.String(), "config.bot_token") {
 		t.Fatalf("expected credentials validation error, got %s", rec.Body.String())
+	}
+}
+
+func TestChannelAccountHandlersReloadRuntimeInstances(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+
+	messageBus := bus.NewLocalBus(log, 8)
+	manager := pkgchannels.NewManager(log, messageBus)
+
+	s := &Server{
+		config:     cfg,
+		logger:     log,
+		entClient:  client,
+		accountMgr: accountMgr,
+		channels:   manager,
+		bus:        messageBus,
+	}
+	e := echo.New()
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/channel-accounts", strings.NewReader(`{
+		"channel_type":"gotify",
+		"account_key":"alerts-a",
+		"display_name":"Alerts A",
+		"enabled":true,
+		"config":{
+			"enabled":true,
+			"server_url":"https://gotify.example.com",
+			"app_token":"token-1",
+			"priority":5
+		}
+	}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	createCtx := e.NewContext(createReq, createRec)
+	if err := s.handleCreateChannelAccount(createCtx); err != nil {
+		t.Fatalf("handleCreateChannelAccount failed: %v", err)
+	}
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, createRec.Code, createRec.Body.String())
+	}
+
+	var created channelaccounts.ChannelAccount
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created account: %v", err)
+	}
+
+	channel, err := manager.GetChannel("gotify:alerts-a")
+	if err != nil {
+		t.Fatalf("expected runtime instance to be registered: %v", err)
+	}
+	if channel.ID() != "gotify:alerts-a" {
+		t.Fatalf("unexpected channel id: %q", channel.ID())
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/channel-accounts/"+created.ID, strings.NewReader(`{
+		"channel_type":"gotify",
+		"account_key":"alerts-a",
+		"display_name":"Alerts A",
+		"enabled":false,
+		"config":{
+			"enabled":false,
+			"server_url":"https://gotify.example.com",
+			"app_token":"token-1",
+			"priority":5
+		}
+	}`))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateRec := httptest.NewRecorder()
+	updateCtx := e.NewContext(updateReq, updateRec)
+	updateCtx.SetPath("/api/channel-accounts/:id")
+	updateCtx.SetPathValues(echo.PathValues{{Name: "id", Value: created.ID}})
+	if err := s.handleUpdateChannelAccount(updateCtx); err != nil {
+		t.Fatalf("handleUpdateChannelAccount failed: %v", err)
+	}
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, updateRec.Code, updateRec.Body.String())
+	}
+	if _, err := manager.GetChannel("gotify:alerts-a"); err == nil {
+		t.Fatalf("expected disabled runtime instance to be removed")
+	}
+
+	_, err = accountMgr.Update(context.Background(), created.ID, channelaccounts.ChannelAccount{
+		ChannelType: "gotify",
+		AccountKey:  "alerts-a",
+		DisplayName: "Alerts A",
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"enabled":    true,
+			"server_url": "https://gotify.example.com",
+			"app_token":  "token-1",
+			"priority":   5,
+		},
+	})
+	if err != nil {
+		t.Fatalf("reactivate account directly: %v", err)
+	}
+	if err := s.reloadChannelsByType("gotify"); err != nil {
+		t.Fatalf("reloadChannelsByType failed: %v", err)
+	}
+	if _, err := manager.GetChannel("gotify:alerts-a"); err != nil {
+		t.Fatalf("expected reactivated runtime instance: %v", err)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/channel-accounts/"+created.ID, nil)
+	deleteRec := httptest.NewRecorder()
+	deleteCtx := e.NewContext(deleteReq, deleteRec)
+	deleteCtx.SetPath("/api/channel-accounts/:id")
+	deleteCtx.SetPathValues(echo.PathValues{{Name: "id", Value: created.ID}})
+	if err := s.handleDeleteChannelAccount(deleteCtx); err != nil {
+		t.Fatalf("handleDeleteChannelAccount failed: %v", err)
+	}
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, deleteRec.Code, deleteRec.Body.String())
+	}
+	if _, err := manager.GetChannel("gotify:alerts-a"); err == nil {
+		t.Fatalf("expected deleted runtime instance to be removed")
 	}
 }

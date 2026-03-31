@@ -3585,39 +3585,57 @@ func (s *Server) reloadChannelsByType(channelType string) error {
 			return fmt.Errorf("list channel accounts for %s: %w", channelType, err)
 		}
 
-		accounted := false
+		desiredIDs := make(map[string]struct{})
+		desiredAccounts := make([]channelaccounts.ChannelAccount, 0)
 		for _, account := range accounts {
 			if account.ChannelType != channelType || !account.Enabled {
 				continue
 			}
-			accounted = true
-
-			ch, err := channels.BuildChannelFromAccount(
-				account,
-				s.logger,
-				s.bus,
-				s.agent,
-				s.commands,
-				s.prefs,
-				s.toolSess,
-				s.processMgr,
-				s.config,
-			)
-			if err != nil {
-				return fmt.Errorf("build %s account runtime %s: %w", channelType, account.AccountKey, err)
-			}
-			if err := s.channels.ReloadChannel(ch); err != nil {
-				return fmt.Errorf("reload %s account runtime %s: %w", channelType, ch.ID(), err)
-			}
+			runtimeID := strings.TrimSpace(account.ChannelType) + ":" + strings.TrimSpace(account.AccountKey)
+			desiredIDs[runtimeID] = struct{}{}
+			desiredAccounts = append(desiredAccounts, account)
 		}
 
-		if accounted {
-			if _, err := s.channels.GetChannel(channelType); err == nil {
-				if err := s.channels.StopChannel(channelType); err != nil {
-					return fmt.Errorf("stop legacy %s runtime: %w", channelType, err)
+		existingChannels := s.channels.ListChannelsByType(channelType)
+		if len(desiredAccounts) > 0 {
+			for _, existing := range existingChannels {
+				if _, ok := desiredIDs[existing.ID()]; ok {
+					continue
+				}
+				if err := s.channels.StopChannel(existing.ID()); err != nil {
+					return fmt.Errorf("stop stale %s runtime %s: %w", channelType, existing.ID(), err)
+				}
+			}
+
+			for _, account := range desiredAccounts {
+				ch, err := channels.BuildChannelFromAccount(
+					account,
+					s.logger,
+					s.bus,
+					s.agent,
+					s.commands,
+					s.prefs,
+					s.toolSess,
+					s.processMgr,
+					s.config,
+				)
+				if err != nil {
+					return fmt.Errorf("build %s account runtime %s: %w", channelType, account.AccountKey, err)
+				}
+				if err := s.channels.ReloadChannel(ch); err != nil {
+					return fmt.Errorf("reload %s account runtime %s: %w", channelType, ch.ID(), err)
 				}
 			}
 			return nil
+		}
+
+		for _, existing := range existingChannels {
+			if existing.ID() == channelType {
+				continue
+			}
+			if err := s.channels.StopChannel(existing.ID()); err != nil {
+				return fmt.Errorf("stop stale %s runtime %s: %w", channelType, existing.ID(), err)
+			}
 		}
 	}
 
@@ -6182,12 +6200,30 @@ func (s *Server) handleCreateChannelAccount(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
+	if s.channels != nil {
+		if err := s.reloadChannelsByType(item.ChannelType); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "channel account created but runtime reload failed: " + err.Error(),
+			})
+		}
+	}
 	return c.JSON(http.StatusOK, item)
 }
 
 func (s *Server) handleUpdateChannelAccount(c *echo.Context) error {
 	if s.accountMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "channel account manager not available"})
+	}
+	existing, err := s.accountMgr.Get(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	if existing == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "channel account not found"})
 	}
 	var body channelaccounts.ChannelAccount
 	if err := c.Bind(&body); err != nil {
@@ -6204,6 +6240,22 @@ func (s *Server) handleUpdateChannelAccount(c *echo.Context) error {
 		}
 		return c.JSON(status, map[string]string{"error": err.Error()})
 	}
+	previousType := strings.TrimSpace(existing.ChannelType)
+	currentType := strings.TrimSpace(item.ChannelType)
+	if s.channels != nil {
+		if previousType != "" && previousType != currentType {
+			if err := s.reloadChannelsByType(previousType); err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{
+					"error": "channel account updated but previous runtime reload failed: " + err.Error(),
+				})
+			}
+		}
+		if err := s.reloadChannelsByType(currentType); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "channel account updated but runtime reload failed: " + err.Error(),
+			})
+		}
+	}
 	return c.JSON(http.StatusOK, item)
 }
 
@@ -6211,13 +6263,31 @@ func (s *Server) handleDeleteChannelAccount(c *echo.Context) error {
 	if s.accountMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "channel account manager not available"})
 	}
-	err := s.accountMgr.Delete(c.Request().Context(), c.Param("id"))
+	existing, err := s.accountMgr.Get(c.Request().Context(), c.Param("id"))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
 			status = http.StatusNotFound
 		}
 		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	if existing == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "channel account not found"})
+	}
+	err = s.accountMgr.Delete(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
+			status = http.StatusNotFound
+		}
+		return c.JSON(status, map[string]string{"error": err.Error()})
+	}
+	if s.channels != nil {
+		if err := s.reloadChannelsByType(existing.ChannelType); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "channel account deleted but runtime reload failed: " + err.Error(),
+			})
+		}
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
 }
@@ -6539,6 +6609,14 @@ func resolveWebUIChatRuntimeAlias(sessionID string) (string, bool) {
 	return runtimeID, true
 }
 
+func runtimePromptIDs(promptID string) []string {
+	promptID = strings.TrimSpace(promptID)
+	if promptID == "" {
+		return nil
+	}
+	return []string{promptID}
+}
+
 func (s *Server) getJWTSecret() string {
 	secret, err := config.GetJWTSecret(s.entClient)
 	if err == nil && strings.TrimSpace(secret) != "" {
@@ -6567,11 +6645,3 @@ func (s *Server) generateToken(profile *config.AuthProfile) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(s.getJWTSecret()))
 }
-func runtimePromptIDs(promptID string) []string {
-	promptID = strings.TrimSpace(promptID)
-	if promptID == "" {
-		return nil
-	}
-	return []string{promptID}
-}
-
