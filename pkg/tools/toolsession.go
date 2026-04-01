@@ -116,6 +116,14 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 	metadata := map[string]interface{}{
 		"user_command": command,
 	}
+	runtimeID := execenv.StartSpecFromContext(ctx, "", "", "", nil).RuntimeID
+	if runtimeID != "" {
+		metadata[execenv.MetadataRuntimeID] = runtimeID
+	}
+	taskID := execenv.StartSpecFromContext(ctx, "", "", "", nil).TaskID
+	if taskID != "" {
+		metadata[execenv.MetadataTaskID] = taskID
+	}
 
 	sess, err := t.toolSessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
 		Source:   toolsessions.SourceAgent,
