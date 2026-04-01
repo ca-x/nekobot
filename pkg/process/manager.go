@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/creack/pty"
 	"go.uber.org/zap"
 
+	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
 )
 
@@ -33,6 +33,8 @@ type Session struct {
 	Output      []string
 	OutputMutex sync.RWMutex
 	MaxOutput   int // Maximum output lines to keep
+	Cleanup     func() error
+	cleanupOnce sync.Once
 }
 
 const (
@@ -45,6 +47,7 @@ type Manager struct {
 	log      *logger.Logger
 	sessions map[string]*Session
 	mu       sync.RWMutex
+	preparer execenv.Preparer
 }
 
 // NewManager creates a new process manager.
@@ -52,69 +55,87 @@ func NewManager(log *logger.Logger) *Manager {
 	return &Manager{
 		log:      log,
 		sessions: make(map[string]*Session),
+		preparer: execenv.NewDefaultPreparer(),
 	}
 }
 
-// Start starts a new PTY session.
+// SetPreparer overrides the execution environment preparer.
+func (m *Manager) SetPreparer(preparer execenv.Preparer) {
+	if m == nil || preparer == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.preparer = preparer
+}
+
+// Start starts a new PTY session with the default start spec.
 func (m *Manager) Start(ctx context.Context, sessionID, command, workdir string) error {
+	return m.StartWithSpec(ctx, execenv.StartSpec{
+		SessionID: sessionID,
+		Command:   command,
+		Workdir:   workdir,
+		Env:       os.Environ(),
+	})
+}
+
+// StartWithSpec starts a new PTY session using an execution-environment preparation contract.
+func (m *Manager) StartWithSpec(ctx context.Context, spec execenv.StartSpec) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check if session already exists
-	if _, exists := m.sessions[sessionID]; exists {
-		return fmt.Errorf("session already exists: %s", sessionID)
+	if _, exists := m.sessions[spec.SessionID]; exists {
+		return fmt.Errorf("session already exists: %s", spec.SessionID)
+	}
+	if strings.TrimSpace(spec.Command) == "" {
+		return fmt.Errorf("command is required")
+	}
+	if m.preparer == nil {
+		m.preparer = execenv.NewDefaultPreparer()
 	}
 
-	// Create command
+	prepared, err := m.preparer.Prepare(ctx, spec)
+	if err != nil {
+		return fmt.Errorf("prepare execenv: %w", err)
+	}
+
 	shellPath := resolveShellPath()
-	cmd := exec.CommandContext(ctx, shellPath, "-c", command)
-	cmd.Env = buildProcessEnv(os.Environ())
-	normalizedWorkdir := strings.TrimSpace(workdir)
-	if normalizedWorkdir != "" {
-		var err error
-		normalizedWorkdir, err = normalizeWorkdir(normalizedWorkdir)
-		if err != nil {
-			return fmt.Errorf("normalize workdir: %w", err)
-		}
-		if err := os.MkdirAll(normalizedWorkdir, 0o755); err != nil {
-			return fmt.Errorf("prepare workdir: %w", err)
-		}
-		cmd.Dir = normalizedWorkdir
+	cmd := exec.CommandContext(ctx, shellPath, "-c", spec.Command)
+	cmd.Env = append([]string{}, prepared.Env...)
+	if prepared.Workdir != "" {
+		cmd.Dir = prepared.Workdir
 	}
 
-	// Start with PTY and a safe default size so TUI tools can render immediately.
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Rows: defaultPTYRows,
 		Cols: defaultPTYCols,
 	})
 	if err != nil {
+		runCleanup(prepared.Cleanup, m.log, spec.SessionID)
 		return fmt.Errorf("starting PTY: %w", err)
 	}
 
-	// Create session
 	session := &Session{
-		ID:        sessionID,
-		Command:   command,
-		Workdir:   normalizedWorkdir,
+		ID:        spec.SessionID,
+		Command:   spec.Command,
+		Workdir:   prepared.Workdir,
 		StartedAt: time.Now(),
 		Running:   true,
 		PTY:       ptmx,
 		Process:   cmd.Process,
 		Output:    make([]string, 0),
-		MaxOutput: 10000, // Keep last 10k lines
+		MaxOutput: 10000,
+		Cleanup:   prepared.Cleanup,
 	}
 
-	m.sessions[sessionID] = session
+	m.sessions[spec.SessionID] = session
 
-	// Start output capture goroutine
 	go m.captureOutput(session)
-
-	// Start wait goroutine
 	go m.waitForExit(session, cmd)
 
 	m.log.Info("PTY session started",
-		zap.String("session_id", sessionID),
-		zap.String("command", command),
+		zap.String("session_id", spec.SessionID),
+		zap.String("command", spec.Command),
 		zap.String("shell", shellPath),
 		zap.Int("pid", cmd.Process.Pid))
 
@@ -141,6 +162,9 @@ func (m *Manager) Reset(sessionID string) error {
 	if session.PTY != nil {
 		_ = session.PTY.Close()
 	}
+	session.cleanupOnce.Do(func() {
+		runCleanup(session.Cleanup, m.log, sessionID)
+	})
 	return nil
 }
 
@@ -192,6 +216,9 @@ func (m *Manager) waitForExit(session *Session, cmd *exec.Cmd) {
 
 	// Close PTY
 	_ = session.PTY.Close()
+	session.cleanupOnce.Do(func() {
+		runCleanup(session.Cleanup, m.log, session.ID)
+	})
 
 	m.log.Info("PTY session exited",
 		zap.String("session_id", session.ID),
@@ -380,37 +407,13 @@ func (m *Manager) Cleanup(maxAge time.Duration) int {
 	return count
 }
 
-func buildProcessEnv(base []string) []string {
-	env := append([]string{}, base...)
-	termIdx := -1
-	termValue := ""
-	for i := range env {
-		if strings.HasPrefix(env[i], "TERM=") {
-			termIdx = i
-			termValue = strings.TrimSpace(strings.TrimPrefix(env[i], "TERM="))
-			break
-		}
+func runCleanup(cleanup func() error, log *logger.Logger, sessionID string) {
+	if cleanup == nil {
+		return
 	}
-
-	// Many tools (and tmux) fail under TERM=dumb in daemon environments.
-	if termIdx == -1 {
-		env = append(env, "TERM=xterm-256color")
-	} else if termValue == "" || strings.EqualFold(termValue, "dumb") {
-		env[termIdx] = "TERM=xterm-256color"
+	if err := cleanup(); err != nil && log != nil {
+		log.Warn("Process session cleanup failed", zap.String("session_id", sessionID), zap.Error(err))
 	}
-
-	hasColorTerm := false
-	for i := range env {
-		if strings.HasPrefix(env[i], "COLORTERM=") {
-			hasColorTerm = true
-			break
-		}
-	}
-	if !hasColorTerm {
-		env = append(env, "COLORTERM=truecolor")
-	}
-
-	return env
 }
 
 func resolveShellPath() string {
@@ -455,24 +458,6 @@ func isExecutableFile(path string) bool {
 		return false
 	}
 	return info.Mode()&0o111 != 0
-}
-
-func normalizeWorkdir(raw string) (string, error) {
-	path := strings.TrimSpace(raw)
-	if path == "" {
-		return "", nil
-	}
-
-	path = expandTildePath(path)
-	path = os.ExpandEnv(path)
-	if !filepath.IsAbs(path) {
-		abs, err := filepath.Abs(path)
-		if err != nil {
-			return "", err
-		}
-		path = abs
-	}
-	return filepath.Clean(path), nil
 }
 
 func expandTildePath(path string) string {
