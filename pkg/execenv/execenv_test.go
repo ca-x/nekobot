@@ -75,3 +75,36 @@ func TestDefaultPreparerPrepareInjectsRuntimeAndTaskMetadata(t *testing.T) {
 		t.Fatalf("expected existing COLORTERM to be preserved, got %q", got)
 	}
 }
+
+func TestStartSpecFromContextPrefersContextAndFallsBackToMetadata(t *testing.T) {
+	ctx := context.WithValue(context.Background(), MetadataRuntimeID, "runtime-from-context")
+	ctx = context.WithValue(ctx, MetadataTaskID, "task-from-context")
+
+	spec := StartSpecFromContext(ctx, "sess-ctx", "echo hi", "/tmp/work", map[string]any{
+		MetadataRuntimeID: "runtime-from-metadata",
+		MetadataTaskID:    "task-from-metadata",
+	})
+	if spec.SessionID != "sess-ctx" {
+		t.Fatalf("expected session id, got %q", spec.SessionID)
+	}
+	if spec.RuntimeID != "runtime-from-context" {
+		t.Fatalf("expected runtime id from context, got %q", spec.RuntimeID)
+	}
+	if spec.TaskID != "task-from-context" {
+		t.Fatalf("expected task id from context, got %q", spec.TaskID)
+	}
+	if len(spec.Env) == 0 {
+		t.Fatal("expected inherited environment")
+	}
+
+	fallback := StartSpecFromContext(context.Background(), "sess-meta", "echo hi", "/tmp/work", map[string]any{
+		MetadataRuntimeID: "runtime-from-metadata",
+		MetadataTaskID:    "task-from-metadata",
+	})
+	if fallback.RuntimeID != "runtime-from-metadata" {
+		t.Fatalf("expected runtime id from metadata, got %q", fallback.RuntimeID)
+	}
+	if fallback.TaskID != "task-from-metadata" {
+		t.Fatalf("expected task id from metadata, got %q", fallback.TaskID)
+	}
+}

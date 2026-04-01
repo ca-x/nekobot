@@ -21,6 +21,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/google/uuid"
 
+	"nekobot/pkg/execenv"
 	"nekobot/pkg/process"
 )
 
@@ -161,7 +162,8 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 		}
 
 		sessionID := uuid.New().String()
-		if err := t.processManager.Start(ctx, sessionID, command, workdir); err != nil {
+		spec := execenv.StartSpecFromContext(ctx, sessionID, command, workdir, nil)
+		if err := t.processManager.StartWithSpec(ctx, spec); err != nil {
 			return "", fmt.Errorf("starting background process: %w", err)
 		}
 

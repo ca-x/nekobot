@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"nekobot/pkg/execenv"
 	"nekobot/pkg/process"
 	"nekobot/pkg/toolsessions"
 )
@@ -136,7 +137,8 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 		tmuxSession = sessionName
 	}
 
-	if err := t.processMgr.Start(context.Background(), sess.ID, launchCommand, workdir); err != nil {
+	spec := execenv.StartSpecFromContext(ctx, sess.ID, launchCommand, workdir, metadata)
+	if err := t.processMgr.StartWithSpec(context.Background(), spec); err != nil {
 		_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
 		return "", fmt.Errorf("failed to start tool process: %w", err)
 	}
