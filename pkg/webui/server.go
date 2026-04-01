@@ -43,6 +43,7 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
+	"nekobot/pkg/execenv"
 	"nekobot/pkg/gateway"
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/inboundrouter"
@@ -58,6 +59,7 @@ import (
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/userprefs"
 	"nekobot/pkg/version"
@@ -99,6 +101,7 @@ type Server struct {
 	auditLogger *audit.Logger
 	ilinkAuth   *ilinkauth.Service
 	serviceCtrl serviceController
+	taskStore   *tasks.Store
 	watcher     *watch.Watcher
 	port        int
 	startedAt   time.Time
@@ -221,6 +224,9 @@ func NewServer(
 		port:      port,
 		startedAt: time.Now(),
 	}
+	if ag != nil {
+		s.taskStore = ag.TaskStore()
+	}
 
 	if entClient != nil {
 		runtimeMgr, err := runtimeagents.NewManager(cfg, log, entClient)
@@ -247,7 +253,7 @@ func NewServer(
 		}
 
 		if s.runtimeMgr != nil && s.accountMgr != nil && s.bindingMgr != nil {
-			topologySvc, err := runtimetopology.NewService(s.runtimeMgr, s.accountMgr, s.bindingMgr)
+			topologySvc, err := runtimetopology.NewService(s.runtimeMgr, s.accountMgr, s.bindingMgr, s.taskStore)
 			if err != nil {
 				log.Warn("Failed to initialize runtime topology service", zap.Error(err))
 			} else {
@@ -1616,7 +1622,8 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 		tmuxSession = sessionName
 	}
 
-	if err := s.processMgr.Start(context.Background(), sess.ID, launchCommand, workdir); err != nil {
+	spec := execenv.StartSpecFromContext(c.Request().Context(), sess.ID, launchCommand, workdir, metadata)
+	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
 		_ = s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to start tool process: " + err.Error()})
 	}
@@ -1833,9 +1840,14 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 		tmuxSession = sessionName
 	}
 
+	nextMetadata := withToolProxyMetadata(cloneMap(current.Metadata), proxyMode, proxyURL)
+	nextMetadata["user_command"] = command
+	nextMetadata["user_args"] = strings.TrimSpace(body.CommandArgs)
+
 	_ = s.processMgr.Reset(id)
 	s.tryKillTmuxSession(id)
-	if err := s.processMgr.Start(context.Background(), id, launchCommand, workdir); err != nil {
+	spec := execenv.StartSpecFromContext(c.Request().Context(), id, launchCommand, workdir, nextMetadata)
+	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
 		_ = s.toolSess.TerminateSession(context.Background(), id, "failed to restart process: "+err.Error())
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to restart tool process: " + err.Error()})
 	}
@@ -1844,9 +1856,6 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	nextMetadata := withToolProxyMetadata(cloneMap(current.Metadata), proxyMode, proxyURL)
-	nextMetadata["user_command"] = command
-	nextMetadata["user_args"] = strings.TrimSpace(body.CommandArgs)
 	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), id, nextMetadata); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -2402,7 +2411,8 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 	if workdir == "" {
 		workdir = s.config.WorkspacePath()
 	}
-	if err := s.processMgr.Start(context.Background(), id, attachCmd, workdir); err != nil {
+	spec := execenv.StartSpecFromContext(ctx, id, attachCmd, workdir, sess.Metadata)
+	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "session already exists") {
 			return true
 		}
@@ -5039,31 +5049,173 @@ func (s *Server) handleStatus(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	taskSnapshots := s.listTaskSnapshots()
+	recentTasks, stateCounts := summarizeTasks(taskSnapshots, 5)
+	runtimeStates, err := s.deriveRuntimeStatuses(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	sessionStates := s.listSessionStates()
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"version":            version.GetVersion(),
-		"commit":             version.GitCommit,
-		"build_time":         version.BuildTime,
-		"os":                 runtime.GOOS,
-		"arch":               runtime.GOARCH,
-		"go_version":         runtime.Version(),
-		"pid":                os.Getpid(),
-		"uptime":             uptime.Round(time.Second).String(),
-		"uptime_seconds":     int64(uptime.Seconds()),
-		"memory_alloc_bytes": mem.Alloc,
-		"memory_sys_bytes":   mem.Sys,
-		"provider_count":     len(s.config.Providers),
-		"config_path":        configPath,
-		"database_dir":       s.config.Storage.DBDir,
-		"runtime_db_path":    runtimeDBPath,
-		"workspace_path":     s.config.Agents.Defaults.Workspace,
-		"gateway_host":       s.config.Gateway.Host,
-		"gateway_port":       s.config.Gateway.Port,
+		"version":                version.GetVersion(),
+		"commit":                 version.GitCommit,
+		"build_time":             version.BuildTime,
+		"os":                     runtime.GOOS,
+		"arch":                   runtime.GOARCH,
+		"go_version":             runtime.Version(),
+		"pid":                    os.Getpid(),
+		"uptime":                 uptime.Round(time.Second).String(),
+		"uptime_seconds":         int64(uptime.Seconds()),
+		"memory_alloc_bytes":     mem.Alloc,
+		"memory_sys_bytes":       mem.Sys,
+		"provider_count":         len(s.config.Providers),
+		"config_path":            configPath,
+		"database_dir":           s.config.Storage.DBDir,
+		"runtime_db_path":        runtimeDBPath,
+		"workspace_path":         s.config.Agents.Defaults.Workspace,
+		"task_count":             len(taskSnapshots),
+		"task_state_counts":      stateCounts,
+		"recent_tasks":           recentTasks,
+		"runtime_states":         runtimeStates,
+		"session_runtime_states": sessionStates,
+		"gateway_host":           s.config.Gateway.Host,
+		"gateway_port":           s.config.Gateway.Port,
 		"gateway": map[string]interface{}{
 			"host": s.config.Gateway.Host,
 			"port": s.config.Gateway.Port,
 		},
 	})
+}
+
+func (s *Server) listTaskSnapshots() []tasks.Task {
+	if s == nil || s.taskStore == nil {
+		return nil
+	}
+	return s.taskStore.List()
+}
+
+func (s *Server) listSessionStates() []tasks.SessionState {
+	if s == nil || s.taskStore == nil {
+		return []tasks.SessionState{}
+	}
+	return s.taskStore.ListSessionStates()
+}
+
+func (s *Server) deriveRuntimeStatuses(ctx context.Context) ([]runtimeagents.AgentRuntime, error) {
+	if s == nil || s.runtimeMgr == nil {
+		return []runtimeagents.AgentRuntime{}, nil
+	}
+
+	items, err := s.runtimeMgr.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.attachRuntimeStatuses(ctx, items)
+}
+
+func (s *Server) attachRuntimeStatuses(ctx context.Context, items []runtimeagents.AgentRuntime) ([]runtimeagents.AgentRuntime, error) {
+	if len(items) == 0 {
+		return []runtimeagents.AgentRuntime{}, nil
+	}
+
+	bindingsByRuntimeID := make(map[string]int, len(items))
+	enabledBindingsByRuntimeID := make(map[string]int, len(items))
+	accountEnabledByID := map[string]bool{}
+	if s.accountMgr != nil {
+		accounts, err := s.accountMgr.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list channel accounts for runtime status: %w", err)
+		}
+		for _, account := range accounts {
+			accountEnabledByID[account.ID] = account.Enabled
+		}
+	}
+	if s.bindingMgr != nil {
+		bindings, err := s.bindingMgr.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list account bindings for runtime status: %w", err)
+		}
+		for _, binding := range bindings {
+			bindingsByRuntimeID[binding.AgentRuntimeID]++
+			if binding.Enabled && accountEnabledByID[binding.ChannelAccountID] {
+				enabledBindingsByRuntimeID[binding.AgentRuntimeID]++
+			}
+		}
+	}
+
+	tasksByRuntimeID := make(map[string]int, len(items))
+	lastSeenByRuntimeID := make(map[string]time.Time, len(items))
+	for _, task := range s.listTaskSnapshots() {
+		runtimeID := strings.TrimSpace(task.RuntimeID)
+		if runtimeID == "" {
+			continue
+		}
+		if !tasks.IsFinal(task.State) {
+			tasksByRuntimeID[runtimeID]++
+		}
+		taskTime := taskSortTime(task)
+		if taskTime.After(lastSeenByRuntimeID[runtimeID]) {
+			lastSeenByRuntimeID[runtimeID] = taskTime
+		}
+	}
+
+	result := make([]runtimeagents.AgentRuntime, 0, len(items))
+	for _, item := range items {
+		status := &runtimeagents.RuntimeDerivedStatus{
+			EffectiveAvailable:  item.Enabled && enabledBindingsByRuntimeID[item.ID] > 0,
+			BoundAccountCount:   bindingsByRuntimeID[item.ID],
+			EnabledBindingCount: enabledBindingsByRuntimeID[item.ID],
+			CurrentTaskCount:    tasksByRuntimeID[item.ID],
+			LastSeenAt:          lastSeenByRuntimeID[item.ID],
+		}
+		switch {
+		case !item.Enabled:
+			status.AvailabilityReason = "runtime_disabled"
+		case enabledBindingsByRuntimeID[item.ID] == 0:
+			if bindingsByRuntimeID[item.ID] == 0 {
+				status.AvailabilityReason = "unbound"
+			} else {
+				status.AvailabilityReason = "no_enabled_bindings"
+			}
+		default:
+			status.AvailabilityReason = "available"
+		}
+		item.Status = status
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func summarizeTasks(all []tasks.Task, limit int) ([]tasks.Task, map[string]int) {
+	stateCounts := make(map[string]int)
+	if len(all) == 0 {
+		return []tasks.Task{}, stateCounts
+	}
+
+	snapshots := append([]tasks.Task(nil), all...)
+	for _, task := range snapshots {
+		stateCounts[string(task.State)]++
+	}
+	sort.SliceStable(snapshots, func(i, j int) bool {
+		return taskSortTime(snapshots[i]).After(taskSortTime(snapshots[j]))
+	})
+	if limit > 0 && len(snapshots) > limit {
+		snapshots = snapshots[:limit]
+	}
+	return snapshots, stateCounts
+}
+
+func taskSortTime(task tasks.Task) time.Time {
+	switch {
+	case !task.CompletedAt.IsZero():
+		return task.CompletedAt
+	case !task.StartedAt.IsZero():
+		return task.StartedAt
+	default:
+		return task.CreatedAt
+	}
 }
 
 func (s *Server) handleServiceStatus(c *echo.Context) error {
@@ -5257,10 +5409,11 @@ type chatWSMessage struct {
 }
 
 type chatWSResponse struct {
-	Type      string          `json:"type"`                // "message", "thinking", "error", "system", "pong", "route_result"
-	Content   string          `json:"content"`             // Response text
-	Thinking  string          `json:"thinking,omitempty"`  // Model's thinking (if extended thinking enabled)
-	Timestamp int64           `json:"timestamp,omitempty"` // Unix timestamp
+	Type      string          `json:"type"`                 // "message", "thinking", "error", "system", "pong", "route_result"
+	Content   string          `json:"content"`              // Response text
+	Thinking  string          `json:"thinking,omitempty"`   // Model's thinking (if extended thinking enabled)
+	Timestamp int64           `json:"timestamp,omitempty"`  // Unix timestamp
+	SessionID string          `json:"session_id,omitempty"` // Routed chat session
 	Route     *chatRouteState `json:"route,omitempty"`
 	Meta      interface{}     `json:"meta,omitempty"`
 }
@@ -5428,7 +5581,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 	baseSessionID := webUIChatSessionID(username)
 	sess, err := s.getOrCreateChatSession(baseSessionID)
 	if err != nil {
-		sendWSError(conn, fmt.Sprintf("session error: %v", err))
+		sendWSError(conn, fmt.Sprintf("session error: %v", err), baseSessionID)
 		return nil
 	}
 
@@ -5437,6 +5590,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		Type:      "system",
 		Content:   "Connected to chat playground",
 		Timestamp: time.Now().Unix(),
+		SessionID: baseSessionID,
 	}
 	if data, err := json.Marshal(welcome); err == nil {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -5452,6 +5606,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		Type:      "routing",
 		Content:   mustMarshalChatRouting(routing),
 		Timestamp: time.Now().Unix(),
+		SessionID: baseSessionID,
 	}); err == nil {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			s.logger.Warn("Failed to send chat routing", zap.Error(err))
@@ -5502,13 +5657,17 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 
 		var msg chatWSMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
-			sendWSError(conn, "invalid message format")
+			sendWSError(conn, "invalid message format", baseSessionID)
 			continue
 		}
 
 		switch msg.Type {
 		case "ping":
-			resp := chatWSResponse{Type: "pong", Timestamp: time.Now().Unix()}
+			resp := chatWSResponse{
+				Type:      "pong",
+				Timestamp: time.Now().Unix(),
+				SessionID: baseSessionID,
+			}
 			if data, err := json.Marshal(resp); err == nil {
 				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 					s.logger.Warn("Failed to send chat pong", zap.Error(err))
@@ -5518,15 +5677,20 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		case "clear":
 			clearSessionID := webUIRuntimeChatSessionID(username, msg.RuntimeID)
 			if err := s.clearChatSession(clearSessionID); err != nil {
-				sendWSError(conn, fmt.Sprintf("session reset failed: %v", err))
+				sendWSError(conn, fmt.Sprintf("session reset failed: %v", err), clearSessionID)
 				continue
 			}
 			sess, err = s.sessionMgr.GetExisting(clearSessionID)
 			if err != nil {
-				sendWSError(conn, fmt.Sprintf("session error: %v", err))
+				sendWSError(conn, fmt.Sprintf("session error: %v", err), clearSessionID)
 				continue
 			}
-			resp := chatWSResponse{Type: "system", Content: "Session cleared", Timestamp: time.Now().Unix()}
+			resp := chatWSResponse{
+				Type:      "system",
+				Content:   "Session cleared",
+				Timestamp: time.Now().Unix(),
+				SessionID: clearSessionID,
+			}
 			if data, err := json.Marshal(resp); err == nil {
 				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 					s.logger.Warn("Failed to send chat cleared event", zap.Error(err))
@@ -5547,7 +5711,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			if runtimeID == "" {
 				// Keep provider/fallback choices in sync with the saved config so restarts preserve them.
 				if err := s.persistChatRouting(requestedProvider, requestedModel, requestedFallback); err != nil {
-					sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err))
+					sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err), sessionID)
 					continue
 				}
 			}
@@ -5560,7 +5724,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				requestedFallback,
 			)
 			if err != nil {
-				sendWSError(conn, fmt.Sprintf("runtime selection failed: %v", err))
+				sendWSError(conn, fmt.Sprintf("runtime selection failed: %v", err), sessionID)
 				continue
 			}
 			if s.prompts != nil {
@@ -5570,13 +5734,13 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 					msg.SystemPromptIDs,
 					msg.UserPromptIDs,
 				); err != nil {
-					sendWSError(conn, fmt.Sprintf("save session prompts failed: %v", err))
+					sendWSError(conn, fmt.Sprintf("save session prompts failed: %v", err), sessionID)
 					continue
 				}
 			}
 			sess, err = s.getOrCreateChatSession(sessionID)
 			if err != nil {
-				sendWSError(conn, fmt.Sprintf("session error: %v", err))
+				sendWSError(conn, fmt.Sprintf("session error: %v", err), sessionID)
 				continue
 			}
 
@@ -5607,6 +5771,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 						Type:      "system",
 						Content:   systemText,
 						Timestamp: time.Now().Unix(),
+						SessionID: sessionID,
 						Meta: map[string]interface{}{
 							"kind": "file_mentions",
 							"data": feedback,
@@ -5633,7 +5798,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				buildWebUIChatPromptContext(sessionID, username, provider, model, fallback, explicitPromptIDs, runtimeID),
 			)
 			if err != nil {
-				sendWSError(conn, fmt.Sprintf("agent error: %v", err))
+				sendWSError(conn, fmt.Sprintf("agent error: %v", err), sessionID)
 				continue
 			}
 
@@ -5647,6 +5812,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Type:      "message",
 				Content:   response,
 				Timestamp: time.Now().Unix(),
+				SessionID: sessionID,
 			}
 			if data, err := json.Marshal(resp); err == nil {
 				if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
@@ -5660,6 +5826,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			routeResp := chatWSResponse{
 				Type:      "route_result",
 				Timestamp: time.Now().Unix(),
+				SessionID: sessionID,
 				Route: &chatRouteState{
 					RequestedProvider: routeResult.RequestedProvider,
 					RequestedModel:    routeResult.RequestedModel,
@@ -5895,11 +6062,16 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 	}
 }
 
-func sendWSError(conn *websocket.Conn, errMsg string) {
+func sendWSError(conn *websocket.Conn, errMsg string, sessionID ...string) {
+	targetSessionID := ""
+	if len(sessionID) > 0 {
+		targetSessionID = strings.TrimSpace(sessionID[0])
+	}
 	resp := chatWSResponse{
 		Type:      "error",
 		Content:   errMsg,
 		Timestamp: time.Now().Unix(),
+		SessionID: targetSessionID,
 	}
 	if data, err := json.Marshal(resp); err == nil {
 		_ = conn.WriteMessage(websocket.TextMessage, data)
@@ -6152,7 +6324,7 @@ func (s *Server) handleListRuntimeAgents(c *echo.Context) error {
 	if s.runtimeMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime agent manager not available"})
 	}
-	items, err := s.runtimeMgr.List(c.Request().Context())
+	items, err := s.deriveRuntimeStatuses(c.Request().Context())
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -6567,8 +6739,12 @@ func (s *Server) handleGetApprovals(c *echo.Context) error {
 
 func (s *Server) handleApproveRequest(c *echo.Context) error {
 	id := c.Param("id")
+	req, _ := s.approval.GetRequest(id)
 	if err := s.approval.Approve(id); err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	}
+	if req != nil && s.taskStore != nil {
+		s.taskStore.ClearSessionPendingAction(req.SessionID)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "approved", "id": id})
 }
@@ -6580,8 +6756,12 @@ func (s *Server) handleDenyRequest(c *echo.Context) error {
 	}
 	_ = c.Bind(&body) // reason is optional
 
+	req, _ := s.approval.GetRequest(id)
 	if err := s.approval.Deny(id, body.Reason); err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	}
+	if req != nil && s.taskStore != nil {
+		s.taskStore.ClearSessionPendingAction(req.SessionID)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "denied", "id": id})
 }

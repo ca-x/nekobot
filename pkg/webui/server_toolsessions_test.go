@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/config"
+	"nekobot/pkg/execenv"
 	"nekobot/pkg/process"
 	"nekobot/pkg/toolsessions"
 )
@@ -497,4 +498,69 @@ func waitForSessionState(t *testing.T, mgr *toolsessions.Manager, sessionID, wan
 		t.Fatalf("get session after wait: %v", err)
 	}
 	t.Fatalf("expected state %q, got %q", wantState, sess.State)
+}
+
+func TestHandleSpawnToolSessionPassesMetadataToExecenv(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	preparer := &captureWebUITestPreparer{}
+	pm := process.NewManager(log)
+	pm.SetPreparer(preparer)
+	server := &Server{
+		config:     cfg,
+		logger:     log,
+		toolSess:   toolMgr,
+		processMgr: pm,
+	}
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tool-sessions/spawn", strings.NewReader(
+		`{"tool":"codex","command":"sleep 5","workdir":"`+cfg.WorkspacePath()+`","metadata":{"runtime_id":"runtime-webui","task_id":"task-webui"}}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/spawn")
+	if err := server.handleSpawnToolSession(ctx); err != nil {
+		t.Fatalf("spawn handler failed: %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+	if preparer.last.RuntimeID != "runtime-webui" {
+		t.Fatalf("expected runtime id to propagate, got %q", preparer.last.RuntimeID)
+	}
+	if preparer.last.TaskID != "task-webui" {
+		t.Fatalf("expected task id to propagate, got %q", preparer.last.TaskID)
+	}
+	if preparer.last.SessionID == "" {
+		t.Fatal("expected spawned session id")
+	}
+	if err := pm.Reset(preparer.last.SessionID); err != nil {
+		t.Fatalf("reset spawned process: %v", err)
+	}
+}
+
+type captureWebUITestPreparer struct {
+	last execenv.StartSpec
+}
+
+func (c *captureWebUITestPreparer) Prepare(_ context.Context, spec execenv.StartSpec) (execenv.Prepared, error) {
+	c.last = spec
+	return execenv.Prepared{
+		Workdir: spec.Workdir,
+		Env:     append([]string{}, spec.Env...),
+		Cleanup: func() error { return nil },
+	}, nil
 }
