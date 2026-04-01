@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 	"nekobot/pkg/audit"
 	"nekobot/pkg/config"
+	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
 )
 
@@ -29,10 +30,12 @@ type Event struct {
 
 // Watcher monitors file patterns and triggers commands on changes.
 type Watcher struct {
-	config   *config.WatchConfig
-	patterns []config.WatchPattern
-	log      *logger.Logger
-	audit    *audit.Logger
+	config    *config.WatchConfig
+	patterns  []config.WatchPattern
+	log       *logger.Logger
+	audit     *audit.Logger
+	preparer  execenv.Preparer
+	workspace string
 
 	fsWatcher     *fsnotify.Watcher
 	cronScheduler *cron.Cron
@@ -78,10 +81,12 @@ func New(cfg *config.Config, log *logger.Logger, auditLogger *audit.Logger) (*Wa
 	watchCfg := cfg.Watch
 	if !watchCfg.Enabled {
 		return &Watcher{
-			config:   &watchCfg,
-			log:      log,
-			audit:    auditLogger,
-			patterns: watchCfg.Patterns,
+			config:    &watchCfg,
+			log:       log,
+			audit:     auditLogger,
+			patterns:  watchCfg.Patterns,
+			preparer:  execenv.NewDefaultPreparer(),
+			workspace: cfg.WorkspacePath(),
 		}, nil
 	}
 
@@ -97,10 +102,12 @@ func New(cfg *config.Config, log *logger.Logger, auditLogger *audit.Logger) (*Wa
 	}
 
 	w := &Watcher{
-		config:   &watchCfg,
-		patterns: watchCfg.Patterns,
-		log:      log,
-		audit:    auditLogger,
+		config:    &watchCfg,
+		patterns:  watchCfg.Patterns,
+		log:       log,
+		audit:     auditLogger,
+		preparer:  execenv.NewDefaultPreparer(),
+		workspace: cfg.WorkspacePath(),
 
 		fsWatcher:      fsWatcher,
 		cronScheduler:  cron.New(),
@@ -463,8 +470,35 @@ func (w *Watcher) executeCommand(patternIdx int, event fsnotify.Event) {
 	go func() {
 		startTime := time.Now()
 
-		// Use shell to execute the command
-		cmd := execShellCommand(w.ctx, command)
+		cmd, cleanup, err := w.prepareShellCommand(command)
+		if err != nil {
+			if w.log != nil {
+				w.log.Warn("Watch command preparation failed",
+					zap.String("command", command),
+					zap.String("file", event.Name),
+					zap.Error(err),
+				)
+			}
+			auditEntry.Success = false
+			auditEntry.Error = err.Error()
+			w.mu.Lock()
+			w.lastRunAt = time.Now()
+			w.lastCommand = command
+			w.lastFile = event.Name
+			w.lastSuccess = false
+			w.lastError = err.Error()
+			w.lastResultPreview = ""
+			w.mu.Unlock()
+			if w.audit != nil {
+				w.audit.Log(auditEntry)
+			}
+			return
+		}
+		defer func() {
+			if cleanup != nil {
+				_ = cleanup()
+			}
+		}()
 
 		// Capture output
 		output, err := cmd.CombinedOutput()
@@ -675,6 +709,32 @@ func (w *Watcher) ApplyConfig(cfg config.WatchConfig) error {
 // execShellCommand creates and returns a command that executes the given shell command.
 func execShellCommand(ctx context.Context, command string) *exec.Cmd {
 	return exec.CommandContext(ctx, "sh", "-c", command)
+}
+
+func (w *Watcher) prepareShellCommand(command string) (*exec.Cmd, func() error, error) {
+	ctx := w.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	preparer := w.preparer
+	if preparer == nil {
+		preparer = execenv.NewDefaultPreparer()
+	}
+	spec := execenv.StartSpec{
+		Command: command,
+		Workdir: strings.TrimSpace(w.workspace),
+		Env:     os.Environ(),
+	}
+	prepared, err := preparer.Prepare(ctx, spec)
+	if err != nil {
+		return nil, nil, fmt.Errorf("prepare watch execenv: %w", err)
+	}
+	cmd := execShellCommand(ctx, command)
+	cmd.Env = append([]string{}, prepared.Env...)
+	if prepared.Workdir != "" {
+		cmd.Dir = prepared.Workdir
+	}
+	return cmd, prepared.Cleanup, nil
 }
 
 func (w *Watcher) debug(msg string, fields ...zap.Field) {

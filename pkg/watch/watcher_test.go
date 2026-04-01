@@ -11,6 +11,7 @@ import (
 
 	"nekobot/pkg/audit"
 	"nekobot/pkg/config"
+	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
 )
 
@@ -322,4 +323,57 @@ func TestWatcherStatusTracksLastExecution(t *testing.T) {
 	}
 
 	t.Fatalf("watch status did not record last execution: %+v", watcher.Status())
+}
+
+type captureWatchPreparer struct {
+	last execenv.StartSpec
+}
+
+func (c *captureWatchPreparer) Prepare(_ context.Context, spec execenv.StartSpec) (execenv.Prepared, error) {
+	c.last = spec
+	return execenv.Prepared{
+		Workdir: spec.Workdir,
+		Env:     append([]string{}, spec.Env...),
+		Cleanup: func() error { return nil },
+	}, nil
+}
+
+func TestWatcherExecuteCommandUsesExecenvPreparation(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Watch.Enabled = true
+	cfg.Watch.Patterns = []config.WatchPattern{{
+		FileGlob: filepath.Join(t.TempDir(), "*.go"),
+		Command:  "printf 'watch-ok'",
+	}}
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: logger.LevelDebug, Development: true})
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+	auditLogger := audit.NewLogger(audit.DefaultConfig(), t.TempDir(), log)
+
+	watcher, err := New(cfg, log, auditLogger)
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+	preparer := &captureWatchPreparer{}
+	watcher.preparer = preparer
+	watcher.ctx = context.Background()
+	watcher.executeCommand(0, fsnotify.Event{Name: "/tmp/demo.txt", Op: fsnotify.Write})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if preparer.last.Command != "" {
+			if preparer.last.Command != "printf 'watch-ok'" {
+				t.Fatalf("unexpected prepared command: %+v", preparer.last)
+			}
+			if preparer.last.Workdir != cfg.WorkspacePath() {
+				t.Fatalf("expected workspace workdir %q, got %q", cfg.WorkspacePath(), preparer.last.Workdir)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("watch execenv preparation was not called")
 }
