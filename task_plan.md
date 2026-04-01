@@ -168,7 +168,7 @@
 - [x] `go test -count=1 ./pkg/process ./pkg/tools ./pkg/webui`
 
 ### Status
-**Completed** - `execenv` 最小基座已经落地，`process.Manager` 不再硬编码全部启动准备逻辑；Phase 3 后续继续补 daemon-facing contract 与 resume metadata。
+**Completed** - `execenv` 最小基座已经落地，`process.Manager` 不再硬编码全部启动准备逻辑；当前已补到工具/Tool Session 主链的 resume metadata，Phase 3 后续继续补 daemon-facing contract 与更多后台入口复用。
 
 ## 2026-04-01 Task Runtime 观测链路批次
 

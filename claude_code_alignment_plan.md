@@ -336,7 +336,8 @@ Progress update (2026-04-01):
 - landed minimal `pkg/execenv` substrate with `StartSpec`, `Prepared`, and `Preparer`.
 - `pkg/process.Manager` now supports `StartWithSpec()` and preparer injection.
 - cleanup hooks now run through a single execution path on reset and natural exit.
-- remaining Phase 3 work: daemon-facing start contract, resume metadata, and broader background-worker adoption.
+- additional Phase 3 progress: runtime/task metadata now propagates into background exec sessions, agent tool sessions, and WebUI tool-session runtime restore paths.
+- remaining Phase 3 work: daemon-facing start contract and broader background-worker adoption beyond the current tool-session/process paths.
 
 ## Phase 4: AgentDefinition and Prompt Assembly Introduction
 Decouple execution definitions from the monolithic agent object.
