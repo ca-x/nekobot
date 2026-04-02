@@ -2911,3 +2911,45 @@ type CronJobState struct {
 - `cron executeJob -> tasks.Service` 已完成。
 - 当前唯一剩余主线切换为：
   1. `watch executeCommand -> tasks.Service`
+
+## 2026-04-02 watch executeCommand -> tasks.Service 接线补记
+
+### 本轮完成
+- `pkg/watch/watcher.go`
+  - `executeCommand()` 现在会在执行 watch 命令前创建 managed task。
+  - 成功路径进入 `complete`，失败路径进入 `fail`。
+  - 当前记录：
+    - `source=watch`
+    - `file`
+    - `op`
+    - `pattern`
+    - `command`
+    - `fail_command`
+  - `RuntimeID` 固定为 `watch`，`SessionID` 使用 `watch:<patternIdx>`。
+- `pkg/watch/fx.go`
+  - `watch.Module` 现在会从共享 `agent.Agent` 注入 `TaskService()`，避免 watcher 自己创建第二套 lifecycle service。
+- `pkg/watch/watcher_test.go`
+  - 已补 watch managed task 成功/失败测试。
+
+### 当前语义
+- watch 触发的本地命令现在属于控制面可见的一类本地 agent 执行。
+- 当前继续复用 `tasks.TypeLocalAgent`，不新增 task type。
+- WebUI `/api/status` 不需要扩 schema，因为现有 `recent_tasks` 聚合已经直接消费 `tasks.Store`。
+
+### 本轮测试
+- `go test -count=1 ./pkg/watch`
+- `go test -count=1 ./pkg/watch ./pkg/webui`
+
+### 结论
+- `watch executeCommand -> tasks.Service` 已完成。
+- 到这里，当前这轮 `runtime/task lifecycle` 主线已经全部收口：
+  1. `subagent`
+  2. `exec.background -> process`
+  3. `agent tool_session spawn -> process`
+  4. `cron executeJob`
+  5. `watch executeCommand`
+- 后续应按主计划切换到：
+  1. `AgentDefinition`
+  2. `tool governance`
+  3. `context economy`
+  4. `permission rules` / `context sources`

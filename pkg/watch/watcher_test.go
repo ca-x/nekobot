@@ -13,6 +13,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/tasks"
 )
 
 func TestWatcherCreation(t *testing.T) {
@@ -376,4 +377,94 @@ func TestWatcherExecuteCommandUsesExecenvPreparation(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("watch execenv preparation was not called")
+}
+
+func TestWatcherExecuteCommandCreatesManagedTaskOnSuccess(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Watch.Enabled = true
+	cfg.Watch.Patterns = []config.WatchPattern{{
+		FileGlob: filepath.Join(t.TempDir(), "*.txt"),
+		Command:  "printf 'watch-ok'",
+	}}
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: logger.LevelDebug, Development: true})
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+	auditLogger := audit.NewLogger(audit.DefaultConfig(), t.TempDir(), log)
+
+	watcher, err := New(cfg, log, auditLogger)
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+	store := tasks.NewStore()
+	watcher.taskSvc = tasks.NewService(store)
+	watcher.ctx = context.Background()
+
+	watcher.executeCommand(0, fsnotify.Event{Name: "/tmp/demo.txt", Op: fsnotify.Write})
+
+	task := waitForWatchTaskState(t, store, tasks.StateCompleted, 2*time.Second)
+	if task.Type != tasks.TypeLocalAgent {
+		t.Fatalf("expected local agent task, got %q", task.Type)
+	}
+	if task.RuntimeID != "watch" {
+		t.Fatalf("expected runtime id watch, got %q", task.RuntimeID)
+	}
+	if task.SessionID != "watch:0" {
+		t.Fatalf("expected session id watch:0, got %q", task.SessionID)
+	}
+	if got, _ := task.Metadata["source"].(string); got != "watch" {
+		t.Fatalf("expected watch source metadata, got %q", got)
+	}
+	if got, _ := task.Metadata["file"].(string); got != "/tmp/demo.txt" {
+		t.Fatalf("expected file metadata, got %q", got)
+	}
+}
+
+func TestWatcherExecuteCommandCreatesManagedTaskOnFailure(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Watch.Enabled = true
+	cfg.Watch.Patterns = []config.WatchPattern{{
+		FileGlob: filepath.Join(t.TempDir(), "*.txt"),
+		Command:  "printf 'watch-fail' >&2; exit 3",
+	}}
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: logger.LevelDebug, Development: true})
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+	auditLogger := audit.NewLogger(audit.DefaultConfig(), t.TempDir(), log)
+
+	watcher, err := New(cfg, log, auditLogger)
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+	store := tasks.NewStore()
+	watcher.taskSvc = tasks.NewService(store)
+	watcher.ctx = context.Background()
+
+	watcher.executeCommand(0, fsnotify.Event{Name: "/tmp/demo.txt", Op: fsnotify.Write})
+
+	task := waitForWatchTaskState(t, store, tasks.StateFailed, 2*time.Second)
+	if task.LastError == "" {
+		t.Fatalf("expected task failure to record error, got %+v", task)
+	}
+}
+
+func waitForWatchTaskState(t *testing.T, store *tasks.Store, want tasks.State, timeout time.Duration) tasks.Task {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		all := store.List()
+		if len(all) == 1 && all[0].State == want {
+			return all[0]
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("watch task did not reach state %s: %+v", want, store.List())
+	return tasks.Task{}
 }

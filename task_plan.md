@@ -62,8 +62,14 @@
   - `exec.background -> process -> tasks.Service`
   - `agent tool_session spawn -> process -> tasks.Service`
   - `cron executeJob -> tasks.Service`
-- provider/model 迁移完成后恢复主线：
-  - 下一条：`watch executeCommand`
+  - `watch executeCommand -> tasks.Service`
+- 当前收口结果：
+  - 本轮 `runtime/task lifecycle` 主线已完成
+  - 下一步按既定计划转入：
+    - `AgentDefinition`
+    - `tool governance`
+    - `context economy`
+    - 以及 `codeany` 吸收项中的 `permission rules` / `context sources`
 
 ### P1 次级收尾
 - `closure_task_plan.md` 中遗留的 `Phase 5: Verify, commit, and deliver` 仍未在主计划中正式关闭。
@@ -111,7 +117,7 @@
 - [`docs/superpowers/specs/2026-04-02-provider-model-redesign-design.md`](/home/czyt/code/nekobot/docs/superpowers/specs/2026-04-02-provider-model-redesign-design.md)
 
 ### Status
-**Phase 6 Completed** - 已确认根目录现有 `*_plan.md` 全部已纳入本主计划索引；`provider/model` 的后端、API、WebUI 和模型消费入口迁移均已打通，`agent tool_session spawn -> process -> tasks.Service` 与 `cron executeJob -> tasks.Service` 也已接入完成，下一步进入 `watch executeCommand`。
+**Phase 6 Completed** - 已确认根目录现有 `*_plan.md` 全部已纳入本主计划索引；`provider/model` 的后端、API、WebUI 和模型消费入口迁移均已打通，后续 `subagent / exec.background / agent tool_session spawn / cron / watch` 也都已接入共享 `pkg/tasks.Service`，本轮 runtime/task lifecycle 主线已收口。
 
 ### Phase 4 Progress
 - [x] provider connection-only 基础切片
@@ -248,15 +254,51 @@
 
 ### Ordering
 - 这两项属于已确认的后续吸收项，但不插队当前主线。
-- 当前顺序保持：
-  1. `watch executeCommand`
-  2. 再进入 `AgentDefinition / tool governance / context economy` 时把这两项落地
+- 当前顺序调整为：
+  1. 进入 `AgentDefinition / tool governance / context economy`
+  2. 在对应阶段落地 `permission rules`
+  3. 在对应阶段落地 `context sources`
 
 ### References
 - [`notes.md`](/home/czyt/code/nekobot/notes.md)
 
 ### Status
-**Planned** - 已纳入主计划，等待当前 `tasks.Service` 主线切片完成后进入对应阶段。
+**Planned** - 已纳入主计划；当前 `tasks.Service` 主线切片已完成，后续在对应治理与上下文阶段推进落地。
+
+
+## 2026-04-02 watch executeCommand -> tasks.Service 接线批次
+
+### Goal
+把 `watch executeCommand` 触发的本地 shell 执行接入共享 `pkg/tasks.Service`，让文件变更触发命令在控制面里具备统一的生命周期可见性。
+
+### Phases
+- [x] Phase 1: 复核 `pkg/watch` 当前执行入口、`execenv` 预处理链和共享 task lifecycle 边界
+- [x] Phase 2: 先补 RED 测试，锁定 watch 命令成功/失败时的 managed task 行为
+- [x] Phase 3: 实现 `watch executeCommand -> tasks.Service` 接线
+- [x] Phase 4: 跑 watch/webui/全仓验证，确认 CI 通过
+- [x] Phase 5: 更新主计划并切换到后续治理主线
+
+### Decisions Made
+- `watch` 为每次触发生成独立的 managed task，不复用底层 shell 进程 id。
+- 当前复用 `tasks.TypeLocalAgent` 表达 watch 驱动的本地命令执行，不额外新增 task type。
+- `RuntimeID` 固定为 `watch`，`SessionID` 使用 `watch:<patternIdx>`，便于把同一 watch pattern 的执行归到稳定会话范围。
+- task metadata 至少记录：
+  - `source=watch`
+  - `file`
+  - `op`
+  - `pattern`
+  - `command`
+  - `fail_command`
+- WebUI `/api/status` 不扩 schema，继续直接消费现有 `tasks.Store` 聚合结果。
+
+### Verification
+- [x] `go test -count=1 ./pkg/watch`
+- [x] `go test -count=1 ./pkg/watch ./pkg/webui`
+- [x] `go test ./...`
+- [x] `cd pkg/webui/frontend && npm ci && npm run build`
+
+### Status
+**Phase 5 Completed** - `watch executeCommand -> tasks.Service` 已落地并通过本地 CI；当前 `runtime/task lifecycle` 主线已全部完成，后续转入 `AgentDefinition / tool governance / context economy` 与已登记的 `codeany` 吸收项。
 
 
 ## 2026-04-02 cron executeJob -> tasks.Service 接线批次

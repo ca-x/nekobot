@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"go.uber.org/fx"
+	"nekobot/pkg/agent"
 	"nekobot/pkg/audit"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -21,10 +22,18 @@ type watcherParams struct {
 	Config *config.Config
 	Log    *logger.Logger
 	Audit  *audit.Logger `optional:"true"`
+	Agent  *agent.Agent  `optional:"true"`
 }
 
 func provideWatcher(p watcherParams) (*Watcher, error) {
-	return New(p.Config, p.Log, p.Audit)
+	watcher, err := New(p.Config, p.Log, p.Audit)
+	if err != nil {
+		return nil, err
+	}
+	if p.Agent != nil {
+		watcher.SetTaskService(p.Agent.TaskService())
+	}
+	return watcher, nil
 }
 
 func registerLifecycle(lc fx.Lifecycle, watcher *Watcher, cfg *config.Config) {

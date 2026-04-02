@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"nekobot/pkg/audit"
 	"nekobot/pkg/config"
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/tasks"
 )
 
 // Event represents a file system event.
@@ -36,6 +38,7 @@ type Watcher struct {
 	audit     *audit.Logger
 	preparer  execenv.Preparer
 	workspace string
+	taskSvc   taskLifecycle
 
 	fsWatcher     *fsnotify.Watcher
 	cronScheduler *cron.Cron
@@ -56,6 +59,15 @@ type Watcher struct {
 	lastSuccess       bool
 	lastError         string
 	lastResultPreview string
+}
+
+type taskLifecycle interface {
+	Enqueue(task tasks.Task) (tasks.Task, error)
+	Claim(taskID, runtimeID string) (tasks.Task, error)
+	Start(taskID string) (tasks.Task, error)
+	Complete(taskID string) (tasks.Task, error)
+	Fail(taskID, lastError string) (tasks.Task, error)
+	Cancel(taskID string) (tasks.Task, error)
 }
 
 // StatusSnapshot describes the current watcher runtime state.
@@ -116,6 +128,16 @@ func New(cfg *config.Config, log *logger.Logger, auditLogger *audit.Logger) (*Wa
 	}
 
 	return w, nil
+}
+
+// SetTaskService attaches the shared managed task lifecycle service.
+func (w *Watcher) SetTaskService(svc taskLifecycle) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.taskSvc = svc
 }
 
 func newFSWatcher() (*fsnotify.Watcher, error) {
@@ -469,6 +491,40 @@ func (w *Watcher) executeCommand(patternIdx int, event fsnotify.Event) {
 	// Execute command in background
 	go func() {
 		startTime := time.Now()
+		taskID := ""
+		if w.taskSvc != nil {
+			taskID = "watch:" + uuid.NewString()
+			task := tasks.Task{
+				ID:        taskID,
+				Type:      tasks.TypeLocalAgent,
+				Summary:   fmt.Sprintf("watch command %s", command),
+				SessionID: fmt.Sprintf("watch:%d", patternIdx),
+				Metadata: map[string]any{
+					"source":      "watch",
+					"file":        event.Name,
+					"op":          event.Op.String(),
+					"pattern":     pattern.FileGlob,
+					"command":     command,
+					"fail_command": strings.TrimSpace(pattern.FailCommand),
+				},
+			}
+			if _, err := w.taskSvc.Enqueue(task); err != nil {
+				if w.log != nil {
+					w.log.Warn("Failed to enqueue watch task", zap.String("command", command), zap.Error(err))
+				}
+				taskID = ""
+			} else if _, err := w.taskSvc.Claim(taskID, "watch"); err != nil {
+				if w.log != nil {
+					w.log.Warn("Failed to claim watch task", zap.String("task_id", taskID), zap.Error(err))
+				}
+				taskID = ""
+			} else if _, err := w.taskSvc.Start(taskID); err != nil {
+				if w.log != nil {
+					w.log.Warn("Failed to start watch task", zap.String("task_id", taskID), zap.Error(err))
+				}
+				taskID = ""
+			}
+		}
 
 		cmd, cleanup, err := w.prepareShellCommand(command)
 		if err != nil {
@@ -489,6 +545,11 @@ func (w *Watcher) executeCommand(patternIdx int, event fsnotify.Event) {
 			w.lastError = err.Error()
 			w.lastResultPreview = ""
 			w.mu.Unlock()
+			if taskID != "" {
+				if _, taskErr := w.taskSvc.Fail(taskID, err.Error()); taskErr != nil && w.log != nil {
+					w.log.Warn("Failed to mark watch task failed", zap.String("task_id", taskID), zap.Error(taskErr))
+				}
+			}
 			if w.audit != nil {
 				w.audit.Log(auditEntry)
 			}
@@ -522,6 +583,11 @@ func (w *Watcher) executeCommand(patternIdx int, event fsnotify.Event) {
 
 			auditEntry.Success = false
 			auditEntry.Error = err.Error()
+			if taskID != "" {
+				if _, taskErr := w.taskSvc.Fail(taskID, err.Error()); taskErr != nil && w.log != nil {
+					w.log.Warn("Failed to mark watch task failed", zap.String("task_id", taskID), zap.Error(taskErr))
+				}
+			}
 		} else {
 			if w.log != nil {
 				w.log.Info("Watch command executed",
@@ -531,6 +597,11 @@ func (w *Watcher) executeCommand(patternIdx int, event fsnotify.Event) {
 				)
 			}
 			auditEntry.Success = true
+			if taskID != "" {
+				if _, taskErr := w.taskSvc.Complete(taskID); taskErr != nil && w.log != nil {
+					w.log.Warn("Failed to complete watch task", zap.String("task_id", taskID), zap.Error(taskErr))
+				}
+			}
 		}
 
 		// Set duration and result preview
