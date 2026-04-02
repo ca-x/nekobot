@@ -285,6 +285,85 @@ var (
 			},
 		},
 	}
+	// ModelCatalogsColumns holds the columns for the "model_catalogs" table.
+	ModelCatalogsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "model_id", Type: field.TypeString},
+		{Name: "display_name", Type: field.TypeString, Default: ""},
+		{Name: "developer", Type: field.TypeString, Default: ""},
+		{Name: "family", Type: field.TypeString, Default: ""},
+		{Name: "type", Type: field.TypeString, Default: ""},
+		{Name: "capabilities_json", Type: field.TypeString, Default: "[]"},
+		{Name: "catalog_source", Type: field.TypeString, Default: "builtin"},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// ModelCatalogsTable holds the schema information for the "model_catalogs" table.
+	ModelCatalogsTable = &schema.Table{
+		Name:       "model_catalogs",
+		Columns:    ModelCatalogsColumns,
+		PrimaryKey: []*schema.Column{ModelCatalogsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "modelcatalog_model_id",
+				Unique:  true,
+				Columns: []*schema.Column{ModelCatalogsColumns[1]},
+			},
+			{
+				Name:    "modelcatalog_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{ModelCatalogsColumns[8]},
+			},
+			{
+				Name:    "modelcatalog_catalog_source",
+				Unique:  false,
+				Columns: []*schema.Column{ModelCatalogsColumns[7]},
+			},
+		},
+	}
+	// ModelRoutesColumns holds the columns for the "model_routes" table.
+	ModelRoutesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "model_id", Type: field.TypeString},
+		{Name: "provider_name", Type: field.TypeString},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "is_default", Type: field.TypeBool, Default: false},
+		{Name: "weight_override", Type: field.TypeInt, Default: 0},
+		{Name: "aliases_json", Type: field.TypeString, Default: "[]"},
+		{Name: "regex_rules_json", Type: field.TypeString, Default: "[]"},
+		{Name: "metadata_json", Type: field.TypeString, Default: "{}"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// ModelRoutesTable holds the schema information for the "model_routes" table.
+	ModelRoutesTable = &schema.Table{
+		Name:       "model_routes",
+		Columns:    ModelRoutesColumns,
+		PrimaryKey: []*schema.Column{ModelRoutesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "modelroute_model_id_provider_name",
+				Unique:  true,
+				Columns: []*schema.Column{ModelRoutesColumns[1], ModelRoutesColumns[2]},
+			},
+			{
+				Name:    "modelroute_model_id",
+				Unique:  false,
+				Columns: []*schema.Column{ModelRoutesColumns[1]},
+			},
+			{
+				Name:    "modelroute_provider_name",
+				Unique:  false,
+				Columns: []*schema.Column{ModelRoutesColumns[2]},
+			},
+			{
+				Name:    "modelroute_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{ModelRoutesColumns[3]},
+			},
+		},
+	}
 	// PromptsColumns holds the columns for the "prompts" table.
 	PromptsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -368,8 +447,8 @@ var (
 		{Name: "api_key", Type: field.TypeString, Default: ""},
 		{Name: "api_base", Type: field.TypeString, Default: ""},
 		{Name: "proxy", Type: field.TypeString, Default: ""},
-		{Name: "models_json", Type: field.TypeString, Default: "[]"},
-		{Name: "default_model", Type: field.TypeString, Default: ""},
+		{Name: "default_weight", Type: field.TypeInt, Default: 1},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "timeout", Type: field.TypeInt, Default: 60},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
@@ -546,6 +625,8 @@ var (
 		ConfigSectionsTable,
 		CronJobsTable,
 		MembershipsTable,
+		ModelCatalogsTable,
+		ModelRoutesTable,
 		PromptsTable,
 		PromptBindingsTable,
 		ProvidersTable,

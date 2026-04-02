@@ -4,10 +4,12 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/process"
+	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -69,5 +71,57 @@ func TestToolSessionToolSpawnPersistsResumeMetadata(t *testing.T) {
 
 	if err := pm.Reset(sessionID); err != nil {
 		t.Fatalf("reset tool session process: %v", err)
+	}
+}
+
+func TestToolSessionToolSpawnCreatesManagedTaskWhenTaskIDMissing(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newExecTestLogger(t)
+	client := newTestEntClientForTools(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	mgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	store := tasks.NewStore()
+	taskSvc := tasks.NewService(store)
+	pm := process.NewManager(log)
+	pm.SetTaskService(taskSvc)
+	tool := NewToolSessionTool(pm, mgr, cfg.WorkspacePath())
+
+	result, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action":  "spawn",
+		"tool":    "codex",
+		"command": "printf 'ok'",
+	})
+	if err != nil {
+		t.Fatalf("spawn tool session: %v", err)
+	}
+	if !strings.Contains(result, "Tool session created successfully") {
+		t.Fatalf("unexpected result: %s", result)
+	}
+
+	task := waitForBackgroundTaskState(t, store, tasks.StateCompleted, 3*time.Second)
+	if task.ID == "" {
+		t.Fatal("expected generated task id")
+	}
+	if task.ID != task.SessionID {
+		t.Fatalf("expected generated task id to match session id, got task=%q session=%q", task.ID, task.SessionID)
+	}
+	if task.Type != tasks.TypeRuntimeWorker {
+		t.Fatalf("expected runtime worker type, got %q", task.Type)
+	}
+
+	sess, err := mgr.GetSession(context.Background(), task.SessionID)
+	if err != nil {
+		t.Fatalf("get created session: %v", err)
+	}
+	if got, _ := sess.Metadata[execenv.MetadataTaskID].(string); got != task.ID {
+		t.Fatalf("expected task id %q in session metadata, got %q", task.ID, got)
 	}
 }

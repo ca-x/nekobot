@@ -33,6 +33,9 @@ func TestManagerCRUD(t *testing.T) {
 	if len(created.Skills) != 2 {
 		t.Fatalf("expected deduped skills, got %+v", created.Skills)
 	}
+	if created.Status != nil {
+		t.Fatalf("expected derived runtime status to stay unset on create, got %+v", created.Status)
+	}
 
 	if _, err := mgr.Create(ctx, AgentRuntime{Name: "support-main"}); !errors.Is(err, ErrRuntimeExists) {
 		t.Fatalf("expected ErrRuntimeExists, got %v", err)
@@ -72,6 +75,9 @@ func TestManagerCRUD(t *testing.T) {
 	}
 	if got.Name != "support-main-v2" {
 		t.Fatalf("unexpected get result: %+v", got)
+	}
+	if got.Status != nil {
+		t.Fatalf("expected derived runtime status to stay unset on get, got %+v", got.Status)
 	}
 
 	if err := mgr.Delete(ctx, created.ID); err != nil {

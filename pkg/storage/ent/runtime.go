@@ -10,6 +10,8 @@ import (
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
+	"nekobot/pkg/storage/ent/modelcatalog"
+	"nekobot/pkg/storage/ent/modelroute"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
@@ -297,6 +299,102 @@ func init() {
 	membershipDescID := membershipFields[0].Descriptor()
 	// membership.DefaultID holds the default value on creation for the id field.
 	membership.DefaultID = membershipDescID.Default.(func() string)
+	modelcatalogFields := schema.ModelCatalog{}.Fields()
+	_ = modelcatalogFields
+	// modelcatalogDescModelID is the schema descriptor for model_id field.
+	modelcatalogDescModelID := modelcatalogFields[1].Descriptor()
+	// modelcatalog.ModelIDValidator is a validator for the "model_id" field. It is called by the builders before save.
+	modelcatalog.ModelIDValidator = modelcatalogDescModelID.Validators[0].(func(string) error)
+	// modelcatalogDescDisplayName is the schema descriptor for display_name field.
+	modelcatalogDescDisplayName := modelcatalogFields[2].Descriptor()
+	// modelcatalog.DefaultDisplayName holds the default value on creation for the display_name field.
+	modelcatalog.DefaultDisplayName = modelcatalogDescDisplayName.Default.(string)
+	// modelcatalogDescDeveloper is the schema descriptor for developer field.
+	modelcatalogDescDeveloper := modelcatalogFields[3].Descriptor()
+	// modelcatalog.DefaultDeveloper holds the default value on creation for the developer field.
+	modelcatalog.DefaultDeveloper = modelcatalogDescDeveloper.Default.(string)
+	// modelcatalogDescFamily is the schema descriptor for family field.
+	modelcatalogDescFamily := modelcatalogFields[4].Descriptor()
+	// modelcatalog.DefaultFamily holds the default value on creation for the family field.
+	modelcatalog.DefaultFamily = modelcatalogDescFamily.Default.(string)
+	// modelcatalogDescType is the schema descriptor for type field.
+	modelcatalogDescType := modelcatalogFields[5].Descriptor()
+	// modelcatalog.DefaultType holds the default value on creation for the type field.
+	modelcatalog.DefaultType = modelcatalogDescType.Default.(string)
+	// modelcatalogDescCapabilitiesJSON is the schema descriptor for capabilities_json field.
+	modelcatalogDescCapabilitiesJSON := modelcatalogFields[6].Descriptor()
+	// modelcatalog.DefaultCapabilitiesJSON holds the default value on creation for the capabilities_json field.
+	modelcatalog.DefaultCapabilitiesJSON = modelcatalogDescCapabilitiesJSON.Default.(string)
+	// modelcatalogDescCatalogSource is the schema descriptor for catalog_source field.
+	modelcatalogDescCatalogSource := modelcatalogFields[7].Descriptor()
+	// modelcatalog.DefaultCatalogSource holds the default value on creation for the catalog_source field.
+	modelcatalog.DefaultCatalogSource = modelcatalogDescCatalogSource.Default.(string)
+	// modelcatalogDescEnabled is the schema descriptor for enabled field.
+	modelcatalogDescEnabled := modelcatalogFields[8].Descriptor()
+	// modelcatalog.DefaultEnabled holds the default value on creation for the enabled field.
+	modelcatalog.DefaultEnabled = modelcatalogDescEnabled.Default.(bool)
+	// modelcatalogDescCreatedAt is the schema descriptor for created_at field.
+	modelcatalogDescCreatedAt := modelcatalogFields[9].Descriptor()
+	// modelcatalog.DefaultCreatedAt holds the default value on creation for the created_at field.
+	modelcatalog.DefaultCreatedAt = modelcatalogDescCreatedAt.Default.(func() time.Time)
+	// modelcatalogDescUpdatedAt is the schema descriptor for updated_at field.
+	modelcatalogDescUpdatedAt := modelcatalogFields[10].Descriptor()
+	// modelcatalog.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	modelcatalog.DefaultUpdatedAt = modelcatalogDescUpdatedAt.Default.(func() time.Time)
+	// modelcatalog.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	modelcatalog.UpdateDefaultUpdatedAt = modelcatalogDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// modelcatalogDescID is the schema descriptor for id field.
+	modelcatalogDescID := modelcatalogFields[0].Descriptor()
+	// modelcatalog.DefaultID holds the default value on creation for the id field.
+	modelcatalog.DefaultID = modelcatalogDescID.Default.(func() string)
+	modelrouteFields := schema.ModelRoute{}.Fields()
+	_ = modelrouteFields
+	// modelrouteDescModelID is the schema descriptor for model_id field.
+	modelrouteDescModelID := modelrouteFields[1].Descriptor()
+	// modelroute.ModelIDValidator is a validator for the "model_id" field. It is called by the builders before save.
+	modelroute.ModelIDValidator = modelrouteDescModelID.Validators[0].(func(string) error)
+	// modelrouteDescProviderName is the schema descriptor for provider_name field.
+	modelrouteDescProviderName := modelrouteFields[2].Descriptor()
+	// modelroute.ProviderNameValidator is a validator for the "provider_name" field. It is called by the builders before save.
+	modelroute.ProviderNameValidator = modelrouteDescProviderName.Validators[0].(func(string) error)
+	// modelrouteDescEnabled is the schema descriptor for enabled field.
+	modelrouteDescEnabled := modelrouteFields[3].Descriptor()
+	// modelroute.DefaultEnabled holds the default value on creation for the enabled field.
+	modelroute.DefaultEnabled = modelrouteDescEnabled.Default.(bool)
+	// modelrouteDescIsDefault is the schema descriptor for is_default field.
+	modelrouteDescIsDefault := modelrouteFields[4].Descriptor()
+	// modelroute.DefaultIsDefault holds the default value on creation for the is_default field.
+	modelroute.DefaultIsDefault = modelrouteDescIsDefault.Default.(bool)
+	// modelrouteDescWeightOverride is the schema descriptor for weight_override field.
+	modelrouteDescWeightOverride := modelrouteFields[5].Descriptor()
+	// modelroute.DefaultWeightOverride holds the default value on creation for the weight_override field.
+	modelroute.DefaultWeightOverride = modelrouteDescWeightOverride.Default.(int)
+	// modelrouteDescAliasesJSON is the schema descriptor for aliases_json field.
+	modelrouteDescAliasesJSON := modelrouteFields[6].Descriptor()
+	// modelroute.DefaultAliasesJSON holds the default value on creation for the aliases_json field.
+	modelroute.DefaultAliasesJSON = modelrouteDescAliasesJSON.Default.(string)
+	// modelrouteDescRegexRulesJSON is the schema descriptor for regex_rules_json field.
+	modelrouteDescRegexRulesJSON := modelrouteFields[7].Descriptor()
+	// modelroute.DefaultRegexRulesJSON holds the default value on creation for the regex_rules_json field.
+	modelroute.DefaultRegexRulesJSON = modelrouteDescRegexRulesJSON.Default.(string)
+	// modelrouteDescMetadataJSON is the schema descriptor for metadata_json field.
+	modelrouteDescMetadataJSON := modelrouteFields[8].Descriptor()
+	// modelroute.DefaultMetadataJSON holds the default value on creation for the metadata_json field.
+	modelroute.DefaultMetadataJSON = modelrouteDescMetadataJSON.Default.(string)
+	// modelrouteDescCreatedAt is the schema descriptor for created_at field.
+	modelrouteDescCreatedAt := modelrouteFields[9].Descriptor()
+	// modelroute.DefaultCreatedAt holds the default value on creation for the created_at field.
+	modelroute.DefaultCreatedAt = modelrouteDescCreatedAt.Default.(func() time.Time)
+	// modelrouteDescUpdatedAt is the schema descriptor for updated_at field.
+	modelrouteDescUpdatedAt := modelrouteFields[10].Descriptor()
+	// modelroute.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	modelroute.DefaultUpdatedAt = modelrouteDescUpdatedAt.Default.(func() time.Time)
+	// modelroute.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	modelroute.UpdateDefaultUpdatedAt = modelrouteDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// modelrouteDescID is the schema descriptor for id field.
+	modelrouteDescID := modelrouteFields[0].Descriptor()
+	// modelroute.DefaultID holds the default value on creation for the id field.
+	modelroute.DefaultID = modelrouteDescID.Default.(func() string)
 	promptFields := schema.Prompt{}.Fields()
 	_ = promptFields
 	// promptDescPromptKey is the schema descriptor for prompt_key field.
@@ -391,14 +489,14 @@ func init() {
 	providerDescProxy := providerFields[5].Descriptor()
 	// provider.DefaultProxy holds the default value on creation for the proxy field.
 	provider.DefaultProxy = providerDescProxy.Default.(string)
-	// providerDescModelsJSON is the schema descriptor for models_json field.
-	providerDescModelsJSON := providerFields[6].Descriptor()
-	// provider.DefaultModelsJSON holds the default value on creation for the models_json field.
-	provider.DefaultModelsJSON = providerDescModelsJSON.Default.(string)
-	// providerDescDefaultModel is the schema descriptor for default_model field.
-	providerDescDefaultModel := providerFields[7].Descriptor()
-	// provider.DefaultDefaultModel holds the default value on creation for the default_model field.
-	provider.DefaultDefaultModel = providerDescDefaultModel.Default.(string)
+	// providerDescDefaultWeight is the schema descriptor for default_weight field.
+	providerDescDefaultWeight := providerFields[6].Descriptor()
+	// provider.DefaultDefaultWeight holds the default value on creation for the default_weight field.
+	provider.DefaultDefaultWeight = providerDescDefaultWeight.Default.(int)
+	// providerDescEnabled is the schema descriptor for enabled field.
+	providerDescEnabled := providerFields[7].Descriptor()
+	// provider.DefaultEnabled holds the default value on creation for the enabled field.
+	provider.DefaultEnabled = providerDescEnabled.Default.(bool)
 	// providerDescTimeout is the schema descriptor for timeout field.
 	providerDescTimeout := providerFields[8].Descriptor()
 	// provider.DefaultTimeout holds the default value on creation for the timeout field.

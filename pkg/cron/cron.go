@@ -8,13 +8,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 
 	"nekobot/pkg/agent"
-	"nekobot/pkg/message"
+	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/message"
 	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/tasks"
 )
 
 // ScheduleKind defines the type of schedule.
@@ -71,9 +74,11 @@ type Job struct {
 
 // Manager manages cron jobs.
 type Manager struct {
-	log    *logger.Logger
-	agent  *agent.Agent
-	client *ent.Client
+	log       *logger.Logger
+	agent     *agent.Agent
+	client    *ent.Client
+	taskSvc   taskLifecycle
+	agentChat func(ctx context.Context, sess agent.SessionInterface, prompt, provider, model string, fallback []string) (string, error)
 
 	// Cron scheduler (for "cron" kind jobs).
 	scheduler *cron.Cron
@@ -84,6 +89,15 @@ type Manager struct {
 	// Lifecycle.
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+type taskLifecycle interface {
+	Enqueue(task tasks.Task) (tasks.Task, error)
+	Claim(taskID, runtimeID string) (tasks.Task, error)
+	Start(taskID string) (tasks.Task, error)
+	Complete(taskID string) (tasks.Task, error)
+	Fail(taskID, lastError string) (tasks.Task, error)
+	Cancel(taskID string) (tasks.Task, error)
 }
 
 // RouteOptions defines optional routing overrides for a scheduled job.
@@ -100,11 +114,17 @@ const (
 // New creates a new cron manager.
 func New(log *logger.Logger, ag *agent.Agent, client *ent.Client) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
+	var taskSvc taskLifecycle
+	if ag != nil {
+		taskSvc = ag.TaskService()
+	}
 
 	return &Manager{
 		log:       log,
 		agent:     ag,
 		client:    client,
+		taskSvc:   taskSvc,
+		agentChat: nil,
 		scheduler: cron.New(),
 		jobs:      make(map[string]*Job),
 		entries:   make(map[string]cron.EntryID),
@@ -540,6 +560,34 @@ func (m *Manager) executeJob(jobID string) {
 
 	ctx, cancel := context.WithTimeout(m.ctx, 5*time.Minute)
 	defer cancel()
+	taskID := ""
+	if m.taskSvc != nil {
+		taskID = "cron:" + jobID + ":" + uuid.NewString()
+		task := tasks.Task{
+			ID:        taskID,
+			Type:      tasks.TypeLocalAgent,
+			Summary:   fmt.Sprintf("cron job %s", jobName),
+			SessionID: jobID,
+			Metadata: map[string]any{
+				"source":   "cron",
+				"job_id":   jobID,
+				"job_name": jobName,
+			},
+		}
+		if _, err := m.taskSvc.Enqueue(task); err != nil {
+			m.log.Warn("Failed to enqueue cron task", zap.String("job_id", jobID), zap.Error(err))
+			taskID = ""
+		} else if _, err := m.taskSvc.Claim(taskID, "cron"); err != nil {
+			m.log.Warn("Failed to claim cron task", zap.String("job_id", jobID), zap.Error(err))
+			taskID = ""
+		} else if _, err := m.taskSvc.Start(taskID); err != nil {
+			m.log.Warn("Failed to start cron task", zap.String("job_id", jobID), zap.Error(err))
+			taskID = ""
+		}
+	}
+	if taskID != "" {
+		ctx = context.WithValue(ctx, execenv.MetadataRuntimeID, "cron")
+	}
 
 	fullPrompt := fmt.Sprintf(`# Cron Job: %s
 
@@ -552,6 +600,17 @@ Scheduled task execution at %s:
 
 	sess := &simpleSession{messages: make([]message.Message, 0)}
 	response, chatErr := m.chatAgent(ctx, sess, fullPrompt, job.Provider, job.Model, job.Fallback)
+	if taskID != "" {
+		if chatErr != nil {
+			if _, err := m.taskSvc.Fail(taskID, chatErr.Error()); err != nil {
+				m.log.Warn("Failed to mark cron task failed", zap.String("task_id", taskID), zap.Error(err))
+			}
+		} else {
+			if _, err := m.taskSvc.Complete(taskID); err != nil {
+				m.log.Warn("Failed to complete cron task", zap.String("task_id", taskID), zap.Error(err))
+			}
+		}
+	}
 
 	finishedAt := time.Now()
 	var (
@@ -637,6 +696,9 @@ Scheduled task execution at %s:
 }
 
 func (m *Manager) chatAgent(ctx context.Context, sess agent.SessionInterface, prompt, provider, model string, fallback []string) (response string, err error) {
+	if m.agentChat != nil {
+		return m.agentChat(ctx, sess, prompt, provider, model, fallback)
+	}
 	if m.agent == nil {
 		return "", fmt.Errorf("agent is nil")
 	}

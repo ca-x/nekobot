@@ -1,9 +1,7 @@
 import { api } from '@/api/client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { t } from '@/lib/i18n';
-
-// ---------- Types ----------
 
 export interface Provider {
   name: string;
@@ -11,10 +9,8 @@ export interface Provider {
   api_key_set: boolean;
   api_base: string;
   proxy: string;
-  models: string[] | null;
-  model_count: number;
-  default_model: string;
-  has_default_model: boolean;
+  default_weight: number;
+  enabled: boolean;
   is_routing_default: boolean;
   supports_discovery: boolean;
   summary: string;
@@ -41,6 +37,8 @@ export interface CreateProviderInput {
   api_base?: string;
   proxy?: string;
   timeout?: number;
+  default_weight?: number;
+  enabled?: boolean;
 }
 
 export interface UpdateProviderInput {
@@ -48,9 +46,9 @@ export interface UpdateProviderInput {
   api_key?: string;
   api_base?: string;
   proxy?: string;
-  models?: string[];
-  default_model?: string;
   timeout?: number;
+  default_weight?: number;
+  enabled?: boolean;
 }
 
 export interface DiscoverModelsInput {
@@ -67,10 +65,8 @@ interface DiscoverModelsResponse {
   models: string[];
 }
 
-// ---------- Hooks ----------
-
-const PROVIDERS_KEY = ['providers'] as const;
-const PROVIDER_RUNTIME_KEY = ['providers', 'runtime'] as const;
+export const PROVIDERS_KEY = ['providers'] as const;
+export const PROVIDER_RUNTIME_KEY = ['providers', 'runtime'] as const;
 
 export function useProviders() {
   return useQuery<Provider[]>({
@@ -106,7 +102,10 @@ export function useUpdateProvider() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ name, data }: { name: string; data: UpdateProviderInput }) =>
-      api.put<{ status: string; provider: Provider }>(`/api/providers/${encodeURIComponent(name)}`, data),
+      api.put<{ status: string; provider: Provider }>(
+        `/api/providers/${encodeURIComponent(name)}`,
+        data,
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [...PROVIDERS_KEY] });
       toast.success(t('saved'));
@@ -118,8 +117,7 @@ export function useUpdateProvider() {
 export function useDeleteProvider() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      api.delete(`/api/providers/${encodeURIComponent(name)}`),
+    mutationFn: (name: string) => api.delete(`/api/providers/${encodeURIComponent(name)}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [...PROVIDERS_KEY] });
       toast.success(t('deleted'));
@@ -129,9 +127,15 @@ export function useDeleteProvider() {
 }
 
 export function useDiscoverModels() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: DiscoverModelsInput) =>
       api.post<DiscoverModelsResponse>('/api/providers/discover-models', input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['models'] });
+      qc.invalidateQueries({ queryKey: ['model-routes'] });
+      toast.success(t('saved'));
+    },
     onError: (err: Error) => toast.error(t('discoveryFailed', err.message)),
   });
 }

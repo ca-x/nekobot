@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/subagent"
+	"nekobot/pkg/tasks"
 )
 
 // SpawnTool provides subagent spawning for async task execution.
@@ -166,7 +167,7 @@ func (t *SpawnTool) status(params map[string]interface{}) (string, error) {
 
 	_, _ = fmt.Fprintf(&sb, "\nTask: %s\n", task.Task)
 
-	if task.Status == "completed" && task.Result != "" {
+	if task.Status == tasks.StateCompleted && task.Result != "" {
 		_, _ = fmt.Fprintf(&sb, "\nResult:\n%s\n", task.Result)
 	}
 
@@ -179,41 +180,41 @@ func (t *SpawnTool) status(params map[string]interface{}) (string, error) {
 
 // list lists all tasks.
 func (t *SpawnTool) list() (string, error) {
-	tasks := t.manager.ListTasks()
+	taskList := t.manager.ListTasks()
 
-	if len(tasks) == 0 {
+	if len(taskList) == 0 {
 		return "No subagent tasks found", nil
 	}
 
 	var sb strings.Builder
-	_, _ = fmt.Fprintf(&sb, "Subagent Tasks (%d total):\n\n", len(tasks))
+	_, _ = fmt.Fprintf(&sb, "Subagent Tasks (%d total):\n\n", len(taskList))
 
 	// Group by status
-	statuses := map[string][]*subagent.SubagentTask{
-		"pending":   {},
-		"running":   {},
-		"completed": {},
-		"failed":    {},
+	statuses := map[tasks.State][]*subagent.SubagentTask{
+		tasks.StatePending:   {},
+		tasks.StateRunning:   {},
+		tasks.StateCompleted: {},
+		tasks.StateFailed:    {},
 	}
 
-	for _, task := range tasks {
+	for _, task := range taskList {
 		statuses[task.Status] = append(statuses[task.Status], task)
 	}
 
 	// Display by status
-	for _, status := range []string{"running", "pending", "completed", "failed"} {
+	for _, status := range []tasks.State{tasks.StateRunning, tasks.StatePending, tasks.StateCompleted, tasks.StateFailed} {
 		taskList := statuses[status]
 		if len(taskList) == 0 {
 			continue
 		}
 
-		_, _ = fmt.Fprintf(&sb, "## %s (%d)\n\n", strings.ToUpper(status), len(taskList))
+		_, _ = fmt.Fprintf(&sb, "## %s (%d)\n\n", strings.ToUpper(string(status)), len(taskList))
 
 		for _, task := range taskList {
 			_, _ = fmt.Fprintf(&sb, "- [%s] %s (ID: %s)\n",
 				task.Label, task.Task[:min(len(task.Task), 60)], task.ID[:8])
 
-			if task.Status == "completed" || task.Status == "failed" {
+			if tasks.IsFinal(task.Status) {
 				duration := task.CompletedAt.Sub(task.StartedAt)
 				_, _ = fmt.Fprintf(&sb, "  Completed in %s\n", duration.Round(time.Second))
 			}

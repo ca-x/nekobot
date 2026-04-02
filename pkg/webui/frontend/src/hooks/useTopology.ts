@@ -3,6 +3,15 @@ import { t } from '@/lib/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
+export interface RuntimeDerivedStatus {
+  effective_available: boolean;
+  availability_reason?: string;
+  bound_account_count: number;
+  enabled_binding_count: number;
+  current_task_count: number;
+  last_seen_at?: string;
+}
+
 export interface RuntimeAgent {
   id: string;
   name: string;
@@ -17,6 +26,7 @@ export interface RuntimeAgent {
   policy: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  status?: RuntimeDerivedStatus;
 }
 
 export interface ChannelAccount {

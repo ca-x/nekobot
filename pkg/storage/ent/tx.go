@@ -26,6 +26,10 @@ type Tx struct {
 	CronJob *CronJobClient
 	// Membership is the client for interacting with the Membership builders.
 	Membership *MembershipClient
+	// ModelCatalog is the client for interacting with the ModelCatalog builders.
+	ModelCatalog *ModelCatalogClient
+	// ModelRoute is the client for interacting with the ModelRoute builders.
+	ModelRoute *ModelRouteClient
 	// Prompt is the client for interacting with the Prompt builders.
 	Prompt *PromptClient
 	// PromptBinding is the client for interacting with the PromptBinding builders.
@@ -178,6 +182,8 @@ func (tx *Tx) init() {
 	tx.ConfigSection = NewConfigSectionClient(tx.config)
 	tx.CronJob = NewCronJobClient(tx.config)
 	tx.Membership = NewMembershipClient(tx.config)
+	tx.ModelCatalog = NewModelCatalogClient(tx.config)
+	tx.ModelRoute = NewModelRouteClient(tx.config)
 	tx.Prompt = NewPromptClient(tx.config)
 	tx.PromptBinding = NewPromptBindingClient(tx.config)
 	tx.Provider = NewProviderClient(tx.config)

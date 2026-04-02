@@ -92,6 +92,30 @@ func (f MembershipFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.MembershipMutation", m)
 }
 
+// The ModelCatalogFunc type is an adapter to allow the use of ordinary
+// function as ModelCatalog mutator.
+type ModelCatalogFunc func(context.Context, *ent.ModelCatalogMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ModelCatalogFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ModelCatalogMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelCatalogMutation", m)
+}
+
+// The ModelRouteFunc type is an adapter to allow the use of ordinary
+// function as ModelRoute mutator.
+type ModelRouteFunc func(context.Context, *ent.ModelRouteMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ModelRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ModelRouteMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelRouteMutation", m)
+}
+
 // The PromptFunc type is an adapter to allow the use of ordinary
 // function as Prompt mutator.
 type PromptFunc func(context.Context, *ent.PromptMutation) (ent.Value, error)

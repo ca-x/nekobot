@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"nekobot/pkg/logger"
 	"nekobot/pkg/memory"
 	promptmemory "nekobot/pkg/memory/prompt"
+	"nekobot/pkg/modelroute"
 	"nekobot/pkg/preprocess"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
@@ -23,6 +25,7 @@ import (
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/subagent"
+	"nekobot/pkg/tasks"
 	"nekobot/pkg/tools"
 	"nekobot/pkg/toolsessions"
 )
@@ -64,6 +67,9 @@ type Agent struct {
 	providerGroups   *providerGroupPlanner
 
 	maxIterations int
+	entClient     *ent.Client
+	taskStore     *tasks.Store
+	taskService   *tasks.Service
 	subagents     *subagent.SubagentManager
 }
 
@@ -249,6 +255,12 @@ func New(
 		failoverCooldown: providers.NewCooldownTracker(),
 		providerGroups:   newProviderGroupPlanner(),
 		maxIterations:    cfg.Agents.Defaults.MaxToolIterations,
+		entClient:        runtimeEntClient,
+		taskStore:        tasks.NewStore(),
+	}
+	agent.taskService = tasks.NewService(agent.taskStore)
+	if processMgr != nil {
+		processMgr.SetTaskService(agent.taskService)
 	}
 
 	// Set orchestrator mode on context builder so skills section adapts.
@@ -309,7 +321,11 @@ func (a *Agent) SetApprovalModeForSession(sessionID string, mode approval.Mode) 
 	default:
 		return fmt.Errorf("unsupported approval mode: %s", mode)
 	}
-	a.approval.SetSessionMode(strings.TrimSpace(sessionID), mode)
+	trimmedID := strings.TrimSpace(sessionID)
+	a.approval.SetSessionMode(trimmedID, mode)
+	if a.taskStore != nil {
+		a.taskStore.SetSessionPermissionMode(trimmedID, string(mode))
+	}
 	return nil
 }
 
@@ -321,7 +337,11 @@ func (a *Agent) ClearApprovalModeForSession(sessionID string) error {
 	if a.approval == nil {
 		return fmt.Errorf("approval manager is unavailable")
 	}
-	a.approval.ClearSessionMode(strings.TrimSpace(sessionID))
+	trimmedID := strings.TrimSpace(sessionID)
+	a.approval.ClearSessionMode(trimmedID)
+	if a.taskStore != nil {
+		a.taskStore.ClearSessionPermissionMode(trimmedID)
+	}
 	return nil
 }
 
@@ -331,6 +351,30 @@ func (a *Agent) SnapshotManager() *session.SnapshotManager {
 		return nil
 	}
 	return a.snapshotMgr
+}
+
+// GetTaskSnapshots exposes shared task runtime snapshots for higher-level control planes.
+func (a *Agent) GetTaskSnapshots() []tasks.Task {
+	if a == nil || a.taskStore == nil {
+		return nil
+	}
+	return a.taskStore.List()
+}
+
+// TaskStore exposes the shared runtime task store.
+func (a *Agent) TaskStore() *tasks.Store {
+	if a == nil {
+		return nil
+	}
+	return a.taskStore
+}
+
+// TaskService exposes the shared runtime task lifecycle service.
+func (a *Agent) TaskService() *tasks.Service {
+	if a == nil {
+		return nil
+	}
+	return a.taskService
 }
 
 // PreviewPreprocessedInput exposes the configured file-mention preprocessing
@@ -360,6 +404,9 @@ func (a *Agent) EnableSubagents(notify subagent.NotifyFunc) {
 	manager := subagent.NewSubagentManager(a.logger, &subagentAgentAdapter{agent: a}, 10)
 	if notify != nil {
 		manager.SetNotifyFunc(notify)
+	}
+	if a.taskService != nil {
+		manager.SetTaskService(a.taskService)
 	}
 
 	a.subagents = manager
@@ -923,7 +970,16 @@ func (a *Agent) callLLMWithFallback(
 			continue
 		}
 
-		model := a.resolveModelForProvider(providerName, primaryProvider, requestedModel)
+		model, err := a.resolveModelForProvider(ctx, providerName, primaryProvider, requestedModel)
+		if err != nil {
+			lastErr = err
+			a.logger.Warn("Provider route resolution failed",
+				zap.String("provider", providerName),
+				zap.String("requested_model", requestedModel),
+				zap.Error(err),
+			)
+			continue
+		}
 
 		client, err := a.getProviderClient(providerName, model, clientCache)
 		if err != nil {
@@ -1027,36 +1083,93 @@ func (a *Agent) getProviderClient(providerName, model string, cache map[string]*
 	return client, nil
 }
 
-func (a *Agent) resolveModelForProvider(providerName, primaryProvider, requestedModel string) string {
+func (a *Agent) resolveModelForProvider(
+	ctx context.Context,
+	providerName,
+	primaryProvider,
+	requestedModel string,
+) (string, error) {
 	model := strings.TrimSpace(requestedModel)
 	if model == "" {
 		model = strings.TrimSpace(a.config.Agents.Defaults.Model)
 	}
+	if model == "" {
+		return "", fmt.Errorf("model is required")
+	}
+	if a != nil && a.entClient != nil {
+		resolved, err := a.resolveModelFromRoutes(ctx, providerName, model)
+		if err == nil {
+			return resolved, nil
+		}
+		if !errors.Is(err, modelroute.ErrRouteNotFound) {
+			return "", err
+		}
+	}
 	if providerName == primaryProvider {
-		return model
+		return model, nil
 	}
 
 	providerCfg := a.config.GetProviderConfig(providerName)
 	if providerCfg == nil {
-		return model
+		return model, nil
 	}
 
 	// If this provider declares no model list, keep caller's model.
 	if len(providerCfg.Models) == 0 {
-		return model
+		return model, nil
 	}
 
 	for _, candidate := range providerCfg.Models {
 		if strings.TrimSpace(candidate) == model {
-			return model
+			return model, nil
 		}
 	}
 
 	if fallbackModel := strings.TrimSpace(providerCfg.GetDefaultModel()); fallbackModel != "" {
-		return fallbackModel
+		return fallbackModel, nil
 	}
 
-	return model
+	return model, nil
+}
+
+func (a *Agent) resolveModelFromRoutes(
+	ctx context.Context,
+	providerName string,
+	requestedModel string,
+) (string, error) {
+	if a == nil || a.entClient == nil {
+		return "", modelroute.ErrRouteNotFound
+	}
+
+	routeMgr, err := modelroute.NewManager(a.config, a.logger, a.entClient)
+	if err != nil {
+		return "", fmt.Errorf("create model route manager: %w", err)
+	}
+
+	logicalModelID := strings.TrimSpace(requestedModel)
+	matchedRoute, err := routeMgr.ResolveInput(ctx, requestedModel)
+	if err == nil {
+		logicalModelID = matchedRoute.ModelID
+	} else if !errors.Is(err, modelroute.ErrRouteNotFound) {
+		return "", err
+	}
+
+	routes, err := routeMgr.ListByModel(ctx, logicalModelID)
+	if err != nil {
+		return "", err
+	}
+
+	for _, route := range routes {
+		if !route.Enabled || strings.TrimSpace(route.ProviderName) != strings.TrimSpace(providerName) {
+			continue
+		}
+		if providerModelID, ok := route.Metadata["provider_model_id"].(string); ok && strings.TrimSpace(providerModelID) != "" {
+			return strings.TrimSpace(providerModelID), nil
+		}
+		return route.ModelID, nil
+	}
+
+	return "", fmt.Errorf("resolve route for provider %s model %s: %w", providerName, logicalModelID, modelroute.ErrRouteNotFound)
 }
 
 // executeToolCall executes a single tool call with approval checking.
@@ -1068,20 +1181,33 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 
 	// Check approval
 	if a.approval != nil {
-		decision, _, err := a.approval.CheckApproval(
+		sessionID := ctxStringValue(ctx, promptContextSessionKey)
+		decision, requestID, err := a.approval.CheckApproval(
 			toolCall.Name,
 			toolCall.Arguments,
-			ctxStringValue(ctx, promptContextSessionKey),
+			sessionID,
 		)
 		if err != nil {
 			return "", fmt.Errorf("approval check failed: %w", err)
 		}
 		switch decision {
 		case approval.Denied:
+			if a.taskStore != nil {
+				a.taskStore.ClearSessionPendingAction(sessionID)
+			}
 			return "Tool call denied by approval policy", nil
 		case approval.Pending:
+			if a.taskStore != nil {
+				a.taskStore.SetSessionPendingAction(sessionID, toolCall.Name, requestID)
+				if mode, ok := a.approval.GetSessionMode(sessionID); ok {
+					a.taskStore.SetSessionPermissionMode(sessionID, string(mode))
+				}
+			}
 			return "Tool call pending approval", nil
 		case approval.Approved:
+			if a.taskStore != nil {
+				a.taskStore.ClearSessionPendingAction(sessionID)
+			}
 			// continue
 		}
 	}

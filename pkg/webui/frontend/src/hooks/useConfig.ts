@@ -2,6 +2,7 @@ import { api } from '@/api/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { t } from '@/lib/i18n';
+import type { RuntimeAgent } from '@/hooks/useTopology';
 
 export interface ConfigData {
   [section: string]: Record<string, unknown>;
@@ -67,6 +68,62 @@ export interface HarnessAuditData {
   entries: AuditEntry[];
   stats: AuditStatsData;
   limit: number;
+}
+
+export interface StatusTask {
+  id: string;
+  type: string;
+  state: string;
+  summary?: string;
+  session_id?: string;
+  runtime_id?: string;
+  actual_provider?: string;
+  actual_model?: string;
+  pending_action?: string;
+  last_error?: string;
+  permission_mode?: string;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SessionRuntimeState {
+  session_id: string;
+  permission_mode?: string;
+  pending_action?: string;
+  pending_request_id?: string;
+  updated_at: string;
+}
+
+export interface StatusData {
+  version: string;
+  commit: string;
+  build_time: string;
+  os: string;
+  arch: string;
+  go_version: string;
+  pid: number;
+  uptime: string;
+  uptime_seconds: number;
+  memory_alloc_bytes: number;
+  memory_sys_bytes: number;
+  provider_count: number;
+  config_path: string;
+  database_dir: string;
+  runtime_db_path: string;
+  workspace_path: string;
+  task_count: number;
+  task_state_counts: Record<string, number>;
+  recent_tasks: StatusTask[];
+  runtime_states: RuntimeAgent[];
+  session_runtime_states: SessionRuntimeState[];
+  gateway_host: string;
+  gateway_port: number;
+  gateway: {
+    host: string;
+    port: number;
+  };
 }
 
 function formatRestartNotice(result: ConfigMutationResult): string | null {
@@ -138,7 +195,7 @@ export function useImportConfig() {
 }
 
 export function useStatus() {
-  return useQuery<Record<string, unknown>>({
+  return useQuery<StatusData>({
     queryKey: ['status'],
     queryFn: () => api.get('/api/status'),
     staleTime: 10_000,

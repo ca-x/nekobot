@@ -1145,13 +1145,13 @@ func TestHandleGetProvidersReturnsProjectedView(t *testing.T) {
 	})
 
 	if _, err := providers.Create(context.Background(), config.ProviderProfile{
-		Name:         "primary",
-		ProviderKind: "openai",
-		APIKey:       "secret-key",
-		APIBase:      "https://api.openai.com/v1",
-		Models:       []string{"gpt-4.1", "gpt-4o-mini"},
-		DefaultModel: "gpt-4.1",
-		Timeout:      45,
+		Name:          "primary",
+		ProviderKind:  "openai",
+		APIKey:        "secret-key",
+		APIBase:       "https://api.openai.com/v1",
+		Timeout:       45,
+		DefaultWeight: 9,
+		Enabled:       true,
 	}); err != nil {
 		t.Fatalf("create provider failed: %v", err)
 	}
@@ -1189,10 +1189,8 @@ func TestHandleGetProvidersReturnsProjectedView(t *testing.T) {
 		"api_key_set",
 		"api_base",
 		"proxy",
-		"models",
-		"model_count",
-		"default_model",
-		"has_default_model",
+		"default_weight",
+		"enabled",
 		"is_routing_default",
 		"supports_discovery",
 		"summary",
@@ -1209,14 +1207,69 @@ func TestHandleGetProvidersReturnsProjectedView(t *testing.T) {
 	if got, _ := item["is_routing_default"].(bool); !got {
 		t.Fatalf("expected is_routing_default true, got %+v", item["is_routing_default"])
 	}
-	if got, _ := item["has_default_model"].(bool); !got {
-		t.Fatalf("expected has_default_model true, got %+v", item["has_default_model"])
+	if got, _ := item["default_weight"].(float64); got != 9 {
+		t.Fatalf("expected default_weight 9, got %+v", item["default_weight"])
 	}
-	if got, _ := item["model_count"].(float64); got != 2 {
-		t.Fatalf("expected model_count 2, got %+v", item["model_count"])
+	if got, ok := item["enabled"].(bool); !ok || !got {
+		t.Fatalf("expected enabled true, got %+v", item["enabled"])
+	}
+	if _, ok := item["models"]; ok {
+		t.Fatalf("expected projected provider to omit models, got %+v", item)
+	}
+	if _, ok := item["default_model"]; ok {
+		t.Fatalf("expected projected provider to omit default_model, got %+v", item)
 	}
 	if secret, ok := item["api_key"].(string); ok && secret != "" {
 		t.Fatalf("expected projected provider to omit raw api_key, got %q", secret)
+	}
+}
+
+func TestHandleGetProviderTypesReturnsRegistry(t *testing.T) {
+	s := &Server{
+		config: config.DefaultConfig(),
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/provider-types", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleGetProviderTypes(c); err != nil {
+		t.Fatalf("handleGetProviderTypes failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload []map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal provider types payload failed: %v", err)
+	}
+	if len(payload) == 0 {
+		t.Fatalf("expected non-empty provider type payload")
+	}
+
+	first := payload[0]
+	for _, key := range []string{"id", "display_name", "icon", "supports_discovery", "auth_fields", "advanced_fields"} {
+		if _, ok := first[key]; !ok {
+			t.Fatalf("expected key %q in provider type payload: %+v", key, first)
+		}
+	}
+
+	foundOpenAI := false
+	for _, item := range payload {
+		if got, _ := item["id"].(string); got == "openai" {
+			foundOpenAI = true
+			if displayName, _ := item["display_name"].(string); strings.TrimSpace(displayName) == "" {
+				t.Fatalf("expected openai display_name, got %+v", item)
+			}
+			if supports, ok := item["supports_discovery"].(bool); !ok || !supports {
+				t.Fatalf("expected openai to support discovery, got %+v", item)
+			}
+		}
+	}
+	if !foundOpenAI {
+		t.Fatalf("expected openai provider type in payload: %+v", payload)
 	}
 }
 

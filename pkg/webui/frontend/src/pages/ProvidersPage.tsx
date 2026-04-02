@@ -1,9 +1,5 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Header from '@/components/layout/Header';
-import { t } from '@/lib/i18n';
-import { cn } from '@/lib/utils';
-import { useProviderRuntime, useProviders, type Provider, type ProviderRuntime } from '@/hooks/useProviders';
-import { useConfig, useSaveConfig } from '@/hooks/useConfig';
 import { ProviderForm } from '@/components/config/ProviderForm';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -16,13 +12,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useConfig, useSaveConfig } from '@/hooks/useConfig';
+import {
+  useProviderRuntime,
+  useProviders,
+  type Provider,
+  type ProviderRuntime,
+} from '@/hooks/useProviders';
+import { useProviderTypes } from '@/hooks/useProviderTypes';
 import { getProviderLogo } from '@/lib/provider-logos';
+import { t } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   ArrowUpRight,
   BadgeCheck,
   CircleAlert,
-  Cpu,
   GitBranch,
   Globe,
   KeyRound,
@@ -31,50 +36,21 @@ import {
   ShieldCheck,
   Sparkles,
   TimerReset,
+  Waypoints,
 } from 'lucide-react';
 
 const KIND_TINTS: Record<string, string> = {
-  openai: 'from-emerald-500/15 via-emerald-500/8 to-transparent text-emerald-700',
-  anthropic: 'from-amber-500/15 via-orange-500/8 to-transparent text-orange-700',
-  gemini: 'from-sky-500/15 via-indigo-500/8 to-transparent text-sky-700',
-  openrouter: 'from-violet-500/15 via-indigo-500/8 to-transparent text-violet-700',
-  groq: 'from-rose-500/15 via-orange-500/8 to-transparent text-rose-700',
-  deepseek: 'from-cyan-500/15 via-blue-500/8 to-transparent text-cyan-700',
-  moonshot: 'from-slate-500/15 via-slate-400/8 to-transparent text-slate-700',
-  zhipu: 'from-blue-500/15 via-blue-400/8 to-transparent text-blue-700',
-  vllm: 'from-red-500/15 via-orange-500/8 to-transparent text-red-700',
-  generic: 'from-stone-500/15 via-stone-400/8 to-transparent text-stone-700',
+  openai: 'from-emerald-500/18 via-emerald-500/8 to-transparent',
+  anthropic: 'from-amber-500/18 via-orange-500/10 to-transparent',
+  gemini: 'from-sky-500/18 via-indigo-500/10 to-transparent',
+  openrouter: 'from-violet-500/18 via-indigo-500/10 to-transparent',
+  groq: 'from-rose-500/18 via-orange-500/8 to-transparent',
+  deepseek: 'from-cyan-500/18 via-blue-500/8 to-transparent',
+  moonshot: 'from-slate-500/18 via-slate-400/8 to-transparent',
+  zhipu: 'from-blue-500/18 via-blue-400/8 to-transparent',
+  vllm: 'from-red-500/18 via-orange-500/8 to-transparent',
+  generic: 'from-stone-500/15 via-stone-400/8 to-transparent',
 };
-
-function getKindTint(kind: string): string {
-  return KIND_TINTS[kind.trim().toLowerCase()] ?? KIND_TINTS.generic;
-}
-
-function getProviderState(provider: Provider): {
-  label: string;
-  tone: string;
-  dot: string;
-} {
-  if (!provider.api_key_set) {
-    return {
-      label: t('providerStateCredentialsMissing'),
-      tone: 'bg-amber-50 text-amber-700 border-amber-200/70',
-      dot: 'bg-amber-500',
-    };
-  }
-  if ((provider.model_count ?? 0) === 0) {
-    return {
-      label: t('providerStateNeedsModels'),
-      tone: 'bg-slate-100 text-slate-700 border-slate-200/70',
-      dot: 'bg-slate-400',
-    };
-  }
-  return {
-    label: t('providerStateReady'),
-    tone: 'bg-emerald-50 text-emerald-700 border-emerald-200/70',
-    dot: 'bg-emerald-500',
-  };
-}
 
 type ProviderGroupStrategy = 'round_robin' | 'least_used' | 'random';
 
@@ -110,15 +86,67 @@ const PROVIDER_GROUP_STRATEGIES: Array<{
   },
 ];
 
+function getKindTint(kind: string): string {
+  return KIND_TINTS[kind.trim().toLowerCase()] ?? KIND_TINTS.generic;
+}
+
+function getConnectionState(provider: Provider, runtime?: ProviderRuntime) {
+  if (!provider.enabled) {
+    return {
+      label: 'Disabled',
+      tone: 'bg-slate-100 text-slate-700 border-slate-200/70',
+      dot: 'bg-slate-400',
+    };
+  }
+  if (!provider.api_key_set) {
+    return {
+      label: t('providerStateCredentialsMissing'),
+      tone: 'bg-amber-50 text-amber-700 border-amber-200/70',
+      dot: 'bg-amber-500',
+    };
+  }
+  if (runtime?.in_cooldown) {
+    return {
+      label: t('providerRuntimeCooldown'),
+      tone: 'bg-amber-50 text-amber-800 border-amber-200/70',
+      dot: 'bg-amber-500',
+    };
+  }
+  if (runtime && !runtime.available) {
+    return {
+      label: 'Unavailable',
+      tone: 'bg-rose-50 text-rose-700 border-rose-200/70',
+      dot: 'bg-rose-500',
+    };
+  }
+  return {
+    label: 'Connected',
+    tone: 'bg-emerald-50 text-emerald-700 border-emerald-200/70',
+    dot: 'bg-emerald-500',
+  };
+}
+
 export default function ProvidersPage() {
   const { data: providers, isLoading } = useProviders();
   const { data: providerRuntime = [] } = useProviderRuntime();
+  const { data: providerTypes = [] } = useProviderTypes();
   const { data: runtimeConfig } = useConfig();
   const saveConfig = useSaveConfig();
+
   const [formOpen, setFormOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [query, setQuery] = useState('');
   const [providerGroups, setProviderGroups] = useState<ProviderGroupDraft[]>([]);
+
+  const providerTypeMap = useMemo(
+    () => new Map(providerTypes.map((item) => [item.id, item])),
+    [providerTypes],
+  );
+  const runtimeMap = useMemo(
+    () => new Map(providerRuntime.map((item) => [item.name, item])),
+    [providerRuntime],
+  );
+  const providerNames = useMemo(() => (providers ?? []).map((provider) => provider.name), [providers]);
 
   const filteredProviders = useMemo(() => {
     const items = providers ?? [];
@@ -131,8 +159,8 @@ export default function ProvidersPage() {
         provider.name,
         provider.provider_kind,
         provider.api_base,
-        provider.default_model,
-        ...(provider.models ?? []),
+        provider.proxy,
+        provider.summary,
       ]
         .join(' ')
         .toLowerCase()
@@ -140,13 +168,9 @@ export default function ProvidersPage() {
     );
   }, [providers, query]);
 
-  const readyCount = (providers ?? []).filter((provider) => provider.api_key_set).length;
+  const readyCount = (providers ?? []).filter((provider) => provider.api_key_set && provider.enabled).length;
   const routingDefault = (providers ?? []).find((provider) => provider.is_routing_default) ?? null;
-  const providerNames = useMemo(() => (providers ?? []).map((provider) => provider.name), [providers]);
-  const runtimeMap = useMemo(
-    () => new Map(providerRuntime.map((item) => [item.name, item])),
-    [providerRuntime],
-  );
+  const discoveryCount = (providers ?? []).filter((provider) => provider.supports_discovery).length;
 
   useEffect(() => {
     const agents = runtimeConfig?.agents;
@@ -293,15 +317,16 @@ export default function ProvidersPage() {
             </div>
             <div className="space-y-2">
               <h2 className="max-w-2xl text-2xl font-semibold tracking-tight text-foreground">
-                {t('providersHeroTitle')}
+                Build clean connection records before you touch routing.
               </h2>
               <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                {t('providersHeroDescription')}
+                Each provider now represents one connection. Credentials, endpoint, timeout, discovery support, and runtime health stay visible in one place, while model sync moves to Models.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
               <MetricCard label={t('providersMetricCount')} value={String(providers?.length ?? 0)} />
               <MetricCard label={t('providersMetricReady')} value={String(readyCount)} />
+              <MetricCard label="Discovery-ready" value={String(discoveryCount)} />
               <MetricCard
                 label={t('providersMetricRoutingDefault')}
                 value={routingDefault?.name ?? t('providersUnset')}
@@ -470,54 +495,53 @@ export default function ProvidersPage() {
         <Card className="overflow-hidden rounded-[28px] border-slate-200/80 bg-white/95 shadow-sm">
           <div className="border-b border-slate-100 px-5 py-5">
             <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-              {t('providerGroupsOverviewBadge')}
+              Axon-style overview
             </div>
             <h3 className="mt-2 text-lg font-semibold text-slate-950">
-              {t('providerGroupsOverviewTitle')}
+              Keep connection inventory visible while editing routing pools.
             </h3>
           </div>
 
           <div className="space-y-3 p-4">
-            {providerGroups.length === 0 ? (
-              <div className="rounded-[22px] border border-dashed border-slate-300 bg-slate-50/80 px-4 py-8 text-center">
-                <p className="text-sm leading-6 text-slate-500">{t('providerGroupsOverviewEmpty')}</p>
-              </div>
-            ) : (
-              providerGroups.map((group) => (
+            {(providers ?? []).slice(0, 5).map((provider) => {
+              const runtime = runtimeMap.get(provider.name);
+              const typeMeta = providerTypeMap.get(provider.provider_kind);
+              return (
                 <div
-                  key={`${group.id}-overview`}
+                  key={`${provider.name}-overview`}
                   className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(140deg,_rgba(248,250,252,0.95),_rgba(255,255,255,0.98))] p-4"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-semibold text-slate-900">{group.name || t('providerGroupUntitled')}</h4>
+                      <h4 className="text-sm font-semibold text-slate-900">{provider.name}</h4>
                       <p className="mt-1 text-xs uppercase tracking-[0.14em] text-slate-400">
-                        {t(
-                          PROVIDER_GROUP_STRATEGIES.find((strategy) => strategy.value === group.strategy)
-                            ?.labelKey ?? 'providerGroupStrategyRoundRobin',
-                        )}
+                        {typeMeta?.display_name || provider.provider_kind}
                       </p>
                     </div>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
-                      {group.members.length} {t('providerGroupMemberCount')}
+                      {provider.enabled ? 'enabled' : 'disabled'}
                     </span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {group.members.length > 0 ? (
-                      group.members.map((member) => (
-                        <span
-                          key={`${group.name}-${member}`}
-                          className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm"
-                        >
-                          {member}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs text-slate-400">{t('providerGroupNoMembers')}</span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm">
+                      {provider.api_key_set ? 'credentials set' : 'credentials missing'}
+                    </span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm">
+                      {provider.supports_discovery ? 'discovery' : 'manual sync'}
+                    </span>
+                    {runtime?.in_cooldown && (
+                      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 shadow-sm">
+                        cooldown
+                      </span>
                     )}
                   </div>
                 </div>
-              ))
+              );
+            })}
+            {(providers?.length ?? 0) === 0 && (
+              <div className="rounded-[22px] border border-dashed border-slate-300 bg-slate-50/80 px-4 py-8 text-center">
+                <p className="text-sm leading-6 text-slate-500">{t('providerGroupsOverviewEmpty')}</p>
+              </div>
             )}
           </div>
         </Card>
@@ -526,7 +550,7 @@ export default function ProvidersPage() {
       {isLoading && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-64 rounded-[24px]" />
+            <Skeleton key={index} className="h-[360px] rounded-[24px]" />
           ))}
         </div>
       )}
@@ -538,6 +562,7 @@ export default function ProvidersPage() {
               key={provider.name}
               provider={provider}
               runtime={runtimeMap.get(provider.name)}
+              typeMeta={providerTypeMap.get(provider.provider_kind)}
               onClick={() => openEdit(provider)}
             />
           ))}
@@ -561,7 +586,7 @@ export default function ProvidersPage() {
           </div>
           <h3 className="text-lg font-semibold text-slate-900">{t('noProviders')}</h3>
           <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-            {t('providersEmptyDescription')}
+            Configure the first provider connection, then probe models into the shared Models catalog.
           </p>
           <Button size="sm" onClick={openNew} className="mt-5 h-10 rounded-xl px-4">
             <Plus className="mr-1.5 h-4 w-4" />
@@ -649,18 +674,18 @@ function MetricCard({
 function ProviderPanel({
   provider,
   runtime,
+  typeMeta,
   onClick,
 }: {
   provider: Provider;
   runtime?: ProviderRuntime;
+  typeMeta?: { display_name: string; description: string; default_api_base?: string; icon: string };
   onClick: () => void;
 }) {
-  const state = getProviderState(provider);
-  const logo = getProviderLogo(provider.provider_kind);
+  const state = getConnectionState(provider, runtime);
+  const logo = getProviderLogo(typeMeta?.icon || provider.provider_kind);
   const tint = getKindTint(provider.provider_kind);
-  const modelCount = provider.model_count ?? provider.models?.length ?? 0;
-  const endpoint = provider.api_base?.trim() || t('providerPanelDefaultEndpoint');
-  const topModels = (provider.models ?? []).slice(0, 3);
+  const endpoint = provider.api_base?.trim() || typeMeta?.default_api_base?.trim() || t('providerPanelDefaultEndpoint');
 
   return (
     <Card
@@ -687,7 +712,9 @@ function ProviderPanel({
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-sm capitalize text-slate-600">{provider.provider_kind}</p>
+              <p className="mt-1 text-sm capitalize text-slate-600">
+                {typeMeta?.display_name || provider.provider_kind}
+              </p>
             </div>
           </div>
 
@@ -706,16 +733,16 @@ function ProviderPanel({
       <div className="space-y-5 p-5">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <InfoTile
-            icon={<Cpu className="h-4 w-4" />}
-            label={t('providerPanelModels')}
-            value={modelCount > 0 ? String(modelCount) : '0'}
-            detail={provider.has_default_model ? provider.default_model : t('providerPanelNoDefault')}
-          />
-          <InfoTile
             icon={<KeyRound className="h-4 w-4" />}
             label={t('providerPanelCredentials')}
             value={provider.api_key_set ? t('providerPanelConfigured') : t('providerPanelMissing')}
-            detail={provider.supports_discovery ? t('providerPanelDiscoveryReady') : t('providerPanelManualOnly')}
+            detail={provider.enabled ? 'Stored connection can be used by routing.' : 'Connection is present but disabled.'}
+          />
+          <InfoTile
+            icon={<Waypoints className="h-4 w-4" />}
+            label="Discovery"
+            value={provider.supports_discovery ? 'Probe & sync' : 'Manual sync'}
+            detail={provider.supports_discovery ? 'Can sync models from this endpoint.' : 'Use manual Models entries for this provider.'}
           />
           <InfoTile
             icon={<BadgeCheck className="h-4 w-4" />}
@@ -723,6 +750,35 @@ function ProviderPanel({
             value={`${provider.timeout || 0}s`}
             detail={provider.proxy?.trim() ? t('providerPanelProxyEnabled') : t('providerPanelDirect')}
           />
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+              <Globe className="h-3.5 w-3.5" />
+              {t('providerPanelEndpoint')}
+            </div>
+            <p className="mt-2 break-all text-sm leading-6 text-slate-700">{endpoint}</p>
+            {provider.proxy?.trim() && (
+              <p className="mt-3 text-xs leading-5 text-slate-500">Proxy: {provider.proxy}</p>
+            )}
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              Weight {provider.default_weight} · {provider.enabled ? 'enabled' : 'disabled'}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-4">
+            <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+              Connection summary
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-700">
+              {provider.summary || typeMeta?.description || t('providerPanelNoSummary')}
+            </p>
+            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-500">
+              <span>{provider.provider_kind}</span>
+              <ArrowUpRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-500" />
+            </div>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4">
@@ -736,10 +792,16 @@ function ProviderPanel({
                 'rounded-full px-3 py-1.5 text-xs font-medium',
                 runtime?.in_cooldown
                   ? 'bg-amber-50 text-amber-800'
-                  : 'bg-emerald-50 text-emerald-700',
+                  : runtime?.available === false
+                    ? 'bg-rose-50 text-rose-700'
+                    : 'bg-emerald-50 text-emerald-700',
               )}
             >
-              {runtime?.in_cooldown ? t('providerRuntimeCooldown') : t('providerRuntimeAvailable')}
+              {runtime?.in_cooldown
+                ? t('providerRuntimeCooldown')
+                : runtime?.available === false
+                  ? 'Unavailable'
+                  : t('providerRuntimeAvailable')}
             </span>
             <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600">
               {t('providerRuntimeErrors', String(runtime?.error_count ?? 0))}
@@ -756,44 +818,12 @@ function ProviderPanel({
             )}
           </div>
           <p className="mt-3 text-sm leading-6 text-slate-500">{formatFailureSummary(runtime)}</p>
-        </div>
-
-        <div className="space-y-3">
-          <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-              <Globe className="h-3.5 w-3.5" />
-              {t('providerPanelEndpoint')}
+          {runtime?.available === false && !runtime?.disabled_reason && (
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-700">
+              <CircleAlert className="h-3.5 w-3.5" />
+              Runtime marked unavailable by backend health memory.
             </div>
-            <p className="mt-2 break-all text-sm leading-6 text-slate-700">{endpoint}</p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-4">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
-                {t('providerPanelSummary')}
-              </div>
-              <ArrowUpRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-500" />
-            </div>
-            <p className="mt-2 text-sm leading-6 text-slate-700">{provider.summary || t('providerPanelNoSummary')}</p>
-            {topModels.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {topModels.map((model) => (
-                  <span
-                    key={model}
-                    className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
-                  >
-                    {model}
-                  </span>
-                ))}
-              </div>
-            )}
-            {topModels.length === 0 && (
-              <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-700">
-                <CircleAlert className="h-3.5 w-3.5" />
-                {t('providerPanelModelsHint')}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
     </Card>
@@ -844,7 +874,7 @@ function InfoTile({
         {label}
       </div>
       <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
-      <div className="mt-1 line-clamp-1 text-xs text-slate-500">{detail}</div>
+      <div className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{detail}</div>
     </div>
   );
 }

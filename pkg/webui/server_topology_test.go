@@ -44,7 +44,7 @@ func TestRuntimeTopologyHandlers_CRUDAndSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new binding manager: %v", err)
 	}
-	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr)
+	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr, nil)
 	if err != nil {
 		t.Fatalf("new topology service: %v", err)
 	}
@@ -144,6 +144,34 @@ func TestRuntimeTopologyHandlers_CRUDAndSnapshot(t *testing.T) {
 	if len(snapshot.Bindings) != 1 || snapshot.Bindings[0].RuntimeName != "Support Main" {
 		t.Fatalf("unexpected topology bindings: %+v", snapshot.Bindings)
 	}
+	if len(snapshot.Runtimes) != 1 || snapshot.Runtimes[0].Runtime.Status == nil {
+		t.Fatalf("expected runtime status in topology snapshot, got %+v", snapshot.Runtimes)
+	}
+	status := snapshot.Runtimes[0].Runtime.Status
+	if !status.EffectiveAvailable || status.EnabledBindingCount != 1 || status.BoundAccountCount != 1 {
+		t.Fatalf("unexpected runtime topology status: %+v", status)
+	}
+	listReq := httptest.NewRequest(http.MethodGet, "/api/runtime-agents", nil)
+	listRec := httptest.NewRecorder()
+	listCtx := e.NewContext(listReq, listRec)
+	if err := s.handleListRuntimeAgents(listCtx); err != nil {
+		t.Fatalf("handleListRuntimeAgents failed: %v", err)
+	}
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, listRec.Code, listRec.Body.String())
+	}
+
+	var runtimeList []runtimeagents.AgentRuntime
+	if err := json.Unmarshal(listRec.Body.Bytes(), &runtimeList); err != nil {
+		t.Fatalf("unmarshal runtime list: %v", err)
+	}
+	if len(runtimeList) != 1 || runtimeList[0].Status == nil {
+		t.Fatalf("expected derived runtime status in list response, got %+v", runtimeList)
+	}
+	if !runtimeList[0].Status.EffectiveAvailable || runtimeList[0].Status.EnabledBindingCount != 1 {
+		t.Fatalf("unexpected runtime list status: %+v", runtimeList[0].Status)
+	}
+
 }
 
 func TestHandleCreateChannelAccountRejectsEnabledWechatAccountWithoutCredentials(t *testing.T) {
@@ -464,7 +492,7 @@ func TestHandleDeleteRuntimeAgentRemovesBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new binding manager: %v", err)
 	}
-	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr)
+	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr, nil)
 	if err != nil {
 		t.Fatalf("new topology service: %v", err)
 	}
@@ -572,7 +600,7 @@ func TestHandleDeleteChannelAccountRemovesBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new binding manager: %v", err)
 	}
-	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr)
+	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr, nil)
 	if err != nil {
 		t.Fatalf("new topology service: %v", err)
 	}
@@ -680,7 +708,7 @@ func TestRuntimeTopologySnapshotMarksBindingsInactiveForDisabledTargets(t *testi
 	if err != nil {
 		t.Fatalf("new binding manager: %v", err)
 	}
-	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr)
+	topologySvc, err := runtimetopology.NewService(runtimeMgr, accountMgr, bindingMgr, nil)
 	if err != nil {
 		t.Fatalf("new topology service: %v", err)
 	}

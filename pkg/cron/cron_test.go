@@ -1,12 +1,16 @@
 package cron
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
+	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/tasks"
 )
 
 func TestManagerPersistsJobsInDatabase(t *testing.T) {
@@ -233,6 +237,88 @@ func TestNormalizeScheduleKindDefaultsToCron(t *testing.T) {
 	if got := normalizeScheduleKind(ScheduleEvery); got != ScheduleEvery {
 		t.Fatalf("expected kind to stay %q, got %q", ScheduleEvery, got)
 	}
+}
+
+func TestExecuteJobCreatesManagedTaskLifecycle(t *testing.T) {
+	t.Parallel()
+
+	manager, cleanup := newTestManager(t)
+	defer cleanup()
+
+	store := tasks.NewStore()
+	taskSvc := tasks.NewService(store)
+	manager.taskSvc = taskSvc
+	manager.agent = &agent.Agent{}
+	manager.agentChat = func(ctx context.Context, sess agent.SessionInterface, prompt, provider, model string, fallback []string) (string, error) {
+		if got, _ := ctx.Value(execenv.MetadataRuntimeID).(string); got != "cron" {
+			t.Fatalf("expected cron runtime id in context, got %q", got)
+		}
+		return "ok", nil
+	}
+
+	job, err := manager.AddCronJob("cron-task", "0 0 * * *", "ping")
+	if err != nil {
+		t.Fatalf("add cron job: %v", err)
+	}
+
+	manager.executeJob(job.ID)
+
+	task := waitForCronTaskState(t, store, tasks.StateCompleted, 3*time.Second)
+	if task.Type != tasks.TypeLocalAgent {
+		t.Fatalf("expected local agent task type, got %q", task.Type)
+	}
+	if task.SessionID != job.ID {
+		t.Fatalf("expected session id %q, got %q", job.ID, task.SessionID)
+	}
+	if task.RuntimeID != "cron" {
+		t.Fatalf("expected runtime id cron, got %q", task.RuntimeID)
+	}
+	if got, _ := task.Metadata["source"].(string); got != "cron" {
+		t.Fatalf("expected cron source metadata, got %q", got)
+	}
+}
+
+func TestExecuteJobMarksManagedTaskFailedOnChatError(t *testing.T) {
+	t.Parallel()
+
+	manager, cleanup := newTestManager(t)
+	defer cleanup()
+
+	store := tasks.NewStore()
+	taskSvc := tasks.NewService(store)
+	manager.taskSvc = taskSvc
+	manager.agent = &agent.Agent{}
+	manager.agentChat = func(ctx context.Context, sess agent.SessionInterface, prompt, provider, model string, fallback []string) (string, error) {
+		return "", fmt.Errorf("chat failed")
+	}
+
+	job, err := manager.AddCronJob("cron-task-fail", "0 0 * * *", "ping")
+	if err != nil {
+		t.Fatalf("add cron job: %v", err)
+	}
+
+	manager.executeJob(job.ID)
+
+	task := waitForCronTaskState(t, store, tasks.StateFailed, 3*time.Second)
+	if task.LastError != "chat failed" {
+		t.Fatalf("expected chat failure to be recorded, got %q", task.LastError)
+	}
+}
+
+func waitForCronTaskState(t *testing.T, store *tasks.Store, want tasks.State, timeout time.Duration) tasks.Task {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		all := store.List()
+		if len(all) == 1 && all[0].State == want {
+			return all[0]
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatalf("cron task did not reach state %s: %+v", want, store.List())
+	return tasks.Task{}
 }
 
 func newTestManager(t *testing.T) (*Manager, func()) {

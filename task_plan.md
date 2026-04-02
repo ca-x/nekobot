@@ -1,6 +1,330 @@
 # Task Plan: nekobot 功能评估、迁移与收口
 
-> Last Updated: 2026-04-01
+> Last Updated: 2026-04-02
+
+## Plan Index
+
+### Source of Truth
+- `task_plan.md`
+  - 当前主执行计划。
+  - 后续活跃开发任务统一收口到这里。
+
+### Referenced Plans
+- `provider_model_migration_plan.md`
+  - 角色：provider/model 管理层 clean-slate 迁移计划。
+  - 状态：当前 active 前置任务。
+  - 目标：先完成 provider connection 与 model config 解耦，再恢复当前 task lifecycle 主线。
+- `claude_code_alignment_plan.md`
+  - 角色：架构对齐参考计划。
+  - 状态：仍有效，但作为架构路线输入，不再单独执行。
+  - 已吸收到本计划的主题：
+    - `task lifecycle service`
+    - `runtime control plane`
+    - `execenv`
+    - `AgentDefinition`
+    - `tool governance`
+    - `context economy`
+- `closure_task_plan.md`
+  - 角色：旧的 Web bootstrap / closure 收尾计划。
+  - 状态：不作为当前主线，但其中未完成的“verify / deliver”仍保留为次级收尾事项。
+- `migration_task_plan.md`
+  - 角色：`goclaw` / `gua` 迁移专题计划。
+  - 状态：已完成，视为归档参考，不再展开为当前 active backlog。
+- `wechat_ilink_task_plan.md`
+  - 角色：WeChat iLink 专题迁移计划。
+  - 状态：已完成，视为归档参考，不再展开为当前 active backlog。
+
+### Consolidation Rules
+- 根目录其他 `*_plan.md` 继续保留原始上下文，不删除。
+- 所有仍然有效的未完成任务，后续都要在本文件中有入口，至少以：
+  - 主任务
+  - 引用任务
+  - 已归档任务
+  三种状态之一表达。
+- 如果某个旁支计划已经完成，只在这里保留引用与结论，不重复维护细项。
+- 当前所有开发计划一律**不考虑历史数据迁移问题**。
+- 历史数据迁移统一后置：
+  - 等所有当前开发任务完成后
+  - 再单独立项处理 schema/data migration
+  - 当前任何单项开发都不以兼容旧数据为前提约束设计
+
+## Consolidated Active Queue
+
+### P0 当前主线
+- 完成 `provider/model` 管理层 clean-slate 迁移计划。
+- 当前约束：
+  - 不考虑历史数据迁移
+  - 不保留旧 provider 数据结构兼容层
+- 当前前置任务：
+  - `provider_model_migration_plan.md`
+- 当前已完成：
+  - `subagent -> tasks.Service`
+  - `exec.background -> process -> tasks.Service`
+  - `agent tool_session spawn -> process -> tasks.Service`
+  - `cron executeJob -> tasks.Service`
+- provider/model 迁移完成后恢复主线：
+  - 下一条：`watch executeCommand`
+
+### P1 次级收尾
+- `closure_task_plan.md` 中遗留的 `Phase 5: Verify, commit, and deliver` 仍未在主计划中正式关闭。
+- 这条不阻塞当前 runtime/task 主线，但后续需要单独清账。
+- 新增 `codeany` 调研吸收项：
+  - `tool governance` 阶段补一层“可持久化权限规则”：
+    - `always allow`
+    - pattern-based `allow`
+    - pattern-based `deny`
+    - 要求进入 `nekobot` 自己的 config/store/API，而不是简单文件直写
+  - `AgentDefinition / context economy` 阶段补“上下文来源可解释面”：
+    - 显示当前 prompt/context 由哪些来源组成
+    - 至少覆盖 skills / memory / project rules / runtime injected context / MCP related context
+    - 目标是给 WebUI 与后续控制面一个 context sources 视图
+
+### Archived / Reference Only
+- `migration_task_plan.md`
+- `wechat_ilink_task_plan.md`
+- 两者当前不再作为 active backlog 来源，只作为历史设计与验证记录引用。
+
+
+## 2026-04-02 Provider/Model Clean-Slate 迁移前置批次
+
+### Goal
+在继续 `task lifecycle` 主线前，先参考 `axonhub` 完成当前 provider/model 管理层的 clean-slate 重构，把 provider 连接管理和 model 配置管理拆开。
+
+### Phases
+- [x] Phase 1: 复核当前 `nekobot` provider/model 耦合结构与 `axonhub` 参考形态
+- [x] Phase 2: 形成独立迁移计划文件并接入主计划索引
+- [x] Phase 3: 完成端到端重构设计收束并落文档
+- [ ] Phase 4: 执行 provider connection / model config / runtime call path 数据模型与存储层重构
+- [ ] Phase 5: 执行 API / WebUI 迁移
+- [x] Phase 6: 恢复 `agent tool_session spawn -> process -> tasks.Service` 主线
+
+### Decisions Made
+- 当前 provider/model 迁移按 clean-slate 方式做，不考虑旧 provider 数据兼容。
+- “历史数据迁移”不再是任何当前 active 计划的设计约束，而是后置专项。
+- 本批次只吸收 `axonhub` 的两层拆分思想：
+  - provider connections
+  - model configs
+- 暂不引入 `axonhub` 的完整 channel/model association DSL。
+
+### References
+- [`provider_model_migration_plan.md`](/home/czyt/code/nekobot/provider_model_migration_plan.md)
+- [`docs/superpowers/specs/2026-04-02-provider-model-redesign-design.md`](/home/czyt/code/nekobot/docs/superpowers/specs/2026-04-02-provider-model-redesign-design.md)
+
+### Status
+**Phase 6 Completed** - 已确认根目录现有 `*_plan.md` 全部已纳入本主计划索引；`provider/model` 的后端、API、WebUI 和模型消费入口迁移均已打通，`agent tool_session spawn -> process -> tasks.Service` 与 `cron executeJob -> tasks.Service` 也已接入完成，下一步进入 `watch executeCommand`。
+
+### Phase 4 Progress
+- [x] provider connection-only 基础切片
+  - `provider` ent schema 去掉 `models/default_model`
+  - `providerstore` 改为持久化连接字段 + `default_weight/enabled`
+  - `/api/providers` 改为 connection-only 投影视图
+  - 新增 `/api/provider-types`
+  - 定向验证通过：
+    - `go test -count=1 ./pkg/providerregistry ./pkg/providerstore ./pkg/webui`
+- [x] model catalog / model route 存储层
+  - 新增 `modelcatalog` / `modelroute` ent schema
+  - 新增 `pkg/modelstore`
+  - 新增 `pkg/modelroute`
+  - 已覆盖：
+    - catalog CRUD
+    - route CRUD
+    - default route
+    - effective weight
+    - alias / regex lookup
+  - 定向验证通过：
+    - `go test -count=1 ./pkg/modelstore ./pkg/modelroute`
+- [x] runtime model resolution 改造
+  - `agent` 已优先通过 `modelroute` 解析 provider 对应的实际模型
+  - route metadata 当前支持 `provider_model_id`
+  - `resolveModelForProvider()` 在新数据层存在时优先读 route，查不到时才回落旧逻辑
+  - 定向验证通过：
+    - `go test -count=1 ./pkg/providerregistry ./pkg/providerstore ./pkg/modelstore ./pkg/modelroute ./pkg/agent ./pkg/runtimeagents ./pkg/webui`
+- [x] models/routes API
+  - 新增：
+    - `/api/models`
+    - `/api/model-routes`
+  - provider discovery 已开始 merge 到：
+    - `model catalog`
+    - `model route`
+  - discovery 当前会自动补：
+    - catalog item
+    - route
+    - `metadata.provider_model_id`
+  - 定向验证通过：
+    - `go test -count=1 ./pkg/providerregistry ./pkg/providerstore ./pkg/modelstore ./pkg/modelroute ./pkg/agent ./pkg/runtimeagents ./pkg/webui`
+- [x] WebUI Providers/Models 页面迁移
+  - 2026-04-02 进度补记：
+    - 已确认根目录计划文件：
+      - `task_plan.md`
+      - `claude_code_alignment_plan.md`
+      - `migration_task_plan.md`
+      - `provider_model_migration_plan.md`
+      - `wechat_ilink_task_plan.md`
+      - `closure_task_plan.md`
+    - 以上均已在本文件 `Plan Index` 中有入口，无新增遗漏 `_plan.md`
+    - 当前前端迁移拆为三段：
+      1. 共享 hooks 与类型层：`useProviders` / `useProviderTypes` / `useModels`
+      2. Provider 连接管理 UI：`ProviderForm` / `ProvidersPage`
+      3. Model 管理 UI 与调用入口：`ModelsPage` + Chat/Config/Cron 模型来源替换
+    - 当前已完成：
+      - `ProviderForm` 已改为 provider type registry 驱动的 connection-only 表单
+      - `ProvidersPage` 已去除 provider-owned model 展示，改为连接与运行态视图
+      - 已新增独立 `ModelsPage`
+      - `App` / `Sidebar` 已接入 models 路由入口
+      - `ChatPage` / `ConfigPage` / `CronPage` 已改从 shared model catalog + routes 读取模型选项
+    - 前端验证通过：
+      - `npm run build`（`pkg/webui/frontend`）
+
+
+## 2026-04-02 Task Lifecycle Service 接线收口批次
+
+### Goal
+把前一轮已经落到 `pkg/tasks.Service` 的生命周期模型，真正接到现有后台执行主链，而不是继续只停留在 store/snapshot/control-plane 展示层。
+
+### Phases
+- [x] Phase 1: 复核当前 `task lifecycle service + runtime control plane` 代码状态与验证覆盖
+- [x] Phase 2: 先补测试，锁定 `subagent` 尚未接入 `tasks.Service` 的缺口
+- [x] Phase 3: 把 `subagent` 执行链接到 `enqueue -> claim -> start -> complete/fail/cancel`
+- [x] Phase 4: 跑定向与扩大的 Go 回归
+- [x] Phase 5: 基于当前收口结果决定下一条接入 `tasks.Service` 的执行路径
+
+### Decisions Made
+- `subagent` 不再继续只依赖 `ListTaskSnapshots()` 暴露任务，而是正式把生命周期写入 `pkg/tasks.Service`。
+- `Agent.EnableSubagents()` 现在直接为 `subagent` 装配共享 task lifecycle service，避免控制面继续依赖“旧 source + 新 managed source”双轨并存。
+- `runtime control plane` 当前已具备：
+  - `status`
+  - `availability_reason`
+  - `current_task_count`
+  - `last_seen_at`
+  - `session_runtime_states`
+- 下一批优先不再扩 UI 展示，而是继续把更多真实执行路径接入统一 task lifecycle。
+- 后续每次切入新的主线切片前，先用 `codeagent` 拉一轮 `codex + claude` 的收束审查，只允许输出一个推荐方向和一组明确延后项，避免多条设计路线并行演化。
+
+### Verification
+- [x] `go test -count=1 ./pkg/subagent ./pkg/agent ./pkg/webui`
+- [x] `go test -count=1 ./pkg/tasks ./pkg/subagent ./pkg/agent ./pkg/runtimeagents ./pkg/runtimetopology ./pkg/approval ./pkg/gateway ./pkg/inboundrouter ./pkg/webui`
+- [x] `go test -count=1 ./...`
+
+### Errors Encountered
+- 暂无新的阻塞错误。
+
+### Phase 5 Decision
+- 已确认下一条最值得接入 `pkg/tasks.Service` 的执行路径为：
+  - `exec.background -> process`
+- 候选顺序：
+  1. `exec.background -> process`
+  2. `agent tool_session spawn`
+  3. `cron executeJob`
+  4. `watch executeCommand`
+  5. `gateway/router chat` 暂不优先
+- `codeagent` 审查收束后的执行规则：
+  - 当前只推进 `exec.background -> process`
+  - `chat/main loop`、`AgentDefinition`、`tool governance`、`frontend domain stores` 在这一切片完成前都不展开实现
+
+### Status
+**Phase 5 Completed** - `subagent` 已正式接入 `pkg/tasks.Service`，并已通过 `codeagent(codex+claude)` 收束出唯一下一主线：`exec.background -> process`。
+
+
+## 2026-04-02 codeany 调研吸收项批次
+
+### Goal
+把 `codeany` 中确认对 `nekobot` 当前方向真正有价值的两点，正式接入主开发计划：一是可持久化权限规则层，二是上下文来源可解释面。
+
+### Phases
+- [ ] Phase 1: 在 `tool governance` 计划阶段设计 `permission rules` 数据模型与存储入口
+- [ ] Phase 2: 在 `tool governance` 执行阶段实现规则匹配、持久化与解释信息输出
+- [ ] Phase 3: 在 `AgentDefinition / context economy` 计划阶段设计 `context sources` 结构与观测视图
+- [ ] Phase 4: 在后续 WebUI / control plane 阶段实现 context sources 展示
+
+### Decisions Made
+- 这两项来自 `codeany` 调研，但只吸收概念与产品边界，不迁入其终端/TUI 形态。
+- 当前不新增独立“plugin system”主线，也不引入 `open-agent-sdk-go` 替换 `blades`。
+- `permission rules` 必须挂到 `nekobot` 自己的治理链路里，避免形成第二套旁路权限系统。
+- `context sources` 应服务于：
+  - `AgentDefinition`
+  - `prompt section registry`
+  - `context economy`
+  - WebUI / runtime control plane 的解释性展示
+
+### Ordering
+- 这两项属于已确认的后续吸收项，但不插队当前主线。
+- 当前顺序保持：
+  1. `watch executeCommand`
+  2. 再进入 `AgentDefinition / tool governance / context economy` 时把这两项落地
+
+### References
+- [`notes.md`](/home/czyt/code/nekobot/notes.md)
+
+### Status
+**Planned** - 已纳入主计划，等待当前 `tasks.Service` 主线切片完成后进入对应阶段。
+
+
+## 2026-04-02 cron executeJob -> tasks.Service 接线批次
+
+### Goal
+把 `cron executeJob` 触发的 agent 执行纳入共享 `pkg/tasks.Service`，让定时任务在控制面里具备统一的生命周期可见性。
+
+### Phases
+- [x] Phase 1: 复核 `pkg/cron` 当前执行入口与共享 task lifecycle 边界
+- [x] Phase 2: 先补测试，锁定 cron job 执行成功/失败时的 managed task 行为
+- [x] Phase 3: 实现 `cron executeJob -> tasks.Service` 接线
+- [x] Phase 4: 跑 cron/webui/全仓验证，确认 CI 通过
+- [x] Phase 5: 切换到下一条唯一主线
+
+### Decisions Made
+- `cron` 采用独立的 managed task，而不是复用 chat 内部 task id。
+- 每次 cron run 生成独立 task id，`SessionID` 复用 `job.ID`，`RuntimeID` 固定为 `cron`。
+- 当前复用 `tasks.TypeLocalAgent` 表达 cron 驱动的本地 agent 执行，不额外新增 task type。
+- 只向执行上下文注入 `runtime_id=cron`，不把 cron run task id 向内继续透传为工具链的父 task id，避免与现有 process-backed task 复用语义冲突。
+- WebUI `/api/status` 与 runtime topology 不扩 schema，直接消费现有聚合任务视图。
+
+### Verification
+- [x] `go test -count=1 ./pkg/cron`
+- [x] `go test -count=1 ./pkg/webui -run 'TestHandle(CreateCronJob_AcceptsRouteOverrides|CreateCronJob_AtScheduleValidatesRFC3339|RunCronJob_NotFound|RunCronJob_DisabledJobDoesNotExecute|CronJobLifecycle)'`
+- [x] `go test ./...`
+- [x] `cd pkg/webui/frontend && npm ci && npm run build`
+
+### Status
+**Phase 5 Completed** - `cron executeJob -> tasks.Service` 已落地并通过本地 CI；当前唯一剩余主线为 `watch executeCommand -> tasks.Service`。
+
+
+## 2026-04-02 exec.background -> process 接线收口批次
+
+### Goal
+把 `exec.background` 创建出来的后台 PTY 进程正式接入共享 `pkg/tasks.Service`，让 process-backed 任务进入统一的 `enqueue -> claim -> start -> complete/fail/cancel` 生命周期，而不是只返回一个 session ID。
+
+### Phases
+- [x] Phase 1: 复核 `exec.background`、`process.Manager` 与共享 `taskStore/taskService` 的现状
+- [x] Phase 2: 先补 RED 测试，锁定 process 生命周期与缺省 taskID 行为
+- [x] Phase 3: 实现 `exec.background -> process -> tasks.Service` 接线
+- [x] Phase 4: 跑切片相关与外围回归，确认 `/api/status` 聚合链未回退
+- [ ] Phase 5: 切换到下一条主线前，重新做一次方向收束审查
+
+### Decisions Made
+- `process.Manager` 而不是 `ExecTool` 负责 process-backed task 的生命周期迁移。
+- `Agent` 统一持有共享 `taskStore` 与 `taskService`，并同时装配给 `processMgr` 与 `subagent`，避免多个 `tasks.Service` 实例对同一 store 造成 source 冲突。
+- 只有携带 task 语义的 process session 才进入 managed lifecycle；当前切片先覆盖 `exec.background`。
+- `exec.background` 在没有显式 `TaskID` 时，使用生成的 `sessionID` 作为 `TaskID`。
+- `Kill`/`Reset` 只标记 cancel 请求，最终 `Cancel` 状态由 `waitForExit` 统一发出，避免重复终态写入。
+- `/api/status` 现有的 task/runtime 聚合测试已经覆盖 runtime worker 对 `CurrentTaskCount` 的影响，因此本切片不额外扩 schema。
+
+### Verification
+- [x] `go test -count=1 ./pkg/process ./pkg/tools ./pkg/agent`
+- [x] `go test -count=1 ./pkg/process ./pkg/tools ./pkg/agent ./pkg/webui`
+- [x] `go test -count=1 ./pkg/runtimeagents ./pkg/runtimetopology ./pkg/tasks`
+- [x] `go test -count=1 ./pkg/subagent ./pkg/approval ./pkg/inboundrouter ./pkg/gateway`
+- [x] `go test -count=1 ./...`
+
+### Errors Encountered
+- 收口审查发现 `process.Manager.Kill()` 存在 cancel/fail 分类竞态：
+  - 旧实现先 `kill` 再标记 cancel，理论上可能把用户主动终止记成 `failed`。
+  - 已在本切片内修复为先标记 cancel，再发送 kill signal，并补回归锁定顺序。
+- `go test -count=1 ./...` 仍会间歇失败于 `pkg/gateway`：
+  - `TestProcessMessageDoesNotEmitInboundWhenRouterHandlesWebsocketChat`
+  - 本轮切片相关定向回归全部通过，但仓库级全量验证仍受这条已知基线问题影响。
+
+### Status
+**Phase 5 Completed** - `exec.background -> process -> tasks.Service` 已落地，补修了 `Kill()` cancel 竞态并通过切片相关回归。仓库级全量验证仍被既有 `pkg/gateway` 基线问题阻塞；下一条唯一主线已收束为 `agent tool_session spawn -> process -> tasks.Service`。
 
 
 ## 2026-04-01 Claude Code Deep Dive V2 计划补强批次

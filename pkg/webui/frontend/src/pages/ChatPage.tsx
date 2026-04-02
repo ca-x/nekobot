@@ -19,16 +19,12 @@ import {
 } from '@/components/ui/select';
 import { useChat, type ChatMessage } from '@/hooks/useChat';
 import { useWatchStatus } from '@/hooks/useConfig';
-import { usePrompts, usePromptSessionBindings } from '@/hooks/usePrompts';
+import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
+import { usePrompts, usePromptSessionBindings, useReplacePromptSessionBindings } from '@/hooks/usePrompts';
+import { useProviders } from '@/hooks/useProviders';
 import { useAccountBindings, useChannelAccounts, useRuntimeAgents } from '@/hooks/useTopology';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-
-interface ProviderInfo {
-  name: string;
-  default_model?: string;
-  models?: string[];
-}
 
 interface ProviderGroupInfo {
   name: string;
@@ -47,11 +43,6 @@ interface ConfigData {
   };
 }
 
-interface ModelEntry {
-  provider: string;
-  model: string;
-}
-
 interface RouteTarget {
   name: string;
   type: 'provider' | 'group';
@@ -59,8 +50,6 @@ interface RouteTarget {
 }
 
 const EMPTY_VALUE = '__default__';
-const MODEL_VALUE_SEPARATOR = '::';
-
 function toSelectValue(value: string): string {
   return value.trim() === '' ? EMPTY_VALUE : value;
 }
@@ -69,48 +58,10 @@ function fromSelectValue(value: string): string {
   return value === EMPTY_VALUE ? '' : value;
 }
 
-function encodeModelValue(entry: ModelEntry): string {
-  return `${entry.provider}${MODEL_VALUE_SEPARATOR}${entry.model}`;
-}
-
-function decodeModelValue(value: string): ModelEntry {
-  const separatorIndex = value.indexOf(MODEL_VALUE_SEPARATOR);
-  if (separatorIndex === -1) {
-    return { provider: '', model: value };
-  }
-  return {
-    provider: value.slice(0, separatorIndex),
-    model: value.slice(separatorIndex + MODEL_VALUE_SEPARATOR.length),
-  };
-}
-
-function findModelEntry(models: ModelEntry[], provider: string, model: string): ModelEntry | undefined {
-  const normalizedModel = model.trim();
-  if (!normalizedModel) {
-    return undefined;
-  }
-
-  const normalizedProvider = provider.trim();
-  if (normalizedProvider) {
-    return models.find((entry) => entry.provider === normalizedProvider && entry.model === normalizedModel);
-  }
-
-  return models.find((entry) => entry.provider === 'default' && entry.model === normalizedModel)
-    ?? models.find((entry) => entry.model === normalizedModel);
-}
-
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
-  });
-}
-
-function useProviders() {
-  return useQuery<ProviderInfo[]>({
-    queryKey: ['providers'],
-    queryFn: () => api.get('/api/providers'),
-    staleTime: 30_000,
   });
 }
 
@@ -122,17 +73,59 @@ function useAppConfig() {
   });
 }
 
+function formatQueryErrorMessage(error: unknown, fallbackKey: string): string {
+  return error instanceof Error && error.message.trim() ? error.message : t(fallbackKey);
+}
+
+function ChatLoadErrorState({
+  title,
+  description,
+  message,
+  onRetry,
+  retrying,
+}: {
+  title: string;
+  description: string;
+  message: string;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
+  return (
+    <div className="rounded-[1.5rem] border border-rose-200/80 bg-rose-50/70 p-4 shadow-[0_20px_50px_-38px_rgba(160,60,70,0.4)]">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700">
+          <AlertCircle className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-rose-950">{title}</div>
+          <p className="mt-1 text-xs leading-5 text-rose-900/80">{description}</p>
+          <div className="mt-3 rounded-2xl border border-rose-200/80 bg-white/90 px-3 py-2 text-xs text-rose-950">
+            {message}
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end">
+        <Button type="button" variant="outline" className="rounded-full" onClick={onRetry} disabled={retrying}>
+          <RefreshCw className={`mr-2 h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
+          {t('refresh')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function buildModelList(
-  providers: ProviderInfo[],
+  providers: Array<{ name: string }>,
+  modelOptions: Array<{ value: string; label: string; providers: string[] }>,
   config: ConfigData | undefined,
 ): {
-  models: ModelEntry[];
+  models: Array<{ model: string; label: string; providers: string[] }>;
   defaultProvider: string;
   defaultModel: string;
   defaultFallback: string[];
   routeTargets: RouteTarget[];
 } {
-  const models: ModelEntry[] = [];
+  const models: Array<{ model: string; label: string; providers: string[] }> = [];
   const seen = new Set<string>();
   const defaults = config?.agents?.defaults;
   const defaultProvider = defaults?.provider?.trim() || '';
@@ -141,18 +134,13 @@ function buildModelList(
   const routeTargets: RouteTarget[] = [];
   const targetSeen = new Set<string>();
 
-  const add = (provider: string, model: string) => {
-    const normalizedProvider = provider.trim() || 'default';
-    const normalizedModel = model.trim();
-    if (!normalizedModel) {
+  const addModel = (modelID: string, label: string, providers: string[]) => {
+    const normalizedModel = modelID.trim();
+    if (!normalizedModel || seen.has(normalizedModel)) {
       return;
     }
-    const key = `${normalizedProvider}::${normalizedModel}`;
-    if (seen.has(key)) {
-      return;
-    }
-    seen.add(key);
-    models.push({ provider: normalizedProvider, model: normalizedModel });
+    seen.add(normalizedModel);
+    models.push({ model: normalizedModel, label, providers });
   };
 
   const addRouteTarget = (target: RouteTarget) => {
@@ -164,15 +152,16 @@ function buildModelList(
     routeTargets.push({ ...target, name });
   };
 
-  add(defaultProvider, defaultModel);
+  if (defaultModel) {
+    addModel(defaultModel, defaultModel, defaultProvider ? [defaultProvider] : []);
+  }
+
   for (const provider of providers) {
     addRouteTarget({ name: provider.name, type: 'provider' });
-    if (provider.default_model) {
-      add(provider.name, provider.default_model);
-    }
-    for (const model of provider.models || []) {
-      add(provider.name, model);
-    }
+  }
+
+  for (const option of modelOptions) {
+    addModel(option.value, option.label, option.providers);
   }
 
   for (const group of defaults?.provider_groups || []) {
@@ -273,14 +262,15 @@ function StatusPill({
 }
 
 export default function ChatPage() {
-  const { data: providers = [] } = useProviders();
-  const { data: config } = useAppConfig();
-  const { data: prompts = [] } = usePrompts();
-  const { data: runtimes = [] } = useRuntimeAgents();
-  const { data: channelAccounts = [] } = useChannelAccounts();
-  const { data: accountBindings = [] } = useAccountBindings();
+  const providersQuery = useProviders();
+  const configQuery = useAppConfig();
+  const promptsQuery = usePrompts();
+  const runtimesQuery = useRuntimeAgents();
+  const channelAccountsQuery = useChannelAccounts();
+  const accountBindingsQuery = useAccountBindings();
   const {
     messages,
+    setActiveSessionKey,
     sendMessage,
     clearMessages,
     replaceMessages,
@@ -293,15 +283,32 @@ export default function ChatPage() {
     clearFileMentionFeedback,
   } = useChat();
   const { data: watchStatus } = useWatchStatus();
-
-  const { models, defaultProvider, defaultModel, defaultFallback, routeTargets } = buildModelList(providers, config);
+  const providers = providersQuery.data ?? [];
+  const config = configQuery.data;
+  const modelsQuery = useModels();
+  const modelCatalog = modelsQuery.data ?? [];
+  const modelRoutesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
+  const prompts = promptsQuery.data ?? [];
+  const runtimes = runtimesQuery.data ?? [];
+  const channelAccounts = channelAccountsQuery.data ?? [];
+  const accountBindings = accountBindingsQuery.data ?? [];
+  const routesByModel = useMemo(
+    () =>
+      Object.fromEntries(
+        modelCatalog.map((item, index) => [item.model_id, modelRoutesQueries[index]?.data ?? []]),
+      ),
+    [modelCatalog, modelRoutesQueries],
+  );
+  const modelOptions = useMemo(
+    () => buildModelOptions(modelCatalog, routesByModel),
+    [modelCatalog, routesByModel],
+  );
+  const { models, defaultProvider, defaultModel, defaultFallback, routeTargets } = buildModelList(providers, modelOptions, config);
   const [selectedProvider, setSelectedProvider] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [customModel, setCustomModel] = useState('');
   const [selectedRuntimeID, setSelectedRuntimeID] = useState('');
   const [selectedFallbackTargets, setSelectedFallbackTargets] = useState<string[]>([]);
-  const [selectedSystemPromptIDs, setSelectedSystemPromptIDs] = useState<string[]>([]);
-  const [selectedUserPromptIDs, setSelectedUserPromptIDs] = useState<string[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [showFileMentionDetails, setShowFileMentionDetails] = useState(false);
   const scrollEndRef = useRef<HTMLDivElement>(null);
@@ -317,7 +324,7 @@ export default function ChatPage() {
     if (routeTargetMap.get(selectedProvider)?.type === 'group') {
       return models;
     }
-    return models.filter((entry) => entry.provider === selectedProvider);
+    return models.filter((entry) => entry.providers.includes(selectedProvider));
   }, [models, routeTargetMap, selectedProvider]);
 
   useEffect(() => {
@@ -373,6 +380,7 @@ export default function ChatPage() {
   const activeRuntimeID = selectedRuntimeID.trim();
   const activeSessionBindingID = activeRuntimeID ? `route:${activeRuntimeID}:webui-chat` : 'webui-chat';
   const { data: sessionPromptBindings } = usePromptSessionBindings(activeSessionBindingID);
+  const replacePromptSessionBindings = useReplacePromptSessionBindings();
   const activeFallback = selectedFallbackTargets.filter((target) => target.trim().length > 0);
   const actualProvider = routeResult?.actual_provider?.trim() || '';
   const actualModel = routeResult?.actual_model?.trim() || '';
@@ -410,8 +418,7 @@ export default function ChatPage() {
   const watchEnabled = !!watchStatus?.enabled;
   const watchRunning = !!watchStatus?.running;
   const watchLabel = watchEnabled ? t('chatWatchOn') : t('chatWatchOff');
-  const selectedModelEntry = findModelEntry(filteredModels, selectedProvider, selectedModel);
-  const selectedModelValue = selectedModelEntry ? encodeModelValue(selectedModelEntry) : EMPTY_VALUE;
+  const selectedModelValue = selectedModel.trim() || EMPTY_VALUE;
   const fallbackRouteTargets = routeTargets.filter((target) => target.name !== effectiveProvider);
   const systemPrompts = useMemo(
     () => prompts.filter((item) => item.enabled && item.mode === 'system'),
@@ -422,15 +429,22 @@ export default function ChatPage() {
     [prompts],
   );
   const hasProviders = providers.length > 0;
+  const hasModels = modelOptions.length > 0;
   const hasEnabledPrompts = systemPrompts.length + userPrompts.length > 0;
+  const selectedSystemPromptIDs = sessionPromptBindings?.system_prompt_ids ?? [];
+  const selectedUserPromptIDs = sessionPromptBindings?.user_prompt_ids ?? [];
+  const runtimeLoadError =
+    (runtimesQuery.isError && runtimesQuery.data == null && runtimesQuery.error) ||
+    (channelAccountsQuery.isError && channelAccountsQuery.data == null && channelAccountsQuery.error) ||
+    (accountBindingsQuery.isError && accountBindingsQuery.data == null && accountBindingsQuery.error) ||
+    null;
+  const providersLoadError = providersQuery.isError && providersQuery.data == null ? providersQuery.error : null;
+  const modelsLoadError = modelsQuery.isError && modelsQuery.data == null ? modelsQuery.error : null;
+  const promptsLoadError = promptsQuery.isError && promptsQuery.data == null ? promptsQuery.error : null;
 
   useEffect(() => {
-    if (!sessionPromptBindings) {
-      return;
-    }
-    setSelectedSystemPromptIDs(sessionPromptBindings.system_prompt_ids ?? []);
-    setSelectedUserPromptIDs(sessionPromptBindings.user_prompt_ids ?? []);
-  }, [sessionPromptBindings]);
+    setActiveSessionKey(activeSessionBindingID);
+  }, [activeSessionBindingID, setActiveSessionKey]);
 
   useEffect(() => {
     if (!selectedRuntimeID) {
@@ -448,9 +462,9 @@ export default function ChatPage() {
     if (!provider) {
       return;
     }
-    const candidate = models.find((entry) => entry.provider === provider && entry.model === selectedModel)
+    const candidate = models.find((entry) => entry.providers.includes(provider) && entry.model === selectedModel)
       ? selectedModel
-      : models.find((entry) => entry.provider === provider)?.model || '';
+      : models.find((entry) => entry.providers.includes(provider))?.model || '';
     setSelectedModel(candidate);
     if (!customModel.trim()) {
       setCustomModel(candidate);
@@ -463,13 +477,8 @@ export default function ChatPage() {
       setCustomModel('');
       return;
     }
-
-    const entry = decodeModelValue(value);
-    setSelectedModel(entry.model);
-    setCustomModel(entry.model);
-    if (!selectedProvider) {
-      setSelectedProvider(entry.provider === 'default' ? '' : entry.provider);
-    }
+    setSelectedModel(value);
+    setCustomModel(value);
   }
 
   function handleToggleFallbackTarget(targetName: string) {
@@ -481,12 +490,24 @@ export default function ChatPage() {
   }
 
   function handleTogglePrompt(promptID: string, mode: 'system' | 'user') {
-    const setter = mode === 'system' ? setSelectedSystemPromptIDs : setSelectedUserPromptIDs;
-    setter((current) =>
-      current.includes(promptID)
-        ? current.filter((item) => item !== promptID)
-        : [...current, promptID],
-    );
+    const nextSystemPromptIDs =
+      mode === 'system'
+        ? selectedSystemPromptIDs.includes(promptID)
+          ? selectedSystemPromptIDs.filter((item) => item !== promptID)
+          : [...selectedSystemPromptIDs, promptID]
+        : selectedSystemPromptIDs;
+    const nextUserPromptIDs =
+      mode === 'user'
+        ? selectedUserPromptIDs.includes(promptID)
+          ? selectedUserPromptIDs.filter((item) => item !== promptID)
+          : [...selectedUserPromptIDs, promptID]
+        : selectedUserPromptIDs;
+
+    replacePromptSessionBindings.mutate({
+      sessionID: activeSessionBindingID,
+      systemPromptIDs: nextSystemPromptIDs,
+      userPromptIDs: nextUserPromptIDs,
+    });
   }
 
   function handleSend() {
@@ -496,6 +517,7 @@ export default function ChatPage() {
     }
 
     sendMessage(content, {
+      sessionKey: activeSessionBindingID,
       provider: activeProvider,
       model: activeModel,
       fallbackProviders: activeFallback,
@@ -526,7 +548,7 @@ export default function ChatPage() {
         toast.info(t('chatUndoNothing'));
         return;
       }
-      replaceMessages((result.messages ?? []).map((message, index) => ({
+      replaceMessages(undoSessionID, (result.messages ?? []).map((message, index) => ({
         role: message.role as ChatMessage['role'],
         content: message.content,
         timestamp: Date.now() + index,
@@ -582,7 +604,7 @@ export default function ChatPage() {
           </CardHeader>
 
           <CardContent className="space-y-4 p-4">
-            {(!hasProviders || !hasEnabledPrompts) && (
+            {(!hasProviders || !hasModels || !hasEnabledPrompts) && (
               <div className="rounded-[1.5rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.92),rgba(252,241,245,0.8))] p-4 dark:bg-card/90">
                 <div className="eyebrow-label mb-3 flex items-center gap-2 text-[hsl(var(--brand-700))]">
                   <Sparkles className="h-3.5 w-3.5" />
@@ -603,6 +625,26 @@ export default function ChatPage() {
                             className="inline-flex items-center gap-1.5 rounded-full bg-amber-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-800 dark:bg-amber-200 dark:text-amber-900 dark:hover:bg-amber-100"
                           >
                             {t('chatGoToProviders')}
+                            <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {!hasModels && (
+                    <div className="rounded-[1.4rem] border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))]/60 p-4 dark:border-[hsl(var(--brand-800))] dark:bg-[hsl(var(--brand-950))]/20">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-700))] dark:bg-[hsl(var(--brand-900))]/50 dark:text-[hsl(var(--brand-300))]">
+                          <Sparkles className="h-4 w-4" />
+                        </div>
+                        <div className="space-y-2">
+                          <div className="text-sm font-semibold text-[hsl(var(--brand-900))] dark:text-[hsl(var(--brand-200))]">No models configured</div>
+                          <p className="text-xs leading-5 text-[hsl(var(--brand-800))]/70 dark:text-[hsl(var(--brand-300))]/70">Discover models from a provider or add them from the models workspace before starting a chat.</p>
+                          <Link
+                            to="/models"
+                            className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--brand-700))] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[hsl(var(--brand-800))] dark:bg-[hsl(var(--brand-300))] dark:text-[hsl(var(--brand-900))] dark:hover:bg-[hsl(var(--brand-200))]"
+                          >
+                            Open models
                             <ArrowRight className="h-3 w-3" />
                           </Link>
                         </div>
@@ -728,69 +770,111 @@ export default function ChatPage() {
               <label className="eyebrow-label text-muted-foreground">
                 {t('chatRuntimeTarget')}
               </label>
-              <Select value={toSelectValue(selectedRuntimeID)} onValueChange={(value) => setSelectedRuntimeID(fromSelectValue(value))}>
-                <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
-                  <SelectValue placeholder={t('chatRuntimeTarget')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={EMPTY_VALUE}>{t('chatRuntimeAuto')}</SelectItem>
-                  {chatRuntimes.map((runtime) => (
-                    <SelectItem key={runtime.id} value={runtime.id}>
-                      {runtime.display_name || runtime.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {runtimeControlsRoute && (
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {t('chatRuntimeControlsRoute')}
-                </p>
+              {runtimeLoadError ? (
+                <ChatLoadErrorState
+                  title={t('chatRuntimeLoadFailedTitle')}
+                  description={t('chatRuntimeLoadFailedDescription')}
+                  message={formatQueryErrorMessage(runtimeLoadError, 'chatRuntimeLoadFailedDetailFallback')}
+                  onRetry={() => {
+                    void runtimesQuery.refetch();
+                    void channelAccountsQuery.refetch();
+                    void accountBindingsQuery.refetch();
+                  }}
+                  retrying={runtimesQuery.isFetching || channelAccountsQuery.isFetching || accountBindingsQuery.isFetching}
+                />
+              ) : (
+                <>
+                  <Select value={toSelectValue(selectedRuntimeID)} onValueChange={(value) => setSelectedRuntimeID(fromSelectValue(value))}>
+                    <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
+                      <SelectValue placeholder={t('chatRuntimeTarget')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={EMPTY_VALUE}>{t('chatRuntimeAuto')}</SelectItem>
+                      {chatRuntimes.map((runtime) => (
+                        <SelectItem key={runtime.id} value={runtime.id}>
+                          {runtime.display_name || runtime.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {runtimeControlsRoute && (
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {t('chatRuntimeControlsRoute')}
+                    </p>
+                  )}
+                  {!runtimeControlsRoute && chatRuntimes.length === 0 ? (
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {hasRuntimeBindings ? t('chatRuntimeUnavailableHint') : t('chatRuntimeEmptyHint')}
+                    </p>
+                  ) : null}
+                </>
               )}
-              {!runtimeControlsRoute && chatRuntimes.length === 0 ? (
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {hasRuntimeBindings ? t('chatRuntimeUnavailableHint') : t('chatRuntimeEmptyHint')}
-                </p>
-              ) : null}
             </div>
 
             <div className="space-y-3">
               <label className="eyebrow-label text-muted-foreground">
                 {t('defaultProvider')}
               </label>
-              <Select value={toSelectValue(selectedProvider)} onValueChange={handleProviderChange} disabled={runtimeControlsRoute}>
-                <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
-                  <SelectValue placeholder={t('defaultProvider')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={EMPTY_VALUE}>{t('chatRouteAuto')}</SelectItem>
-                  {routeTargets.map((target) => (
-                    <SelectItem key={target.name} value={target.name}>
-                      {target.type === 'group'
-                        ? `${target.name} (${t('chatRouteTargetGroup')})`
-                        : target.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {providersLoadError ? (
+                <ChatLoadErrorState
+                  title={t('chatProvidersLoadFailedTitle')}
+                  description={t('chatProvidersLoadFailedDescription')}
+                  message={formatQueryErrorMessage(providersLoadError, 'chatProvidersLoadFailedDetailFallback')}
+                  onRetry={() => {
+                    void providersQuery.refetch();
+                    void configQuery.refetch();
+                  }}
+                  retrying={providersQuery.isFetching || configQuery.isFetching}
+                />
+              ) : (
+                <Select value={toSelectValue(selectedProvider)} onValueChange={handleProviderChange} disabled={runtimeControlsRoute}>
+                  <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
+                    <SelectValue placeholder={t('defaultProvider')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={EMPTY_VALUE}>{t('chatRouteAuto')}</SelectItem>
+                    {routeTargets.map((target) => (
+                      <SelectItem key={target.name} value={target.name}>
+                        {target.type === 'group'
+                          ? `${target.name} (${t('chatRouteTargetGroup')})`
+                          : target.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div className="space-y-3">
               <label className="eyebrow-label text-muted-foreground">
                 {t('defaultModel')}
               </label>
-              <Select value={selectedModelValue} onValueChange={handleModelChange} disabled={runtimeControlsRoute}>
-                <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
-                  <SelectValue placeholder={t('defaultModel')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={EMPTY_VALUE}>{t('chatModelUnset')}</SelectItem>
-                  {filteredModels.map((entry) => (
-                    <SelectItem key={encodeModelValue(entry)} value={encodeModelValue(entry)}>
-                      {selectedProvider ? entry.model : `${entry.model} (${entry.provider})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {modelsLoadError ? (
+                <ChatLoadErrorState
+                  title="Model catalog failed to load"
+                  description="Model selection now depends on the shared model catalog and routes."
+                  message={formatQueryErrorMessage(modelsLoadError, 'chatProvidersLoadFailedDetailFallback')}
+                  onRetry={() => {
+                    void modelsQuery.refetch();
+                    void providersQuery.refetch();
+                  }}
+                  retrying={modelsQuery.isFetching || providersQuery.isFetching}
+                />
+              ) : (
+                <Select value={selectedModelValue} onValueChange={handleModelChange} disabled={runtimeControlsRoute}>
+                  <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
+                    <SelectValue placeholder={t('defaultModel')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={EMPTY_VALUE}>{t('chatModelUnset')}</SelectItem>
+                    {filteredModels.map((entry) => (
+                      <SelectItem key={entry.model} value={entry.model}>
+                        {entry.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -810,70 +894,94 @@ export default function ChatPage() {
               <label className="eyebrow-label text-muted-foreground">
                 {t('chatSystemPrompts')}
               </label>
-              <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
-                <p className="text-sm text-muted-foreground">{t('chatSystemPromptsHint')}</p>
-                {systemPrompts.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
-                    {t('chatPromptEmpty')}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {systemPrompts.map((prompt) => {
-                      const selected = selectedSystemPromptIDs.includes(prompt.id);
-                      return (
-                        <button
-                          key={prompt.id}
-                          type="button"
-                          onClick={() => handleTogglePrompt(prompt.id, 'system')}
-                          className={cn(
-                            'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                            selected
-                              ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
-                              : 'border-[hsl(var(--gray-200))] bg-white text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
-                          )}
-                        >
-                          {prompt.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {promptsLoadError ? (
+                <ChatLoadErrorState
+                  title={t('chatPromptsLoadFailedTitle')}
+                  description={t('chatPromptsLoadFailedDescription')}
+                  message={formatQueryErrorMessage(promptsLoadError, 'chatPromptsLoadFailedDetailFallback')}
+                  onRetry={() => {
+                    void promptsQuery.refetch();
+                  }}
+                  retrying={promptsQuery.isFetching}
+                />
+              ) : (
+                <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
+                  <p className="text-sm text-muted-foreground">{t('chatSystemPromptsHint')}</p>
+                  {systemPrompts.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
+                      {t('chatPromptEmpty')}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {systemPrompts.map((prompt) => {
+                        const selected = selectedSystemPromptIDs.includes(prompt.id);
+                        return (
+                          <button
+                            key={prompt.id}
+                            type="button"
+                            onClick={() => handleTogglePrompt(prompt.id, 'system')}
+                            className={cn(
+                              'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                              selected
+                                ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
+                                : 'border-[hsl(var(--gray-200))] bg-white text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
+                            )}
+                          >
+                            {prompt.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
               <label className="eyebrow-label text-muted-foreground">
                 {t('chatUserPrompts')}
               </label>
-              <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
-                <p className="text-sm text-muted-foreground">{t('chatUserPromptsHint')}</p>
-                {userPrompts.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
-                    {t('chatPromptEmpty')}
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {userPrompts.map((prompt) => {
-                      const selected = selectedUserPromptIDs.includes(prompt.id);
-                      return (
-                        <button
-                          key={prompt.id}
-                          type="button"
-                          onClick={() => handleTogglePrompt(prompt.id, 'user')}
-                          className={cn(
-                            'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                            selected
-                              ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
-                              : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
-                          )}
-                        >
-                          {prompt.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              {promptsLoadError ? (
+                <ChatLoadErrorState
+                  title={t('chatPromptsLoadFailedTitle')}
+                  description={t('chatPromptsLoadFailedDescription')}
+                  message={formatQueryErrorMessage(promptsLoadError, 'chatPromptsLoadFailedDetailFallback')}
+                  onRetry={() => {
+                    void promptsQuery.refetch();
+                  }}
+                  retrying={promptsQuery.isFetching}
+                />
+              ) : (
+                <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
+                  <p className="text-sm text-muted-foreground">{t('chatUserPromptsHint')}</p>
+                  {userPrompts.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
+                      {t('chatPromptEmpty')}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {userPrompts.map((prompt) => {
+                        const selected = selectedUserPromptIDs.includes(prompt.id);
+                        return (
+                          <button
+                            key={prompt.id}
+                            type="button"
+                            onClick={() => handleTogglePrompt(prompt.id, 'user')}
+                            className={cn(
+                              'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                              selected
+                                ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
+                                : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
+                            )}
+                          >
+                            {prompt.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -943,7 +1051,7 @@ export default function ChatPage() {
                   {t('reconnect')}
                 </Button>
               )}
-              <Button variant="outline" className="h-11 rounded-full sm:min-w-[140px]" onClick={() => clearMessages(activeRuntimeID)}>
+              <Button variant="outline" className="h-11 rounded-full sm:min-w-[140px]" onClick={() => clearMessages(activeSessionBindingID, activeRuntimeID)}>
                 <Trash2 className="mr-2 h-4 w-4" />
                 {t('clearSession')}
               </Button>

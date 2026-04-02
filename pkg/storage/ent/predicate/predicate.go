@@ -27,6 +27,12 @@ type CronJob func(*sql.Selector)
 // Membership is the predicate function for membership builders.
 type Membership func(*sql.Selector)
 
+// ModelCatalog is the predicate function for modelcatalog builders.
+type ModelCatalog func(*sql.Selector)
+
+// ModelRoute is the predicate function for modelroute builders.
+type ModelRoute func(*sql.Selector)
+
 // Prompt is the predicate function for prompt builders.
 type Prompt func(*sql.Selector)
 

@@ -13,6 +13,8 @@ import (
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
+	"nekobot/pkg/storage/ent/modelcatalog"
+	"nekobot/pkg/storage/ent/modelroute"
 	"nekobot/pkg/storage/ent/predicate"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
@@ -44,6 +46,8 @@ const (
 	TypeConfigSection  = "ConfigSection"
 	TypeCronJob        = "CronJob"
 	TypeMembership     = "Membership"
+	TypeModelCatalog   = "ModelCatalog"
+	TypeModelRoute     = "ModelRoute"
 	TypePrompt         = "Prompt"
 	TypePromptBinding  = "PromptBinding"
 	TypeProvider       = "Provider"
@@ -5703,6 +5707,1678 @@ func (m *MembershipMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Membership edge %s", name)
 }
 
+// ModelCatalogMutation represents an operation that mutates the ModelCatalog nodes in the graph.
+type ModelCatalogMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *string
+	model_id          *string
+	display_name      *string
+	developer         *string
+	family            *string
+	_type             *string
+	capabilities_json *string
+	catalog_source    *string
+	enabled           *bool
+	created_at        *time.Time
+	updated_at        *time.Time
+	clearedFields     map[string]struct{}
+	done              bool
+	oldValue          func(context.Context) (*ModelCatalog, error)
+	predicates        []predicate.ModelCatalog
+}
+
+var _ ent.Mutation = (*ModelCatalogMutation)(nil)
+
+// modelcatalogOption allows management of the mutation configuration using functional options.
+type modelcatalogOption func(*ModelCatalogMutation)
+
+// newModelCatalogMutation creates new mutation for the ModelCatalog entity.
+func newModelCatalogMutation(c config, op Op, opts ...modelcatalogOption) *ModelCatalogMutation {
+	m := &ModelCatalogMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeModelCatalog,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withModelCatalogID sets the ID field of the mutation.
+func withModelCatalogID(id string) modelcatalogOption {
+	return func(m *ModelCatalogMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ModelCatalog
+		)
+		m.oldValue = func(ctx context.Context) (*ModelCatalog, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ModelCatalog.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withModelCatalog sets the old ModelCatalog of the mutation.
+func withModelCatalog(node *ModelCatalog) modelcatalogOption {
+	return func(m *ModelCatalogMutation) {
+		m.oldValue = func(context.Context) (*ModelCatalog, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ModelCatalogMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ModelCatalogMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ModelCatalog entities.
+func (m *ModelCatalogMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ModelCatalogMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ModelCatalogMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ModelCatalog.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetModelID sets the "model_id" field.
+func (m *ModelCatalogMutation) SetModelID(s string) {
+	m.model_id = &s
+}
+
+// ModelID returns the value of the "model_id" field in the mutation.
+func (m *ModelCatalogMutation) ModelID() (r string, exists bool) {
+	v := m.model_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelID returns the old "model_id" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldModelID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelID: %w", err)
+	}
+	return oldValue.ModelID, nil
+}
+
+// ResetModelID resets all changes to the "model_id" field.
+func (m *ModelCatalogMutation) ResetModelID() {
+	m.model_id = nil
+}
+
+// SetDisplayName sets the "display_name" field.
+func (m *ModelCatalogMutation) SetDisplayName(s string) {
+	m.display_name = &s
+}
+
+// DisplayName returns the value of the "display_name" field in the mutation.
+func (m *ModelCatalogMutation) DisplayName() (r string, exists bool) {
+	v := m.display_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDisplayName returns the old "display_name" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldDisplayName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDisplayName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDisplayName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDisplayName: %w", err)
+	}
+	return oldValue.DisplayName, nil
+}
+
+// ResetDisplayName resets all changes to the "display_name" field.
+func (m *ModelCatalogMutation) ResetDisplayName() {
+	m.display_name = nil
+}
+
+// SetDeveloper sets the "developer" field.
+func (m *ModelCatalogMutation) SetDeveloper(s string) {
+	m.developer = &s
+}
+
+// Developer returns the value of the "developer" field in the mutation.
+func (m *ModelCatalogMutation) Developer() (r string, exists bool) {
+	v := m.developer
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeveloper returns the old "developer" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldDeveloper(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeveloper is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeveloper requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeveloper: %w", err)
+	}
+	return oldValue.Developer, nil
+}
+
+// ResetDeveloper resets all changes to the "developer" field.
+func (m *ModelCatalogMutation) ResetDeveloper() {
+	m.developer = nil
+}
+
+// SetFamily sets the "family" field.
+func (m *ModelCatalogMutation) SetFamily(s string) {
+	m.family = &s
+}
+
+// Family returns the value of the "family" field in the mutation.
+func (m *ModelCatalogMutation) Family() (r string, exists bool) {
+	v := m.family
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFamily returns the old "family" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldFamily(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFamily is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFamily requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFamily: %w", err)
+	}
+	return oldValue.Family, nil
+}
+
+// ResetFamily resets all changes to the "family" field.
+func (m *ModelCatalogMutation) ResetFamily() {
+	m.family = nil
+}
+
+// SetType sets the "type" field.
+func (m *ModelCatalogMutation) SetType(s string) {
+	m._type = &s
+}
+
+// GetType returns the value of the "type" field in the mutation.
+func (m *ModelCatalogMutation) GetType() (r string, exists bool) {
+	v := m._type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldType returns the old "type" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldType: %w", err)
+	}
+	return oldValue.Type, nil
+}
+
+// ResetType resets all changes to the "type" field.
+func (m *ModelCatalogMutation) ResetType() {
+	m._type = nil
+}
+
+// SetCapabilitiesJSON sets the "capabilities_json" field.
+func (m *ModelCatalogMutation) SetCapabilitiesJSON(s string) {
+	m.capabilities_json = &s
+}
+
+// CapabilitiesJSON returns the value of the "capabilities_json" field in the mutation.
+func (m *ModelCatalogMutation) CapabilitiesJSON() (r string, exists bool) {
+	v := m.capabilities_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCapabilitiesJSON returns the old "capabilities_json" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldCapabilitiesJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCapabilitiesJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCapabilitiesJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCapabilitiesJSON: %w", err)
+	}
+	return oldValue.CapabilitiesJSON, nil
+}
+
+// ResetCapabilitiesJSON resets all changes to the "capabilities_json" field.
+func (m *ModelCatalogMutation) ResetCapabilitiesJSON() {
+	m.capabilities_json = nil
+}
+
+// SetCatalogSource sets the "catalog_source" field.
+func (m *ModelCatalogMutation) SetCatalogSource(s string) {
+	m.catalog_source = &s
+}
+
+// CatalogSource returns the value of the "catalog_source" field in the mutation.
+func (m *ModelCatalogMutation) CatalogSource() (r string, exists bool) {
+	v := m.catalog_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCatalogSource returns the old "catalog_source" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldCatalogSource(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCatalogSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCatalogSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCatalogSource: %w", err)
+	}
+	return oldValue.CatalogSource, nil
+}
+
+// ResetCatalogSource resets all changes to the "catalog_source" field.
+func (m *ModelCatalogMutation) ResetCatalogSource() {
+	m.catalog_source = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *ModelCatalogMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *ModelCatalogMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *ModelCatalogMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ModelCatalogMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ModelCatalogMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ModelCatalogMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *ModelCatalogMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *ModelCatalogMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the ModelCatalog entity.
+// If the ModelCatalog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelCatalogMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *ModelCatalogMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the ModelCatalogMutation builder.
+func (m *ModelCatalogMutation) Where(ps ...predicate.ModelCatalog) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ModelCatalogMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ModelCatalogMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ModelCatalog, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ModelCatalogMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ModelCatalogMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ModelCatalog).
+func (m *ModelCatalogMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ModelCatalogMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.model_id != nil {
+		fields = append(fields, modelcatalog.FieldModelID)
+	}
+	if m.display_name != nil {
+		fields = append(fields, modelcatalog.FieldDisplayName)
+	}
+	if m.developer != nil {
+		fields = append(fields, modelcatalog.FieldDeveloper)
+	}
+	if m.family != nil {
+		fields = append(fields, modelcatalog.FieldFamily)
+	}
+	if m._type != nil {
+		fields = append(fields, modelcatalog.FieldType)
+	}
+	if m.capabilities_json != nil {
+		fields = append(fields, modelcatalog.FieldCapabilitiesJSON)
+	}
+	if m.catalog_source != nil {
+		fields = append(fields, modelcatalog.FieldCatalogSource)
+	}
+	if m.enabled != nil {
+		fields = append(fields, modelcatalog.FieldEnabled)
+	}
+	if m.created_at != nil {
+		fields = append(fields, modelcatalog.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, modelcatalog.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ModelCatalogMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case modelcatalog.FieldModelID:
+		return m.ModelID()
+	case modelcatalog.FieldDisplayName:
+		return m.DisplayName()
+	case modelcatalog.FieldDeveloper:
+		return m.Developer()
+	case modelcatalog.FieldFamily:
+		return m.Family()
+	case modelcatalog.FieldType:
+		return m.GetType()
+	case modelcatalog.FieldCapabilitiesJSON:
+		return m.CapabilitiesJSON()
+	case modelcatalog.FieldCatalogSource:
+		return m.CatalogSource()
+	case modelcatalog.FieldEnabled:
+		return m.Enabled()
+	case modelcatalog.FieldCreatedAt:
+		return m.CreatedAt()
+	case modelcatalog.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ModelCatalogMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case modelcatalog.FieldModelID:
+		return m.OldModelID(ctx)
+	case modelcatalog.FieldDisplayName:
+		return m.OldDisplayName(ctx)
+	case modelcatalog.FieldDeveloper:
+		return m.OldDeveloper(ctx)
+	case modelcatalog.FieldFamily:
+		return m.OldFamily(ctx)
+	case modelcatalog.FieldType:
+		return m.OldType(ctx)
+	case modelcatalog.FieldCapabilitiesJSON:
+		return m.OldCapabilitiesJSON(ctx)
+	case modelcatalog.FieldCatalogSource:
+		return m.OldCatalogSource(ctx)
+	case modelcatalog.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case modelcatalog.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case modelcatalog.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown ModelCatalog field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ModelCatalogMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case modelcatalog.FieldModelID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelID(v)
+		return nil
+	case modelcatalog.FieldDisplayName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDisplayName(v)
+		return nil
+	case modelcatalog.FieldDeveloper:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeveloper(v)
+		return nil
+	case modelcatalog.FieldFamily:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFamily(v)
+		return nil
+	case modelcatalog.FieldType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetType(v)
+		return nil
+	case modelcatalog.FieldCapabilitiesJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCapabilitiesJSON(v)
+		return nil
+	case modelcatalog.FieldCatalogSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCatalogSource(v)
+		return nil
+	case modelcatalog.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case modelcatalog.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case modelcatalog.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ModelCatalog field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ModelCatalogMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ModelCatalogMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ModelCatalogMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown ModelCatalog numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ModelCatalogMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ModelCatalogMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ModelCatalogMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown ModelCatalog nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ModelCatalogMutation) ResetField(name string) error {
+	switch name {
+	case modelcatalog.FieldModelID:
+		m.ResetModelID()
+		return nil
+	case modelcatalog.FieldDisplayName:
+		m.ResetDisplayName()
+		return nil
+	case modelcatalog.FieldDeveloper:
+		m.ResetDeveloper()
+		return nil
+	case modelcatalog.FieldFamily:
+		m.ResetFamily()
+		return nil
+	case modelcatalog.FieldType:
+		m.ResetType()
+		return nil
+	case modelcatalog.FieldCapabilitiesJSON:
+		m.ResetCapabilitiesJSON()
+		return nil
+	case modelcatalog.FieldCatalogSource:
+		m.ResetCatalogSource()
+		return nil
+	case modelcatalog.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case modelcatalog.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case modelcatalog.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ModelCatalog field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ModelCatalogMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ModelCatalogMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ModelCatalogMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ModelCatalogMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ModelCatalogMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ModelCatalogMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ModelCatalogMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ModelCatalog unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ModelCatalogMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ModelCatalog edge %s", name)
+}
+
+// ModelRouteMutation represents an operation that mutates the ModelRoute nodes in the graph.
+type ModelRouteMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *string
+	model_id           *string
+	provider_name      *string
+	enabled            *bool
+	is_default         *bool
+	weight_override    *int
+	addweight_override *int
+	aliases_json       *string
+	regex_rules_json   *string
+	metadata_json      *string
+	created_at         *time.Time
+	updated_at         *time.Time
+	clearedFields      map[string]struct{}
+	done               bool
+	oldValue           func(context.Context) (*ModelRoute, error)
+	predicates         []predicate.ModelRoute
+}
+
+var _ ent.Mutation = (*ModelRouteMutation)(nil)
+
+// modelrouteOption allows management of the mutation configuration using functional options.
+type modelrouteOption func(*ModelRouteMutation)
+
+// newModelRouteMutation creates new mutation for the ModelRoute entity.
+func newModelRouteMutation(c config, op Op, opts ...modelrouteOption) *ModelRouteMutation {
+	m := &ModelRouteMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeModelRoute,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withModelRouteID sets the ID field of the mutation.
+func withModelRouteID(id string) modelrouteOption {
+	return func(m *ModelRouteMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ModelRoute
+		)
+		m.oldValue = func(ctx context.Context) (*ModelRoute, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ModelRoute.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withModelRoute sets the old ModelRoute of the mutation.
+func withModelRoute(node *ModelRoute) modelrouteOption {
+	return func(m *ModelRouteMutation) {
+		m.oldValue = func(context.Context) (*ModelRoute, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ModelRouteMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ModelRouteMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ModelRoute entities.
+func (m *ModelRouteMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ModelRouteMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ModelRouteMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ModelRoute.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetModelID sets the "model_id" field.
+func (m *ModelRouteMutation) SetModelID(s string) {
+	m.model_id = &s
+}
+
+// ModelID returns the value of the "model_id" field in the mutation.
+func (m *ModelRouteMutation) ModelID() (r string, exists bool) {
+	v := m.model_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModelID returns the old "model_id" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldModelID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModelID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModelID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModelID: %w", err)
+	}
+	return oldValue.ModelID, nil
+}
+
+// ResetModelID resets all changes to the "model_id" field.
+func (m *ModelRouteMutation) ResetModelID() {
+	m.model_id = nil
+}
+
+// SetProviderName sets the "provider_name" field.
+func (m *ModelRouteMutation) SetProviderName(s string) {
+	m.provider_name = &s
+}
+
+// ProviderName returns the value of the "provider_name" field in the mutation.
+func (m *ModelRouteMutation) ProviderName() (r string, exists bool) {
+	v := m.provider_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderName returns the old "provider_name" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldProviderName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderName: %w", err)
+	}
+	return oldValue.ProviderName, nil
+}
+
+// ResetProviderName resets all changes to the "provider_name" field.
+func (m *ModelRouteMutation) ResetProviderName() {
+	m.provider_name = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *ModelRouteMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *ModelRouteMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *ModelRouteMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetIsDefault sets the "is_default" field.
+func (m *ModelRouteMutation) SetIsDefault(b bool) {
+	m.is_default = &b
+}
+
+// IsDefault returns the value of the "is_default" field in the mutation.
+func (m *ModelRouteMutation) IsDefault() (r bool, exists bool) {
+	v := m.is_default
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsDefault returns the old "is_default" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldIsDefault(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsDefault is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsDefault requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsDefault: %w", err)
+	}
+	return oldValue.IsDefault, nil
+}
+
+// ResetIsDefault resets all changes to the "is_default" field.
+func (m *ModelRouteMutation) ResetIsDefault() {
+	m.is_default = nil
+}
+
+// SetWeightOverride sets the "weight_override" field.
+func (m *ModelRouteMutation) SetWeightOverride(i int) {
+	m.weight_override = &i
+	m.addweight_override = nil
+}
+
+// WeightOverride returns the value of the "weight_override" field in the mutation.
+func (m *ModelRouteMutation) WeightOverride() (r int, exists bool) {
+	v := m.weight_override
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWeightOverride returns the old "weight_override" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldWeightOverride(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWeightOverride is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWeightOverride requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWeightOverride: %w", err)
+	}
+	return oldValue.WeightOverride, nil
+}
+
+// AddWeightOverride adds i to the "weight_override" field.
+func (m *ModelRouteMutation) AddWeightOverride(i int) {
+	if m.addweight_override != nil {
+		*m.addweight_override += i
+	} else {
+		m.addweight_override = &i
+	}
+}
+
+// AddedWeightOverride returns the value that was added to the "weight_override" field in this mutation.
+func (m *ModelRouteMutation) AddedWeightOverride() (r int, exists bool) {
+	v := m.addweight_override
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetWeightOverride resets all changes to the "weight_override" field.
+func (m *ModelRouteMutation) ResetWeightOverride() {
+	m.weight_override = nil
+	m.addweight_override = nil
+}
+
+// SetAliasesJSON sets the "aliases_json" field.
+func (m *ModelRouteMutation) SetAliasesJSON(s string) {
+	m.aliases_json = &s
+}
+
+// AliasesJSON returns the value of the "aliases_json" field in the mutation.
+func (m *ModelRouteMutation) AliasesJSON() (r string, exists bool) {
+	v := m.aliases_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAliasesJSON returns the old "aliases_json" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldAliasesJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAliasesJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAliasesJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAliasesJSON: %w", err)
+	}
+	return oldValue.AliasesJSON, nil
+}
+
+// ResetAliasesJSON resets all changes to the "aliases_json" field.
+func (m *ModelRouteMutation) ResetAliasesJSON() {
+	m.aliases_json = nil
+}
+
+// SetRegexRulesJSON sets the "regex_rules_json" field.
+func (m *ModelRouteMutation) SetRegexRulesJSON(s string) {
+	m.regex_rules_json = &s
+}
+
+// RegexRulesJSON returns the value of the "regex_rules_json" field in the mutation.
+func (m *ModelRouteMutation) RegexRulesJSON() (r string, exists bool) {
+	v := m.regex_rules_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRegexRulesJSON returns the old "regex_rules_json" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldRegexRulesJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRegexRulesJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRegexRulesJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRegexRulesJSON: %w", err)
+	}
+	return oldValue.RegexRulesJSON, nil
+}
+
+// ResetRegexRulesJSON resets all changes to the "regex_rules_json" field.
+func (m *ModelRouteMutation) ResetRegexRulesJSON() {
+	m.regex_rules_json = nil
+}
+
+// SetMetadataJSON sets the "metadata_json" field.
+func (m *ModelRouteMutation) SetMetadataJSON(s string) {
+	m.metadata_json = &s
+}
+
+// MetadataJSON returns the value of the "metadata_json" field in the mutation.
+func (m *ModelRouteMutation) MetadataJSON() (r string, exists bool) {
+	v := m.metadata_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMetadataJSON returns the old "metadata_json" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldMetadataJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMetadataJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMetadataJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMetadataJSON: %w", err)
+	}
+	return oldValue.MetadataJSON, nil
+}
+
+// ResetMetadataJSON resets all changes to the "metadata_json" field.
+func (m *ModelRouteMutation) ResetMetadataJSON() {
+	m.metadata_json = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ModelRouteMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ModelRouteMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ModelRouteMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *ModelRouteMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *ModelRouteMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the ModelRoute entity.
+// If the ModelRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelRouteMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *ModelRouteMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the ModelRouteMutation builder.
+func (m *ModelRouteMutation) Where(ps ...predicate.ModelRoute) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ModelRouteMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ModelRouteMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ModelRoute, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ModelRouteMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ModelRouteMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ModelRoute).
+func (m *ModelRouteMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ModelRouteMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.model_id != nil {
+		fields = append(fields, modelroute.FieldModelID)
+	}
+	if m.provider_name != nil {
+		fields = append(fields, modelroute.FieldProviderName)
+	}
+	if m.enabled != nil {
+		fields = append(fields, modelroute.FieldEnabled)
+	}
+	if m.is_default != nil {
+		fields = append(fields, modelroute.FieldIsDefault)
+	}
+	if m.weight_override != nil {
+		fields = append(fields, modelroute.FieldWeightOverride)
+	}
+	if m.aliases_json != nil {
+		fields = append(fields, modelroute.FieldAliasesJSON)
+	}
+	if m.regex_rules_json != nil {
+		fields = append(fields, modelroute.FieldRegexRulesJSON)
+	}
+	if m.metadata_json != nil {
+		fields = append(fields, modelroute.FieldMetadataJSON)
+	}
+	if m.created_at != nil {
+		fields = append(fields, modelroute.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, modelroute.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ModelRouteMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case modelroute.FieldModelID:
+		return m.ModelID()
+	case modelroute.FieldProviderName:
+		return m.ProviderName()
+	case modelroute.FieldEnabled:
+		return m.Enabled()
+	case modelroute.FieldIsDefault:
+		return m.IsDefault()
+	case modelroute.FieldWeightOverride:
+		return m.WeightOverride()
+	case modelroute.FieldAliasesJSON:
+		return m.AliasesJSON()
+	case modelroute.FieldRegexRulesJSON:
+		return m.RegexRulesJSON()
+	case modelroute.FieldMetadataJSON:
+		return m.MetadataJSON()
+	case modelroute.FieldCreatedAt:
+		return m.CreatedAt()
+	case modelroute.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ModelRouteMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case modelroute.FieldModelID:
+		return m.OldModelID(ctx)
+	case modelroute.FieldProviderName:
+		return m.OldProviderName(ctx)
+	case modelroute.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case modelroute.FieldIsDefault:
+		return m.OldIsDefault(ctx)
+	case modelroute.FieldWeightOverride:
+		return m.OldWeightOverride(ctx)
+	case modelroute.FieldAliasesJSON:
+		return m.OldAliasesJSON(ctx)
+	case modelroute.FieldRegexRulesJSON:
+		return m.OldRegexRulesJSON(ctx)
+	case modelroute.FieldMetadataJSON:
+		return m.OldMetadataJSON(ctx)
+	case modelroute.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case modelroute.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown ModelRoute field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ModelRouteMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case modelroute.FieldModelID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModelID(v)
+		return nil
+	case modelroute.FieldProviderName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderName(v)
+		return nil
+	case modelroute.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case modelroute.FieldIsDefault:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsDefault(v)
+		return nil
+	case modelroute.FieldWeightOverride:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWeightOverride(v)
+		return nil
+	case modelroute.FieldAliasesJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAliasesJSON(v)
+		return nil
+	case modelroute.FieldRegexRulesJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRegexRulesJSON(v)
+		return nil
+	case modelroute.FieldMetadataJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMetadataJSON(v)
+		return nil
+	case modelroute.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case modelroute.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ModelRoute field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ModelRouteMutation) AddedFields() []string {
+	var fields []string
+	if m.addweight_override != nil {
+		fields = append(fields, modelroute.FieldWeightOverride)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ModelRouteMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case modelroute.FieldWeightOverride:
+		return m.AddedWeightOverride()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ModelRouteMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case modelroute.FieldWeightOverride:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddWeightOverride(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ModelRoute numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ModelRouteMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ModelRouteMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ModelRouteMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown ModelRoute nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ModelRouteMutation) ResetField(name string) error {
+	switch name {
+	case modelroute.FieldModelID:
+		m.ResetModelID()
+		return nil
+	case modelroute.FieldProviderName:
+		m.ResetProviderName()
+		return nil
+	case modelroute.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case modelroute.FieldIsDefault:
+		m.ResetIsDefault()
+		return nil
+	case modelroute.FieldWeightOverride:
+		m.ResetWeightOverride()
+		return nil
+	case modelroute.FieldAliasesJSON:
+		m.ResetAliasesJSON()
+		return nil
+	case modelroute.FieldRegexRulesJSON:
+		m.ResetRegexRulesJSON()
+		return nil
+	case modelroute.FieldMetadataJSON:
+		m.ResetMetadataJSON()
+		return nil
+	case modelroute.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case modelroute.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown ModelRoute field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ModelRouteMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ModelRouteMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ModelRouteMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ModelRouteMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ModelRouteMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ModelRouteMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ModelRouteMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ModelRoute unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ModelRouteMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ModelRoute edge %s", name)
+}
+
 // PromptMutation represents an operation that mutates the Prompt nodes in the graph.
 type PromptMutation struct {
 	config
@@ -7162,24 +8838,25 @@ func (m *PromptBindingMutation) ResetEdge(name string) error {
 // ProviderMutation represents an operation that mutates the Provider nodes in the graph.
 type ProviderMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *string
-	name          *string
-	provider_kind *string
-	api_key       *string
-	api_base      *string
-	proxy         *string
-	models_json   *string
-	default_model *string
-	timeout       *int
-	addtimeout    *int
-	created_at    *time.Time
-	updated_at    *time.Time
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*Provider, error)
-	predicates    []predicate.Provider
+	op                Op
+	typ               string
+	id                *string
+	name              *string
+	provider_kind     *string
+	api_key           *string
+	api_base          *string
+	proxy             *string
+	default_weight    *int
+	adddefault_weight *int
+	enabled           *bool
+	timeout           *int
+	addtimeout        *int
+	created_at        *time.Time
+	updated_at        *time.Time
+	clearedFields     map[string]struct{}
+	done              bool
+	oldValue          func(context.Context) (*Provider, error)
+	predicates        []predicate.Provider
 }
 
 var _ ent.Mutation = (*ProviderMutation)(nil)
@@ -7466,76 +9143,96 @@ func (m *ProviderMutation) ResetProxy() {
 	m.proxy = nil
 }
 
-// SetModelsJSON sets the "models_json" field.
-func (m *ProviderMutation) SetModelsJSON(s string) {
-	m.models_json = &s
+// SetDefaultWeight sets the "default_weight" field.
+func (m *ProviderMutation) SetDefaultWeight(i int) {
+	m.default_weight = &i
+	m.adddefault_weight = nil
 }
 
-// ModelsJSON returns the value of the "models_json" field in the mutation.
-func (m *ProviderMutation) ModelsJSON() (r string, exists bool) {
-	v := m.models_json
+// DefaultWeight returns the value of the "default_weight" field in the mutation.
+func (m *ProviderMutation) DefaultWeight() (r int, exists bool) {
+	v := m.default_weight
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldModelsJSON returns the old "models_json" field's value of the Provider entity.
+// OldDefaultWeight returns the old "default_weight" field's value of the Provider entity.
 // If the Provider object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ProviderMutation) OldModelsJSON(ctx context.Context) (v string, err error) {
+func (m *ProviderMutation) OldDefaultWeight(ctx context.Context) (v int, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldModelsJSON is only allowed on UpdateOne operations")
+		return v, errors.New("OldDefaultWeight is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldModelsJSON requires an ID field in the mutation")
+		return v, errors.New("OldDefaultWeight requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldModelsJSON: %w", err)
+		return v, fmt.Errorf("querying old value for OldDefaultWeight: %w", err)
 	}
-	return oldValue.ModelsJSON, nil
+	return oldValue.DefaultWeight, nil
 }
 
-// ResetModelsJSON resets all changes to the "models_json" field.
-func (m *ProviderMutation) ResetModelsJSON() {
-	m.models_json = nil
+// AddDefaultWeight adds i to the "default_weight" field.
+func (m *ProviderMutation) AddDefaultWeight(i int) {
+	if m.adddefault_weight != nil {
+		*m.adddefault_weight += i
+	} else {
+		m.adddefault_weight = &i
+	}
 }
 
-// SetDefaultModel sets the "default_model" field.
-func (m *ProviderMutation) SetDefaultModel(s string) {
-	m.default_model = &s
-}
-
-// DefaultModel returns the value of the "default_model" field in the mutation.
-func (m *ProviderMutation) DefaultModel() (r string, exists bool) {
-	v := m.default_model
+// AddedDefaultWeight returns the value that was added to the "default_weight" field in this mutation.
+func (m *ProviderMutation) AddedDefaultWeight() (r int, exists bool) {
+	v := m.adddefault_weight
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldDefaultModel returns the old "default_model" field's value of the Provider entity.
+// ResetDefaultWeight resets all changes to the "default_weight" field.
+func (m *ProviderMutation) ResetDefaultWeight() {
+	m.default_weight = nil
+	m.adddefault_weight = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *ProviderMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *ProviderMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the Provider entity.
 // If the Provider object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ProviderMutation) OldDefaultModel(ctx context.Context) (v string, err error) {
+func (m *ProviderMutation) OldEnabled(ctx context.Context) (v bool, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldDefaultModel is only allowed on UpdateOne operations")
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldDefaultModel requires an ID field in the mutation")
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldDefaultModel: %w", err)
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
 	}
-	return oldValue.DefaultModel, nil
+	return oldValue.Enabled, nil
 }
 
-// ResetDefaultModel resets all changes to the "default_model" field.
-func (m *ProviderMutation) ResetDefaultModel() {
-	m.default_model = nil
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *ProviderMutation) ResetEnabled() {
+	m.enabled = nil
 }
 
 // SetTimeout sets the "timeout" field.
@@ -7716,11 +9413,11 @@ func (m *ProviderMutation) Fields() []string {
 	if m.proxy != nil {
 		fields = append(fields, provider.FieldProxy)
 	}
-	if m.models_json != nil {
-		fields = append(fields, provider.FieldModelsJSON)
+	if m.default_weight != nil {
+		fields = append(fields, provider.FieldDefaultWeight)
 	}
-	if m.default_model != nil {
-		fields = append(fields, provider.FieldDefaultModel)
+	if m.enabled != nil {
+		fields = append(fields, provider.FieldEnabled)
 	}
 	if m.timeout != nil {
 		fields = append(fields, provider.FieldTimeout)
@@ -7749,10 +9446,10 @@ func (m *ProviderMutation) Field(name string) (ent.Value, bool) {
 		return m.APIBase()
 	case provider.FieldProxy:
 		return m.Proxy()
-	case provider.FieldModelsJSON:
-		return m.ModelsJSON()
-	case provider.FieldDefaultModel:
-		return m.DefaultModel()
+	case provider.FieldDefaultWeight:
+		return m.DefaultWeight()
+	case provider.FieldEnabled:
+		return m.Enabled()
 	case provider.FieldTimeout:
 		return m.Timeout()
 	case provider.FieldCreatedAt:
@@ -7778,10 +9475,10 @@ func (m *ProviderMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldAPIBase(ctx)
 	case provider.FieldProxy:
 		return m.OldProxy(ctx)
-	case provider.FieldModelsJSON:
-		return m.OldModelsJSON(ctx)
-	case provider.FieldDefaultModel:
-		return m.OldDefaultModel(ctx)
+	case provider.FieldDefaultWeight:
+		return m.OldDefaultWeight(ctx)
+	case provider.FieldEnabled:
+		return m.OldEnabled(ctx)
 	case provider.FieldTimeout:
 		return m.OldTimeout(ctx)
 	case provider.FieldCreatedAt:
@@ -7832,19 +9529,19 @@ func (m *ProviderMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetProxy(v)
 		return nil
-	case provider.FieldModelsJSON:
-		v, ok := value.(string)
+	case provider.FieldDefaultWeight:
+		v, ok := value.(int)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetModelsJSON(v)
+		m.SetDefaultWeight(v)
 		return nil
-	case provider.FieldDefaultModel:
-		v, ok := value.(string)
+	case provider.FieldEnabled:
+		v, ok := value.(bool)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetDefaultModel(v)
+		m.SetEnabled(v)
 		return nil
 	case provider.FieldTimeout:
 		v, ok := value.(int)
@@ -7875,6 +9572,9 @@ func (m *ProviderMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *ProviderMutation) AddedFields() []string {
 	var fields []string
+	if m.adddefault_weight != nil {
+		fields = append(fields, provider.FieldDefaultWeight)
+	}
 	if m.addtimeout != nil {
 		fields = append(fields, provider.FieldTimeout)
 	}
@@ -7886,6 +9586,8 @@ func (m *ProviderMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *ProviderMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
+	case provider.FieldDefaultWeight:
+		return m.AddedDefaultWeight()
 	case provider.FieldTimeout:
 		return m.AddedTimeout()
 	}
@@ -7897,6 +9599,13 @@ func (m *ProviderMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *ProviderMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case provider.FieldDefaultWeight:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDefaultWeight(v)
+		return nil
 	case provider.FieldTimeout:
 		v, ok := value.(int)
 		if !ok {
@@ -7946,11 +9655,11 @@ func (m *ProviderMutation) ResetField(name string) error {
 	case provider.FieldProxy:
 		m.ResetProxy()
 		return nil
-	case provider.FieldModelsJSON:
-		m.ResetModelsJSON()
+	case provider.FieldDefaultWeight:
+		m.ResetDefaultWeight()
 		return nil
-	case provider.FieldDefaultModel:
-		m.ResetDefaultModel()
+	case provider.FieldEnabled:
+		m.ResetEnabled()
 		return nil
 	case provider.FieldTimeout:
 		m.ResetTimeout()

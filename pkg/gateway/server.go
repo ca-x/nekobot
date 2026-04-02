@@ -334,7 +334,9 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 	_ = s.bus.SendInbound(busMsg)
 
 	response := ""
+	routerHandled := false
 	if s.router != nil {
+		routerHandled = true
 		var err error
 		response, _, err = s.router.ChatWebsocket(
 			context.Background(),
@@ -348,6 +350,10 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 			s.sendError(client, fmt.Sprintf("agent error: %v", err))
 			return
 		}
+	}
+	if response == "" && routerHandled {
+		s.sendError(client, "agent error: websocket chat returned empty response")
+		return
 	}
 	if response == "" {
 		var err error

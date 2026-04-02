@@ -52,14 +52,14 @@ func GetStreamingSessionID(ctx context.Context) string {
 
 // StreamWriter provides real-time output streaming for commands.
 type StreamWriter struct {
-	mu       sync.Mutex
+	mu        sync.Mutex
 	sessionID string
-	output   strings.Builder
-	lines    int
-	handler  StreamingHandler
-	interval time.Duration
-	lastSend time.Time
-	done     bool
+	output    strings.Builder
+	lines     int
+	handler   StreamingHandler
+	interval  time.Duration
+	lastSend  time.Time
+	done      bool
 }
 
 // NewStreamWriter creates a new streaming writer.
@@ -115,11 +115,11 @@ func (sw *StreamWriter) Finish(exitCode int, errMsg string) {
 	if sw.handler != nil {
 		update := StreamingUpdate{
 			SessionID: sw.sessionID,
-			Output:   sw.output.String(),
-			Lines:    sw.lines,
-			Done:     true,
-			ExitCode: exitCode,
-			Error:    errMsg,
+			Output:    sw.output.String(),
+			Lines:     sw.lines,
+			Done:      true,
+			ExitCode:  exitCode,
+			Error:     errMsg,
 		}
 		sw.handler(update)
 	}
@@ -146,9 +146,9 @@ func (sw *StreamWriter) sendUpdate() {
 	sw.lastSend = time.Now()
 	update := StreamingUpdate{
 		SessionID: sw.sessionID,
-		Output: sw.output.String(),
-		Lines:  sw.lines,
-		Done:   false,
+		Output:    sw.output.String(),
+		Lines:     sw.lines,
+		Done:      false,
 	}
 	sw.handler(update)
 }

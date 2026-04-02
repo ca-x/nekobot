@@ -13,8 +13,12 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"nekobot/pkg/accountbindings"
+	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/config"
+	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/tasks"
 	"nekobot/pkg/watch"
 	"nekobot/pkg/workspace"
 )
@@ -73,6 +77,7 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 		config:    cfg,
 		loader:    loader,
 		startedAt: time.Now().Add(-3 * time.Second),
+		taskStore: tasks.NewStore(),
 	}
 
 	e := echo.New()
@@ -109,6 +114,9 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 		"database_dir",
 		"runtime_db_path",
 		"workspace_path",
+		"task_count",
+		"task_state_counts",
+		"recent_tasks",
 		"gateway_host",
 		"gateway_port",
 	}
@@ -128,6 +136,256 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 	}
 	if payload["workspace_path"] != cfg.Agents.Defaults.Workspace {
 		t.Fatalf("unexpected workspace_path: %+v", payload["workspace_path"])
+	}
+	if payload["task_count"].(float64) != 0 {
+		t.Fatalf("expected zero task_count, got %+v", payload["task_count"])
+	}
+	if recentTasks, ok := payload["recent_tasks"].([]interface{}); !ok || len(recentTasks) != 0 {
+		t.Fatalf("expected empty recent_tasks, got %+v", payload["recent_tasks"])
+	}
+	if runtimeStates, ok := payload["runtime_states"].([]interface{}); !ok || len(runtimeStates) != 0 {
+		t.Fatalf("expected empty runtime_states, got %+v", payload["runtime_states"])
+	}
+	if sessionStates, ok := payload["session_runtime_states"].([]interface{}); !ok || len(sessionStates) != 0 {
+		t.Fatalf("expected empty session_runtime_states, got %+v", payload["session_runtime_states"])
+	}
+}
+
+func TestHandleStatus_IncludesRecentTasks(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	now := time.Now()
+	store := tasks.NewStore()
+	store.SetSource("test", func() []tasks.Task {
+		return []tasks.Task{
+			{
+				ID:        "task-old",
+				Type:      tasks.TypeBackgroundAgent,
+				State:     tasks.StateCompleted,
+				Summary:   "old task",
+				CreatedAt: now.Add(-20 * time.Minute),
+			},
+			{
+				ID:        "task-running",
+				Type:      tasks.TypeBackgroundAgent,
+				State:     tasks.StateRunning,
+				Summary:   "running task",
+				CreatedAt: now.Add(-10 * time.Minute),
+				StartedAt: now.Add(-1 * time.Minute),
+			},
+			{
+				ID:          "task-failed",
+				Type:        tasks.TypeBackgroundAgent,
+				State:       tasks.StateFailed,
+				Summary:     "failed task",
+				LastError:   "boom",
+				CreatedAt:   now.Add(-15 * time.Minute),
+				CompletedAt: now.Add(-30 * time.Second),
+			},
+		}
+	})
+	s := &Server{
+		config:    cfg,
+		startedAt: now.Add(-5 * time.Second),
+		taskStore: store,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleStatus(ctx); err != nil {
+		t.Fatalf("handleStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var payload struct {
+		TaskCount       int            `json:"task_count"`
+		TaskStateCounts map[string]int `json:"task_state_counts"`
+		RecentTasks     []tasks.Task   `json:"recent_tasks"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal status payload failed: %v", err)
+	}
+	if payload.TaskCount != 3 {
+		t.Fatalf("expected task_count 3, got %d", payload.TaskCount)
+	}
+	if payload.TaskStateCounts[string(tasks.StateRunning)] != 1 {
+		t.Fatalf("expected running count 1, got %+v", payload.TaskStateCounts)
+	}
+	if payload.TaskStateCounts[string(tasks.StateFailed)] != 1 {
+		t.Fatalf("expected failed count 1, got %+v", payload.TaskStateCounts)
+	}
+	if len(payload.RecentTasks) != 3 {
+		t.Fatalf("expected 3 recent tasks, got %d", len(payload.RecentTasks))
+	}
+	if payload.RecentTasks[0].ID != "task-failed" {
+		t.Fatalf("expected most recent task to be task-failed, got %q", payload.RecentTasks[0].ID)
+	}
+	if payload.RecentTasks[1].ID != "task-running" {
+		t.Fatalf("expected second task to be task-running, got %q", payload.RecentTasks[1].ID)
+	}
+}
+
+func TestHandleStatus_IncludesRuntimeStates(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	runtimeItem, err := runtimeMgr.Create(t.Context(), runtimeagents.AgentRuntime{
+		Name:        "ops-runtime",
+		DisplayName: "Ops Runtime",
+		Enabled:     true,
+		Provider:    "openai",
+		Model:       "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	accountItem, err := accountMgr.Create(t.Context(), channelaccounts.ChannelAccount{
+		ChannelType: "websocket",
+		AccountKey:  "default",
+		DisplayName: "Gateway Default",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	if _, err := bindingMgr.Create(t.Context(), accountbindings.AccountBinding{
+		ChannelAccountID: accountItem.ID,
+		AgentRuntimeID:   runtimeItem.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	store := tasks.NewStore()
+	store.SetSource("runtime", func() []tasks.Task {
+		return []tasks.Task{{
+			ID:        "task-1",
+			Type:      tasks.TypeRuntimeWorker,
+			State:     tasks.StateRunning,
+			RuntimeID: runtimeItem.ID,
+			Summary:   "runtime task",
+			StartedAt: time.Now().Add(-30 * time.Second),
+			CreatedAt: time.Now().Add(-1 * time.Minute),
+		}}
+	})
+
+	s := &Server{
+		config:     cfg,
+		startedAt:  time.Now().Add(-5 * time.Second),
+		taskStore:  store,
+		runtimeMgr: runtimeMgr,
+		accountMgr: accountMgr,
+		bindingMgr: bindingMgr,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleStatus(ctx); err != nil {
+		t.Fatalf("handleStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var payload struct {
+		RuntimeStates []runtimeagents.AgentRuntime `json:"runtime_states"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal status payload failed: %v", err)
+	}
+	if len(payload.RuntimeStates) != 1 {
+		t.Fatalf("expected one runtime state, got %d", len(payload.RuntimeStates))
+	}
+	status := payload.RuntimeStates[0].Status
+	if status == nil {
+		t.Fatalf("expected runtime status")
+	}
+	if !status.EffectiveAvailable || status.EnabledBindingCount != 1 || status.CurrentTaskCount != 1 {
+		t.Fatalf("unexpected runtime status: %+v", status)
+	}
+	if status.AvailabilityReason != "available" {
+		t.Fatalf("unexpected availability reason: %q", status.AvailabilityReason)
+	}
+}
+
+func TestHandleStatus_IncludesSessionRuntimeStates(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	store := tasks.NewStore()
+	store.SetSessionPermissionMode("sess-1", "manual")
+	store.SetSessionPendingAction("sess-1", "exec", "approval-1")
+
+	s := &Server{
+		config:    cfg,
+		startedAt: time.Now().Add(-5 * time.Second),
+		taskStore: store,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleStatus(ctx); err != nil {
+		t.Fatalf("handleStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var payload struct {
+		SessionRuntimeStates []tasks.SessionState `json:"session_runtime_states"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal status payload failed: %v", err)
+	}
+	if len(payload.SessionRuntimeStates) != 1 {
+		t.Fatalf("expected one session runtime state, got %d", len(payload.SessionRuntimeStates))
+	}
+	if payload.SessionRuntimeStates[0].SessionID != "sess-1" {
+		t.Fatalf("expected session id sess-1, got %q", payload.SessionRuntimeStates[0].SessionID)
+	}
+	if payload.SessionRuntimeStates[0].PermissionMode != "manual" {
+		t.Fatalf("expected manual permission mode, got %q", payload.SessionRuntimeStates[0].PermissionMode)
+	}
+	if payload.SessionRuntimeStates[0].PendingRequestID != "approval-1" {
+		t.Fatalf("expected approval request id approval-1, got %q", payload.SessionRuntimeStates[0].PendingRequestID)
 	}
 }
 

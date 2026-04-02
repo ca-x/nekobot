@@ -303,3 +303,40 @@ func TestProcessMessageDoesNotEmitInboundWhenRouterHandlesWebsocketChat(t *testi
 		t.Fatalf("expected websocket inbound bus path to stay unused, got %d hits", inboundHits)
 	}
 }
+
+func TestProcessMessageDoesNotFallbackWhenRouterReturnsEmptyReply(t *testing.T) {
+	s := newTestServer(t)
+	router := &stubGatewayRouter{}
+	s.router = router
+
+	sess, err := s.sessionMgr.GetWithSource("gateway-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	client := &Client{
+		id:       "gateway-session",
+		send:     make(chan []byte, 1),
+		userID:   "user-1",
+		username: "alice",
+		session:  sess,
+	}
+
+	s.processMessage(client, WSMessage{
+		Type:    "message",
+		Content: "hello",
+	})
+
+	select {
+	case payload := <-client.send:
+		var msg WSMessage
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			t.Fatalf("unmarshal ws message: %v", err)
+		}
+		if msg.Type != "error" {
+			t.Fatalf("expected error message, got %#v", msg)
+		}
+	default:
+		t.Fatal("expected websocket error message")
+	}
+}

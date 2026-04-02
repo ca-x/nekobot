@@ -74,30 +74,30 @@ func (_c *ProviderCreate) SetNillableProxy(v *string) *ProviderCreate {
 	return _c
 }
 
-// SetModelsJSON sets the "models_json" field.
-func (_c *ProviderCreate) SetModelsJSON(v string) *ProviderCreate {
-	_c.mutation.SetModelsJSON(v)
+// SetDefaultWeight sets the "default_weight" field.
+func (_c *ProviderCreate) SetDefaultWeight(v int) *ProviderCreate {
+	_c.mutation.SetDefaultWeight(v)
 	return _c
 }
 
-// SetNillableModelsJSON sets the "models_json" field if the given value is not nil.
-func (_c *ProviderCreate) SetNillableModelsJSON(v *string) *ProviderCreate {
+// SetNillableDefaultWeight sets the "default_weight" field if the given value is not nil.
+func (_c *ProviderCreate) SetNillableDefaultWeight(v *int) *ProviderCreate {
 	if v != nil {
-		_c.SetModelsJSON(*v)
+		_c.SetDefaultWeight(*v)
 	}
 	return _c
 }
 
-// SetDefaultModel sets the "default_model" field.
-func (_c *ProviderCreate) SetDefaultModel(v string) *ProviderCreate {
-	_c.mutation.SetDefaultModel(v)
+// SetEnabled sets the "enabled" field.
+func (_c *ProviderCreate) SetEnabled(v bool) *ProviderCreate {
+	_c.mutation.SetEnabled(v)
 	return _c
 }
 
-// SetNillableDefaultModel sets the "default_model" field if the given value is not nil.
-func (_c *ProviderCreate) SetNillableDefaultModel(v *string) *ProviderCreate {
+// SetNillableEnabled sets the "enabled" field if the given value is not nil.
+func (_c *ProviderCreate) SetNillableEnabled(v *bool) *ProviderCreate {
 	if v != nil {
-		_c.SetDefaultModel(*v)
+		_c.SetEnabled(*v)
 	}
 	return _c
 }
@@ -205,13 +205,13 @@ func (_c *ProviderCreate) defaults() {
 		v := provider.DefaultProxy
 		_c.mutation.SetProxy(v)
 	}
-	if _, ok := _c.mutation.ModelsJSON(); !ok {
-		v := provider.DefaultModelsJSON
-		_c.mutation.SetModelsJSON(v)
+	if _, ok := _c.mutation.DefaultWeight(); !ok {
+		v := provider.DefaultDefaultWeight
+		_c.mutation.SetDefaultWeight(v)
 	}
-	if _, ok := _c.mutation.DefaultModel(); !ok {
-		v := provider.DefaultDefaultModel
-		_c.mutation.SetDefaultModel(v)
+	if _, ok := _c.mutation.Enabled(); !ok {
+		v := provider.DefaultEnabled
+		_c.mutation.SetEnabled(v)
 	}
 	if _, ok := _c.mutation.Timeout(); !ok {
 		v := provider.DefaultTimeout
@@ -258,11 +258,11 @@ func (_c *ProviderCreate) check() error {
 	if _, ok := _c.mutation.Proxy(); !ok {
 		return &ValidationError{Name: "proxy", err: errors.New(`ent: missing required field "Provider.proxy"`)}
 	}
-	if _, ok := _c.mutation.ModelsJSON(); !ok {
-		return &ValidationError{Name: "models_json", err: errors.New(`ent: missing required field "Provider.models_json"`)}
+	if _, ok := _c.mutation.DefaultWeight(); !ok {
+		return &ValidationError{Name: "default_weight", err: errors.New(`ent: missing required field "Provider.default_weight"`)}
 	}
-	if _, ok := _c.mutation.DefaultModel(); !ok {
-		return &ValidationError{Name: "default_model", err: errors.New(`ent: missing required field "Provider.default_model"`)}
+	if _, ok := _c.mutation.Enabled(); !ok {
+		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "Provider.enabled"`)}
 	}
 	if _, ok := _c.mutation.Timeout(); !ok {
 		return &ValidationError{Name: "timeout", err: errors.New(`ent: missing required field "Provider.timeout"`)}
@@ -328,13 +328,13 @@ func (_c *ProviderCreate) createSpec() (*Provider, *sqlgraph.CreateSpec) {
 		_spec.SetField(provider.FieldProxy, field.TypeString, value)
 		_node.Proxy = value
 	}
-	if value, ok := _c.mutation.ModelsJSON(); ok {
-		_spec.SetField(provider.FieldModelsJSON, field.TypeString, value)
-		_node.ModelsJSON = value
+	if value, ok := _c.mutation.DefaultWeight(); ok {
+		_spec.SetField(provider.FieldDefaultWeight, field.TypeInt, value)
+		_node.DefaultWeight = value
 	}
-	if value, ok := _c.mutation.DefaultModel(); ok {
-		_spec.SetField(provider.FieldDefaultModel, field.TypeString, value)
-		_node.DefaultModel = value
+	if value, ok := _c.mutation.Enabled(); ok {
+		_spec.SetField(provider.FieldEnabled, field.TypeBool, value)
+		_node.Enabled = value
 	}
 	if value, ok := _c.mutation.Timeout(); ok {
 		_spec.SetField(provider.FieldTimeout, field.TypeInt, value)

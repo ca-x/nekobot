@@ -18,6 +18,8 @@ import (
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
+	"nekobot/pkg/storage/ent/modelcatalog"
+	"nekobot/pkg/storage/ent/modelroute"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
@@ -51,6 +53,10 @@ type Client struct {
 	CronJob *CronJobClient
 	// Membership is the client for interacting with the Membership builders.
 	Membership *MembershipClient
+	// ModelCatalog is the client for interacting with the ModelCatalog builders.
+	ModelCatalog *ModelCatalogClient
+	// ModelRoute is the client for interacting with the ModelRoute builders.
+	ModelRoute *ModelRouteClient
 	// Prompt is the client for interacting with the Prompt builders.
 	Prompt *PromptClient
 	// PromptBinding is the client for interacting with the PromptBinding builders.
@@ -83,6 +89,8 @@ func (c *Client) init() {
 	c.ConfigSection = NewConfigSectionClient(c.config)
 	c.CronJob = NewCronJobClient(c.config)
 	c.Membership = NewMembershipClient(c.config)
+	c.ModelCatalog = NewModelCatalogClient(c.config)
+	c.ModelRoute = NewModelRouteClient(c.config)
 	c.Prompt = NewPromptClient(c.config)
 	c.PromptBinding = NewPromptBindingClient(c.config)
 	c.Provider = NewProviderClient(c.config)
@@ -189,6 +197,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ConfigSection:  NewConfigSectionClient(cfg),
 		CronJob:        NewCronJobClient(cfg),
 		Membership:     NewMembershipClient(cfg),
+		ModelCatalog:   NewModelCatalogClient(cfg),
+		ModelRoute:     NewModelRouteClient(cfg),
 		Prompt:         NewPromptClient(cfg),
 		PromptBinding:  NewPromptBindingClient(cfg),
 		Provider:       NewProviderClient(cfg),
@@ -222,6 +232,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ConfigSection:  NewConfigSectionClient(cfg),
 		CronJob:        NewCronJobClient(cfg),
 		Membership:     NewMembershipClient(cfg),
+		ModelCatalog:   NewModelCatalogClient(cfg),
+		ModelRoute:     NewModelRouteClient(cfg),
 		Prompt:         NewPromptClient(cfg),
 		PromptBinding:  NewPromptBindingClient(cfg),
 		Provider:       NewProviderClient(cfg),
@@ -259,8 +271,9 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
-		c.ConfigSection, c.CronJob, c.Membership, c.Prompt, c.PromptBinding,
-		c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
+		c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog, c.ModelRoute,
+		c.Prompt, c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession,
+		c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -271,8 +284,9 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
-		c.ConfigSection, c.CronJob, c.Membership, c.Prompt, c.PromptBinding,
-		c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
+		c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog, c.ModelRoute,
+		c.Prompt, c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession,
+		c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -295,6 +309,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.CronJob.mutate(ctx, m)
 	case *MembershipMutation:
 		return c.Membership.mutate(ctx, m)
+	case *ModelCatalogMutation:
+		return c.ModelCatalog.mutate(ctx, m)
+	case *ModelRouteMutation:
+		return c.ModelRoute.mutate(ctx, m)
 	case *PromptMutation:
 		return c.Prompt.mutate(ctx, m)
 	case *PromptBindingMutation:
@@ -1277,6 +1295,272 @@ func (c *MembershipClient) mutate(ctx context.Context, m *MembershipMutation) (V
 	}
 }
 
+// ModelCatalogClient is a client for the ModelCatalog schema.
+type ModelCatalogClient struct {
+	config
+}
+
+// NewModelCatalogClient returns a client for the ModelCatalog from the given config.
+func NewModelCatalogClient(c config) *ModelCatalogClient {
+	return &ModelCatalogClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `modelcatalog.Hooks(f(g(h())))`.
+func (c *ModelCatalogClient) Use(hooks ...Hook) {
+	c.hooks.ModelCatalog = append(c.hooks.ModelCatalog, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `modelcatalog.Intercept(f(g(h())))`.
+func (c *ModelCatalogClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ModelCatalog = append(c.inters.ModelCatalog, interceptors...)
+}
+
+// Create returns a builder for creating a ModelCatalog entity.
+func (c *ModelCatalogClient) Create() *ModelCatalogCreate {
+	mutation := newModelCatalogMutation(c.config, OpCreate)
+	return &ModelCatalogCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ModelCatalog entities.
+func (c *ModelCatalogClient) CreateBulk(builders ...*ModelCatalogCreate) *ModelCatalogCreateBulk {
+	return &ModelCatalogCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ModelCatalogClient) MapCreateBulk(slice any, setFunc func(*ModelCatalogCreate, int)) *ModelCatalogCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ModelCatalogCreateBulk{err: fmt.Errorf("calling to ModelCatalogClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ModelCatalogCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ModelCatalogCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ModelCatalog.
+func (c *ModelCatalogClient) Update() *ModelCatalogUpdate {
+	mutation := newModelCatalogMutation(c.config, OpUpdate)
+	return &ModelCatalogUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ModelCatalogClient) UpdateOne(_m *ModelCatalog) *ModelCatalogUpdateOne {
+	mutation := newModelCatalogMutation(c.config, OpUpdateOne, withModelCatalog(_m))
+	return &ModelCatalogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ModelCatalogClient) UpdateOneID(id string) *ModelCatalogUpdateOne {
+	mutation := newModelCatalogMutation(c.config, OpUpdateOne, withModelCatalogID(id))
+	return &ModelCatalogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ModelCatalog.
+func (c *ModelCatalogClient) Delete() *ModelCatalogDelete {
+	mutation := newModelCatalogMutation(c.config, OpDelete)
+	return &ModelCatalogDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ModelCatalogClient) DeleteOne(_m *ModelCatalog) *ModelCatalogDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ModelCatalogClient) DeleteOneID(id string) *ModelCatalogDeleteOne {
+	builder := c.Delete().Where(modelcatalog.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ModelCatalogDeleteOne{builder}
+}
+
+// Query returns a query builder for ModelCatalog.
+func (c *ModelCatalogClient) Query() *ModelCatalogQuery {
+	return &ModelCatalogQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeModelCatalog},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ModelCatalog entity by its id.
+func (c *ModelCatalogClient) Get(ctx context.Context, id string) (*ModelCatalog, error) {
+	return c.Query().Where(modelcatalog.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ModelCatalogClient) GetX(ctx context.Context, id string) *ModelCatalog {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ModelCatalogClient) Hooks() []Hook {
+	return c.hooks.ModelCatalog
+}
+
+// Interceptors returns the client interceptors.
+func (c *ModelCatalogClient) Interceptors() []Interceptor {
+	return c.inters.ModelCatalog
+}
+
+func (c *ModelCatalogClient) mutate(ctx context.Context, m *ModelCatalogMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ModelCatalogCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ModelCatalogUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ModelCatalogUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ModelCatalogDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ModelCatalog mutation op: %q", m.Op())
+	}
+}
+
+// ModelRouteClient is a client for the ModelRoute schema.
+type ModelRouteClient struct {
+	config
+}
+
+// NewModelRouteClient returns a client for the ModelRoute from the given config.
+func NewModelRouteClient(c config) *ModelRouteClient {
+	return &ModelRouteClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `modelroute.Hooks(f(g(h())))`.
+func (c *ModelRouteClient) Use(hooks ...Hook) {
+	c.hooks.ModelRoute = append(c.hooks.ModelRoute, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `modelroute.Intercept(f(g(h())))`.
+func (c *ModelRouteClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ModelRoute = append(c.inters.ModelRoute, interceptors...)
+}
+
+// Create returns a builder for creating a ModelRoute entity.
+func (c *ModelRouteClient) Create() *ModelRouteCreate {
+	mutation := newModelRouteMutation(c.config, OpCreate)
+	return &ModelRouteCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ModelRoute entities.
+func (c *ModelRouteClient) CreateBulk(builders ...*ModelRouteCreate) *ModelRouteCreateBulk {
+	return &ModelRouteCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ModelRouteClient) MapCreateBulk(slice any, setFunc func(*ModelRouteCreate, int)) *ModelRouteCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ModelRouteCreateBulk{err: fmt.Errorf("calling to ModelRouteClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ModelRouteCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ModelRouteCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ModelRoute.
+func (c *ModelRouteClient) Update() *ModelRouteUpdate {
+	mutation := newModelRouteMutation(c.config, OpUpdate)
+	return &ModelRouteUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ModelRouteClient) UpdateOne(_m *ModelRoute) *ModelRouteUpdateOne {
+	mutation := newModelRouteMutation(c.config, OpUpdateOne, withModelRoute(_m))
+	return &ModelRouteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ModelRouteClient) UpdateOneID(id string) *ModelRouteUpdateOne {
+	mutation := newModelRouteMutation(c.config, OpUpdateOne, withModelRouteID(id))
+	return &ModelRouteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ModelRoute.
+func (c *ModelRouteClient) Delete() *ModelRouteDelete {
+	mutation := newModelRouteMutation(c.config, OpDelete)
+	return &ModelRouteDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ModelRouteClient) DeleteOne(_m *ModelRoute) *ModelRouteDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ModelRouteClient) DeleteOneID(id string) *ModelRouteDeleteOne {
+	builder := c.Delete().Where(modelroute.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ModelRouteDeleteOne{builder}
+}
+
+// Query returns a query builder for ModelRoute.
+func (c *ModelRouteClient) Query() *ModelRouteQuery {
+	return &ModelRouteQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeModelRoute},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ModelRoute entity by its id.
+func (c *ModelRouteClient) Get(ctx context.Context, id string) (*ModelRoute, error) {
+	return c.Query().Where(modelroute.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ModelRouteClient) GetX(ctx context.Context, id string) *ModelRoute {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ModelRouteClient) Hooks() []Hook {
+	return c.hooks.ModelRoute
+}
+
+// Interceptors returns the client interceptors.
+func (c *ModelRouteClient) Interceptors() []Interceptor {
+	return c.inters.ModelRoute
+}
+
+func (c *ModelRouteClient) mutate(ctx context.Context, m *ModelRouteMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ModelRouteCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ModelRouteUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ModelRouteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ModelRouteDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ModelRoute mutation op: %q", m.Op())
+	}
+}
+
 // PromptClient is a client for the Prompt schema.
 type PromptClient struct {
 	config
@@ -2244,12 +2528,12 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 type (
 	hooks struct {
 		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
-		CronJob, Membership, Prompt, PromptBinding, Provider, Tenant, ToolEvent,
-		ToolSession, User []ent.Hook
+		CronJob, Membership, ModelCatalog, ModelRoute, Prompt, PromptBinding, Provider,
+		Tenant, ToolEvent, ToolSession, User []ent.Hook
 	}
 	inters struct {
 		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
-		CronJob, Membership, Prompt, PromptBinding, Provider, Tenant, ToolEvent,
-		ToolSession, User []ent.Interceptor
+		CronJob, Membership, ModelCatalog, ModelRoute, Prompt, PromptBinding, Provider,
+		Tenant, ToolEvent, ToolSession, User []ent.Interceptor
 	}
 )

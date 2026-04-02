@@ -271,14 +271,16 @@ type ProvidersConfig []ProviderProfile
 
 // ProviderProfile defines a provider profile with type and alias.
 type ProviderProfile struct {
-	Name         string   `mapstructure:"name" json:"name"`                   // Alias (e.g., "openai-primary", "my-api")
-	ProviderKind string   `mapstructure:"provider_kind" json:"provider_kind"` // Type: "openai", "anthropic", "gemini"
-	APIKey       string   `mapstructure:"api_key" json:"api_key"`
-	APIBase      string   `mapstructure:"api_base" json:"api_base"`
-	Proxy        string   `mapstructure:"proxy" json:"proxy,omitempty"`                 // HTTP/SOCKS5 proxy URL (optional)
-	Models       []string `mapstructure:"models" json:"models,omitempty"`               // Supported model list
-	DefaultModel string   `mapstructure:"default_model" json:"default_model,omitempty"` // Default model for this provider
-	Timeout      int      `mapstructure:"timeout" json:"timeout,omitempty"`             // Timeout in seconds, default 30s
+	Name          string   `mapstructure:"name" json:"name"`                   // Alias (e.g., "openai-primary", "my-api")
+	ProviderKind  string   `mapstructure:"provider_kind" json:"provider_kind"` // Type: "openai", "anthropic", "gemini"
+	APIKey        string   `mapstructure:"api_key" json:"api_key"`
+	APIBase       string   `mapstructure:"api_base" json:"api_base"`
+	Proxy         string   `mapstructure:"proxy" json:"proxy,omitempty"` // HTTP/SOCKS5 proxy URL (optional)
+	DefaultWeight int      `mapstructure:"default_weight" json:"default_weight,omitempty"`
+	Enabled       bool     `mapstructure:"enabled" json:"enabled"`
+	Models        []string `mapstructure:"models" json:"models,omitempty"`               // Supported model list
+	DefaultModel  string   `mapstructure:"default_model" json:"default_model,omitempty"` // Default model for this provider
+	Timeout       int      `mapstructure:"timeout" json:"timeout,omitempty"`             // Timeout in seconds, default 30s
 }
 
 // LoggerConfig contains logger configuration.

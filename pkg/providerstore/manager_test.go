@@ -46,11 +46,12 @@ func TestManagerCRUDAndConfigSync(t *testing.T) {
 	}
 
 	created, err := mgr.Create(ctx, config.ProviderProfile{
-		Name:         "openai",
-		ProviderKind: "openai",
-		APIKey:       "k2",
-		APIBase:      "https://api.openai.com/v1",
-		Models:       []string{"gpt-4o"},
+		Name:          "openai",
+		ProviderKind:  "openai",
+		APIKey:        "k2",
+		APIBase:       "https://api.openai.com/v1",
+		DefaultWeight: 7,
+		Enabled:       true,
 	})
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
@@ -58,16 +59,26 @@ func TestManagerCRUDAndConfigSync(t *testing.T) {
 	if created.Name != "openai" {
 		t.Fatalf("unexpected created provider: %+v", created)
 	}
+	if created.DefaultWeight != 7 {
+		t.Fatalf("expected default weight 7, got %+v", created)
+	}
+	if !created.Enabled {
+		t.Fatalf("expected provider enabled, got %+v", created)
+	}
+	if len(created.Models) != 0 || created.DefaultModel != "" {
+		t.Fatalf("expected connection-only provider shape, got %+v", created)
+	}
 
 	if _, err := mgr.Create(ctx, config.ProviderProfile{Name: "openai", ProviderKind: "openai"}); !errors.Is(err, ErrProviderExists) {
 		t.Fatalf("expected ErrProviderExists, got: %v", err)
 	}
 
 	updated, err := mgr.Update(ctx, "openai", config.ProviderProfile{
-		Name:         "openai-main",
-		ProviderKind: "openai",
-		APIBase:      "https://proxy.example/v1",
-		Models:       []string{"gpt-4.1"},
+		Name:          "openai-main",
+		ProviderKind:  "openai",
+		APIBase:       "https://proxy.example/v1",
+		DefaultWeight: 3,
+		Enabled:       false,
 	})
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
@@ -77,6 +88,12 @@ func TestManagerCRUDAndConfigSync(t *testing.T) {
 	}
 	if updated.APIKey != "k2" {
 		t.Fatalf("expected API key to be preserved, got %q", updated.APIKey)
+	}
+	if updated.DefaultWeight != 3 || updated.Enabled {
+		t.Fatalf("expected updated weight/enabled fields, got %+v", updated)
+	}
+	if len(updated.Models) != 0 || updated.DefaultModel != "" {
+		t.Fatalf("expected connection-only provider shape after update, got %+v", updated)
 	}
 
 	if err := mgr.Delete(ctx, "openai-main"); err != nil {

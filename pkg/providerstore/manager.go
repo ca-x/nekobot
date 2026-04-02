@@ -2,7 +2,6 @@ package providerstore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -154,19 +153,14 @@ func (m *Manager) Update(ctx context.Context, name string, profile config.Provid
 		}
 	}
 
-	modelsJSON, err := marshalModels(normalized.Models)
-	if err != nil {
-		return nil, err
-	}
-
 	_, err = m.client.Provider.UpdateOneID(current.ID).
 		SetName(normalized.Name).
 		SetProviderKind(normalized.ProviderKind).
 		SetAPIKey(normalized.APIKey).
 		SetAPIBase(normalized.APIBase).
 		SetProxy(normalized.Proxy).
-		SetModelsJSON(modelsJSON).
-		SetDefaultModel(normalized.DefaultModel).
+		SetDefaultWeight(normalized.DefaultWeight).
+		SetEnabled(normalized.Enabled).
 		SetTimeout(normalized.Timeout).
 		Save(ctx)
 	if err != nil {
@@ -260,18 +254,14 @@ func (m *Manager) existsLocked(ctx context.Context, name string) (bool, error) {
 }
 
 func (m *Manager) insertLocked(ctx context.Context, profile config.ProviderProfile) error {
-	modelsJSON, err := marshalModels(profile.Models)
-	if err != nil {
-		return err
-	}
-	_, err = m.client.Provider.Create().
+	_, err := m.client.Provider.Create().
 		SetName(profile.Name).
 		SetProviderKind(profile.ProviderKind).
 		SetAPIKey(profile.APIKey).
 		SetAPIBase(profile.APIBase).
 		SetProxy(profile.Proxy).
-		SetModelsJSON(modelsJSON).
-		SetDefaultModel(profile.DefaultModel).
+		SetDefaultWeight(profile.DefaultWeight).
+		SetEnabled(profile.Enabled).
 		SetTimeout(profile.Timeout).
 		Save(ctx)
 	if err != nil {
@@ -287,19 +277,15 @@ func toConfigProvider(rec *ent.Provider) (config.ProviderProfile, error) {
 	if rec == nil {
 		return config.ProviderProfile{}, fmt.Errorf("provider record is nil")
 	}
-	models, err := unmarshalModels(rec.ModelsJSON)
-	if err != nil {
-		return config.ProviderProfile{}, err
-	}
 	profile := config.ProviderProfile{
-		Name:         rec.Name,
-		ProviderKind: rec.ProviderKind,
-		APIKey:       rec.APIKey,
-		APIBase:      rec.APIBase,
-		Proxy:        rec.Proxy,
-		Models:       models,
-		DefaultModel: rec.DefaultModel,
-		Timeout:      rec.Timeout,
+		Name:          rec.Name,
+		ProviderKind:  rec.ProviderKind,
+		APIKey:        rec.APIKey,
+		APIBase:       rec.APIBase,
+		Proxy:         rec.Proxy,
+		DefaultWeight: rec.DefaultWeight,
+		Enabled:       rec.Enabled,
+		Timeout:       rec.Timeout,
 	}
 	normalized, err := normalizeProvider(profile)
 	if err != nil {
@@ -322,71 +308,19 @@ func normalizeProvider(profile config.ProviderProfile) (config.ProviderProfile, 
 	profile.APIKey = strings.TrimSpace(profile.APIKey)
 	profile.APIBase = strings.TrimSpace(profile.APIBase)
 	profile.Proxy = strings.TrimSpace(profile.Proxy)
-	profile.DefaultModel = strings.TrimSpace(profile.DefaultModel)
-	profile.Models = normalizeModelList(profile.Models)
-
-	if profile.DefaultModel != "" {
-		if !containsString(profile.Models, profile.DefaultModel) {
-			profile.Models = append([]string{profile.DefaultModel}, profile.Models...)
-		}
+	profile.Models = []string{}
+	profile.DefaultModel = ""
+	if profile.DefaultWeight <= 0 {
+		profile.DefaultWeight = 1
 	}
-	if profile.DefaultModel == "" && len(profile.Models) > 0 {
-		profile.DefaultModel = profile.Models[0]
+	if !profile.Enabled {
+		// false is a valid explicit value; keep as-is.
 	}
 
 	if profile.Timeout <= 0 {
 		profile.Timeout = 60
 	}
 	return profile, nil
-}
-
-func normalizeModelList(models []string) []string {
-	if len(models) == 0 {
-		return []string{}
-	}
-	seen := make(map[string]struct{}, len(models))
-	result := make([]string, 0, len(models))
-	for _, model := range models {
-		trimmed := strings.TrimSpace(model)
-		if trimmed == "" {
-			continue
-		}
-		if _, ok := seen[trimmed]; ok {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		result = append(result, trimmed)
-	}
-	return result
-}
-
-func containsString(items []string, target string) bool {
-	for _, item := range items {
-		if item == target {
-			return true
-		}
-	}
-	return false
-}
-
-func marshalModels(models []string) (string, error) {
-	data, err := json.Marshal(normalizeModelList(models))
-	if err != nil {
-		return "", fmt.Errorf("marshal models: %w", err)
-	}
-	return string(data), nil
-}
-
-func unmarshalModels(raw string) ([]string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return []string{}, nil
-	}
-	var models []string
-	if err := json.Unmarshal([]byte(trimmed), &models); err != nil {
-		return nil, fmt.Errorf("unmarshal models: %w", err)
-	}
-	return normalizeModelList(models), nil
 }
 
 func cloneProviders(src []config.ProviderProfile) []config.ProviderProfile {
@@ -396,7 +330,8 @@ func cloneProviders(src []config.ProviderProfile) []config.ProviderProfile {
 	dst := make([]config.ProviderProfile, len(src))
 	for i := range src {
 		dst[i] = src[i]
-		dst[i].Models = append([]string(nil), src[i].Models...)
+		dst[i].Models = []string{}
+		dst[i].DefaultModel = ""
 	}
 	return dst
 }

@@ -163,6 +163,9 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) (st
 
 		sessionID := uuid.New().String()
 		spec := execenv.StartSpecFromContext(ctx, sessionID, command, workdir, nil)
+		if strings.TrimSpace(spec.TaskID) == "" {
+			spec.TaskID = sessionID
+		}
 		if err := t.processManager.StartWithSpec(ctx, spec); err != nil {
 			return "", fmt.Errorf("starting background process: %w", err)
 		}

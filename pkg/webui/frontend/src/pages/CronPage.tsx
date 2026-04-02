@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import Header from '@/components/layout/Header';
 import { useConfig } from '@/hooks/useConfig';
+import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
 import { useProviders } from '@/hooks/useProviders';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -46,11 +47,6 @@ interface ProviderGroupInfo {
 interface RouteTarget {
   name: string;
   type: 'provider' | 'group';
-}
-
-interface ModelEntry {
-  provider: string;
-  model: string;
 }
 
 interface CronFormState {
@@ -111,6 +107,8 @@ function renderLastResult(job: CronJob): string {
 export default function CronPage() {
   const [form, setForm] = useState<CronFormState>(DEFAULT_FORM);
   const { data: providers = [] } = useProviders();
+  const { data: modelCatalog = [] } = useModels();
+  const modelRoutesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
   const { data: config } = useConfig();
 
   const { data: jobs = [], isLoading, isFetching, refetch } = useCronJobs();
@@ -158,41 +156,23 @@ export default function CronPage() {
     [routeTargets],
   );
 
-  const modelOptions = useMemo(() => {
-    const result: ModelEntry[] = [];
-    const seen = new Set<string>();
-    for (const provider of providers) {
-      const providerName = provider.name.trim();
-      if (!providerName) {
-        continue;
-      }
-      const addModel = (model: string) => {
-        const normalized = model.trim();
-        if (!normalized) {
-          return;
-        }
-        const key = `${providerName}::${normalized}`;
-        if (seen.has(key)) {
-          return;
-        }
-        seen.add(key);
-        result.push({ provider: providerName, model: normalized });
-      };
-      if (provider.default_model) {
-        addModel(provider.default_model);
-      }
-      for (const model of provider.models ?? []) {
-        addModel(model);
-      }
-    }
-    return result;
-  }, [providers]);
+  const routesByModel = useMemo(
+    () =>
+      Object.fromEntries(
+        modelCatalog.map((item, index) => [item.model_id, modelRoutesQueries[index]?.data ?? []]),
+      ),
+    [modelCatalog, modelRoutesQueries],
+  );
+  const modelOptions = useMemo(
+    () => buildModelOptions(modelCatalog, routesByModel),
+    [modelCatalog, routesByModel],
+  );
 
   const filteredModels = useMemo(() => {
     if (!form.provider || routeTargetMap.get(form.provider)?.type === 'group') {
       return modelOptions;
     }
-    return modelOptions.filter((entry) => entry.provider === form.provider);
+    return modelOptions.filter((entry) => entry.providers.includes(form.provider));
   }, [form.provider, modelOptions, routeTargetMap]);
 
   const fallbackTargets = useMemo(
@@ -378,10 +358,8 @@ export default function CronPage() {
                 <SelectContent>
                   <SelectItem value="__default__">{t('cronModelDefault')}</SelectItem>
                   {filteredModels.map((entry) => (
-                    <SelectItem key={`${entry.provider}::${entry.model}`} value={entry.model}>
-                      {form.provider && routeTargetMap.get(form.provider)?.type !== 'group'
-                        ? entry.model
-                        : `${entry.model} (${entry.provider})`}
+                    <SelectItem key={entry.value} value={entry.value}>
+                      {entry.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

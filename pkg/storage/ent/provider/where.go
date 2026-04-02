@@ -89,14 +89,14 @@ func Proxy(v string) predicate.Provider {
 	return predicate.Provider(sql.FieldEQ(FieldProxy, v))
 }
 
-// ModelsJSON applies equality check predicate on the "models_json" field. It's identical to ModelsJSONEQ.
-func ModelsJSON(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldEQ(FieldModelsJSON, v))
+// DefaultWeight applies equality check predicate on the "default_weight" field. It's identical to DefaultWeightEQ.
+func DefaultWeight(v int) predicate.Provider {
+	return predicate.Provider(sql.FieldEQ(FieldDefaultWeight, v))
 }
 
-// DefaultModel applies equality check predicate on the "default_model" field. It's identical to DefaultModelEQ.
-func DefaultModel(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldEQ(FieldDefaultModel, v))
+// Enabled applies equality check predicate on the "enabled" field. It's identical to EnabledEQ.
+func Enabled(v bool) predicate.Provider {
+	return predicate.Provider(sql.FieldEQ(FieldEnabled, v))
 }
 
 // Timeout applies equality check predicate on the "timeout" field. It's identical to TimeoutEQ.
@@ -439,134 +439,54 @@ func ProxyContainsFold(v string) predicate.Provider {
 	return predicate.Provider(sql.FieldContainsFold(FieldProxy, v))
 }
 
-// ModelsJSONEQ applies the EQ predicate on the "models_json" field.
-func ModelsJSONEQ(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldEQ(FieldModelsJSON, v))
+// DefaultWeightEQ applies the EQ predicate on the "default_weight" field.
+func DefaultWeightEQ(v int) predicate.Provider {
+	return predicate.Provider(sql.FieldEQ(FieldDefaultWeight, v))
 }
 
-// ModelsJSONNEQ applies the NEQ predicate on the "models_json" field.
-func ModelsJSONNEQ(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldNEQ(FieldModelsJSON, v))
+// DefaultWeightNEQ applies the NEQ predicate on the "default_weight" field.
+func DefaultWeightNEQ(v int) predicate.Provider {
+	return predicate.Provider(sql.FieldNEQ(FieldDefaultWeight, v))
 }
 
-// ModelsJSONIn applies the In predicate on the "models_json" field.
-func ModelsJSONIn(vs ...string) predicate.Provider {
-	return predicate.Provider(sql.FieldIn(FieldModelsJSON, vs...))
+// DefaultWeightIn applies the In predicate on the "default_weight" field.
+func DefaultWeightIn(vs ...int) predicate.Provider {
+	return predicate.Provider(sql.FieldIn(FieldDefaultWeight, vs...))
 }
 
-// ModelsJSONNotIn applies the NotIn predicate on the "models_json" field.
-func ModelsJSONNotIn(vs ...string) predicate.Provider {
-	return predicate.Provider(sql.FieldNotIn(FieldModelsJSON, vs...))
+// DefaultWeightNotIn applies the NotIn predicate on the "default_weight" field.
+func DefaultWeightNotIn(vs ...int) predicate.Provider {
+	return predicate.Provider(sql.FieldNotIn(FieldDefaultWeight, vs...))
 }
 
-// ModelsJSONGT applies the GT predicate on the "models_json" field.
-func ModelsJSONGT(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldGT(FieldModelsJSON, v))
+// DefaultWeightGT applies the GT predicate on the "default_weight" field.
+func DefaultWeightGT(v int) predicate.Provider {
+	return predicate.Provider(sql.FieldGT(FieldDefaultWeight, v))
 }
 
-// ModelsJSONGTE applies the GTE predicate on the "models_json" field.
-func ModelsJSONGTE(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldGTE(FieldModelsJSON, v))
+// DefaultWeightGTE applies the GTE predicate on the "default_weight" field.
+func DefaultWeightGTE(v int) predicate.Provider {
+	return predicate.Provider(sql.FieldGTE(FieldDefaultWeight, v))
 }
 
-// ModelsJSONLT applies the LT predicate on the "models_json" field.
-func ModelsJSONLT(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldLT(FieldModelsJSON, v))
+// DefaultWeightLT applies the LT predicate on the "default_weight" field.
+func DefaultWeightLT(v int) predicate.Provider {
+	return predicate.Provider(sql.FieldLT(FieldDefaultWeight, v))
 }
 
-// ModelsJSONLTE applies the LTE predicate on the "models_json" field.
-func ModelsJSONLTE(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldLTE(FieldModelsJSON, v))
+// DefaultWeightLTE applies the LTE predicate on the "default_weight" field.
+func DefaultWeightLTE(v int) predicate.Provider {
+	return predicate.Provider(sql.FieldLTE(FieldDefaultWeight, v))
 }
 
-// ModelsJSONContains applies the Contains predicate on the "models_json" field.
-func ModelsJSONContains(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldContains(FieldModelsJSON, v))
+// EnabledEQ applies the EQ predicate on the "enabled" field.
+func EnabledEQ(v bool) predicate.Provider {
+	return predicate.Provider(sql.FieldEQ(FieldEnabled, v))
 }
 
-// ModelsJSONHasPrefix applies the HasPrefix predicate on the "models_json" field.
-func ModelsJSONHasPrefix(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldHasPrefix(FieldModelsJSON, v))
-}
-
-// ModelsJSONHasSuffix applies the HasSuffix predicate on the "models_json" field.
-func ModelsJSONHasSuffix(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldHasSuffix(FieldModelsJSON, v))
-}
-
-// ModelsJSONEqualFold applies the EqualFold predicate on the "models_json" field.
-func ModelsJSONEqualFold(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldEqualFold(FieldModelsJSON, v))
-}
-
-// ModelsJSONContainsFold applies the ContainsFold predicate on the "models_json" field.
-func ModelsJSONContainsFold(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldContainsFold(FieldModelsJSON, v))
-}
-
-// DefaultModelEQ applies the EQ predicate on the "default_model" field.
-func DefaultModelEQ(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldEQ(FieldDefaultModel, v))
-}
-
-// DefaultModelNEQ applies the NEQ predicate on the "default_model" field.
-func DefaultModelNEQ(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldNEQ(FieldDefaultModel, v))
-}
-
-// DefaultModelIn applies the In predicate on the "default_model" field.
-func DefaultModelIn(vs ...string) predicate.Provider {
-	return predicate.Provider(sql.FieldIn(FieldDefaultModel, vs...))
-}
-
-// DefaultModelNotIn applies the NotIn predicate on the "default_model" field.
-func DefaultModelNotIn(vs ...string) predicate.Provider {
-	return predicate.Provider(sql.FieldNotIn(FieldDefaultModel, vs...))
-}
-
-// DefaultModelGT applies the GT predicate on the "default_model" field.
-func DefaultModelGT(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldGT(FieldDefaultModel, v))
-}
-
-// DefaultModelGTE applies the GTE predicate on the "default_model" field.
-func DefaultModelGTE(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldGTE(FieldDefaultModel, v))
-}
-
-// DefaultModelLT applies the LT predicate on the "default_model" field.
-func DefaultModelLT(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldLT(FieldDefaultModel, v))
-}
-
-// DefaultModelLTE applies the LTE predicate on the "default_model" field.
-func DefaultModelLTE(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldLTE(FieldDefaultModel, v))
-}
-
-// DefaultModelContains applies the Contains predicate on the "default_model" field.
-func DefaultModelContains(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldContains(FieldDefaultModel, v))
-}
-
-// DefaultModelHasPrefix applies the HasPrefix predicate on the "default_model" field.
-func DefaultModelHasPrefix(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldHasPrefix(FieldDefaultModel, v))
-}
-
-// DefaultModelHasSuffix applies the HasSuffix predicate on the "default_model" field.
-func DefaultModelHasSuffix(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldHasSuffix(FieldDefaultModel, v))
-}
-
-// DefaultModelEqualFold applies the EqualFold predicate on the "default_model" field.
-func DefaultModelEqualFold(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldEqualFold(FieldDefaultModel, v))
-}
-
-// DefaultModelContainsFold applies the ContainsFold predicate on the "default_model" field.
-func DefaultModelContainsFold(v string) predicate.Provider {
-	return predicate.Provider(sql.FieldContainsFold(FieldDefaultModel, v))
+// EnabledNEQ applies the NEQ predicate on the "enabled" field.
+func EnabledNEQ(v bool) predicate.Provider {
+	return predicate.Provider(sql.FieldNEQ(FieldEnabled, v))
 }
 
 // TimeoutEQ applies the EQ predicate on the "timeout" field.

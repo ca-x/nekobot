@@ -219,6 +219,182 @@ func TestChatWebsocketFallsBackWithoutTopologyBinding(t *testing.T) {
 	}
 }
 
+func TestChatWebsocketRejectsDisabledWebsocketAccount(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error", OutputPath: ""})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	if _, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "websocket",
+		AccountKey:  "default",
+		DisplayName: "Gateway Default",
+		Enabled:     false,
+	}); err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	agentStub := &stubAgent{response: "should not be used"}
+	router, err := New(
+		log,
+		bus.NewLocalBus(log, 4),
+		agentStub,
+		session.NewManager(t.TempDir(), cfg.Sessions),
+		accountMgr,
+		bindingMgr,
+		runtimeMgr,
+	)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	reply, metadata, err := router.ChatWebsocket(
+		context.Background(),
+		"u-1",
+		"alice",
+		"gateway-session",
+		"hello",
+		"",
+	)
+	if err == nil {
+		t.Fatal("expected disabled websocket account to fail")
+	}
+	if !strings.Contains(err.Error(), "websocket chat is not available") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "" {
+		t.Fatalf("expected empty reply, got %q", reply)
+	}
+	if metadata != nil {
+		raw, _ := json.Marshal(metadata)
+		t.Fatalf("expected nil metadata, got %s", raw)
+	}
+	if agentStub.lastInput != "" {
+		t.Fatalf("expected legacy agent fallback to stay unused, got %q", agentStub.lastInput)
+	}
+}
+
+func TestChatWebsocketRejectsConfiguredAccountWithoutActiveBindings(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error", OutputPath: ""})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	accountItem, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "websocket",
+		AccountKey:  "default",
+		DisplayName: "Gateway Default",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	runtimeItem, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "support-main",
+		DisplayName: "Support Main",
+		Enabled:     false,
+		Provider:    "openai",
+		Model:       "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	if _, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: accountItem.ID,
+		AgentRuntimeID:   runtimeItem.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          false,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	agentStub := &stubAgent{response: "should not be used"}
+	router, err := New(
+		log,
+		bus.NewLocalBus(log, 4),
+		agentStub,
+		session.NewManager(t.TempDir(), cfg.Sessions),
+		accountMgr,
+		bindingMgr,
+		runtimeMgr,
+	)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	reply, metadata, err := router.ChatWebsocket(
+		context.Background(),
+		"u-1",
+		"alice",
+		"gateway-session",
+		"hello",
+		"",
+	)
+	if err == nil {
+		t.Fatal("expected configured websocket account without active bindings to fail")
+	}
+	if !strings.Contains(err.Error(), "websocket chat has no active runtime bindings") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if reply != "" {
+		t.Fatalf("expected empty reply, got %q", reply)
+	}
+	if metadata != nil {
+		raw, _ := json.Marshal(metadata)
+		t.Fatalf("expected nil metadata, got %s", raw)
+	}
+	if agentStub.lastInput != "" {
+		t.Fatalf("expected legacy agent fallback to stay unused, got %q", agentStub.lastInput)
+	}
+}
+
 func TestChatWebsocketUsesExplicitRuntimeSelection(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()

@@ -139,6 +139,18 @@ func (m *Manager) ClearSessionMode(sessionID string) {
 	delete(m.session, sessionID)
 }
 
+// GetSessionMode returns the approval mode override for one session.
+func (m *Manager) GetSessionMode(sessionID string) (Mode, bool) {
+	if sessionID == "" {
+		return "", false
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	mode, ok := m.session[sessionID]
+	return mode, ok
+}
+
 // Approve approves a pending request by ID.
 func (m *Manager) Approve(id string) error {
 	m.mu.Lock()
@@ -190,6 +202,30 @@ func (m *Manager) GetDecision(id string) (Decision, error) {
 		return "", fmt.Errorf("request not found: %s", id)
 	}
 	return req.Decision, nil
+}
+
+// GetRequest returns one tracked approval request by ID.
+func (m *Manager) GetRequest(id string) (*Request, bool) {
+	if id == "" {
+		return nil, false
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	req, ok := m.pending[id]
+	if !ok || req == nil {
+		return nil, false
+	}
+
+	copyReq := *req
+	if req.Arguments != nil {
+		copyReq.Arguments = make(map[string]interface{}, len(req.Arguments))
+		for key, value := range req.Arguments {
+			copyReq.Arguments[key] = value
+		}
+	}
+	return &copyReq, true
 }
 
 // Cleanup removes resolved requests.

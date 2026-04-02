@@ -13,6 +13,7 @@ import {
   useImportConfig,
   useSaveConfig,
 } from '@/hooks/useConfig';
+import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
 import { useProviders } from '@/hooks/useProviders';
 import { useCleanupQMDExports, useInstallQMD, useQMDStatus, useUpdateQMD } from '@/hooks/useQMD';
 import { Button } from '@/components/ui/button';
@@ -85,11 +86,6 @@ interface FieldDef {
 interface RouteTargetOption {
   name: string;
   type: 'provider' | 'group';
-}
-
-interface ModelEntry {
-  provider: string;
-  model: string;
 }
 
 interface SectionMeta {
@@ -269,6 +265,48 @@ function DirtyDot({ dirty }: { dirty: boolean }) {
   );
 }
 
+function formatQueryErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim() ? error.message : t('configLoadFailedDetailFallback');
+}
+
+function ConfigLoadErrorState({
+  message,
+  onRetry,
+  retrying,
+}: {
+  message: string;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
+  return (
+    <div className="flex min-h-[360px] items-center justify-center px-4 pb-4 md:px-5 md:pb-5">
+      <Card className="w-full max-w-2xl border-rose-200/80 bg-rose-50/60 shadow-[0_24px_60px_-42px_rgba(160,60,70,0.35)]">
+        <CardHeader className="pb-3">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-rose-700">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {t('configLoadFailedTitle')}
+          </div>
+          <CardTitle className="text-xl text-rose-950">{t('configLoadFailedTitle')}</CardTitle>
+          <CardDescription className="text-rose-900/80">
+            {t('configLoadFailedDescription')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-2xl border border-rose-200/80 bg-white/85 px-4 py-3 text-sm text-rose-900">
+            {message}
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" className="rounded-full" onClick={onRetry} disabled={retrying}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
+              {t('refresh')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function FormField({
   field,
   secretVisible,
@@ -428,6 +466,8 @@ function AgentsSectionForm({
   onChange: (key: string, value: unknown) => void;
 }) {
   const { data: providers = [] } = useProviders();
+  const { data: modelCatalog = [] } = useModels();
+  const modelRoutesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
 
   const readString = (path: string) => {
     const value = getNestedValue(data, path);
@@ -479,42 +519,24 @@ function AgentsSectionForm({
     [routeTargets],
   );
 
-  const models = useMemo(() => {
-    const result: ModelEntry[] = [];
-    const seen = new Set<string>();
-    for (const provider of providers) {
-      const providerName = provider.name.trim();
-      if (!providerName) {
-        continue;
-      }
-      const addModel = (model: string) => {
-        const normalizedModel = model.trim();
-        if (!normalizedModel) {
-          return;
-        }
-        const key = `${providerName}::${normalizedModel}`;
-        if (seen.has(key)) {
-          return;
-        }
-        seen.add(key);
-        result.push({ provider: providerName, model: normalizedModel });
-      };
-      if (provider.default_model) {
-        addModel(provider.default_model);
-      }
-      for (const model of provider.models ?? []) {
-        addModel(model);
-      }
-    }
-    return result;
-  }, [providers]);
+  const routesByModel = useMemo(
+    () =>
+      Object.fromEntries(
+        modelCatalog.map((item, index) => [item.model_id, modelRoutesQueries[index]?.data ?? []]),
+      ),
+    [modelCatalog, modelRoutesQueries],
+  );
+  const models = useMemo(
+    () => buildModelOptions(modelCatalog, routesByModel),
+    [modelCatalog, routesByModel],
+  );
 
   const selectedProvider = readString('defaults.provider');
   const selectedFallback = readStringArray('defaults.fallback');
   const selectedModel = readString('defaults.model');
   const selectedProviderKind = routeTargetMap.get(selectedProvider)?.type ?? null;
   const filteredModels = selectedProvider && selectedProviderKind !== 'group'
-    ? models.filter((entry) => entry.provider === selectedProvider)
+    ? models.filter((entry) => entry.providers.includes(selectedProvider))
     : models;
   const fallbackOptions = routeTargets.filter((target) => target.name !== selectedProvider);
 
@@ -577,10 +599,8 @@ function AgentsSectionForm({
                 <SelectContent>
                   <SelectItem value="__default__">{t('agentsModelDefault')}</SelectItem>
                   {filteredModels.map((entry) => (
-                    <SelectItem key={`${entry.provider}::${entry.model}`} value={entry.model}>
-                      {selectedProvider && selectedProviderKind !== 'group'
-                        ? entry.model
-                        : `${entry.model} (${entry.provider})`}
+                    <SelectItem key={entry.value} value={entry.value}>
+                      {entry.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1821,13 +1841,30 @@ export default function ConfigPage() {
   const [visibleSecrets, setVisibleSecrets] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: config, isLoading } = useConfig();
+  const configQuery = useConfig();
+  const { data: config, isLoading } = configQuery;
   const saveConfig = useSaveConfig();
   const exportConfig = useExportConfig();
   const importConfig = useImportConfig();
   const cleanupSessions = useCleanupSessions();
   const cleanupToolSessionEvents = useCleanupToolSessionEvents();
   const cleanupSkillVersions = useCleanupSkillVersions();
+  const hasBlockingConfigError = configQuery.isError && configQuery.data == null;
+
+  if (hasBlockingConfigError) {
+    return (
+      <div className="config-page flex h-full flex-col">
+        <Header title={t('tabConfig')} />
+        <ConfigLoadErrorState
+          message={formatQueryErrorMessage(configQuery.error)}
+          onRetry={() => {
+            void configQuery.refetch();
+          }}
+          retrying={configQuery.isFetching}
+        />
+      </div>
+    );
+  }
 
   const persistedSections = useMemo(() => {
     const next = {} as Record<ConfigSection, Record<string, unknown>>;

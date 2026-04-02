@@ -1,5 +1,908 @@
 # Notes: nextclaw + picoclaw → nekobot 特性分析
 
+## 2026-04-02 全局规划约束补记
+
+### 新的全局约束
+- 当前系统的所有 active 开发计划都**不考虑历史数据迁移问题**。
+- 这个约束不仅适用于本次 provider/model 迁移，也适用于后续其他主线任务。
+- 历史数据迁移统一后置：
+  - 等所有当前开发任务完成以后
+  - 再单独作为迁移专项处理
+
+### 对当前计划顺序的影响
+- `provider/model` 迁移将按 clean-slate 方式执行。
+- 当前主计划顺序调整为：
+  1. 先执行 `provider_model_migration_plan.md`
+  2. 再恢复 `agent tool_session spawn -> process -> tasks.Service`
+  3. 然后才是 `cron executeJob` / `watch executeCommand`
+
+### 当前明确结论
+- 当前任何 active 计划都不需要为了旧数据库、旧 API 返回形状、旧 WebUI 表单状态保留兼容层。
+- 如果后续某一处需要兼容历史数据，应视为违反当前计划约束，必须单独提出来，而不是在实现中顺手混入。
+
+## 2026-04-02 Provider/Model 重构第一段后端切片补记
+
+### 本轮完成
+- `pkg/storage/ent/schema/provider.go`
+  - `provider` schema 已收缩为 connection-only：
+    - 去掉 `models_json`
+    - 去掉 `default_model`
+    - 新增 `default_weight`
+    - 新增 `enabled`
+- `pkg/providerstore/manager.go`
+  - provider store 不再持久化 provider 自带的模型列表。
+  - `normalizeProvider()` 当前明确把 provider 记录收敛为 connection-only：
+    - `Models = []`
+    - `DefaultModel = ""`
+    - 默认 `DefaultWeight = 1`
+    - `Timeout` 仍按现有规则兜底
+- `pkg/providerregistry/registry.go`
+  - 新增内置 provider type registry。
+  - 当前先内置最小集合：
+    - `openai`
+    - `anthropic`
+    - `gemini`
+    - `openrouter`
+    - `ollama`
+- `pkg/webui/server.go`
+  - 新增 `/api/provider-types`
+  - `/api/providers` 的 provider 投影视图已改为 connection-only：
+    - 返回 `default_weight`
+    - 返回 `enabled`
+    - 不再返回 `models/default_model`
+  - `supports_discovery` 改为基于 registry 判断，而不是本地硬编码 switch
+
+### 这一步刻意没有做的事
+- 没有把 `config/import` / `config/export` 的 provider 外部格式一起重做。
+- 没有删除 `config.ProviderProfile` 上旧的 `Models/DefaultModel` 字段。
+- 没有改 runtime `agent/runtimeagents/providers` 对旧模型语义的消费。
+- 没有开始前端 `ProvidersPage` / `ModelsPage` 的 AxonHub 对齐迁移。
+
+### 原因
+- 当前这一步只想先把 provider 基础层真正从“连接+模型配置”里拆出来，而不把 runtime / import-export / frontend 同时打碎。
+- 为了维持阶段性可编译和可验证，先允许：
+  - 外层 config shape 仍保留旧字段
+  - 但 provider store / provider API 投影已经按新语义落地
+
+### 当前验证
+- `go test -count=1 ./pkg/providerregistry ./pkg/providerstore ./pkg/webui`
+
+### 下一步建议
+- 直接进入 `model catalog + model route` 存储层：
+  - 新 ent schema
+  - `modelstore`
+  - `modelroute`
+  - route lookup / default provider / effective weight helper
+- 这一步完成后，再切 runtime model resolution。
+
+## 2026-04-02 Provider/Model 重构第二段数据层补记
+
+### 本轮完成
+- `pkg/storage/ent/schema/modelcatalog.go`
+  - 新增模型目录实体。
+- `pkg/storage/ent/schema/modelroute.go`
+  - 新增模型到 provider 的路由实体。
+- `pkg/modelstore/manager.go`
+  - 已完成最小 catalog CRUD。
+- `pkg/modelroute/manager.go`
+  - 已完成最小 route CRUD 与解析辅助：
+    - `ListByModel`
+    - `ResolveInput`
+    - `DefaultRoute`
+    - `EffectiveWeight`
+
+### 当前已锁定的 route 语义
+- `weight_override > 0` 时优先使用 route weight。
+- 否则回落到 provider 的 `default_weight`。
+- `ResolveInput()` 第一版支持：
+  - 直接 `model_id`
+  - alias
+  - regex rule
+- `DefaultRoute()` 当前按：
+  - `model_id`
+  - `is_default = true`
+  - `enabled = true`
+  查唯一默认 route。
+
+### 当前刻意保留的简化
+- 还没有把 `modelstore/modelroute` 接进 WebUI API。
+- 还没有让 runtime/agent 真正消费这些 store。
+- `modelroute` 当前通过复用 `providerstore.Manager` 读取 provider 默认权重，后续若需要可以再抽更小的 provider read interface。
+
+### 本轮验证
+- `go test -count=1 ./pkg/modelstore ./pkg/modelroute`
+
+### 下一步
+- 切到 runtime model resolution：
+  - `pkg/agent/agent.go`
+  - `pkg/runtimeagents`
+  - `pkg/providers/rotation_factory.go`
+  - 目标是去掉 provider 自带 `models/default_model` 的运行时依赖。
+
+## 2026-04-02 Provider/Model 重构第三段运行时补记
+
+### 本轮完成
+- `pkg/agent/agent.go`
+  - `resolveModelForProvider()` 已改成：
+    1. 优先读取 `modelroute`
+    2. 找到当前 provider 对应 route 后，优先读 `metadata.provider_model_id`
+    3. 如果没有 provider-specific model id，则回退到 route 的 `model_id`
+    4. 只有在 route 层查不到时，才临时回退旧的 provider config 逻辑
+- `pkg/agent/agent_test.go`
+  - 原先“fallback 到 provider default model”的测试已经替换为 route 驱动测试。
+  - 现在锁定：
+    - 同一逻辑模型在 fallback provider 上可映射到不同的实际 provider model id。
+
+### 当前语义
+- 逻辑输入模型：
+  - 先交给 `modelroute.ResolveInput()`
+- provider-specific 实际模型：
+  - 当前通过 `route.Metadata["provider_model_id"]` 表达
+- 这意味着：
+  - route 层现在已经不仅决定“用哪个 provider”
+  - 也决定“这个 provider 实际该调用哪个模型 id”
+
+### 当前刻意保留的过渡
+- `config.ProviderProfile.Models/DefaultModel` 还没有从代码里完全删除。
+- 但运行时主链已经优先走新 route 数据层。
+- 旧字段当前只作为过渡 fallback，避免 API / 前端尚未迁完时立即断链。
+
+### 本轮验证
+- `go test -count=1 ./pkg/providerregistry ./pkg/providerstore ./pkg/modelstore ./pkg/modelroute ./pkg/agent ./pkg/runtimeagents ./pkg/webui`
+
+### 下一步
+- 开始补 WebUI API：
+  - `/api/models`
+  - `/api/model-routes`
+  - provider discovery -> catalog + route merge
+
+## 2026-04-02 Provider/Model 重构第四段 API 补记
+
+### 本轮完成
+- `pkg/webui/server.go`
+  - 新增：
+    - `/api/models`
+    - `/api/model-routes`
+  - provider discovery 现在不再只是返回模型列表，而是会 merge 到新数据层：
+    - 若 catalog 不存在，则创建 `model catalog`
+    - 为当前 provider 创建或更新 `model route`
+    - 默认写入 `metadata.provider_model_id`
+- `pkg/webui/server_models_test.go`
+  - 已补：
+    - models list/create
+    - model-routes get/update
+    - provider discovery -> catalog + route merge
+
+### 当前 discovery merge 语义
+- 当前保持最小可用版本：
+  - discovery 拿到 provider 真实模型 id
+  - catalog 直接以这个模型 id 建立基础记录
+  - route metadata 同时记录 `provider_model_id`
+- 这意味着：
+  - 对“同一逻辑模型多个 provider 映射不同 provider model id”的更复杂归并，后续还可以继续强化
+  - 但当前后端主链已经不再停留在“provider record 自己保存 models 列表”
+
+### 本轮验证
+- `go test -count=1 ./pkg/providerregistry ./pkg/providerstore ./pkg/modelstore ./pkg/modelroute ./pkg/agent ./pkg/runtimeagents ./pkg/webui`
+
+### 下一步
+- 进入前端迁移：
+  - `useProviderTypes`
+  - `useModels`
+  - `ProvidersPage`
+  - `ModelsPage`
+  - `ProviderForm`
+  - 以及 Chat/Config/Cron 对 provider-derived model list 的替换
+
+## 2026-04-02 Provider/Model 前端迁移启动补记
+
+### 计划索引复核结果
+- 根目录当前存在的 `*_plan.md`：
+  - `task_plan.md`
+  - `claude_code_alignment_plan.md`
+  - `migration_task_plan.md`
+  - `provider_model_migration_plan.md`
+  - `wechat_ilink_task_plan.md`
+  - `closure_task_plan.md`
+- 这些计划均已在 `task_plan.md -> Plan Index` 中被归类为：
+  - `Source of Truth`
+  - `Referenced Plans`
+  - `Archived / Reference Only`
+- 结论：
+  - 当前没有新的未纳入主计划的 `_plan.md`
+  - 不需要额外创建新的聚合计划文件
+
+### 当前前端缺口
+- `useProviders.ts` 仍暴露旧 provider-model 耦合字段：
+  - `models`
+  - `model_count`
+  - `default_model`
+  - `has_default_model`
+- `ProviderForm.tsx` 仍负责 provider 内嵌模型发现和持久化管理。
+- `ProvidersPage.tsx` 仍按“provider 自带模型列表”渲染。
+- `ChatPage.tsx` / `ConfigPage.tsx` / `CronPage.tsx` 仍从 provider 列表推导 model options。
+
+### 当前前端目标拆分
+1. 共享数据层
+   - `useProviders`: 改为 connection-only provider 形状
+   - `useProviderTypes`: 接 `/api/provider-types`
+   - `useModels`: 接 `/api/models` + `/api/model-routes`
+2. Provider UI
+   - 提供 AxonHub 风格的 provider type 卡片选择
+   - provider form 由 registry 驱动字段
+   - discovery 只负责发现和落地模型，不再把模型持久化到 provider 表单状态
+3. Models UI
+   - 增加独立 `ModelsPage`
+   - 展示 catalog + route
+   - 支持 route 的默认项、权重、alias、regex、provider-specific model id
+4. 消费方切换
+   - Chat/Config/Cron 全部从 `/api/models` + `/api/model-routes` 取模型候选
+
+## 2026-04-02 Provider/Model 前端迁移完成补记
+
+### 本轮完成
+- 新增共享 hooks：
+  - `pkg/webui/frontend/src/hooks/useProviderTypes.ts`
+  - `pkg/webui/frontend/src/hooks/useModels.ts`
+- `pkg/webui/frontend/src/hooks/useProviders.ts`
+  - 已改为 connection-only provider 契约：
+    - `default_weight`
+    - `enabled`
+  - 已去掉旧的 provider-owned model 字段。
+- `pkg/webui/frontend/src/components/config/ProviderForm.tsx`
+  - 已改为 provider type registry 驱动表单。
+  - discovery 语义改为同步到 shared Models workspace。
+- `pkg/webui/frontend/src/pages/ProvidersPage.tsx`
+  - 已改为 connection / runtime 视图，不再显示 provider 自带 models/default model。
+- `pkg/webui/frontend/src/pages/ModelsPage.tsx`
+  - 已新增独立模型管理页。
+  - 当前支持：
+    - catalog 列表
+    - 搜索
+    - route 展开编辑
+    - `enabled`
+    - `is_default`
+    - `weight_override`
+    - `aliases`
+    - `regex_rules`
+    - `metadata.provider_model_id`
+- `pkg/webui/frontend/src/pages/ChatPage.tsx`
+- `pkg/webui/frontend/src/pages/ConfigPage.tsx`
+- `pkg/webui/frontend/src/pages/CronPage.tsx`
+  - 已切换为从 shared model catalog + routes 构建模型选项。
+
+### 当前验证
+- `npm run build`（`pkg/webui/frontend`）已通过。
+
+### 当前结论
+- `provider/model` clean-slate 迁移的 WebUI 关键闭环已经成立：
+  - provider 负责连接
+  - model 负责逻辑模型与 route
+  - discovery 负责把 provider 能力灌入 model catalog / routes
+  - 消费侧不再从 provider record 推导模型列表
+
+## 2026-04-02 codeany / open-agent-sdk-go 调研补记
+
+### 调研对象
+- `/home/czyt/code/codeany`
+- `github.com/codeany-ai/open-agent-sdk-go@v0.3.0`
+- 当前 `nekobot` 已集成的 `github.com/go-kratos/blades@v0.4.0`
+
+### 对 `codeany` 的直接观察
+- `codeany` 本身更像一个“终端 agent 产品壳”：
+  - Bubble Tea TUI
+  - slash commands
+  - session 持久化
+  - skills/plugins/memory 的文件系统组织
+  - 权限模式与交互批准
+- 它在核心运行时上并没有自己重做完整 agent 内核，而是直接依赖：
+  - `open-agent-sdk-go/agent`
+  - `open-agent-sdk-go/types`
+  - `open-agent-sdk-go/hooks`
+  - `open-agent-sdk-go/mcp`
+- 从 `internal/tui/model.go` 和 `internal/pipe/pipe.go` 看，`codeany` 对 SDK 的使用方式相对薄：
+  - 构建 `agent.Options`
+  - 设置 model / api key / base url / MCP / hooks / permission mode
+  - `Init()`
+  - `Query()` / `Prompt()`
+  - 接流式事件并渲染 UI
+
+### `open-agent-sdk-go` 更像什么
+- 更像“面向 Claude Code / terminal coding agent 产品形态”的应用 SDK。
+- 它对以下能力应该是内建优先的：
+  - permission mode
+  - tool approval callback
+  - MCP client
+  - hook 配置
+  - query/prompt 事件流
+- 但从 `codeany` 的集成厚度看，它不像一个比 `blades` 更底层、更通用、更强工作流表达的框架；
+  - 它更偏向“快速搭一个 Claude Code 类终端 agent 产品”的成品运行时。
+
+### 与 `blades` 的差异
+
+#### `blades` 更强的地方
+- 更像通用 agent framework，而不是终端产品 SDK。
+- 当前公开结构已经覆盖：
+  - `Agent`
+  - `Runner`
+  - `ModelProvider`
+  - `Tool`
+  - `Memory`
+  - `Middleware`
+  - `flow`
+  - `graph`
+  - `skills`
+  - `evaluator`
+- 对多 agent workflow、graph orchestration、tool middleware、memory adapter 这些“运行平台层能力”，`blades` 显然更完整。
+- 当前 `nekobot` 也已经围绕 `blades` 做了较深的适配：
+  - blades runtime provider fallback
+  - blades skill adapter
+  - blades memory adapter
+  - 现有 orchestrator 开关和测试覆盖
+
+#### `open-agent-sdk-go` / `codeany` 值得吸收的地方
+- 产品化终端体验更直接：
+  - Bubble Tea TUI 结构更轻
+  - slash commands 组织直给
+  - 本地 session / memory / skills / plugins 目录约定清晰
+  - permission mode 和 interactive approval 体验成型
+- 如果 `nekobot` 后续要补“类似 Claude Code 的纯终端使用体验”，可以参考它的：
+  - TUI 状态机组织
+  - slash command 体系
+  - 本地 config / session / memory 的落盘习惯
+  - plugin/skill 目录协议
+
+### 是否比当前 `blades` 更完善
+- 如果问题是“作为通用 agent framework / orchestration substrate，是否比 blades 更完善”：
+  - 当前证据不支持这个结论。
+  - 反而更像：
+    - `blades` 更强在框架层
+    - `open-agent-sdk-go` 更偏产品 SDK / coding-agent runtime
+- 如果问题是“作为快速做出 Claude Code 式终端 agent 产品的现成运行时，是否更省事”：
+  - 是，有这个可能。
+  - 尤其在：
+    - permission modes
+    - MCP
+    - terminal event streaming
+    - agent UI integration
+    这些产品侧能力上，可能比你现在自拼 `blades + nekobot runtime + webui` 更直给。
+
+### 对 `nekobot` 的建议
+1. 不建议把当前 `blades` 主线直接切换到 `open-agent-sdk-go`。
+   - 当前 `nekobot` 已经围绕 `blades` 做了不少 runtime、tool、memory、skills 适配。
+   - 硬切会打断现有 `task lifecycle / runtime control plane / AgentDefinition / tool governance` 主线。
+2. 值得吸收的重点应放在产品层，而不是立即替换框架层：
+   - terminal/TUI 交互模式
+   - permission mode UX
+   - slash command 体系
+   - plugin/skills 文件约定
+   - session/memory 落盘方式
+3. 如果真要验证 `open-agent-sdk-go`，建议单开旁路 spike：
+   - 只做一个最小 terminal client
+   - 不碰现有 web/runtime 主线
+   - 验证：
+     - tool approval 能力
+     - MCP 集成深度
+      - 可否承载你需要的 provider/model route 语义
+      - 是否支持你后续要做的 `AgentDefinition / task lifecycle / runtime topology`
+
+## 2026-04-02 codeany 自身设计观察补记
+
+### 总体印象
+- `codeany` 的价值不只是“调用了 SDK”。
+- 它自己的设计重点很明显偏向：
+  - 终端产品体验
+  - 本地优先的状态与配置组织
+  - 低复杂度、够用即可的工程分层
+- 它不是一个大而全的平台，而是一个“把 coding agent 产品形态迅速拼完整”的实现。
+
+### 值得关注的设计点
+
+#### 1. CLI / Pipe / Interactive 三入口分得很干净
+- `internal/cli/root.go` 把入口分成：
+  - 交互 TUI
+  - pipe mode
+  - print/json mode
+- 这种设计很适合 agent 产品：
+  - 同一个 runtime
+  - 多种使用姿势
+  - 不强制每次都走重 UI
+- 对 `nekobot` 的启发：
+  - 你后续如果补 terminal client，最好不要把 web/runtime 专用入口硬绑在一起。
+  - 应该保留：
+    - interactive terminal mode
+    - non-interactive batch mode
+    - machine-readable output mode
+
+#### 2. TUI 状态机设计是“产品导向”的，不追求抽象完美
+- `internal/tui/model.go` 的状态很少：
+  - `init`
+  - `input`
+  - `querying`
+  - `permission`
+- 这说明它在终端交互上是刻意压复杂度的。
+- 它没有试图把所有 agent 内部生命周期都建模成很细的 domain state。
+- 对 `nekobot` 的启发：
+  - terminal/TUI 层不要直接照抄 runtime control plane 的复杂状态图。
+  - 前端或终端体验层应该是更粗粒度、更面向用户心智的状态机。
+
+#### 3. 输入组件专门为 IME / 中文输入做了取舍
+- `internal/tui/input.go` 直接用 `bubbles/textarea` 包装，并把：
+  - 中文/IME
+  - history
+  - 多行输入
+  - 自动扩高
+  一起处理掉。
+- 这比很多 agent 终端只顾英文命令行体验要成熟。
+- 对 `nekobot` 的启发：
+  - 如果要做 terminal client，中文输入法兼容要一开始就考虑，不然后面很难补。
+
+#### 4. 渲染层很务实
+- `internal/tui/render.go` 做了几件很产品化的事：
+  - markdown 渲染
+  - 超长内容裁剪
+  - tool input 的“人类可读摘要”
+  - 路径缩短
+- 这类逻辑不是框架能力，但非常影响实际可用性。
+- 对 `nekobot` 的启发：
+  - 你现在 webui 已经有 runtime/task 维度的结构化信息，后续 terminal client 也应该有一层“人类可读摘要器”，而不是直接吐原始 JSON/tool args。
+
+#### 5. slash command 体系非常“产品壳友好”
+- `internal/slash/slash.go` 是一个很典型的命令中枢：
+  - 命令注册表
+  - fuzzy match/autocomplete
+  - handler 分发
+- 虽然实现不复杂，但对扩展性足够友好。
+- 它的问题也很明显：
+  - 命令很多
+  - 目前比较偏平铺式 switch
+  - 长期扩展后会变重
+- 对 `nekobot` 的启发：
+  - 如果补 terminal command surface，可以先学它的“统一命令索引 + autocomplete + result contract”。
+  - 但不要照搬它的大 switch，最好直接做成 registry/command object。
+
+#### 6. skills / plugins / memory 都是文件系统优先
+- `internal/skills/skills.go`
+- `internal/plugins/plugins.go`
+- `internal/memory/memory.go`
+- 它们都走：
+  - 明确目录约定
+  - frontmatter
+  - 轻解析
+  - prompt 拼装
+- 这套模式不复杂，但非常适合终端产品和个人本地使用。
+- 对 `nekobot` 的启发：
+  - 你不一定要把所有扩展能力都做进数据库。
+  - 对 skills / local plugins / prompt fragments / workspace memory，这种“文件系统协议优先”的模式有很高性价比。
+
+#### 7. session 设计简单但够用
+- `internal/session/session.go` 没追求事件溯源或复杂 runtime projection。
+- 它就是：
+  - metadata
+  - conversation log
+  - 最近会话列表
+  - resume
+- 这是很典型的“用户体验优先”设计。
+- 对 `nekobot` 的启发：
+  - 你当前 `tasks/runtime topology/webui` 已经比较系统化。
+  - 但如果要补 terminal session UX，完全可以单独做一层轻量会话视图，不必让用户直接面对底层 runtime/task 全量模型。
+
+#### 8. worktree 设计很朴素，但产品闭环完整
+- `internal/worktree/worktree.go` 没做复杂调度。
+- 但它把：
+  - create
+  - enter
+  - exit
+  - remove
+  - metadata
+  这一整套闭环走通了。
+- 对 `nekobot` 的启发：
+  - 很多产品能力不需要一开始就做成平台级抽象。
+  - 先把“能闭环完成一个真实动作”的最小工作流做出来，价值比抽象漂亮更高。
+
+### 不建议照搬的地方
+- 很多模块是“单机终端产品”的合理设计，但不一定适合 `nekobot`：
+  - slash command 直接大 switch
+  - memory/skills/plugins 完全本地文件导向
+  - 权限与交互直接绑在 TUI 主循环里
+- `nekobot` 当前已经明显朝：
+  - runtime control plane
+  - tasks.Service
+  - webui + backend API
+  - provider/model route
+  这个方向发展。
+- 所以更合适的做法是吸收其产品层经验，而不是把它的内部组织整体迁过来。
+
+### 最值得吸收的不是“框架”，而是产品工程取舍
+1. 用少量状态把终端体验做顺。
+2. 把 CLI / pipe / interactive 明确分开。
+3. 对输入法、多行输入、工具摘要、会话恢复做足产品细节。
+4. 对 skills/plugins/session/memory 采用简单稳定的本地协议。
+5. 先完成闭环，再考虑更大的抽象。
+
+## 2026-04-02 codeany 吸收项已纳入计划
+
+### 已确认纳入主计划的两点
+1. `tool governance` 阶段补 `permission rules`
+   - 目标能力：
+     - always allow
+     - pattern allow
+     - pattern deny
+   - 进入 `nekobot` 自己的 config/store/API 与解释链路
+2. `AgentDefinition / context economy` 阶段补 `context sources`
+   - 目标能力：
+     - 展示当前 prompt/context 的来源组成
+     - 至少覆盖：
+       - skills
+       - memory
+       - project rules
+       - runtime injected context
+       - MCP related context
+
+### 当前明确不纳入的内容
+- 不新增独立 plugin system 主线。
+- 不引入 `open-agent-sdk-go` 替换 `blades`。
+- 不把 `codeany` 的 terminal/TUI 设计迁入 `nekobot`。
+
+## 2026-04-02 Task Lifecycle Service 接线收口补记
+
+### 本轮确认的状态
+1. `runtime control plane` 这一层已经不只是只读 topology：
+   - `/api/status` 和 System 页已能看到：
+     - `runtime_states`
+     - `session_runtime_states`
+     - `current_task_count`
+     - `last_seen_at`
+     - `availability_reason`
+2. 但在这次收口前，`task lifecycle service` 仍主要停留在“定义好了 + 测试好了”，真实执行链并没有正式接入：
+   - `subagent` 还是靠 `ListTaskSnapshots()` 暴露状态。
+   - 这意味着控制面虽然能看见任务，但生命周期迁移仍不是真正由统一 service 驱动。
+
+### 本轮已完成的代码收口
+- `pkg/subagent/manager.go`
+  - 新增对共享 task lifecycle service 的挂接。
+  - `Spawn()` 时写入 `enqueue`。
+  - worker 开始执行时写入 `claim -> start`。
+  - 成功完成时写入 `complete`。
+  - 执行失败或队列满时写入 `fail`。
+  - `CancelTask()` 时写入 `cancel`。
+- `pkg/agent/agent.go`
+  - `EnableSubagents()` 现在直接为 `subagent` 装配 `tasks.NewService(a.taskStore)`。
+  - 不再继续把 `subagent` 作为一个独立 snapshot source 注册到 `taskStore`，避免和 `managed` source 双轨重复。
+- 新增/补强回归：
+  - `pkg/subagent/manager_test.go`
+    - 锁定 subagent 成功/失败路径会驱动 `tasks.Service` 生命周期迁移。
+  - `pkg/agent/agent_test.go`
+    - 锁定 `EnableSubagents()` 会装配共享 task lifecycle service。
+
+### 当前结论
+- 现在 `nekobot` 的后台任务链路终于从：
+  - “subagent 自己维护状态 -> store 聚合 snapshot -> WebUI 看见”
+- 前进到：
+  - “subagent 执行路径 -> `pkg/tasks.Service` 生命周期迁移 -> store / status / WebUI 统一消费”
+- 这意味着 `tasks.Service` 已经从纯设计/测试对象，变成真实运行时主链的一部分。
+
+### 收束后的下一步建议
+在补完计划索引后，又用 `codeagent` 分别拉了 `codex` 与 `claude` 对当前所有根目录计划文件做了一轮“只允许一个方向”的收束审查。
+
+共识结论：
+1. 下一条唯一主线切片是 `exec.background -> process` 接入 `pkg/tasks.Service`。
+2. 当前不再把 `chat/main loop` 作为下一步实现目标。
+   - 它仍是重要后续方向，但现在推进会和 `exec.background/process`、`AgentDefinition`、`tool governance` 形成多条主线并行，容易把运行态模型再次做散。
+3. 当前明确延后：
+   - `chat/main loop` task-backed 化
+   - `agent tool_session spawn`
+   - `cron executeJob`
+   - `watch executeCommand`
+   - `AgentDefinition`
+   - `tool governance`
+   - `frontend domain stores`
+
+### 统一后的执行顺序
+1. `exec.background -> process`
+2. `agent tool_session spawn`
+3. `cron executeJob`
+4. `watch executeCommand`
+5. 之后才回到更大的 `chat/main loop` / `AgentDefinition` / `tool governance`
+
+### 计划治理规则
+- 后续每次准备切入新的主线切片前，先用 `codeagent` 做一轮 `codex + claude` 收束审查。
+- 该审查只允许产出：
+  - 一个推荐的下一切片
+  - 一组明确延后项
+- 不再接受“当前可以同时做 A/B/C 三条方向”的计划输出。
+
+### 已完成验证
+- `go test -count=1 ./pkg/subagent ./pkg/agent ./pkg/webui`
+- `go test -count=1 ./pkg/tasks ./pkg/subagent ./pkg/agent ./pkg/runtimeagents ./pkg/runtimetopology ./pkg/approval ./pkg/gateway ./pkg/inboundrouter ./pkg/webui`
+- `go test -count=1 ./...`
+
+## 2026-04-02 exec.background -> process 接线补记
+
+### 本轮新增完成的代码收口
+- `pkg/process/manager.go`
+  - 新增可选 `taskLifecycle` 挂点与 `SetTaskService()`。
+  - `StartWithSpec()` 会在 task-aware session 上执行：
+    - `enqueue`
+    - `claim -> start`
+    - prepare/startup 失败时 `fail`
+  - `waitForExit()` 会根据最终退出原因统一写入：
+    - `complete`
+    - `fail`
+    - `cancel`
+  - `Kill()` / `Reset()` 不直接终结 task，而是只标记 cancel 请求，避免重复终态。
+- `pkg/tools/exec.go`
+  - `exec.background` 在没有显式 `TaskID` 时，自动用生成出来的 `sessionID` 作为 `TaskID`，确保进入统一 task lifecycle。
+- `pkg/agent/agent.go`
+  - `Agent` 现在显式持有共享 `taskStore` 与 `taskService`。
+  - `processMgr` 与 `subagent` 都复用同一个 `tasks.Service`，避免多个 service 实例对同一个 store 造成状态源冲突。
+
+### 本轮新增回归
+- `pkg/process/manager_test.go`
+  - `TestManagerStartWithSpecTracksManagedTaskLifecycle`
+    - 锁定 process-backed task 会记录 runtime/session/lifecycle timestamps，并最终进入 `completed`。
+  - `TestManagerKillCancelsManagedTask`
+    - 锁定 `Kill()` 后最终状态为 `canceled`，而不是遗失或双写。
+- `pkg/tools/exec_test.go`
+  - `TestExecToolBackgroundCreatesManagedTaskWhenTaskIDMissing`
+    - 锁定 `exec.background` 在无 `TaskID` 时也会创建一个 managed task，并复用返回给用户的 session 语义。
+
+### 当前结论
+- `tasks.Service` 现在已经同时挂到两条真实后台执行链：
+  - `subagent`
+  - `exec.background -> process`
+- 这意味着 `/api/status` / System 页里看到的 active task，不再只是“逻辑上应该能接”，而是已经覆盖到真实 PTY 后台执行路径。
+- 现有 `pkg/webui/server_status_test.go` 已经验证 `TypeRuntimeWorker` 任务会影响 runtime `CurrentTaskCount`，因此本轮没有再额外扩一条 process-source 专属状态测试。
+
+### 本轮验证结果
+- `go test -count=1 ./pkg/process ./pkg/tools ./pkg/agent`
+- `go test -count=1 ./pkg/process ./pkg/tools ./pkg/agent ./pkg/webui`
+- `go test -count=1 ./pkg/runtimeagents ./pkg/runtimetopology ./pkg/tasks`
+- `go test -count=1 ./pkg/subagent ./pkg/approval ./pkg/inboundrouter ./pkg/gateway`
+- `go test -count=1 ./...`
+  - 本轮仓库级回归通过，之前记录的 `pkg/gateway` 失败未复现。
+
+### 下一步边界
+- 暂时不直接展开：
+  - `cron executeJob`
+  - `watch executeCommand`
+  - `chat/main loop`
+  - `AgentDefinition`
+  - `tool governance`
+- 切下一条主线前，仍先按既定规则做一轮 `codeagent` 收束审查，只选一个方向推进。
+
+## 2026-04-02 exec.background -> process 收口补修
+
+### 审查发现
+- 并行 reviewer 发现 `pkg/process/manager.go` 的 `Kill()` 存在一个真实竞态：
+  - 旧实现先调用 `Process.Kill()`
+  - 再写入 `cancelRequested`
+- 而 `waitForExit()` 会根据 `cancelRequested` 来区分最终应写入 `cancel` 还是 `fail`。
+- 这意味着在极端时序下，用户主动 kill 的 session 可能被错误记录为 `failed`。
+
+### 本轮补修
+- `pkg/process/manager.go`
+  - 抽出可替换的 `killProcess` seam，便于测试 kill 顺序。
+  - `Kill()` 改为先 `markCancelRequested()`，再发送 kill signal。
+- `pkg/process/manager_test.go`
+  - 新增 `TestManagerKillMarksCancelBeforeSendingSignal`
+  - 直接锁定 kill signal 发出前 `cancelRequested` 已经为真，避免竞态回归。
+
+### 补修后验证
+- `go test -count=1 ./pkg/process`
+- `go test -count=1 ./pkg/process ./pkg/tools ./pkg/agent ./pkg/webui`
+- `go test -count=1 ./pkg/subagent ./pkg/approval ./pkg/gateway ./pkg/inboundrouter`
+- `go test -count=1 ./...`
+  - 再次复现既有 `pkg/gateway` 间歇性失败：
+    - `TestProcessMessageDoesNotEmitInboundWhenRouterHandlesWebsocketChat`
+  - 因此当前只能确认本切片相关回归通过，不能声称仓库级基线已经稳定全绿。
+
+### 下一条唯一主线
+- 新一轮收束审查的结论是：
+  - 下一条唯一主线应为 `agent tool_session spawn -> process -> tasks.Service`
+- 原因：
+  - 它继续复用已有的 `process.Manager` 生命周期接线
+  - 能补齐 agent 创建 tool session 的任务可观测性缺口
+  - 不会像 `cron` / `watch` 那样过早把 task 语义拉回 chat/main-loop 或另一套 shell 执行路径
+
+### 明确延后项
+- `cron executeJob`
+- `watch executeCommand`
+- `chat/main loop`
+- `gateway/router`
+- `AgentDefinition`
+- `tool governance`
+- `toolsessions.Manager` 内部再造一套 task lifecycle
+
+## 2026-04-01 Claude Code AI Agent Deep Dive V2 补记
+
+### 新增参考范围
+- `/home/czyt/code/claude-code/docs/ai-agent-deep-dive-v2.pdf`
+
+### 相比前两轮 Claude Code 文档补充出来的关键点
+1. `query` 主循环本身是一个状态机，而不是“调用模型 -> 执行工具 -> 结束”这么简单。
+   - 每轮迭代里会经历：上下文预处理、token budget 检查、system prompt 组装、流式响应处理、错误恢复、stop hooks、工具执行、附件注入、下一轮状态转移。
+   - 对 `nekobot` 的直接启发是：后续 `task lifecycle service` 之外，还要预留“turn-level runtime state”而不是只记录 task final snapshot。
+2. `streaming tool execution` 值得单独进入规划。
+   - Claude Code 会在模型还在输出时提前执行已经完整的 tool block。
+   - 这对当前 `nekobot` 的 harness / chat / future agent runtime 有直接价值，应在工具治理阶段预留“流式工具调度”插槽，而不是把所有工具执行都假设成 response 完成后的批处理。
+3. prompt 不只是静态/动态两段，还包括 `section registry` 和缓存边界约束。
+   - 后续 `nekobot` 的 prompt assembler 不能只有“切几个 section 函数”；还要区分：
+     - 稳定 section，可缓存。
+     - 会话动态 section，可重算。
+     - 明确不能缓存的 capability / MCP / runtime-dependent section。
+4. 工具系统的目标不是注册表，而是“治理流水线”。
+   - PDF 更明确了执行链：schema 校验、validateInput、speculative classifier、pre-hook、hook 权限结果解析、permission 决策、输入修正、tool.call、遥测、post-hook、failure-hook。
+   - 当前 `nekobot` 后续设计不能只停在 allow/deny；要按 pipeline 分层预留节点。
+5. 多 Agent 体系的重点是“角色切分 + 运行时复用”，不是先堆 agent 数量。
+   - `explore/plan/verify` 是同一运行时里的不同定义和权限裁剪。
+   - `nekobot` 后续 specialist agent 也应走相同路径：
+     - 共用 task runtime。
+     - 共用 tool governance。
+     - 通过 AgentDefinition 和 permission mode 做差异化。
+6. 生命周期管理要覆盖“第二天”的问题。
+   - transcript、agent metadata、perf tracing、shell task cleanup、hook cleanup、file state cleanup 都属于正式运行时的一部分。
+   - 对 `nekobot` 的启发是：`execenv + daemon substrate` 不应只负责启动，还要定义 cleanup contract。
+7. 安全层必须三层互不绕过。
+   - classifier 只是辅助，hook 不能绕过 settings deny，permission 决策是最终关口。
+   - 这意味着 `nekobot` 的 hooks / approval / permission mode 设计必须从一开始就避免出现“插件直接放行高风险操作”的旁路。
+8. 上下文经济学需要专门基础设施，不只是超长后压缩。
+   - 轻量压缩、重量压缩、reactive compact、tool result budget、skill/MCP 按需注入都值得进入后续路线。
+   - 当前最适合先落的是：session/task summary、tool result summary、prompt stable/dynamic boundary、resume metadata。
+
+### 对现有路线的修正
+- `Phase 2` 不能只做 task lifecycle service 的 CRUD 语义，还要明确：
+  - runtime claim/report contract。
+  - runtime active task projection。
+  - 为后续 query/turn 级 state 留出挂点。
+- `Phase 4` 的 prompt assembly 需要升级为：
+  - section-based assembler。
+  - stable/dynamic boundary。
+  - capability-aware dynamic sections。
+- `Phase 5` 的 tool governance 必须显式包含：
+  - classifier/precheck。
+  - pre/post/failure hooks。
+  - permission decision glue。
+  - future streaming tool execution slot。
+- `Phase 7` 的 context lifecycle 需要改成更细项：
+  - session summary。
+  - task summary。
+  - transcript compaction policy。
+  - tool result budget。
+  - reactive compact fallback。
+
+### 当前建议的最小下一步顺序
+1. 完成 `task lifecycle service`。
+2. 完成 `runtime control plane` 的 status/active tasks/last_seen 视图。
+3. 在此基础上抽出 `execenv` 启动与 cleanup contract。
+4. 再进入 `AgentDefinition + prompt assembler`。
+5. 之后再上 `tool governance pipeline`。
+6. `context compaction` 放在工具治理和 specialist agent 之后，但要提前预埋 metadata。
+
+## 2026-04-01 Multica 参考架构补记
+
+### 参考范围
+- `/home/czyt/code/multica/server/internal/service/task.go`
+- `/home/czyt/code/multica/server/internal/daemon/daemon.go`
+- `/home/czyt/code/multica/server/internal/handler/runtime.go`
+- `/home/czyt/code/multica/apps/web/features/workspace/store.ts`
+
+### 对当前 `nekobot` 最有价值的设计点
+1. `task lifecycle service` 是独立层，而不是散在 handler/manager 里的状态跳转。
+   - `enqueue -> claim -> start -> complete/fail/cancel` 语义清楚。
+   - runtime claim 和 agent 执行被拆开，适合多 runtime / 多 agent / 后台 worker。
+2. `daemon -> execenv -> agent backend` 三层分离。
+   - 后台 supervisor 负责领取任务和生命周期。
+   - `execenv` 负责工作目录、上下文注入、环境变量、resume/workdir reuse。
+   - backend 只负责真正运行 agent CLI/模型。
+3. `runtime` 是一等控制面资源。
+   - 除了 provider/model，还要有 `status`、`last_seen`、`metadata`、`usage/activity`。
+   - 这和 `nekobot` 的 runtime/account/binding 模型天然兼容，适合继续补 runtime health 和 task view。
+4. 前端 store 按 domain 拆分。
+   - `workspace` store 统一协调 `agents`、`members`、`skills`，并在切换 workspace 时主动清空其他 domain 的 stale state。
+   - 对 `nekobot` 的启发是：Chat、Runtime Topology、Tasks、Channels/Accounts、System/Status 不应继续主要靠页面内局部状态拼装。
+
+### 对 `nekobot` 的直接映射
+- 应新增中层：`task lifecycle service`。
+  - 当前 `tasks.Store` 还是聚合快照容器，不够承担状态转换约束。
+- 应新增执行环境层：`execenv`。
+  - 后续 watch、background task、daemon worker、resume task 都会需要这层。
+- 应增强 runtime 控制面。
+  - 继续保留现有 `runtimeagents` / topology 模型，但补 `health/last_seen/usage/activity/current_tasks`。
+- WebUI 应开始按 domain 重构状态。
+  - 优先顺序：`chat`、`tasks`、`runtimes`、`channels/accounts`、`system status`。
+
+### 不应照搬的部分
+- `multica` 的 issue/workspace/task board 产品域不属于当前 `nekobot` 核心目标。
+- 当前只吸收其执行模型和控制面组织方式，不迁移其产品对象模型。
+
+### 更新后的优先级
+1. session runtime state 收口。
+2. task lifecycle service。
+3. runtime control plane enhancement。
+4. execenv + daemon substrate。
+5. AgentDefinition / tool governance / permission mode。
+6. frontend domain stores。
+
+## 2026-03-31 Chat Session 桶路由与错误态补记
+
+### 问题确认
+- `pkg/webui/frontend/src/hooks/useChat.ts` 之前已经切到 `messagesBySession` 这类 session bucket 结构，但 websocket 回包仍然没有稳定的 `session_id`。
+- 前端只能依赖 `pendingSessionKeyRef.current ?? activeSessionKey` 猜测本次响应属于哪个 session。
+- 这在以下场景不够稳：
+  - 用户切换 runtime 后，上一轮回复晚到。
+  - 同一个 websocket 连接快速连续发送不同 runtime 的请求。
+  - 错误消息或系统消息在前端切 runtime 之后才返回。
+- 同时，`ChatPage.tsx` 对 provider / prompts / runtime topology 查询失败仍然使用默认空数组，视觉上会退化成“像是没有配置”，而不是“请求失败”。
+
+### 已修复
+- `pkg/webui/server.go`
+  - `chatWSResponse` 新增 `session_id`。
+  - `welcome` / `routing` / `pong` / `message` / `route_result` / `file_mentions system` / `clear system` / `error` 全部可携带 `session_id`。
+  - 错误路径也按 `baseSessionID` 或本次 `sessionID` 回传明确归属，避免前端把错误打到错误的会话桶里。
+- `pkg/webui/frontend/src/hooks/useChat.ts`
+  - websocket 入站事件优先使用服务端 `session_id` 决定 `targetSessionKey`。
+  - 仅当旧事件没有 `session_id` 时，才回退到 `pendingSessionKeyRef` / `activeSessionKey`。
+  - `route_result` / `message` / `error` / `file_mentions` / `system` 都改成 session-scoped 写入。
+- `pkg/webui/frontend/src/pages/ChatPage.tsx`
+  - provider / prompts / runtimes / channel accounts / account bindings 改成显式 query object 使用。
+  - 当 runtime/provider/prompt 查询失败且没有缓存数据时，展示阻断型 error card，而不是空态。
+  - prompt session binding 继续跟随 `activeSessionBindingID`，避免 runtime 切换后 prompt chip 漂移到旧 session。
+- `pkg/webui/frontend/public/i18n/{en,zh-CN,ja}.json`
+  - 新增 chat runtime/provider/prompt load failure 文案。
+
+### 当前语义
+- Chat 响应、系统事件和错误事件都可以被服务端显式声明到某个 session。
+- 前端 session bucket 不再只靠“当前 UI 正在看哪个 runtime”来推断响应归属。
+- 查询失败时，Chat 控制面不会再伪装成“没有 provider / 没有 prompt / 没有 runtime”，而是明确告诉用户当前是加载失败。
+
+### 已完成验证
+- `go test -count=1 ./pkg/inboundrouter -run 'TestChatWebsocketFallsBackWithoutTopologyBinding|TestChatWebsocketRejectsDisabledWebsocketAccount|TestChatWebsocketRejectsConfiguredAccountWithoutActiveBindings'`
+- `go test -count=1 ./pkg/gateway -run 'TestProcessMessageDoesNotFallbackWhenRouterReturnsEmptyReply|TestProcessMessageDoesNotFallbackWhenExplicitRuntimeFails|TestProcessMessageDoesNotEmitInboundWhenRouterHandlesWebsocketChat|TestProcessMessagePassesExplicitRuntimeIDToRouter'`
+- `go test -count=1 ./pkg/webui -run 'TestBuildWebUIChatPromptContextIncludesExplicitRuntimeID|TestHandleUndoChatSession|TestClearChatSessionRemovesUndoSnapshots|TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults|TestResolveWebUIRuntimeSelectionRejectsUnboundRuntime|TestResolveWebUIRuntimeSelectionFallsBackToRequestedRoute'`
+- `go test -count=1 ./pkg/webui ./pkg/gateway ./pkg/inboundrouter`
+- `npm --prefix pkg/webui/frontend run build`
+
+### 结论
+- 这次收口后，WebUI Chat 至少在协议层和前端状态层实现了“服务端声明 session，前端按 session 精确入桶”的一致模型。
+- 这也是后续引入 task-backed chat state、background task summary 和多 agent 协作状态栏的必要前置。
+
+## 2026-03-31 Claude Code 扩展能力分层结论
+
+### 适合优先学习并引入的能力
+- `Coordinator`
+  - 当前 `nekobot` 已经有 subagent / runtime / tool session 雏形，但没有一个真正统一的本地 task coordinator。
+  - 这部分应落到 task runtime + inbox/notification，而不是先做远程 agent。
+- `Kairos`
+  - 当前已有 sessions / notes / learnings / watch / audit，可以自然扩展到“每日追加日志 + 后台压缩/蒸馏”。
+  - 这比直接上 remote memory 更符合当前系统阶段。
+- `Daemon`
+  - 适合承接 background tasks、watch jobs、summarizer、future background verify agents。
+- `UDS Inbox`
+  - 适合做本地跨进程 IPC，把 gateway/webui/background worker/daemon 串起来，成为后续 teammate/swarm 的本地桥。
+- `Auto-Dream`
+  - 可以先做成本地 summarizer 调度，不需要 GrowthBook 或远端依赖。
+
+### 适合后续跟进的能力
+- `Buddy`
+  - 更像前端产品层增强，适合在任务/会话基础设施稳定后作为 UI personality 层引入。
+  - 可以挂接到 chat composer / task state / agent persona，但不应抢在 task runtime 前。
+- `Bridge`
+  - 值得保留抽象接口，但真正跨设备/跨重启控制先放后面。
+
+### 暂不优先的能力
+- `Ultraplan`
+  - 它依赖远程执行、计划审批与远程会话归档，本地基础设施没稳定之前上这个只会把复杂度提前。
+
+### 推荐落地顺序
+1. `Task Runtime + Session State Protocol`
+2. `AgentDefinition + Dynamic Tool Assembly + Permission Modes`
+3. `Daemon + UDS Inbox + Background Task Supervision`
+4. `Kairos-style daily log + Auto-Dream summarizer`
+5. `Coordinator + local teammate/swarm prep`
+6. `Buddy` 和更强的前端任务体验
+7. 最后再看 `Bridge` / `Ultraplan`
+
 ## 2026-03-31 Binding 启用态一致性补记
 
 ### 问题确认
@@ -258,6 +1161,207 @@
 - 未显式选择 runtime 时：
   - 保持现有 binding mode 语义，`single_agent` 走首个 binding，`multi_agent` 走全部 enabled bindings。
 - 显式选择 runtime 时：
+
+## 2026-03-31 Claude Code 基础能力对标补记
+
+### 已对照的 `claude-code` 设计点
+- `src/utils/sessionState.ts`
+  - 把会话粗状态 `idle | running | requires_action` 与 richer metadata 解耦：
+    - `pending_action`
+    - `task_summary`
+    - `permission_mode`
+- `src/state/store.ts` + `src/state/AppStateStore.ts`
+  - 使用很小的 store 把状态变更集中到单一更新出口，便于 UI / bridge / notification 共享同一事实来源。
+- `src/services/compact/sessionMemoryCompact.ts`
+  - 上下文压缩不是简单“截断消息”，而是带边界、保工具调用配对、保计划片段、保 session memory。
+- `src/skills/loadSkillsDir.ts`
+  - skills 不只是“全量加载”，还支持：
+    - 多来源优先级
+    - 去重
+    - 条件激活
+    - agent/mcp 相关元数据
+- `src/services/AgentSummary/agentSummary.ts`
+  - 为长时间运行的 sub-agent/后台任务周期性产出 1-2 句 progress summary。
+
+### 对 `nekobot` 当前现状的判断
+- 已有基础不错，但核心短板是“缺少统一状态层”：
+  - WebUI chat/gateway 主要还是靠消息流和局部布尔值表达状态。
+  - session 持久化只有 `summary/source`，没有 `state/pending_action/last_error/runtime/provider` 之类的结构化元数据。
+- skills 系统已经有：
+  - 多路径发现
+  - eligibility
+  - registry/install
+  - watcher
+  - snapshot/version
+  但还缺：
+  - 条件自动激活
+  - 基于当前任务/触达文件/运行时的自动推荐与前置筛选
+  - 与 agent runtime / orchestrator 更强的耦合入口。
+- memory/context 已有：
+  - semantic memory
+  - learnings
+  - workspace memory
+  - 紧急压缩重试
+  但还缺：
+  - 可观测的压缩边界
+  - turn summary / compact summary
+  - session 级压缩策略与 UI 呈现。
+- subagent 已有最基础队列执行，但离 Claude Code 的协作能力还差很远：
+  - 没有显式的 progress summary
+  - 没有任务依赖/合流
+  - 没有统一的前台/后台状态投影
+  - 没有待批准动作/待用户输入状态机。
+
+### 最值得直接引入的能力
+1. 显式会话状态协议。
+   - 建议为 Chat/Gateway/ToolSession/Subagent 统一增加：
+     - `state`
+     - `pending_action`
+     - `task_summary`
+     - `last_error`
+     - `runtime_id`
+     - `actual_provider`
+     - `actual_model`
+   - 这是后续所有前端体验和调度能力的底座。
+
+2. WebSocket 生命周期状态机。
+   - 现状只有 `connecting/connected/disconnected`，不够表达“临时断线重连中”。
+   - 应补：
+     - `reconnecting`
+     - close reason / retry budget
+     - 服务端与前端统一状态说明。
+
+3. 条件 skills 激活与自动推荐。
+   - 参考 Claude Code 的 conditional skill 思路，把 skill 触发从“用户显式点名”扩到：
+     - 路径匹配
+     - channel/runtime/agent 能力匹配
+     - 当前任务类型匹配
+   - 这对 Claude agent 支持尤其重要，因为 Claude 的工作模式很依赖技能编排。
+
+4. session / subagent 的周期性 summary。
+   - harness、多 agent 协作、长时任务都需要这个能力，否则 WebUI 和 channel 侧只能看到“正在跑”，不知道在干什么。
+
+5. 上下文压缩从“紧急 fallback”升级为“可解释策略”。
+   - 压缩边界应可记录、可恢复、可被前端解释，而不是只在 provider context overflow 时兜底。
+
+### 对 Claude agent 特别有价值的增强
+- 权限模式与 pending action 显式化。
+  - 例如 `manual / acceptEdits / fullAuto` 之类的模式，配合 approval manager 做 UI 投影。
+- agent profile / capability card。
+  - 每个 agent runtime 直接展示：
+    - provider/model
+    - skills
+    - tools
+    - prompt
+    - approval mode
+    - memory/context policy
+- 任务型子代理编排。
+  - 当前 subagent 更像简单异步任务池。
+  - 若要更好支持 Claude agent，应补：
+    - task role
+    - progress summary
+    - result contract
+    - merge/integration hook。
+- MCP / external tool capability registry。
+  - Claude Code 在工具与能力来源组织上更系统。
+  - `nekobot` 后续可把 tool session、skills、channel actions、browser/tooling 收口到统一 capability registry。
+
+### 未来可继续集成的好特性
+- 远程/计划任务 agent。
+  - 类似 Claude Code 的 scheduled remote agents，但先用本地 harness/runtime 版本落地。
+- 会话事件历史分页与审计。
+  - 不只看消息正文，也看事件流：状态切换、tool call、approval、handoff、compression。
+- 文件触达驱动的 skill 激活。
+  - 当前最适合与 `watch`、`@file`、workspace memory 串起来。
+- agent 协作面板。
+  - 主 agent 只是调度入口，其他 agent 作为可选资源显示状态、摘要、结果。
+- 配置缓存与变更探测。
+  - 适合后续做 Config 热更新、runtime topology 大规模化之后再补。
+
+### 建议优先级
+- P0:
+  - 会话状态协议。
+  - Chat/Gateway WebSocket 重连状态机。
+- P1:
+  - session/subagent progress summary。
+  - 技能条件激活与自动推荐索引。
+- P2:
+  - 可解释上下文压缩。
+  - Claude agent capability registry / profile。
+- P3:
+  - 计划任务 agent、远程执行、事件流审计面板。
+
+## 2026-03-31 Claude Code 第二轮设计拆解补记
+
+### 用户补充要点的直接结论
+- Claude Code 不是“一个顶层常驻 agent + prompt + tools”。
+- 它更接近一个运行平台：
+  - 入口层。
+  - AgentDefinition 层。
+  - 动态工具注册层。
+  - 状态层。
+  - 任务层。
+  - swarm / teammate / bridge 扩展层。
+- 这意味着 `nekobot` 后续不能只围绕 `pkg/agent.Agent` 继续增肥。
+
+### 对 `nekobot` 架构的直接启发
+1. `AgentDefinition` 必须成为一等公民。
+   - 至少应声明：
+     - tools
+     - disallowed tools
+     - provider/model
+     - permission mode
+     - prompt / initial prompt
+     - memory policy
+     - runtime isolation
+     - hooks / MCP / capability dependencies
+   - 当前 `runtimeagents.AgentRuntime` 还不够，它更像路由配置，不是完整执行定义。
+
+2. 任务系统必须成为 agent 的承载层。
+   - 当前 `subagent` 更像异步队列，不够表达：
+     - local agent
+     - background agent
+     - runtime worker
+     - teammate-like worker
+     - future remote agent
+   - 后续需要统一 task model，而不是每种 agent 生命周期各写一半。
+
+3. permission mode 不应只是 approval 的附属配置。
+   - plan mode / verify mode / default mode / restricted mode 这些后续都应成为显式权限上下文。
+
+4. tools 必须按任务动态组装。
+   - Claude Code 的工具池是会话状态的一部分，不是静态常量。
+   - `nekobot` 当前虽然有 registry，但仍偏静态初始化，后续应能按 agent/task/runtime 筛选。
+
+5. 生命周期治理应视为基础能力。
+   - transcript
+   - pending action
+   - task summary
+   - cleanup
+   - resume
+   - background/foreground switch
+   - bridge / approval sync
+   这些都应成为统一 runtime 生命周期的一部分。
+
+### 对后续开发顺序的影响
+- bug 修复完成后，第一阶段不应该先做“更多 channel 功能”。
+- 第一阶段应先做：
+  - session/task state 协议
+  - AgentDefinition 抽象
+  - task-backed execution skeleton
+- 第二阶段再做：
+  - dynamic tool assembly
+  - permission mode
+  - built-in specialist agents
+- 第三阶段再做：
+  - context compaction
+  - progress summary
+  - teammate/swarm-like runtime
+
+### 明确不再采用的旧思路
+- 不继续把所有新能力都挂到一个长期存活的 `*agent.Agent` 实例上。
+- 不继续把 `plan/explore/verify` 当作散落 prompt 模板或 WebUI 层按钮逻辑。
+- 不继续把 subagent 只当“后台消息队列任务”。
   - 只路由到指定 runtime。
   - WebUI 会把这次对话写入 `route:<runtimeID>:webui-chat:<username>`，避免不同 runtime 共用同一段历史。
 - 当前 reply label 逻辑保持不变：
@@ -1598,3 +2702,212 @@ type CronJobState struct {
 ### 验证
 - 已执行：`go test ./pkg/agent ./pkg/subagent ./pkg/tools ./pkg/config ./pkg/webui ./pkg/gateway`
 - 结果：全部通过。
+
+
+## 2026-04-01 Claude Code 文档补充结论
+
+### 新吸收的关键设计原则
+- `Prompt assembly` 要继续从“单段系统提示”升级为“静态前缀 + 动态后缀”的模块化拼装：
+  - 静态区承载身份、行为规则、工具使用语法、输出风格。
+  - 动态区承载 session guidance、skills/capabilities、MCP instructions、当前权限模式、上下文摘要。
+  - 这样不仅更容易维护，也更利于后续 prompt cache / context compaction。
+- `Task runtime` 不应只等于 subagent 队列。
+  - Claude Code 的启发是：前台 agent、后台 agent、specialist agent、teammate 都共享任务模型，只是生命周期不同。
+  - `nekobot` 需要继续把 chat、background subagent、future verify/plan/explore agent 都收敛到统一任务载体，而不是各走各的状态流。
+- `Runtime state store` 是下一阶段的关键。
+  - Claude Code 的 `AppStateStore` 说明：权限对话、任务列表、plan 状态、team context、inbox 不应散落在多个临时对象里。
+  - `nekobot` 应新增一层统一运行态存储，至少承载 task list、permission mode、pending actions、task summaries、notifications。
+- `Tool execution` 应被视作治理流水线，不是直接调用。
+  - 文档反复强调：输入校验 -> pre-hook -> permission -> execute -> post-hook -> failure-hook。
+  - 这对 `nekobot` 后续引入 permission mode、tool hooks、runtime-specific tool filtering 非常关键。
+- `Capability awareness` 要成为模型可见的协议，而不是配置存在即可。
+  - Claude Code 的 skills/plugin/MCP 强在“模型知道自己现在能用什么、为什么能用、何时该用”。
+  - `nekobot` 后续不应只把 skills/MCP/tools 注册到后端，还需要把 capability delta 拼进 prompt 动态区。
+- `Context economy` 需要独立成基础设施。
+  - 文档明确了 `microcompact / autocompact / transcript / resume / cache boundary` 是一套体系，不是一个 `/compact` 命令。
+  - `nekobot` 现在已有 sessions、learnings、memory、audit；下一步应做结构化摘要边界，而不是继续依赖历史消息自然膨胀。
+- `Coordinator` 的价值在于“共享任务协议 + push completion + idle worker semantics”，而不是先追求 swarm 噱头。
+  - 当前更适合先实现 task ownership、task summary、worker idle/active state、completion notification。
+- `Daemon + UDS inbox + bridge` 应被看作同一层。
+  - daemon 解决长生命周期监督。
+  - UDS inbox 解决本地跨进程控制/通知。
+  - bridge 则是这套抽象对外暴露后的延伸，不适合跳过前两者直接做。
+
+### 对现有计划的直接影响
+- `Phase 1` 不应只停留在“任务字段暴露”，还应明确引入最小 `runtime state store` 轮廓。
+- `Phase 2` 的 `AgentDefinition` 需要同时纳入：
+  - tool allow/deny
+  - permission mode
+  - hooks
+  - MCP requirements/instructions
+  - context policy
+  而不是只抽 prompt/provider/model。
+- `Phase 3` 应拆成两半：
+  - `task-scoped tool assembly`
+  - `hook + permission pipeline`
+- `Phase 5` 的上下文工程需要细化为：
+  - prompt static/dynamic boundary
+  - transcript summary
+  - task/session compact
+  - resume metadata
+- `Phase 6` 的 teammate/swarm 预留应以前置的 `task store + inbox + notification contract` 为基础，不直接写多 agent orchestration 业务。
+
+### 结论
+- 继续参考 Claude Code 是对的，但 `nekobot` 当前最该学的不是“彩蛋功能”，而是：
+  1. 模块化 prompt 装配。
+  2. 统一任务模型与运行态存储。
+  3. 工具调用治理链。
+  4. capability-aware prompt 注入。
+  5. 上下文压缩与 resumability。
+  6. daemon/inbox/coordinator 的分层推进。
+
+
+## 2026-04-01 Task Runtime 观测链路补记
+
+### 已完成内容
+- `pkg/agent/agent.go`
+  - 新增 `GetTaskSnapshots()`，把 subagent manager 的 snapshot 能力以 agent 级出口暴露给上层控制面。
+- `pkg/webui/server.go`
+  - `Server` 新增 `taskSource` 注入点，默认接 `ag.GetTaskSnapshots`。
+  - `/api/status` 新增：
+    - `task_count`
+    - `task_state_counts`
+    - `recent_tasks`
+  - 新增摘要逻辑：按 `completed_at > started_at > created_at` 排序并截取最近 5 条。
+- `pkg/webui/server_status_test.go`
+  - 扩展状态接口断言。
+  - 新增 `TestHandleStatus_IncludesRecentTasks`。
+- `pkg/webui/frontend/src/hooks/useConfig.ts`
+  - 为状态接口补 `StatusData` / `StatusTask` 类型。
+- `pkg/webui/frontend/src/pages/SystemPage.tsx`
+  - 新增任务运行态卡片，展示总任务数、运行中、等待中、失败数。
+  - 新增近期任务列表，直接展示状态 pill、task type、label、session/channel 信息和错误摘要。
+  - 仍保留 raw status 区块，便于排查更深层 payload。
+- `pkg/webui/frontend/public/i18n/{en,zh-CN,ja}.json`
+  - 补齐 System 页任务运行态相关文案。
+
+### 为什么这一步重要
+- 这让 `pkg/tasks.Task` 不再只是内部结构，而是真正进入了控制面协议。
+- 它为后续几件事打基础：
+  - runtime state store
+  - pending action / permission mode 可视化
+  - daemon/background worker 监督
+  - coordinator/teammate 的任务面板
+
+### 当前边界
+- 现在可见的主要还是 background subagent task。
+- main chat loop、future verify/plan/explore agent 还没有统一接入同一 task runtime。
+- 这一步解决的是“可观测性缺口”，不是完整 runtime store。
+
+### 已完成验证
+- `go test -count=1 ./pkg/webui -run 'TestHandleStatus_ReturnsExtendedFields|TestHandleStatus_IncludesRecentTasks|TestBuildWebUIChatPromptContextIncludesExplicitRuntimeID|TestHandleUndoChatSession|TestClearChatSessionRemovesUndoSnapshots|TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults|TestResolveWebUIRuntimeSelectionRejectsUnboundRuntime|TestResolveWebUIRuntimeSelectionFallsBackToRequestedRoute'`
+- `go test -count=1 ./pkg/agent ./pkg/subagent ./pkg/tools ./pkg/webui ./pkg/gateway ./pkg/inboundrouter`
+- `npm --prefix pkg/webui/frontend run build`
+
+
+## 2026-04-01 Runtime State Store Skeleton 补记
+
+### 已完成内容
+- `pkg/tasks/store.go`
+  - 新增 `Store`，支持：
+    - `SetSource(name, SnapshotFunc)`
+    - `RemoveSource(name)`
+    - `List()`
+  - 当前按 source 名字稳定排序，保证聚合结果可预测。
+- `pkg/tasks/store_test.go`
+  - 新增 store 聚合顺序与 source 移除测试。
+- `pkg/agent/agent.go`
+  - `Agent` 新增 `taskStore *tasks.Store`。
+  - 初始化时创建 store。
+  - `EnableSubagents()` 时注册 `subagents` source。
+  - `DisableSubagents()` 时移除 `subagents` source。
+  - `GetTaskSnapshots()` 改为统一从 store 读取。
+- `pkg/webui/server.go`
+  - `Server` 从直接持有 `taskSource` 改为持有 `taskStore`。
+  - 当前默认接一个 `agent` source，但协议层已经从“单 source callback”升级到“统一 store 聚合”。
+- `pkg/webui/server_status_test.go`
+  - 测试改为通过 `tasks.Store` 注入假数据，避免测试继续绑定旧的单函数 source 模型。
+
+### 为什么这一步重要
+- 上一轮只解决“看见 subagent task”。
+- 这一轮开始解决“以后所有 execution unit 该挂到哪里”。
+- 有了 store，后续可以按 source 逐步接入：
+  - main chat task
+  - verify / plan / explore specialist task
+  - daemon/background worker
+  - teammate/coordinator worker
+
+### 当前边界
+- 现在的 store 还是 pull-based snapshot aggregation，不是事件流。
+- 还没有：
+  - pending action registry
+  - permission dialog state
+  - notification inbox
+  - resume metadata registry
+- 所以它是 `runtime state store skeleton`，不是完整 `AppStateStore` 替代品。
+
+### 已完成验证
+- `go test -count=1 ./pkg/tasks ./pkg/agent ./pkg/subagent ./pkg/webui`
+
+## 2026-04-02 tool_session spawn -> process 接线补记
+
+### 本轮完成
+- `pkg/tools/toolsession.go`
+  - `tool_session spawn` 现在会先解析上下文里的 `runtime_id/task_id`。
+  - 当上游没有显式 `task_id` 时，会为新建的 tool session 自动生成一个 task 绑定：
+    - 直接复用新创建的 `session_id`
+    - 回写到 tool session metadata
+    - 再交给 `process.StartWithSpec()` 进入共享 `pkg/tasks.Service`
+- 这意味着 agent 主动拉起的 coding tool session，已经不再只是 WebUI 可见的终端 session，控制面里也会出现对应的 managed task。
+
+### 当前语义
+- 如果上游已经有 `task_id`：
+  - 保持透传，不额外重写。
+- 如果上游没有 `task_id`：
+  - `tool_session` 自己生成独立 task identity。
+  - `process` 继续负责完整生命周期推进：
+    - `enqueue`
+    - `claim`
+    - `start`
+    - `complete/fail/cancel`
+- 当前没有新增 task type；仍复用现有 `runtime_worker`，因此 WebUI `/api/status` 与 runtime topology 不需要扩 schema。
+
+### 本轮测试
+- `go test -count=1 ./pkg/tools`
+- `go test -count=1 ./pkg/process ./pkg/agent ./pkg/webui`
+
+### 结论
+- `provider/model` 前置迁移后的下一条主线 `agent tool_session spawn -> process -> tasks.Service` 已完成。
+- 当前唯一下一主线切换为：
+  1. `cron executeJob`
+  2. `watch executeCommand`
+
+## 2026-04-02 cron executeJob -> tasks.Service 接线补记
+
+### 本轮完成
+- `pkg/cron/cron.go`
+  - `executeJob()` 现在会在进入 agent 执行前创建 managed task。
+  - 成功路径进入 `complete`，失败路径进入 `fail`。
+  - 每次 cron run 使用独立 task id，并记录：
+    - `source=cron`
+    - `job_id`
+    - `job_name`
+- `pkg/agent/agent.go`
+  - 暴露共享 `TaskService()`，供 `cron.Manager` 复用同一套生命周期服务。
+
+### 当前语义
+- cron 任务现在属于控制面可见的一类本地 agent 执行。
+- 当前复用 `tasks.TypeLocalAgent`。
+- `SessionID` 复用 `cron job id`，`RuntimeID` 固定为 `cron`。
+- 只向执行上下文注入 `runtime_id=cron`，不向内层工具执行链透传 cron run 自己的 task id。
+
+### 本轮测试
+- `go test -count=1 ./pkg/cron`
+- `go test -count=1 ./pkg/webui -run 'TestHandle(CreateCronJob_AcceptsRouteOverrides|CreateCronJob_AtScheduleValidatesRFC3339|RunCronJob_NotFound|RunCronJob_DisabledJobDoesNotExecute|CronJobLifecycle)'`
+- `go test ./...`
+- `cd pkg/webui/frontend && npm ci && npm run build`
+
+### 结论
+- `cron executeJob -> tasks.Service` 已完成。
+- 当前唯一剩余主线切换为：
+  1. `watch executeCommand -> tasks.Service`

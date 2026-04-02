@@ -17,6 +17,7 @@ import (
 
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/tasks"
 )
 
 // Session represents a PTY session.
@@ -35,6 +36,12 @@ type Session struct {
 	MaxOutput   int // Maximum output lines to keep
 	Cleanup     func() error
 	cleanupOnce sync.Once
+	TaskID      string
+	RuntimeID   string
+	taskDone    sync.Once
+
+	cancelMu        sync.RWMutex
+	cancelRequested bool
 }
 
 const (
@@ -42,12 +49,26 @@ const (
 	defaultPTYCols = 120
 )
 
+var killProcess = func(proc *os.Process) error {
+	return proc.Kill()
+}
+
 // Manager manages PTY sessions.
 type Manager struct {
 	log      *logger.Logger
 	sessions map[string]*Session
 	mu       sync.RWMutex
 	preparer execenv.Preparer
+	taskSvc  taskLifecycle
+}
+
+type taskLifecycle interface {
+	Enqueue(task tasks.Task) (tasks.Task, error)
+	Claim(taskID, runtimeID string) (tasks.Task, error)
+	Start(taskID string) (tasks.Task, error)
+	Complete(taskID string) (tasks.Task, error)
+	Fail(taskID, lastError string) (tasks.Task, error)
+	Cancel(taskID string) (tasks.Task, error)
 }
 
 // NewManager creates a new process manager.
@@ -67,6 +88,16 @@ func (m *Manager) SetPreparer(preparer execenv.Preparer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.preparer = preparer
+}
+
+// SetTaskService attaches a shared task lifecycle service for task-aware process sessions.
+func (m *Manager) SetTaskService(svc taskLifecycle) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.taskSvc = svc
 }
 
 // Start starts a new PTY session with the default start spec.
@@ -93,9 +124,16 @@ func (m *Manager) StartWithSpec(ctx context.Context, spec execenv.StartSpec) err
 	if m.preparer == nil {
 		m.preparer = execenv.NewDefaultPreparer()
 	}
+	preparer := m.preparer
+	taskSvc := m.taskSvc
 
-	prepared, err := m.preparer.Prepare(ctx, spec)
+	if err := enqueueManagedTask(taskSvc, spec); err != nil {
+		return fmt.Errorf("enqueue managed task: %w", err)
+	}
+
+	prepared, err := preparer.Prepare(ctx, spec)
 	if err != nil {
+		failManagedTask(taskSvc, spec, fmt.Errorf("prepare execenv: %w", err), m.log)
 		return fmt.Errorf("prepare execenv: %w", err)
 	}
 
@@ -111,8 +149,16 @@ func (m *Manager) StartWithSpec(ctx context.Context, spec execenv.StartSpec) err
 		Cols: defaultPTYCols,
 	})
 	if err != nil {
+		failManagedTask(taskSvc, spec, fmt.Errorf("starting PTY: %w", err), m.log)
 		runCleanup(prepared.Cleanup, m.log, spec.SessionID)
 		return fmt.Errorf("starting PTY: %w", err)
+	}
+	if err := startManagedTask(taskSvc, spec); err != nil {
+		_ = cmd.Process.Kill()
+		_ = ptmx.Close()
+		failManagedTask(taskSvc, spec, fmt.Errorf("start managed task: %w", err), m.log)
+		runCleanup(prepared.Cleanup, m.log, spec.SessionID)
+		return fmt.Errorf("start managed task: %w", err)
 	}
 
 	session := &Session{
@@ -126,6 +172,8 @@ func (m *Manager) StartWithSpec(ctx context.Context, spec execenv.StartSpec) err
 		Output:    make([]string, 0),
 		MaxOutput: 10000,
 		Cleanup:   prepared.Cleanup,
+		TaskID:    strings.TrimSpace(spec.TaskID),
+		RuntimeID: strings.TrimSpace(spec.RuntimeID),
 	}
 
 	m.sessions[spec.SessionID] = session
@@ -157,7 +205,8 @@ func (m *Manager) Reset(sessionID string) error {
 	running := session.Running
 	session.OutputMutex.RUnlock()
 	if running && session.Process != nil {
-		_ = session.Process.Kill()
+		session.markCancelRequested()
+		_ = killProcess(session.Process)
 	}
 	if session.PTY != nil {
 		_ = session.PTY.Close()
@@ -219,6 +268,20 @@ func (m *Manager) waitForExit(session *Session, cmd *exec.Cmd) {
 	session.cleanupOnce.Do(func() {
 		runCleanup(session.Cleanup, m.log, session.ID)
 	})
+	switch {
+	case session.cancelRequestedState():
+		cancelManagedTask(m.taskSvc, session, m.log)
+	case session.ExitCode == 0:
+		completeManagedTask(m.taskSvc, session, m.log)
+	default:
+		failManagedTask(m.taskSvc, execenv.StartSpec{
+			SessionID: session.ID,
+			Command:   session.Command,
+			Workdir:   session.Workdir,
+			RuntimeID: session.RuntimeID,
+			TaskID:    session.TaskID,
+		}, fmt.Errorf("process exited with code %d", session.ExitCode), m.log)
+	}
 
 	m.log.Info("PTY session exited",
 		zap.String("session_id", session.ID),
@@ -314,7 +377,8 @@ func (m *Manager) Kill(sessionID string) error {
 		return fmt.Errorf("session not running: %s", sessionID)
 	}
 
-	if err := session.Process.Kill(); err != nil {
+	session.markCancelRequested()
+	if err := killProcess(session.Process); err != nil {
 		return fmt.Errorf("killing process: %w", err)
 	}
 
@@ -414,6 +478,92 @@ func runCleanup(cleanup func() error, log *logger.Logger, sessionID string) {
 	if err := cleanup(); err != nil && log != nil {
 		log.Warn("Process session cleanup failed", zap.String("session_id", sessionID), zap.Error(err))
 	}
+}
+
+func enqueueManagedTask(svc taskLifecycle, spec execenv.StartSpec) error {
+	if svc == nil || strings.TrimSpace(spec.TaskID) == "" {
+		return nil
+	}
+	runtimeID := strings.TrimSpace(spec.RuntimeID)
+	if runtimeID == "" {
+		runtimeID = "process"
+	}
+	_, err := svc.Enqueue(tasks.Task{
+		ID:        strings.TrimSpace(spec.TaskID),
+		Type:      tasks.TypeRuntimeWorker,
+		Summary:   strings.TrimSpace(spec.Command),
+		SessionID: strings.TrimSpace(spec.SessionID),
+		RuntimeID: runtimeID,
+		Metadata: map[string]any{
+			"source":  "process",
+			"workdir": strings.TrimSpace(spec.Workdir),
+		},
+	})
+	return err
+}
+
+func startManagedTask(svc taskLifecycle, spec execenv.StartSpec) error {
+	if svc == nil || strings.TrimSpace(spec.TaskID) == "" {
+		return nil
+	}
+	runtimeID := strings.TrimSpace(spec.RuntimeID)
+	if runtimeID == "" {
+		runtimeID = "process"
+	}
+	if _, err := svc.Claim(strings.TrimSpace(spec.TaskID), runtimeID); err != nil {
+		return err
+	}
+	_, err := svc.Start(strings.TrimSpace(spec.TaskID))
+	return err
+}
+
+func completeManagedTask(svc taskLifecycle, session *Session, log *logger.Logger) {
+	if svc == nil || session == nil || strings.TrimSpace(session.TaskID) == "" {
+		return
+	}
+	session.taskDone.Do(func() {
+		if _, err := svc.Complete(strings.TrimSpace(session.TaskID)); err != nil && log != nil {
+			log.Warn("Completing managed process task failed", zap.String("task_id", session.TaskID), zap.Error(err))
+		}
+	})
+}
+
+func failManagedTask(svc taskLifecycle, spec execenv.StartSpec, cause error, log *logger.Logger) {
+	if svc == nil || strings.TrimSpace(spec.TaskID) == "" || cause == nil {
+		return
+	}
+	if _, err := svc.Fail(strings.TrimSpace(spec.TaskID), cause.Error()); err != nil && log != nil {
+		log.Warn("Failing managed process task failed", zap.String("task_id", spec.TaskID), zap.Error(err))
+	}
+}
+
+func cancelManagedTask(svc taskLifecycle, session *Session, log *logger.Logger) {
+	if svc == nil || session == nil || strings.TrimSpace(session.TaskID) == "" {
+		return
+	}
+	session.taskDone.Do(func() {
+		if _, err := svc.Cancel(strings.TrimSpace(session.TaskID)); err != nil && log != nil {
+			log.Warn("Canceling managed process task failed", zap.String("task_id", session.TaskID), zap.Error(err))
+		}
+	})
+}
+
+func (s *Session) markCancelRequested() {
+	if s == nil {
+		return
+	}
+	s.cancelMu.Lock()
+	defer s.cancelMu.Unlock()
+	s.cancelRequested = true
+}
+
+func (s *Session) cancelRequestedState() bool {
+	if s == nil {
+		return false
+	}
+	s.cancelMu.RLock()
+	defer s.cancelMu.RUnlock()
+	return s.cancelRequested
 }
 
 func resolveShellPath() string {

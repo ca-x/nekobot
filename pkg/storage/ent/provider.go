@@ -27,10 +27,10 @@ type Provider struct {
 	APIBase string `json:"api_base,omitempty"`
 	// Proxy holds the value of the "proxy" field.
 	Proxy string `json:"proxy,omitempty"`
-	// ModelsJSON holds the value of the "models_json" field.
-	ModelsJSON string `json:"models_json,omitempty"`
-	// DefaultModel holds the value of the "default_model" field.
-	DefaultModel string `json:"default_model,omitempty"`
+	// DefaultWeight holds the value of the "default_weight" field.
+	DefaultWeight int `json:"default_weight,omitempty"`
+	// Enabled holds the value of the "enabled" field.
+	Enabled bool `json:"enabled,omitempty"`
 	// Timeout holds the value of the "timeout" field.
 	Timeout int `json:"timeout,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -45,9 +45,11 @@ func (*Provider) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case provider.FieldTimeout:
+		case provider.FieldEnabled:
+			values[i] = new(sql.NullBool)
+		case provider.FieldDefaultWeight, provider.FieldTimeout:
 			values[i] = new(sql.NullInt64)
-		case provider.FieldID, provider.FieldName, provider.FieldProviderKind, provider.FieldAPIKey, provider.FieldAPIBase, provider.FieldProxy, provider.FieldModelsJSON, provider.FieldDefaultModel:
+		case provider.FieldID, provider.FieldName, provider.FieldProviderKind, provider.FieldAPIKey, provider.FieldAPIBase, provider.FieldProxy:
 			values[i] = new(sql.NullString)
 		case provider.FieldCreatedAt, provider.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -102,17 +104,17 @@ func (_m *Provider) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Proxy = value.String
 			}
-		case provider.FieldModelsJSON:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field models_json", values[i])
+		case provider.FieldDefaultWeight:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field default_weight", values[i])
 			} else if value.Valid {
-				_m.ModelsJSON = value.String
+				_m.DefaultWeight = int(value.Int64)
 			}
-		case provider.FieldDefaultModel:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field default_model", values[i])
+		case provider.FieldEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field enabled", values[i])
 			} else if value.Valid {
-				_m.DefaultModel = value.String
+				_m.Enabled = value.Bool
 			}
 		case provider.FieldTimeout:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -183,11 +185,11 @@ func (_m *Provider) String() string {
 	builder.WriteString("proxy=")
 	builder.WriteString(_m.Proxy)
 	builder.WriteString(", ")
-	builder.WriteString("models_json=")
-	builder.WriteString(_m.ModelsJSON)
+	builder.WriteString("default_weight=")
+	builder.WriteString(fmt.Sprintf("%v", _m.DefaultWeight))
 	builder.WriteString(", ")
-	builder.WriteString("default_model=")
-	builder.WriteString(_m.DefaultModel)
+	builder.WriteString("enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))
 	builder.WriteString(", ")
 	builder.WriteString("timeout=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Timeout))

@@ -45,7 +45,7 @@ import {
 } from '@/hooks/useTopology';
 import { t } from '@/lib/i18n';
 import { ApiError } from '@/api/client';
-import { Bot, Link2, Pencil, Plus, RadioTower, Sparkles, Trash2 } from 'lucide-react';
+import { AlertTriangle, Bot, Link2, Pencil, Plus, RadioTower, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 type RuntimeDialogState = {
@@ -132,6 +132,44 @@ function defaultBindingState(): BindingDialogState {
   };
 }
 
+function formatQueryErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim() ? error.message : t('runtimeTopologyLoadFailedDetailFallback');
+}
+
+function RuntimeTopologyLoadErrorState({
+  message,
+  onRetry,
+  retrying,
+}: {
+  message: string;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
+  return (
+    <Card className="border-rose-200/80 bg-rose-50/60 shadow-[0_24px_60px_-42px_rgba(160,60,70,0.35)]">
+      <CardContent className="space-y-4 p-5">
+        <div className="inline-flex w-fit items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-rose-700">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          {t('runtimeTopologyLoadFailedTitle')}
+        </div>
+        <div>
+          <div className="text-lg font-semibold text-rose-950">{t('runtimeTopologyLoadFailedTitle')}</div>
+          <p className="mt-2 text-sm leading-6 text-rose-900/80">{t('runtimeTopologyLoadFailedDescription')}</p>
+        </div>
+        <div className="rounded-2xl border border-rose-200/80 bg-white/85 px-4 py-3 text-sm text-rose-900">
+          {message}
+        </div>
+        <div className="flex justify-end">
+          <Button type="button" variant="outline" className="rounded-full" onClick={onRetry} disabled={retrying}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
+            {t('refresh')}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function RuntimeTopologyPage() {
   const topologyQuery = useRuntimeTopology();
   const runtimeQuery = useRuntimeAgents();
@@ -187,6 +225,13 @@ export default function RuntimeTopologyPage() {
     runtimeQuery.isLoading ||
     accountQuery.isLoading ||
     bindingQuery.isLoading;
+
+  const blockingQueryError =
+    (topologyQuery.isError && topologyQuery.data == null && topologyQuery.error) ||
+    (runtimeQuery.isError && runtimeQuery.data == null && runtimeQuery.error) ||
+    (accountQuery.isError && accountQuery.data == null && accountQuery.error) ||
+    (bindingQuery.isError && bindingQuery.data == null && bindingQuery.error) ||
+    null;
 
   const isMutating =
     createRuntime.isPending ||
@@ -414,7 +459,25 @@ export default function RuntimeTopologyPage() {
     <div>
       <Header title={t('tabRuntimeTopology')} description={t('runtimeTopologyDescription')} />
 
-      {isLoading ? (
+      {blockingQueryError ? (
+        <RuntimeTopologyLoadErrorState
+          message={formatQueryErrorMessage(blockingQueryError)}
+          onRetry={() => {
+            void Promise.all([
+              topologyQuery.refetch(),
+              runtimeQuery.refetch(),
+              accountQuery.refetch(),
+              bindingQuery.refetch(),
+            ]);
+          }}
+          retrying={
+            topologyQuery.isFetching ||
+            runtimeQuery.isFetching ||
+            accountQuery.isFetching ||
+            bindingQuery.isFetching
+          }
+        />
+      ) : isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
             <Skeleton key={index} className="h-32 rounded-3xl" />
@@ -422,7 +485,7 @@ export default function RuntimeTopologyPage() {
         </div>
       ) : null}
 
-      {!isLoading ? (
+      {!blockingQueryError && !isLoading ? (
         <div className="space-y-5">
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
@@ -511,7 +574,13 @@ export default function RuntimeTopologyPage() {
                           chips={[
                             t('runtimeTopologyProvider', runtime.provider || '-'),
                             t('runtimeTopologyModel', runtime.model || '-'),
-                            t('runtimeTopologyBoundAccounts', String(node?.bound_account_count ?? 0)),
+                            t('runtimeTopologyBoundAccounts', String(runtime.status?.bound_account_count ?? node?.bound_account_count ?? 0)),
+                            formatRuntimeAvailabilityChip(
+                              runtime.status?.effective_available ?? false,
+                              runtime.status?.availability_reason,
+                            ),
+                            `${t('systemTasksRunning')}: ${String(runtime.status?.current_task_count ?? 0)}`,
+                            runtime.status?.last_seen_at ? `${t('systemSessionUpdatedAt', new Date(runtime.status.last_seen_at).toLocaleString())}` : '',
                             runtime.prompt_id
                               ? t('runtimeTopologyPrompt', runtime.prompt_id)
                               : t('runtimeTopologyPromptUnset'),
@@ -1066,6 +1135,16 @@ function formatBindingTargetLabel(name: string, kind: string, enabled: boolean):
     return `${name} (${kind})`;
   }
   return `${name} (${kind} · ${t('disabled')})`;
+}
+
+function formatRuntimeAvailabilityChip(effectiveAvailable: boolean, reason?: string): string {
+  if (effectiveAvailable) {
+    return `${t('systemAvailable')}: ${t('systemYes')}`;
+  }
+  if (!reason) {
+    return `${t('systemAvailable')}: ${t('systemNo')}`;
+  }
+  return `${t('systemAvailable')}: ${t(`runtimeTopologyAvailabilityReason_${reason}`)}`;
 }
 
 function SectionHeading({ title, description }: { title: string; description: string }) {

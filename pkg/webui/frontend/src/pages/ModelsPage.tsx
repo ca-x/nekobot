@@ -1,0 +1,380 @@
+import { useMemo, useState } from 'react';
+import Header from '@/components/layout/Header';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
+import { t } from '@/lib/i18n';
+import {
+  buildModelOptions,
+  normalizeRouteMetadataProviderModelID,
+  useModelRoutesForModels,
+  useModels,
+  useUpdateModelRoute,
+  type ModelRoute,
+} from '@/hooks/useModels';
+import { useProviders } from '@/hooks/useProviders';
+import {
+  ChevronDown,
+  ChevronUp,
+  Route,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+} from 'lucide-react';
+
+function parseListInput(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export default function ModelsPage() {
+  const { data: modelCatalog = [], isLoading } = useModels();
+  const { data: providers = [] } = useProviders();
+  const updateRoute = useUpdateModelRoute();
+  const [query, setQuery] = useState('');
+  const [expandedModelID, setExpandedModelID] = useState('');
+
+  const routesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
+  const routesByModel = useMemo(
+    () =>
+      Object.fromEntries(
+        modelCatalog.map((item, index) => [item.model_id, routesQueries[index]?.data ?? []]),
+      ),
+    [modelCatalog, routesQueries],
+  );
+  const modelOptions = useMemo(
+    () => buildModelOptions(modelCatalog, routesByModel),
+    [modelCatalog, routesByModel],
+  );
+
+  const filteredModels = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) {
+      return modelCatalog;
+    }
+    return modelCatalog.filter((model) =>
+      [
+        model.model_id,
+        model.display_name,
+        model.developer,
+        model.family,
+        model.type,
+        model.catalog_source,
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(keyword),
+    );
+  }, [modelCatalog, query]);
+
+  const providerNames = useMemo(
+    () => new Set(providers.map((provider) => provider.name.trim()).filter(Boolean)),
+    [providers],
+  );
+
+  return (
+    <div className="space-y-6">
+      <Header title="Models" description="Manage logical models and provider routes separately from provider connections." />
+
+      <section className="relative overflow-hidden rounded-[28px] border border-border/70 bg-[radial-gradient(circle_at_top_left,_rgba(244,114,182,0.18),_transparent_38%),linear-gradient(135deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.72))] p-5 shadow-sm sm:p-6">
+        <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-100/60 blur-3xl" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-rose-300/40 bg-card/90 px-3 py-1 text-xs font-medium text-rose-700 shadow-sm">
+              <Sparkles className="h-3.5 w-3.5" />
+              Model workspace
+            </div>
+            <div className="space-y-2">
+              <h2 className="max-w-2xl text-2xl font-semibold tracking-tight text-foreground">
+                Shape logical models first, then tune provider-specific routes.
+              </h2>
+              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                The model catalog defines user-facing model IDs. Routes decide which provider serves each model, which route is default, and how aliases or regex matching resolve.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <MetricCard label="Catalog" value={String(modelCatalog.length)} />
+              <MetricCard label="Enabled" value={String(modelOptions.length)} />
+              <MetricCard
+                label="Providers wired"
+                value={String(
+                  Array.from(
+                    new Set(
+                      Object.values(routesByModel)
+                        .flat()
+                        .map((route) => route.provider_name),
+                    ),
+                  ).length,
+                )}
+              />
+            </div>
+          </div>
+
+          <div className="w-full sm:max-w-[320px]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search model ID, name, developer"
+                className="h-11 rounded-2xl border-border/70 bg-card/90 pl-9 shadow-sm"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {isLoading && (
+        <div className="grid grid-cols-1 gap-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-48 rounded-[24px]" />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && filteredModels.length === 0 && (
+        <div className="rounded-[28px] border border-dashed border-border/70 bg-card/70 px-6 py-16 text-center">
+          <div className="text-lg font-semibold text-foreground">No models found</div>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Discover models from a provider or create them through the backend API first.
+          </p>
+        </div>
+      )}
+
+      {!isLoading && filteredModels.length > 0 && (
+        <div className="grid grid-cols-1 gap-4">
+          {filteredModels.map((model) => {
+            const routes = routesByModel[model.model_id] ?? [];
+            const expanded = expandedModelID === model.model_id;
+            return (
+              <Card key={model.model_id} className="overflow-hidden rounded-[28px] border-border/70 bg-card/92 shadow-sm">
+                <div className="border-b border-border/70 bg-[linear-gradient(135deg,rgba(255,248,250,0.95),rgba(249,245,255,0.92))] px-5 py-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-3">
+                      <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/90 px-3 py-1 text-xs font-medium text-muted-foreground">
+                        <Route className="h-3.5 w-3.5" />
+                        {model.catalog_source || 'manual'}
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-foreground">{model.display_name || model.model_id}</h3>
+                        <p className="mt-1 break-all font-mono text-sm text-muted-foreground">{model.model_id}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full bg-background px-2.5 py-1 text-xs text-muted-foreground">
+                          {model.enabled ? 'Enabled' : 'Disabled'}
+                        </span>
+                        {model.developer && (
+                          <span className="rounded-full bg-background px-2.5 py-1 text-xs text-muted-foreground">
+                            {model.developer}
+                          </span>
+                        )}
+                        {model.family && (
+                          <span className="rounded-full bg-background px-2.5 py-1 text-xs text-muted-foreground">
+                            {model.family}
+                          </span>
+                        )}
+                        {model.type && (
+                          <span className="rounded-full bg-background px-2.5 py-1 text-xs text-muted-foreground">
+                            {model.type}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      <MetricCard label="Routes" value={String(routes.length)} compact />
+                      <MetricCard
+                        label="Providers"
+                        value={String(new Set(routes.map((route) => route.provider_name)).size)}
+                        compact
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-full rounded-2xl px-4"
+                        onClick={() => setExpandedModelID(expanded ? '' : model.model_id)}
+                      >
+                        {expanded ? <ChevronUp className="mr-2 h-4 w-4" /> : <ChevronDown className="mr-2 h-4 w-4" />}
+                        Routes
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                {expanded && (
+                  <CardContent className="space-y-4 p-5">
+                    {routes.length === 0 ? (
+                      <div className="rounded-[22px] border border-dashed border-border/70 bg-card/70 px-4 py-8 text-center">
+                        <p className="text-sm text-muted-foreground">No routes are configured for this model yet.</p>
+                      </div>
+                    ) : (
+                      <ScrollArea className="max-h-[520px] pr-3">
+                        <div className="space-y-4">
+                          {routes.map((route) => (
+                            <RouteEditor
+                              key={`${route.model_id}-${route.provider_name}`}
+                              route={route}
+                              providerExists={providerNames.has(route.provider_name)}
+                              onSave={(next) =>
+                                updateRoute.mutate({
+                                  modelID: route.model_id,
+                                  providerName: route.provider_name,
+                                  data: next,
+                                })
+                              }
+                              saving={updateRoute.isPending}
+                            />
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    )}
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RouteEditor({
+  route,
+  providerExists,
+  onSave,
+  saving,
+}: {
+  route: ModelRoute;
+  providerExists: boolean;
+  onSave: (value: ModelRoute) => void;
+  saving: boolean;
+}) {
+  const [enabled, setEnabled] = useState(route.enabled);
+  const [isDefault, setIsDefault] = useState(route.is_default);
+  const [weight, setWeight] = useState(String(route.weight_override || ''));
+  const [aliases, setAliases] = useState(route.aliases.join(', '));
+  const [regexRules, setRegexRules] = useState(route.regex_rules.join(', '));
+  const [providerModelID, setProviderModelID] = useState(normalizeRouteMetadataProviderModelID(route));
+
+  const handleSave = () => {
+    onSave({
+      ...route,
+      enabled,
+      is_default: isDefault,
+      weight_override: weight.trim() ? Number(weight) : 0,
+      aliases: parseListInput(aliases),
+      regex_rules: parseListInput(regexRules),
+      metadata: {
+        ...(route.metadata ?? {}),
+        provider_model_id: providerModelID.trim(),
+      },
+    });
+  };
+
+  return (
+    <div className="rounded-[24px] border border-border/70 bg-background/80 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-sm font-semibold text-foreground">{route.provider_name}</div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {providerExists ? 'Connected provider route' : 'Route points to a provider that is not currently configured'}
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          {route.is_default ? 'Default route' : 'Secondary route'}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <Field label="Enabled">
+          <div className="flex h-11 items-center rounded-2xl border border-border/70 bg-card/90 px-3">
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
+          </div>
+        </Field>
+        <Field label="Default">
+          <div className="flex h-11 items-center rounded-2xl border border-border/70 bg-card/90 px-3">
+            <Switch checked={isDefault} onCheckedChange={setIsDefault} />
+          </div>
+        </Field>
+        <Field label="Weight override">
+          <Input
+            type="number"
+            min={0}
+            value={weight}
+            onChange={(event) => setWeight(event.target.value)}
+            className="h-11 rounded-2xl bg-card/90"
+          />
+        </Field>
+        <Field label="Provider model ID">
+          <Input
+            value={providerModelID}
+            onChange={(event) => setProviderModelID(event.target.value)}
+            className="h-11 rounded-2xl bg-card/90"
+          />
+        </Field>
+        <Field label="Aliases">
+          <Input
+            value={aliases}
+            onChange={(event) => setAliases(event.target.value)}
+            placeholder="alias-a, alias-b"
+            className="h-11 rounded-2xl bg-card/90"
+          />
+        </Field>
+        <Field label="Regex rules">
+          <Input
+            value={regexRules}
+            onChange={(event) => setRegexRules(event.target.value)}
+            placeholder="^gpt-4\\.1-mini$"
+            className="h-11 rounded-2xl bg-card/90"
+          />
+        </Field>
+      </div>
+
+      <div className="mt-4 flex justify-end">
+        <Button type="button" className="rounded-full" onClick={handleSave} disabled={saving}>
+          Save route
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  compact,
+}: {
+  label: string;
+  value: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`rounded-2xl border border-border/70 bg-card/90 px-4 py-3 shadow-sm ${compact ? 'min-w-[104px]' : 'min-w-[120px]'}`}>
+      <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className="mt-1 text-base font-semibold text-foreground">{value}</div>
+    </div>
+  );
+}

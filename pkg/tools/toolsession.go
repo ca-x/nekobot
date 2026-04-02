@@ -116,11 +116,12 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 	metadata := map[string]interface{}{
 		"user_command": command,
 	}
-	runtimeID := execenv.StartSpecFromContext(ctx, "", "", "", nil).RuntimeID
+	baseSpec := execenv.StartSpecFromContext(ctx, "", "", "", nil)
+	runtimeID := baseSpec.RuntimeID
 	if runtimeID != "" {
 		metadata[execenv.MetadataRuntimeID] = runtimeID
 	}
-	taskID := execenv.StartSpecFromContext(ctx, "", "", "", nil).TaskID
+	taskID := baseSpec.TaskID
 	if taskID != "" {
 		metadata[execenv.MetadataTaskID] = taskID
 	}
@@ -136,6 +137,14 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create tool session: %w", err)
+	}
+	if taskID == "" {
+		taskID = sess.ID
+		metadata[execenv.MetadataTaskID] = taskID
+		if err := t.toolSessionMgr.UpdateSessionMetadata(ctx, sess.ID, metadata); err != nil {
+			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist task metadata: "+err.Error())
+			return "", fmt.Errorf("failed to persist tool session metadata: %w", err)
+		}
 	}
 
 	launchCommand := command

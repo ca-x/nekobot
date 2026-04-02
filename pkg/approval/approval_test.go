@@ -239,3 +239,41 @@ func TestSessionModeOverrideCanBeCleared(t *testing.T) {
 		t.Fatal("expected pending request ID after clearing override")
 	}
 }
+
+func TestGetSessionModeReturnsOverride(t *testing.T) {
+	mgr := NewManager(Config{Mode: ModePrompt})
+	mgr.SetSessionMode("sess-1", ModeManual)
+
+	mode, ok := mgr.GetSessionMode("sess-1")
+	if !ok {
+		t.Fatal("expected session mode override")
+	}
+	if mode != ModeManual {
+		t.Fatalf("expected ModeManual, got %s", mode)
+	}
+}
+
+func TestGetRequestReturnsCopy(t *testing.T) {
+	mgr := NewManager(Config{Mode: ModeManual})
+	_, id, err := mgr.CheckApproval("exec", map[string]interface{}{"cmd": "ls"}, "sess-1")
+	if err != nil {
+		t.Fatalf("CheckApproval failed: %v", err)
+	}
+
+	req, ok := mgr.GetRequest(id)
+	if !ok || req == nil {
+		t.Fatal("expected request copy")
+	}
+	if req.SessionID != "sess-1" {
+		t.Fatalf("expected session id sess-1, got %q", req.SessionID)
+	}
+	req.Arguments["cmd"] = "mutated"
+
+	reqAgain, ok := mgr.GetRequest(id)
+	if !ok || reqAgain == nil {
+		t.Fatal("expected request copy on second read")
+	}
+	if reqAgain.Arguments["cmd"] != "ls" {
+		t.Fatalf("expected original arguments to remain unchanged, got %+v", reqAgain.Arguments)
+	}
+}

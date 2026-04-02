@@ -32,6 +32,7 @@ export interface ChatRouteResult {
 }
 
 interface SendOptions {
+  sessionKey: string;
   provider: string;
   model: string;
   fallbackProviders: string[];
@@ -42,9 +43,11 @@ interface SendOptions {
 
 interface UseChatReturn {
   messages: ChatMessage[];
+  activeSessionKey: string;
+  setActiveSessionKey: (sessionKey: string) => void;
   sendMessage: (text: string, options: SendOptions) => void;
-  clearMessages: (runtimeID?: string) => void;
-  replaceMessages: (messages: ChatMessage[]) => void;
+  clearMessages: (sessionKey: string, runtimeID?: string) => void;
+  replaceMessages: (sessionKey: string, messages: ChatMessage[]) => void;
   connectionStatus: ConnectionStatus;
   reconnect: () => void;
   routeSettings: ChatRouteSettings;
@@ -55,18 +58,20 @@ interface UseChatReturn {
 }
 
 export function useChat(): UseChatReturn {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [activeSessionKey, setActiveSessionKey] = useState('webui-chat');
+  const [messagesBySession, setMessagesBySession] = useState<Record<string, ChatMessage[]>>({});
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [routeSettings, setRouteSettings] = useState<ChatRouteSettings>({
     provider: '',
     model: '',
     fallback: [],
   });
-  const [routeResult, setRouteResult] = useState<ChatRouteResult | null>(null);
-  const [isAwaitingReply, setIsAwaitingReply] = useState(false);
-  const [fileMentionFeedback, setFileMentionFeedback] = useState<FileMentionFeedback | null>(null);
+  const [routeResultsBySession, setRouteResultsBySession] = useState<Record<string, ChatRouteResult | null>>({});
+  const [awaitingReplyBySession, setAwaitingReplyBySession] = useState<Record<string, boolean>>({});
+  const [fileMentionFeedbackBySession, setFileMentionFeedbackBySession] = useState<Record<string, FileMentionFeedback | null>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSessionKeyRef = useRef<string | null>(null);
 
   const cleanup = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -111,19 +116,26 @@ export function useChat(): UseChatReturn {
 
     ws.onclose = () => {
       setConnectionStatus('disconnected');
-      setIsAwaitingReply(false);
+      setAwaitingReplyBySession((prev) => ({
+        ...prev,
+        [pendingSessionKeyRef.current ?? activeSessionKey]: false,
+      }));
       wsRef.current = null;
     };
 
     ws.onerror = () => {
       setConnectionStatus('disconnected');
-      setIsAwaitingReply(false);
+      setAwaitingReplyBySession((prev) => ({
+        ...prev,
+        [pendingSessionKeyRef.current ?? activeSessionKey]: false,
+      }));
     };
 
     ws.onmessage = (ev: MessageEvent) => {
       let msg: {
         type?: string;
         content?: string;
+        session_id?: string;
         route?: ChatRouteResult;
         meta?: { kind?: string; data?: FileMentionFeedback };
       };
@@ -134,6 +146,8 @@ export function useChat(): UseChatReturn {
       }
 
       const now = Date.now();
+      const explicitSessionKey = msg.session_id?.trim() || '';
+      const targetSessionKey = explicitSessionKey || pendingSessionKeyRef.current || activeSessionKey;
 
       if (msg.type === 'routing') {
         try {
@@ -152,49 +166,102 @@ export function useChat(): UseChatReturn {
       }
 
       if (msg.type === 'message') {
-        setIsAwaitingReply(false);
-        setMessages((prev) => [
+        if (pendingSessionKeyRef.current === targetSessionKey) {
+          pendingSessionKeyRef.current = null;
+        }
+        setAwaitingReplyBySession((prev) => ({ ...prev, [targetSessionKey]: false }));
+        setMessagesBySession((prev) => ({
           ...prev,
-          { role: 'assistant', content: msg.content || '', timestamp: now },
-        ]);
+          [targetSessionKey]: [
+            ...(prev[targetSessionKey] ?? []),
+            { role: 'assistant', content: msg.content || '', timestamp: now },
+          ],
+        }));
       } else if (msg.type === 'error') {
-        setIsAwaitingReply(false);
-        setMessages((prev) => [
+        if (pendingSessionKeyRef.current === targetSessionKey) {
+          pendingSessionKeyRef.current = null;
+        }
+        setAwaitingReplyBySession((prev) => ({ ...prev, [targetSessionKey]: false }));
+        setMessagesBySession((prev) => ({
           ...prev,
-          { role: 'error', content: msg.content || 'Unknown error', timestamp: now },
-        ]);
+          [targetSessionKey]: [
+            ...(prev[targetSessionKey] ?? []),
+            { role: 'error', content: msg.content || 'Unknown error', timestamp: now },
+          ],
+        }));
       } else if (msg.type === 'route_result' && msg.route) {
-        setRouteResult(msg.route);
+        if (pendingSessionKeyRef.current === targetSessionKey) {
+          pendingSessionKeyRef.current = null;
+        }
+        setRouteResultsBySession((prev) => ({ ...prev, [targetSessionKey]: msg.route ?? null }));
       } else if (msg.type === 'system' && msg.meta?.kind === 'file_mentions' && msg.meta.data) {
-        setFileMentionFeedback({
-          count: Number(msg.meta.data.count || 0),
-          paths: Array.isArray(msg.meta.data.paths) ? msg.meta.data.paths : [],
-          warnings: Array.isArray(msg.meta.data.warnings) ? msg.meta.data.warnings : [],
-        });
-        setMessages((prev) => [
+        const feedback = msg.meta.data;
+        setFileMentionFeedbackBySession((prev) => ({
           ...prev,
-          {
-            role: 'system',
-            content: msg.content || 'file mention feedback',
-            timestamp: now,
+          [targetSessionKey]: {
+            count: Number(feedback.count || 0),
+            paths: Array.isArray(feedback.paths) ? feedback.paths : [],
+            warnings: Array.isArray(feedback.warnings) ? feedback.warnings : [],
           },
-        ]);
+        }));
+        setMessagesBySession((prev) => ({
+          ...prev,
+          [targetSessionKey]: [
+            ...(prev[targetSessionKey] ?? []),
+            {
+              role: 'system',
+              content: msg.content || 'file mention feedback',
+              timestamp: now,
+            },
+          ],
+        }));
       } else {
-        setMessages((prev) => [
+        if (msg.type === 'system' && msg.content === 'Session cleared' && pendingSessionKeyRef.current === targetSessionKey) {
+          pendingSessionKeyRef.current = null;
+        }
+        setMessagesBySession((prev) => ({
           ...prev,
-          {
-            role: 'system',
-            content: msg.content || msg.type || 'event',
-            timestamp: now,
-          },
-        ]);
+          [targetSessionKey]: [
+            ...(prev[targetSessionKey] ?? []),
+            {
+              role: 'system',
+              content: msg.content || msg.type || 'event',
+              timestamp: now,
+            },
+          ],
+        }));
       }
     };
-  }, [cleanup]);
+  }, [activeSessionKey, cleanup]);
 
   const reconnect = useCallback(() => {
     connect();
   }, [connect]);
+
+  const setMessagesForSession = useCallback((sessionKey: string, messages: ChatMessage[]) => {
+    setMessagesBySession((prev) => {
+      const existing = prev[sessionKey];
+      if (
+        existing &&
+        existing.length === messages.length &&
+        existing.every((message, index) => {
+          const next = messages[index];
+          return (
+            message.role === next.role &&
+            message.content === next.content &&
+            message.timestamp === next.timestamp
+          );
+        })
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        [sessionKey]: messages,
+      };
+    });
+  }, []);
 
   const sendMessage = useCallback((text: string, options: SendOptions) => {
     const ws = wsRef.current;
@@ -218,35 +285,43 @@ export function useChat(): UseChatReturn {
       model: options.model,
       fallback: options.fallbackProviders,
     });
-    setRouteResult(null);
-    setFileMentionFeedback(null);
-    setIsAwaitingReply(true);
+    setRouteResultsBySession((prev) => ({ ...prev, [options.sessionKey]: null }));
+    setFileMentionFeedbackBySession((prev) => ({ ...prev, [options.sessionKey]: null }));
+    setAwaitingReplyBySession((prev) => ({ ...prev, [options.sessionKey]: true }));
+    setActiveSessionKey(options.sessionKey);
+    pendingSessionKeyRef.current = options.sessionKey;
 
-    setMessages((prev) => [
+    setMessagesBySession((prev) => ({
       ...prev,
-      { role: 'user', content: text, timestamp: Date.now() },
-    ]);
+      [options.sessionKey]: [
+        ...(prev[options.sessionKey] ?? []),
+        { role: 'user', content: text, timestamp: Date.now() },
+      ],
+    }));
   }, []);
 
-  const clearMessages = useCallback((runtimeID?: string) => {
+  const clearMessages = useCallback((sessionKey: string, runtimeID?: string) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'clear', runtime_id: runtimeID ?? '' }));
     }
-    setIsAwaitingReply(false);
-    setRouteResult(null);
-    setFileMentionFeedback(null);
-    setMessages([]);
-  }, []);
+    setAwaitingReplyBySession((prev) => ({ ...prev, [sessionKey]: false }));
+    setRouteResultsBySession((prev) => ({ ...prev, [sessionKey]: null }));
+    setFileMentionFeedbackBySession((prev) => ({ ...prev, [sessionKey]: null }));
+    setActiveSessionKey(sessionKey);
+    pendingSessionKeyRef.current = null;
+    setMessagesForSession(sessionKey, []);
+  }, [setMessagesForSession]);
 
-  const replaceMessages = useCallback((nextMessages: ChatMessage[]) => {
-    setIsAwaitingReply(false);
-    setMessages(nextMessages);
+  const replaceMessages = useCallback((sessionKey: string, nextMessages: ChatMessage[]) => {
+    setActiveSessionKey(sessionKey);
+    setAwaitingReplyBySession((prev) => ({ ...prev, [sessionKey]: false }));
+    setMessagesForSession(sessionKey, nextMessages);
   }, []);
 
   const clearFileMentionFeedback = useCallback(() => {
-    setFileMentionFeedback(null);
-  }, []);
+    setFileMentionFeedbackBySession((prev) => ({ ...prev, [activeSessionKey]: null }));
+  }, [activeSessionKey]);
 
   // Connect on mount, cleanup on unmount
   useEffect(() => {
@@ -254,8 +329,15 @@ export function useChat(): UseChatReturn {
     return cleanup;
   }, [connect, cleanup]);
 
+  const messages = messagesBySession[activeSessionKey] ?? [];
+  const routeResult = routeResultsBySession[activeSessionKey] ?? null;
+  const isAwaitingReply = awaitingReplyBySession[activeSessionKey] ?? false;
+  const fileMentionFeedback = fileMentionFeedbackBySession[activeSessionKey] ?? null;
+
   return {
     messages,
+    activeSessionKey,
+    setActiveSessionKey,
     sendMessage,
     clearMessages,
     replaceMessages,

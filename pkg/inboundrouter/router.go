@@ -150,7 +150,7 @@ func (r *Router) ChatWebsocket(
 		if strings.TrimSpace(runtimeID) != "" {
 			return "", nil, fmt.Errorf("runtime %s is not available for websocket chat", strings.TrimSpace(runtimeID))
 		}
-		return "", nil, nil
+		return "", nil, fmt.Errorf("websocket chat is not available")
 	}
 
 	selectedBindings, err := r.selectBindings(ctx, websocketAccount.ID, runtimeID)
@@ -165,20 +165,7 @@ func (r *Router) ChatWebsocket(
 				websocketAccount.ID,
 			)
 		}
-		sess, sessErr := r.sessionMgr.GetWithSource(upstreamSessionID, session.SourceGateway)
-		if sessErr != nil {
-			return "", nil, fmt.Errorf("get gateway session %s: %w", upstreamSessionID, sessErr)
-		}
-		response, _, chatErr := r.agent.ChatWithPromptContextDetailed(ctx, sess, content, agent.PromptContext{
-			Channel:   "websocket",
-			SessionID: upstreamSessionID,
-			UserID:    userID,
-			Username:  username,
-		})
-		if chatErr != nil {
-			return "", nil, chatErr
-		}
-		return response, nil, nil
+		return "", nil, fmt.Errorf("websocket chat has no active runtime bindings")
 	}
 
 	selection := selectedBindings[0]
@@ -186,7 +173,7 @@ func (r *Router) ChatWebsocket(
 		if strings.TrimSpace(runtimeID) != "" {
 			return "", nil, fmt.Errorf("runtime %s is disabled", strings.TrimSpace(runtimeID))
 		}
-		return "", nil, nil
+		return "", nil, fmt.Errorf("websocket chat has no active runtime bindings")
 	}
 
 	reply, metadata, err := r.chatWithRuntime(ctx, &bus.Message{

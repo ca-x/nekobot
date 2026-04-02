@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
+	"nekobot/pkg/tasks"
 )
 
 func TestExecToolReportsStreamingFallbackWithoutHandler(t *testing.T) {
@@ -75,6 +77,60 @@ func TestExecToolBackgroundPassesRuntimeMetadataToProcessSpec(t *testing.T) {
 	if err := pm.Reset(preparer.last.SessionID); err != nil {
 		t.Fatalf("reset background process: %v", err)
 	}
+}
+
+func TestExecToolBackgroundCreatesManagedTaskWhenTaskIDMissing(t *testing.T) {
+	log := newExecTestLogger(t)
+	store := tasks.NewStore()
+	taskSvc := tasks.NewService(store)
+	pm := process.NewManager(log)
+	pm.SetTaskService(taskSvc)
+	tool := NewExecTool(t.TempDir(), false, ExecConfig{Timeout: 5 * time.Second}, pm)
+
+	result, err := tool.Execute(context.Background(), map[string]interface{}{
+		"command":    "printf 'ok'",
+		"background": true,
+	})
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if !strings.Contains(result, "Background process started") {
+		t.Fatalf("expected background start message, got:\n%s", result)
+	}
+
+	task := waitForBackgroundTaskState(t, store, tasks.StateCompleted, 3*time.Second)
+	if task.ID == "" {
+		t.Fatal("expected generated task id")
+	}
+	if task.Type != tasks.TypeRuntimeWorker {
+		t.Fatalf("expected runtime worker type, got %q", task.Type)
+	}
+	if task.SessionID == "" {
+		t.Fatal("expected session id to be tracked")
+	}
+	if !strings.Contains(result, task.SessionID) {
+		t.Fatalf("expected output to mention session id %q, got:\n%s", task.SessionID, result)
+	}
+}
+
+func waitForBackgroundTaskState(t *testing.T, store *tasks.Store, want tasks.State, timeout time.Duration) tasks.Task {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		all := store.List()
+		if len(all) == 1 && all[0].State == want {
+			return all[0]
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	var states []string
+	for _, task := range store.List() {
+		states = append(states, fmt.Sprintf("%s=%s", task.ID, task.State))
+	}
+	t.Fatalf("background task did not reach %s before timeout; saw %v", want, states)
+	return tasks.Task{}
 }
 
 func newExecTestLogger(t *testing.T) *logger.Logger {

@@ -98,30 +98,37 @@ func (_u *ProviderUpdate) SetNillableProxy(v *string) *ProviderUpdate {
 	return _u
 }
 
-// SetModelsJSON sets the "models_json" field.
-func (_u *ProviderUpdate) SetModelsJSON(v string) *ProviderUpdate {
-	_u.mutation.SetModelsJSON(v)
+// SetDefaultWeight sets the "default_weight" field.
+func (_u *ProviderUpdate) SetDefaultWeight(v int) *ProviderUpdate {
+	_u.mutation.ResetDefaultWeight()
+	_u.mutation.SetDefaultWeight(v)
 	return _u
 }
 
-// SetNillableModelsJSON sets the "models_json" field if the given value is not nil.
-func (_u *ProviderUpdate) SetNillableModelsJSON(v *string) *ProviderUpdate {
+// SetNillableDefaultWeight sets the "default_weight" field if the given value is not nil.
+func (_u *ProviderUpdate) SetNillableDefaultWeight(v *int) *ProviderUpdate {
 	if v != nil {
-		_u.SetModelsJSON(*v)
+		_u.SetDefaultWeight(*v)
 	}
 	return _u
 }
 
-// SetDefaultModel sets the "default_model" field.
-func (_u *ProviderUpdate) SetDefaultModel(v string) *ProviderUpdate {
-	_u.mutation.SetDefaultModel(v)
+// AddDefaultWeight adds value to the "default_weight" field.
+func (_u *ProviderUpdate) AddDefaultWeight(v int) *ProviderUpdate {
+	_u.mutation.AddDefaultWeight(v)
 	return _u
 }
 
-// SetNillableDefaultModel sets the "default_model" field if the given value is not nil.
-func (_u *ProviderUpdate) SetNillableDefaultModel(v *string) *ProviderUpdate {
+// SetEnabled sets the "enabled" field.
+func (_u *ProviderUpdate) SetEnabled(v bool) *ProviderUpdate {
+	_u.mutation.SetEnabled(v)
+	return _u
+}
+
+// SetNillableEnabled sets the "enabled" field if the given value is not nil.
+func (_u *ProviderUpdate) SetNillableEnabled(v *bool) *ProviderUpdate {
 	if v != nil {
-		_u.SetDefaultModel(*v)
+		_u.SetEnabled(*v)
 	}
 	return _u
 }
@@ -236,11 +243,14 @@ func (_u *ProviderUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Proxy(); ok {
 		_spec.SetField(provider.FieldProxy, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.ModelsJSON(); ok {
-		_spec.SetField(provider.FieldModelsJSON, field.TypeString, value)
+	if value, ok := _u.mutation.DefaultWeight(); ok {
+		_spec.SetField(provider.FieldDefaultWeight, field.TypeInt, value)
 	}
-	if value, ok := _u.mutation.DefaultModel(); ok {
-		_spec.SetField(provider.FieldDefaultModel, field.TypeString, value)
+	if value, ok := _u.mutation.AddedDefaultWeight(); ok {
+		_spec.AddField(provider.FieldDefaultWeight, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.Enabled(); ok {
+		_spec.SetField(provider.FieldEnabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Timeout(); ok {
 		_spec.SetField(provider.FieldTimeout, field.TypeInt, value)
@@ -341,30 +351,37 @@ func (_u *ProviderUpdateOne) SetNillableProxy(v *string) *ProviderUpdateOne {
 	return _u
 }
 
-// SetModelsJSON sets the "models_json" field.
-func (_u *ProviderUpdateOne) SetModelsJSON(v string) *ProviderUpdateOne {
-	_u.mutation.SetModelsJSON(v)
+// SetDefaultWeight sets the "default_weight" field.
+func (_u *ProviderUpdateOne) SetDefaultWeight(v int) *ProviderUpdateOne {
+	_u.mutation.ResetDefaultWeight()
+	_u.mutation.SetDefaultWeight(v)
 	return _u
 }
 
-// SetNillableModelsJSON sets the "models_json" field if the given value is not nil.
-func (_u *ProviderUpdateOne) SetNillableModelsJSON(v *string) *ProviderUpdateOne {
+// SetNillableDefaultWeight sets the "default_weight" field if the given value is not nil.
+func (_u *ProviderUpdateOne) SetNillableDefaultWeight(v *int) *ProviderUpdateOne {
 	if v != nil {
-		_u.SetModelsJSON(*v)
+		_u.SetDefaultWeight(*v)
 	}
 	return _u
 }
 
-// SetDefaultModel sets the "default_model" field.
-func (_u *ProviderUpdateOne) SetDefaultModel(v string) *ProviderUpdateOne {
-	_u.mutation.SetDefaultModel(v)
+// AddDefaultWeight adds value to the "default_weight" field.
+func (_u *ProviderUpdateOne) AddDefaultWeight(v int) *ProviderUpdateOne {
+	_u.mutation.AddDefaultWeight(v)
 	return _u
 }
 
-// SetNillableDefaultModel sets the "default_model" field if the given value is not nil.
-func (_u *ProviderUpdateOne) SetNillableDefaultModel(v *string) *ProviderUpdateOne {
+// SetEnabled sets the "enabled" field.
+func (_u *ProviderUpdateOne) SetEnabled(v bool) *ProviderUpdateOne {
+	_u.mutation.SetEnabled(v)
+	return _u
+}
+
+// SetNillableEnabled sets the "enabled" field if the given value is not nil.
+func (_u *ProviderUpdateOne) SetNillableEnabled(v *bool) *ProviderUpdateOne {
 	if v != nil {
-		_u.SetDefaultModel(*v)
+		_u.SetEnabled(*v)
 	}
 	return _u
 }
@@ -509,11 +526,14 @@ func (_u *ProviderUpdateOne) sqlSave(ctx context.Context) (_node *Provider, err 
 	if value, ok := _u.mutation.Proxy(); ok {
 		_spec.SetField(provider.FieldProxy, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.ModelsJSON(); ok {
-		_spec.SetField(provider.FieldModelsJSON, field.TypeString, value)
+	if value, ok := _u.mutation.DefaultWeight(); ok {
+		_spec.SetField(provider.FieldDefaultWeight, field.TypeInt, value)
 	}
-	if value, ok := _u.mutation.DefaultModel(); ok {
-		_spec.SetField(provider.FieldDefaultModel, field.TypeString, value)
+	if value, ok := _u.mutation.AddedDefaultWeight(); ok {
+		_spec.AddField(provider.FieldDefaultWeight, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.Enabled(); ok {
+		_spec.SetField(provider.FieldEnabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Timeout(); ok {
 		_spec.SetField(provider.FieldTimeout, field.TypeInt, value)

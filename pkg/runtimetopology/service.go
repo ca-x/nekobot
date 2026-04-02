@@ -3,10 +3,13 @@ package runtimetopology
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"nekobot/pkg/accountbindings"
 	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/runtimeagents"
+	"nekobot/pkg/tasks"
 )
 
 // Summary contains top-level topology counts.
@@ -51,9 +54,12 @@ type Snapshot struct {
 
 // Service aggregates runtime/account/binding data into a topology view.
 type Service struct {
-	runtimes *runtimeagents.Manager
-	accounts *channelaccounts.Manager
-	bindings *accountbindings.Manager
+	runtimes  *runtimeagents.Manager
+	accounts  *channelaccounts.Manager
+	bindings  *accountbindings.Manager
+	taskStore interface {
+		List() []tasks.Task
+	}
 }
 
 // NewService creates a new topology service.
@@ -61,6 +67,9 @@ func NewService(
 	runtimes *runtimeagents.Manager,
 	accounts *channelaccounts.Manager,
 	bindings *accountbindings.Manager,
+	taskStore interface {
+		List() []tasks.Task
+	},
 ) (*Service, error) {
 	if runtimes == nil {
 		return nil, fmt.Errorf("runtime manager is nil")
@@ -72,9 +81,10 @@ func NewService(
 		return nil, fmt.Errorf("account binding manager is nil")
 	}
 	return &Service{
-		runtimes: runtimes,
-		accounts: accounts,
-		bindings: bindings,
+		runtimes:  runtimes,
+		accounts:  accounts,
+		bindings:  bindings,
+		taskStore: taskStore,
 	}, nil
 }
 
@@ -137,8 +147,40 @@ func (s *Service) Snapshot(ctx context.Context) (*Snapshot, error) {
 		})
 	}
 
+	taskCountByRuntimeID := make(map[string]int, len(runtimeList))
+	lastSeenByRuntimeID := make(map[string]time.Time, len(runtimeList))
+	if s.taskStore != nil {
+		for _, task := range s.taskStore.List() {
+			runtimeID := strings.TrimSpace(task.RuntimeID)
+			if runtimeID == "" {
+				continue
+			}
+			if !tasks.IsFinal(task.State) {
+				taskCountByRuntimeID[runtimeID]++
+			}
+			taskTime := task.CreatedAt
+			if !task.CompletedAt.IsZero() {
+				taskTime = task.CompletedAt
+			} else if !task.StartedAt.IsZero() {
+				taskTime = task.StartedAt
+			}
+			if taskTime.After(lastSeenByRuntimeID[runtimeID]) {
+				lastSeenByRuntimeID[runtimeID] = taskTime
+			}
+		}
+	}
+
 	runtimes := make([]RuntimeNode, 0, len(runtimeList))
 	for _, item := range runtimeList {
+		status := &runtimeagents.RuntimeDerivedStatus{
+			EffectiveAvailable:  item.Enabled && runtimeEnabledByID[item.ID] && countEffectiveBindings(edges, item.ID) > 0,
+			AvailabilityReason:  deriveAvailabilityReason(item.Enabled, runtimeCountByID[item.ID], countEffectiveBindings(edges, item.ID)),
+			BoundAccountCount:   runtimeCountByID[item.ID],
+			EnabledBindingCount: countEffectiveBindings(edges, item.ID),
+			CurrentTaskCount:    taskCountByRuntimeID[item.ID],
+			LastSeenAt:          lastSeenByRuntimeID[item.ID],
+		}
+		item.Status = status
 		runtimes = append(runtimes, RuntimeNode{
 			Runtime:           item,
 			BoundAccountCount: runtimeCountByID[item.ID],
@@ -191,4 +233,27 @@ func bindingEffectiveState(
 		return false, "runtime_disabled"
 	}
 	return true, ""
+}
+
+func countEffectiveBindings(edges []BindingEdge, runtimeID string) int {
+	count := 0
+	for _, edge := range edges {
+		if edge.Binding.AgentRuntimeID == runtimeID && edge.EffectiveEnabled {
+			count++
+		}
+	}
+	return count
+}
+
+func deriveAvailabilityReason(enabled bool, boundCount int, enabledBindingCount int) string {
+	switch {
+	case !enabled:
+		return "runtime_disabled"
+	case enabledBindingCount > 0:
+		return "available"
+	case boundCount > 0:
+		return "no_enabled_bindings"
+	default:
+		return "unbound"
+	}
 }

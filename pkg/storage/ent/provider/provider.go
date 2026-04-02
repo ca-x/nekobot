@@ -23,10 +23,10 @@ const (
 	FieldAPIBase = "api_base"
 	// FieldProxy holds the string denoting the proxy field in the database.
 	FieldProxy = "proxy"
-	// FieldModelsJSON holds the string denoting the models_json field in the database.
-	FieldModelsJSON = "models_json"
-	// FieldDefaultModel holds the string denoting the default_model field in the database.
-	FieldDefaultModel = "default_model"
+	// FieldDefaultWeight holds the string denoting the default_weight field in the database.
+	FieldDefaultWeight = "default_weight"
+	// FieldEnabled holds the string denoting the enabled field in the database.
+	FieldEnabled = "enabled"
 	// FieldTimeout holds the string denoting the timeout field in the database.
 	FieldTimeout = "timeout"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -45,8 +45,8 @@ var Columns = []string{
 	FieldAPIKey,
 	FieldAPIBase,
 	FieldProxy,
-	FieldModelsJSON,
-	FieldDefaultModel,
+	FieldDefaultWeight,
+	FieldEnabled,
 	FieldTimeout,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -73,10 +73,10 @@ var (
 	DefaultAPIBase string
 	// DefaultProxy holds the default value on creation for the "proxy" field.
 	DefaultProxy string
-	// DefaultModelsJSON holds the default value on creation for the "models_json" field.
-	DefaultModelsJSON string
-	// DefaultDefaultModel holds the default value on creation for the "default_model" field.
-	DefaultDefaultModel string
+	// DefaultDefaultWeight holds the default value on creation for the "default_weight" field.
+	DefaultDefaultWeight int
+	// DefaultEnabled holds the default value on creation for the "enabled" field.
+	DefaultEnabled bool
 	// DefaultTimeout holds the default value on creation for the "timeout" field.
 	DefaultTimeout int
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
@@ -122,14 +122,14 @@ func ByProxy(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldProxy, opts...).ToFunc()
 }
 
-// ByModelsJSON orders the results by the models_json field.
-func ByModelsJSON(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldModelsJSON, opts...).ToFunc()
+// ByDefaultWeight orders the results by the default_weight field.
+func ByDefaultWeight(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDefaultWeight, opts...).ToFunc()
 }
 
-// ByDefaultModel orders the results by the default_model field.
-func ByDefaultModel(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldDefaultModel, opts...).ToFunc()
+// ByEnabled orders the results by the enabled field.
+func ByEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldEnabled, opts...).ToFunc()
 }
 
 // ByTimeout orders the results by the timeout field.

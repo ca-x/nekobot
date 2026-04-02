@@ -53,6 +53,8 @@ export interface PromptBindingInput {
 
 const PROMPTS_KEY = ['prompts'] as const;
 const PROMPT_BINDINGS_KEY = ['prompt-bindings'] as const;
+const promptSessionBindingsKey = (sessionID: string) =>
+  ['prompt-session-bindings', sessionID] as const;
 
 export function usePrompts() {
   return useQuery<PromptRecord[]>({
@@ -82,7 +84,7 @@ export function usePromptBindings(scope?: string, target?: string) {
 
 export function usePromptSessionBindings(sessionID: string | null) {
   return useQuery<PromptSessionBindingSet>({
-    queryKey: ['prompt-session-bindings', sessionID ?? ''],
+    queryKey: promptSessionBindingsKey(sessionID ?? ''),
     queryFn: () => api.get(`/api/chat/prompts/session/${encodeURIComponent(sessionID ?? '')}`),
     enabled: Boolean(sessionID),
     staleTime: 5_000,
@@ -180,10 +182,28 @@ export function useReplacePromptSessionBindings() {
         system_prompt_ids: systemPromptIDs,
         user_prompt_ids: userPromptIDs,
       }),
-    onSuccess: (_, variables) => {
-      qc.invalidateQueries({ queryKey: ['prompt-session-bindings', variables.sessionID] });
+    onMutate: async (variables) => {
+      const queryKey = promptSessionBindingsKey(variables.sessionID);
+      await qc.cancelQueries({ queryKey });
+
+      const previous = qc.getQueryData<PromptSessionBindingSet>(queryKey);
+      qc.setQueryData<PromptSessionBindingSet>(queryKey, {
+        system_prompt_ids: [...variables.systemPromptIDs],
+        user_prompt_ids: [...variables.userPromptIDs],
+        bindings: previous?.bindings ?? [],
+      });
+
+      return { previous, queryKey };
+    },
+    onSuccess: (data, variables) => {
+      qc.setQueryData(promptSessionBindingsKey(variables.sessionID), data);
       qc.invalidateQueries({ queryKey: [...PROMPT_BINDINGS_KEY] });
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error, _variables, context) => {
+      if (context?.previous) {
+        qc.setQueryData(context.queryKey, context.previous);
+      }
+      toast.error(err.message);
+    },
   });
 }

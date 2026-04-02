@@ -49,8 +49,11 @@ import (
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 	memoryqmd "nekobot/pkg/memory/qmd"
+	"nekobot/pkg/modelroute"
+	"nekobot/pkg/modelstore"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
+	"nekobot/pkg/providerregistry"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
 	"nekobot/pkg/runtimeagents"
@@ -306,12 +309,17 @@ func (s *Server) setup() {
 	}))
 
 	// Provider routes
+	api.GET("/provider-types", s.handleGetProviderTypes)
 	api.GET("/providers", s.handleGetProviders)
 	api.GET("/providers/runtime", s.handleGetProviderRuntime)
 	api.POST("/providers", s.handleCreateProvider)
 	api.POST("/providers/discover-models", s.handleDiscoverProviderModels)
 	api.PUT("/providers/:name", s.handleUpdateProvider)
 	api.DELETE("/providers/:name", s.handleDeleteProvider)
+	api.GET("/models", s.handleGetModels)
+	api.POST("/models", s.handleCreateModel)
+	api.GET("/model-routes", s.handleGetModelRoutes)
+	api.PUT("/model-routes/:modelID/:providerName", s.handleUpdateModelRoute)
 
 	// Channel routes
 	api.GET("/channels", s.handleGetChannels)
@@ -930,21 +938,19 @@ func (s *Server) handleDeleteProvider(c *echo.Context) error {
 
 func providerProfileToMap(p config.ProviderProfile) map[string]interface{} {
 	return map[string]interface{}{
-		"name":          p.Name,
-		"provider_kind": p.ProviderKind,
-		"api_key":       p.APIKey,
-		"api_base":      p.APIBase,
-		"proxy":         p.Proxy,
-		"models":        p.Models,
-		"default_model": p.DefaultModel,
-		"timeout":       p.Timeout,
+		"name":           p.Name,
+		"provider_kind":  p.ProviderKind,
+		"api_key":        p.APIKey,
+		"api_base":       p.APIBase,
+		"proxy":          p.Proxy,
+		"default_weight": p.DefaultWeight,
+		"enabled":        p.Enabled,
+		"timeout":        p.Timeout,
 	}
 }
 
 func (s *Server) providerProfileToView(p config.ProviderProfile) map[string]interface{} {
-	models := append([]string(nil), p.Models...)
 	apiKeySet := strings.TrimSpace(p.APIKey) != ""
-	defaultModel := strings.TrimSpace(p.DefaultModel)
 
 	return map[string]interface{}{
 		"name":               strings.TrimSpace(p.Name),
@@ -952,10 +958,8 @@ func (s *Server) providerProfileToView(p config.ProviderProfile) map[string]inte
 		"api_key_set":        apiKeySet,
 		"api_base":           strings.TrimSpace(p.APIBase),
 		"proxy":              strings.TrimSpace(p.Proxy),
-		"models":             models,
-		"model_count":        len(models),
-		"default_model":      defaultModel,
-		"has_default_model":  defaultModel != "",
+		"default_weight":     p.DefaultWeight,
+		"enabled":            p.Enabled,
 		"is_routing_default": strings.TrimSpace(s.config.Agents.Defaults.Provider) == strings.TrimSpace(p.Name),
 		"supports_discovery": providerKindSupportsDiscovery(p.ProviderKind),
 		"summary":            summarizeProviderProfile(p),
@@ -964,28 +968,23 @@ func (s *Server) providerProfileToView(p config.ProviderProfile) map[string]inte
 }
 
 func providerKindSupportsDiscovery(kind string) bool {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "openai", "anthropic", "gemini", "ollama", "groq", "lmstudio", "vllm", "deepseek", "moonshot", "zhipu", "openrouter", "nvidia", "generic":
-		return true
-	default:
-		return false
-	}
+	item, ok := providerregistry.Get(strings.ToLower(strings.TrimSpace(kind)))
+	return ok && item.SupportsDiscovery
 }
 
 func summarizeProviderProfile(p config.ProviderProfile) string {
-	modelCount := len(p.Models)
-	defaultModel := strings.TrimSpace(p.DefaultModel)
 	parts := make([]string, 0, 2)
-	if modelCount > 0 {
-		parts = append(parts, fmt.Sprintf("%d models", modelCount))
+	if p.Enabled {
+		parts = append(parts, "Enabled")
+	} else {
+		parts = append(parts, "Disabled")
 	}
-	if defaultModel != "" {
-		parts = append(parts, fmt.Sprintf("default %s", defaultModel))
-	}
-	if len(parts) == 0 {
-		return "No models configured"
-	}
+	parts = append(parts, fmt.Sprintf("weight %d", p.DefaultWeight))
 	return strings.Join(parts, " · ")
+}
+
+func (s *Server) handleGetProviderTypes(c *echo.Context) error {
+	return c.JSON(http.StatusOK, providerregistry.List())
 }
 
 func (s *Server) handleProviderStoreError(c *echo.Context, err error) error {
@@ -1078,10 +1077,131 @@ func (s *Server) handleDiscoverProviderModels(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
+	if err := s.mergeDiscoveredModels(c.Request().Context(), profile, models); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"provider_kind": kind,
 		"models":        models,
 	})
+}
+
+func (s *Server) handleGetModels(c *echo.Context) error {
+	manager, err := modelstore.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	items, err := manager.List(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleCreateModel(c *echo.Context) error {
+	var input modelstore.ModelCatalog
+	if err := c.Bind(&input); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	manager, err := modelstore.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	item, err := manager.Create(c.Request().Context(), input)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, map[string]interface{}{"status": "created", "model": item})
+}
+
+func (s *Server) handleGetModelRoutes(c *echo.Context) error {
+	modelID := strings.TrimSpace(c.QueryParam("model_id"))
+	if modelID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "model_id is required"})
+	}
+	manager, err := modelroute.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	items, err := manager.ListByModel(c.Request().Context(), modelID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleUpdateModelRoute(c *echo.Context) error {
+	var input modelroute.ModelRoute
+	if err := c.Bind(&input); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	modelID := strings.TrimSpace(c.Param("modelID"))
+	providerName := strings.TrimSpace(c.Param("providerName"))
+	manager, err := modelroute.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	item, err := manager.Update(c.Request().Context(), modelID, providerName, input)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{"status": "updated", "route": item})
+}
+
+func (s *Server) mergeDiscoveredModels(
+	ctx context.Context,
+	profile config.ProviderProfile,
+	modelIDs []string,
+) error {
+	modelMgr, err := modelstore.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return fmt.Errorf("create model manager: %w", err)
+	}
+	routeMgr, err := modelroute.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return fmt.Errorf("create model route manager: %w", err)
+	}
+
+	for _, modelID := range modelIDs {
+		trimmedModelID := strings.TrimSpace(modelID)
+		if trimmedModelID == "" {
+			continue
+		}
+		if _, err := modelMgr.Get(ctx, trimmedModelID); err != nil {
+			if !errors.Is(err, modelstore.ErrModelNotFound) {
+				return err
+			}
+			if _, err := modelMgr.Create(ctx, modelstore.ModelCatalog{
+				ModelID:       trimmedModelID,
+				DisplayName:   trimmedModelID,
+				CatalogSource: "provider_discovery",
+				Enabled:       true,
+			}); err != nil && !errors.Is(err, modelstore.ErrModelExists) {
+				return err
+			}
+		}
+
+		routeInput := modelroute.ModelRoute{
+			ModelID:      trimmedModelID,
+			ProviderName: strings.TrimSpace(profile.Name),
+			Enabled:      true,
+			IsDefault:    false,
+			Metadata: map[string]interface{}{
+				"provider_model_id": trimmedModelID,
+			},
+		}
+		if _, err := routeMgr.Create(ctx, routeInput); err != nil {
+			if !errors.Is(err, modelroute.ErrRouteExists) {
+				return err
+			}
+			if _, err := routeMgr.Update(ctx, routeInput.ModelID, routeInput.ProviderName, routeInput); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // --- Cron Handlers ---
@@ -1264,7 +1384,7 @@ func (s *Server) discoverModels(kind string, profile *config.ProviderProfile) ([
 	kind = strings.ToLower(strings.TrimSpace(kind))
 
 	if kind == "openai" || kind == "generic" || kind == "openrouter" || kind == "groq" || kind == "vllm" || kind == "deepseek" || kind == "moonshot" || kind == "zhipu" || kind == "nvidia" {
-		if models, err := discoverOpenAICompatibleModels(profile.APIBase, profile.APIKey, profile.Proxy, profile.Timeout); err == nil && len(models) > 0 {
+		if models, err := discoverOpenAICompatibleModelsFunc(profile.APIBase, profile.APIKey, profile.Proxy, profile.Timeout); err == nil && len(models) > 0 {
 			return models, nil
 		}
 	}
@@ -1360,6 +1480,8 @@ func discoverOpenAICompatibleModels(apiBase, apiKey, proxy string, timeout int) 
 	sort.Strings(models)
 	return dedupeStrings(models), nil
 }
+
+var discoverOpenAICompatibleModelsFunc = discoverOpenAICompatibleModels
 
 func dedupeStrings(items []string) []string {
 	if len(items) == 0 {

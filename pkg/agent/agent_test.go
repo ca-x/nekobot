@@ -19,8 +19,12 @@ import (
 	"nekobot/pkg/logger"
 	"nekobot/pkg/memory"
 	promptmemory "nekobot/pkg/memory/prompt"
+	"nekobot/pkg/modelroute"
+	"nekobot/pkg/modelstore"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/session"
+	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/tasks"
 	"nekobot/pkg/tools"
 )
 
@@ -141,27 +145,32 @@ func TestBuildProviderOrder_ExpandsProviderGroupLeastUsed(t *testing.T) {
 	}
 }
 
-func TestResolveModelForProvider_FallsBackToProviderDefaultModel(t *testing.T) {
+func TestResolveModelForProvider_UsesModelRoute(t *testing.T) {
 	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
 	cfg.Agents.Defaults.Model = "claude-sonnet-4-5-20250929"
 	cfg.Providers = []config.ProviderProfile{
-		{
-			Name:         "anthropic",
-			ProviderKind: "anthropic",
-			Models:       []string{"claude-sonnet-4-5-20250929"},
-			DefaultModel: "claude-sonnet-4-5-20250929",
-		},
-		{
-			Name:         "openai",
-			ProviderKind: "openai",
-			Models:       []string{"gpt-4o-mini"},
-			DefaultModel: "gpt-4o-mini",
-		},
+		{Name: "anthropic", ProviderKind: "anthropic", Enabled: true, DefaultWeight: 1},
+		{Name: "openai", ProviderKind: "openai", Enabled: true, DefaultWeight: 1},
 	}
 
-	ag := &Agent{config: cfg}
+	log := testLogger(t)
+	client := newRuntimeEntClient(t, cfg)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
 
-	got := ag.resolveModelForProvider("openai", "anthropic", "claude-sonnet-4-5-20250929")
+	if err := createRouteFixtures(t, cfg, log, client); err != nil {
+		t.Fatalf("createRouteFixtures failed: %v", err)
+	}
+
+	ag := &Agent{config: cfg, entClient: client, logger: log}
+
+	got, err := ag.resolveModelForProvider(context.Background(), "openai", "anthropic", "claude-sonnet-4-5-20250929")
+	if err != nil {
+		t.Fatalf("resolveModelForProvider failed: %v", err)
+	}
 	want := "gpt-4o-mini"
 	if got != want {
 		t.Fatalf("expected model %q, got %q", want, got)
@@ -330,6 +339,77 @@ func TestAgentRegistersMemoryToolWhenSemanticMemoryEnabled(t *testing.T) {
 	}
 }
 
+func createRouteFixtures(
+	t *testing.T,
+	cfg *config.Config,
+	log *logger.Logger,
+	client *ent.Client,
+) error {
+	t.Helper()
+
+	modelMgr, err := modelstore.NewManager(cfg, log, client)
+	if err != nil {
+		return err
+	}
+	if _, err := modelMgr.Create(context.Background(), modelstore.ModelCatalog{
+		ModelID:       "claude-sonnet-4-5-20250929",
+		DisplayName:   "Claude Sonnet",
+		CatalogSource: "builtin",
+		Enabled:       true,
+	}); err != nil && !errors.Is(err, modelstore.ErrModelExists) {
+		return err
+	}
+	if _, err := modelMgr.Create(context.Background(), modelstore.ModelCatalog{
+		ModelID:       "gpt-4o-mini",
+		DisplayName:   "GPT-4o mini",
+		CatalogSource: "provider_discovery",
+		Enabled:       true,
+	}); err != nil && !errors.Is(err, modelstore.ErrModelExists) {
+		return err
+	}
+
+	routeMgr, err := modelroute.NewManager(cfg, log, client)
+	if err != nil {
+		return err
+	}
+	if _, err := routeMgr.Create(context.Background(), modelroute.ModelRoute{
+		ModelID:      "claude-sonnet-4-5-20250929",
+		ProviderName: "anthropic",
+		Enabled:      true,
+		IsDefault:    true,
+	}); err != nil && !errors.Is(err, modelroute.ErrRouteExists) {
+		return err
+	}
+	if _, err := routeMgr.Create(context.Background(), modelroute.ModelRoute{
+		ModelID:      "claude-sonnet-4-5-20250929",
+		ProviderName: "openai",
+		Enabled:      true,
+		IsDefault:    false,
+		Aliases:      []string{"claude-sonnet-4-5-20250929"},
+		Metadata: map[string]interface{}{
+			"provider_model_id": "gpt-4o-mini",
+		},
+	}); err != nil && !errors.Is(err, modelroute.ErrRouteExists) {
+		return err
+	}
+
+	return nil
+}
+
+func newRuntimeEntClient(t *testing.T, cfg *config.Config) *ent.Client {
+	t.Helper()
+
+	client, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open runtime ent client: %v", err)
+	}
+	if err := config.EnsureRuntimeEntSchema(client); err != nil {
+		_ = client.Close()
+		t.Fatalf("ensure runtime schema: %v", err)
+	}
+	return client
+}
+
 func TestEnableSubagentsRegistersSpawnTool(t *testing.T) {
 	cfg := config.DefaultConfig()
 
@@ -351,6 +431,33 @@ func TestEnableSubagentsRegistersSpawnTool(t *testing.T) {
 
 	if _, ok := ag.tools.Get("spawn"); !ok {
 		t.Fatal("expected spawn tool to be registered")
+	}
+}
+
+func TestEnableSubagentsRegistersManagedTaskLifecycle(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	ag.EnableSubagents(nil)
+	defer ag.DisableSubagents()
+
+	if ag.subagents == nil {
+		t.Fatal("expected subagents manager to be initialized")
+	}
+	if !ag.subagents.HasTaskService() {
+		t.Fatal("expected subagents task service to be initialized")
 	}
 }
 
@@ -1040,6 +1147,67 @@ func TestSetApprovalModeForSessionRejectsUnknownMode(t *testing.T) {
 	err := ag.SetApprovalModeForSession("wechat-user-1", approval.Mode("weird"))
 	if err == nil {
 		t.Fatal("expected error for unsupported approval mode")
+	}
+}
+
+func TestSetApprovalModeForSessionUpdatesTaskStore(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.approval = approval.NewManager(approval.Config{Mode: approval.ModePrompt})
+	ag.taskStore = tasks.NewStore()
+
+	if err := ag.SetApprovalModeForSession("wechat-user-1", approval.ModeManual); err != nil {
+		t.Fatalf("SetApprovalModeForSession failed: %v", err)
+	}
+
+	states := ag.taskStore.ListSessionStates()
+	if len(states) != 1 {
+		t.Fatalf("expected one session state, got %d", len(states))
+	}
+	if states[0].PermissionMode != string(approval.ModeManual) {
+		t.Fatalf("expected manual permission mode, got %q", states[0].PermissionMode)
+	}
+
+	if err := ag.ClearApprovalModeForSession("wechat-user-1"); err != nil {
+		t.Fatalf("ClearApprovalModeForSession failed: %v", err)
+	}
+	if states := ag.taskStore.ListSessionStates(); len(states) != 0 {
+		t.Fatalf("expected no session states after clear, got %+v", states)
+	}
+}
+
+func TestExecuteToolCallTracksPendingApprovalInTaskStore(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.approval = approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	ag.taskStore = tasks.NewStore()
+	ag.tools.MustRegister(&toolExecutionResultStubTool{
+		name:        "approval_runtime_tool",
+		description: "captures runtime approval state",
+	})
+
+	ctx := context.WithValue(context.Background(), promptContextSessionKey, "wechat-user-1")
+	result, err := ag.executeToolCall(ctx, providers.UnifiedToolCall{
+		Name:      "approval_runtime_tool",
+		Arguments: map[string]interface{}{"x": 1},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if result != "Tool call pending approval" {
+		t.Fatalf("unexpected tool result: %q", result)
+	}
+
+	states := ag.taskStore.ListSessionStates()
+	if len(states) != 1 {
+		t.Fatalf("expected one session state, got %d", len(states))
+	}
+	if states[0].SessionID != "wechat-user-1" {
+		t.Fatalf("expected session id wechat-user-1, got %q", states[0].SessionID)
+	}
+	if states[0].PendingAction != "approval_runtime_tool" {
+		t.Fatalf("expected pending action approval_runtime_tool, got %q", states[0].PendingAction)
+	}
+	if states[0].PendingRequestID == "" {
+		t.Fatal("expected pending request id to be tracked")
 	}
 }
 

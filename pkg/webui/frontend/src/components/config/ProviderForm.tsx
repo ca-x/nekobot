@@ -1,13 +1,13 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useEffect, useMemo, useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
   DialogPortal,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,597 +19,434 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { MaskedInput } from '@/components/common/MaskedInput';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { getProviderLogo } from '@/lib/provider-logos';
 import {
   useCreateProvider,
-  useUpdateProvider,
   useDeleteProvider,
   useDiscoverModels,
-  type Provider,
+  useUpdateProvider,
   type CreateProviderInput,
+  type Provider,
   type UpdateProviderInput,
 } from '@/hooks/useProviders';
+import { useProviderTypes } from '@/hooks/useProviderTypes';
 import {
-  KeyRound,
+  CheckCircle2,
   Globe,
-  Search,
-  Plus,
-  X,
+  KeyRound,
   Loader2,
+  Search,
+  ShieldCheck,
   Trash2,
-  Check,
 } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-
-// ---------- Constants ----------
-
-const PROVIDER_TYPES = [
-  'openai',
-  'anthropic',
-  'gemini',
-  'ollama',
-  'groq',
-  'lmstudio',
-  'vllm',
-  'deepseek',
-  'moonshot',
-  'zhipu',
-  'openrouter',
-  'nvidia',
-  'generic',
-] as const;
-
-type ProviderType = (typeof PROVIDER_TYPES)[number];
-
-// ---------- Types ----------
 
 interface ProviderFormData {
   name: string;
-  provider_kind: ProviderType;
+  provider_kind: string;
   api_key: string;
   api_base: string;
   proxy: string;
-  timeout: string; // keep as string for input, parse on submit
+  timeout: string;
+  default_weight: string;
+  enabled: boolean;
 }
 
 interface ProviderFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  provider: Provider | null; // null = create mode
+  provider: Provider | null;
 }
 
-// ---------- Component ----------
+function toFormData(provider: Provider | null): ProviderFormData {
+  return {
+    name: provider?.name ?? '',
+    provider_kind: provider?.provider_kind ?? 'openai',
+    api_key: '',
+    api_base: provider?.api_base ?? '',
+    proxy: provider?.proxy ?? '',
+    timeout: provider?.timeout ? String(provider.timeout) : '',
+    default_weight: String(provider?.default_weight ?? 1),
+    enabled: provider?.enabled ?? true,
+  };
+}
 
 export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps) {
   const isEdit = provider !== null;
-
+  const { data: providerTypes = [] } = useProviderTypes();
   const createProvider = useCreateProvider();
   const updateProvider = useUpdateProvider();
   const deleteProvider = useDeleteProvider();
   const discoverModels = useDiscoverModels();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const { register, handleSubmit, control, reset, watch, formState: { errors } } = useForm<ProviderFormData>({
-    defaultValues: {
-      name: '',
-      provider_kind: 'openai',
-      api_key: '',
-      api_base: '',
-      proxy: '',
-      timeout: '',
-    },
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm<ProviderFormData>({
+    defaultValues: toFormData(provider),
   });
 
-  // Model management state
-  const [models, setModels] = useState<string[]>([]);
-  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
-  const [selectedDiscovered, setSelectedDiscovered] = useState<Set<string>>(new Set());
-  const [modelFilter, setModelFilter] = useState('');
-  const [manualModel, setManualModel] = useState('');
-  const [showModelPicker, setShowModelPicker] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [configuredModelFilter, setConfiguredModelFilter] = useState('');
-
-  // Populate form on open / provider change
   useEffect(() => {
-    if (open) {
-      if (provider) {
-        reset({
-          name: provider.name,
-          provider_kind: (provider.provider_kind || 'openai') as ProviderType,
-          api_key: '',
-          api_base: provider.api_base ?? '',
-          proxy: provider.proxy ?? '',
-          timeout: provider.timeout ? String(provider.timeout) : '',
-        });
-        setModels(provider.models ?? []);
-      } else {
-        reset({
-          name: '',
-          provider_kind: 'openai',
-          api_key: '',
-          api_base: '',
-          proxy: '',
-          timeout: '',
-        });
-        setModels([]);
-      }
-      setDiscoveredModels([]);
-      setSelectedDiscovered(new Set());
-      setModelFilter('');
-      setManualModel('');
-      setShowModelPicker(false);
+    if (!open) {
+      return;
     }
+    reset(toFormData(provider));
   }, [open, provider, reset]);
 
-  // Watched values for model discovery
-  const watchedKind = watch('provider_kind');
-  const watchedApiKey = watch('api_key');
-  const watchedApiBase = watch('api_base');
-  const watchedProxy = watch('proxy');
-  const watchedTimeout = watch('timeout');
+  const selectedKind = watch('provider_kind');
+  const selectedType = useMemo(
+    () => providerTypes.find((item) => item.id === selectedKind) ?? providerTypes[0] ?? null,
+    [providerTypes, selectedKind],
+  );
 
-  // Filter discovered models
-  const filteredDiscovered = useMemo(() => {
-    if (!modelFilter.trim()) return discoveredModels;
-    const lc = modelFilter.toLowerCase();
-    return discoveredModels.filter((m) => m.toLowerCase().includes(lc));
-  }, [discoveredModels, modelFilter]);
-
-  // Filter configured models
-  const filteredConfiguredModels = useMemo(() => {
-    if (!configuredModelFilter.trim()) return models;
-    const lc = configuredModelFilter.toLowerCase();
-    return models.filter((m) => m.toLowerCase().includes(lc));
-  }, [models, configuredModelFilter]);
-
-  // ---------- Handlers ----------
+  useEffect(() => {
+    if (!selectedType) {
+      return;
+    }
+    const current = watch('api_base');
+    if (!current.trim() && selectedType.default_api_base) {
+      setValue('api_base', selectedType.default_api_base, { shouldDirty: !isEdit });
+    }
+  }, [isEdit, selectedType, setValue, watch]);
 
   const close = () => onOpenChange(false);
+  const isSaving = createProvider.isPending || updateProvider.isPending;
+  const logo = getProviderLogo(selectedType?.icon ?? selectedKind);
 
-  const onSubmit = (data: ProviderFormData) => {
-    if (isEdit) {
-      const payload: UpdateProviderInput = {
-        provider_kind: data.provider_kind,
-        api_base: data.api_base || undefined,
-        proxy: data.proxy || undefined,
-        timeout: data.timeout ? parseInt(data.timeout, 10) : undefined,
-        models,
-      };
-      if (data.api_key) payload.api_key = data.api_key;
-      updateProvider.mutate(
-        { name: provider!.name, data: payload },
-        {
-          onSuccess: close,
-          onError: (err) => toast.error(err instanceof Error ? err.message : t('saveFailed')),
-        },
-      );
-    } else {
-      if (!data.name.trim()) return;
-      const payload: CreateProviderInput = {
-        name: data.name.trim(),
-        provider_kind: data.provider_kind,
-        api_key: data.api_key || undefined,
-        api_base: data.api_base || undefined,
-        proxy: data.proxy || undefined,
-        timeout: data.timeout ? parseInt(data.timeout, 10) : undefined,
-      };
-      createProvider.mutate(payload, {
-        onSuccess: close,
-        onError: (err) => toast.error(err instanceof Error ? err.message : t('saveFailed')),
-      });
-    }
-  };
-
-  const handleDelete = () => {
-    if (!provider) return;
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDelete = () => {
-    if (!provider) return;
-    deleteProvider.mutate(provider.name, {
-      onSuccess: () => {
-        setShowDeleteConfirm(false);
-        close();
-      },
-      onError: (err) => toast.error(err instanceof Error ? err.message : t('deleteFailed')),
-    });
-  };
-
-  const handleDiscover = () => {
+  const applyDiscover = () => {
+    const values = watch();
     discoverModels.mutate(
       {
-        name: provider?.name,
-        provider_kind: watchedKind,
-                        api_key: watchedApiKey || undefined,
-                        api_base: watchedApiBase || provider?.api_base,
-                        proxy: watchedProxy || provider?.proxy,
-                        timeout: watchedTimeout ? parseInt(watchedTimeout, 10) : provider?.timeout,
+        name: provider?.name || values.name.trim() || undefined,
+        provider_kind: values.provider_kind,
+        api_key: values.api_key || undefined,
+        api_base: values.api_base || undefined,
+        proxy: values.proxy || undefined,
+        timeout: values.timeout ? Number(values.timeout) : undefined,
       },
       {
-        onSuccess: (resp) => {
-          const discovered = resp.models ?? [];
-          setDiscoveredModels(discovered);
-          // Pre-select already-configured models
-          const existing = new Set(models);
-          const preSelected = new Set(discovered.filter((m) => existing.has(m)));
-          setSelectedDiscovered(preSelected);
-          setShowModelPicker(true);
+        onSuccess: (result) => {
+          toast.success(`Discovered ${result.models.length} models and synced them to Models.`);
         },
       },
     );
   };
 
-  const toggleDiscoveredModel = (model: string) => {
-    setSelectedDiscovered((prev) => {
-      const next = new Set(prev);
-      if (next.has(model)) next.delete(model);
-      else next.add(model);
-      return next;
-    });
-  };
+  const onSubmit = (data: ProviderFormData) => {
+    const base = {
+      provider_kind: data.provider_kind,
+      api_base: data.api_base.trim() || undefined,
+      proxy: data.proxy.trim() || undefined,
+      timeout: data.timeout.trim() ? Number(data.timeout) : undefined,
+      default_weight: data.default_weight.trim() ? Number(data.default_weight) : 1,
+      enabled: data.enabled,
+    };
 
-  const selectAllVisible = () => {
-    setSelectedDiscovered((prev) => {
-      const next = new Set(prev);
-      filteredDiscovered.forEach((m) => next.add(m));
-      return next;
-    });
-  };
-
-  const clearSelection = () => {
-    setSelectedDiscovered(new Set());
-  };
-
-  const applyDiscoveredSelection = () => {
-    // Merge: keep manually added models that are not in discovered list, plus selected discovered models
-    const discoveredSet = new Set(discoveredModels);
-    const manuallyAdded = models.filter((m) => !discoveredSet.has(m));
-    const merged = [...new Set([...manuallyAdded, ...selectedDiscovered])];
-    setModels(merged);
-    setShowModelPicker(false);
-  };
-
-  const addManualModel = () => {
-    const name = manualModel.trim();
-    if (!name) return;
-    if (!models.includes(name)) {
-      setModels((prev) => [...prev, name]);
+    if (isEdit) {
+      const payload: UpdateProviderInput = {
+        ...base,
+      };
+      if (data.api_key.trim()) {
+        payload.api_key = data.api_key.trim();
+      }
+      updateProvider.mutate(
+        { name: provider.name, data: payload },
+        { onSuccess: close },
+      );
+      return;
     }
-    setManualModel('');
+
+    const payload: CreateProviderInput = {
+      name: data.name.trim(),
+      ...base,
+      api_key: data.api_key.trim() || undefined,
+    };
+    createProvider.mutate(payload, { onSuccess: close });
   };
 
-  const removeModel = (model: string) => {
-    setModels((prev) => prev.filter((m) => m !== model));
+  const confirmDelete = () => {
+    if (!provider) {
+      return;
+    }
+    deleteProvider.mutate(provider.name, {
+      onSuccess: () => {
+        setShowDeleteConfirm(false);
+        close();
+      },
+    });
   };
-
-  const isSaving = createProvider.isPending || updateProvider.isPending;
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[560px] max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center shrink-0">
-              <KeyRound className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <div>
-              <DialogTitle>
-                {isEdit ? t('editProviderDialogTitle') : t('newProviderDialogTitle')}
-              </DialogTitle>
-              <DialogDescription>
-                {isEdit ? provider!.name : t('creatingNew')}
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
-          <ScrollArea className="flex-1 pr-3 -mr-3">
-            <div className="space-y-5 pb-2">
-              {/* Provider Name */}
-              <div className="space-y-2">
-                <Label htmlFor="pf-name">{t('providerName')}</Label>
-                <Input
-                  id="pf-name"
-                  placeholder="e.g. my-openai\u2026"
-                  disabled={isEdit}
-                  {...register('name', { required: !isEdit })}
-                  className={cn(errors.name && 'border-destructive')}
-                />
-                {errors.name && (
-                  <p className="text-xs text-destructive">{t('providerNameRequired')}</p>
+        <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-[760px]">
+          <DialogHeader>
+            <div className="flex items-start gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[20px] border border-border/70 bg-card shadow-sm">
+                {logo ? (
+                  <img src={logo} alt={selectedKind} className="h-8 w-8 object-contain" />
+                ) : (
+                  <KeyRound className="h-6 w-6 text-primary" />
                 )}
               </div>
+              <div className="space-y-1">
+                <DialogTitle>{isEdit ? t('editProviderDialogTitle') : t('newProviderDialogTitle')}</DialogTitle>
+                <DialogDescription>
+                  {isEdit ? provider.name : 'Create a provider connection first, then sync discovered models into the shared models workspace.'}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
 
-              {/* Provider Type */}
-              <div className="space-y-2">
-                <Label htmlFor="pf-kind">{t('providerType')}</Label>
-                <Controller
-                  name="provider_kind"
-                  control={control}
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger id="pf-kind">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PROVIDER_TYPES.map((pt) => (
-                          <SelectItem key={pt} value={pt}>
-                            {pt}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+          <form onSubmit={handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col">
+            <ScrollArea className="flex-1 pr-3">
+              <div className="space-y-6 pb-3">
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Provider type
+                  </div>
+                  <Controller
+                    name="provider_kind"
+                    control={control}
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange} disabled={providerTypes.length === 0}>
+                        <SelectTrigger className="h-11 rounded-2xl bg-card/90">
+                          <SelectValue placeholder={t('providerType')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {providerTypes.map((item) => (
+                            <SelectItem key={item.id} value={item.id}>
+                              {item.display_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+
+                  {selectedType && (
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-2xl border border-border/70 bg-card/85 p-4 sm:col-span-2">
+                        <div className="text-sm font-semibold text-foreground">{selectedType.display_name}</div>
+                        <p className="mt-2 text-sm leading-6 text-muted-foreground">{selectedType.description}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {selectedType.capabilities.map((capability) => (
+                            <span
+                              key={capability}
+                              className="rounded-full border border-border/70 bg-background px-2.5 py-1 text-xs text-muted-foreground"
+                            >
+                              {capability}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Defaults</div>
+                        <div className="mt-3 space-y-3 text-sm">
+                          <div>
+                            <div className="text-muted-foreground">API Base</div>
+                            <div className="mt-1 break-all text-foreground">
+                              {selectedType.default_api_base || 'Manual'}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground">Discovery</div>
+                            <div className="mt-1 text-foreground">
+                              {selectedType.supports_discovery ? 'Supported' : 'Manual only'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   )}
-                />
-              </div>
+                </section>
 
-              {/* API Endpoint */}
-              <div className="space-y-2">
-                <Label htmlFor="pf-endpoint" className="flex items-center gap-1.5">
-                  <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                  {t('apiEndpoint')}
-                </Label>
-                <Input
-                  id="pf-endpoint"
-                  placeholder="https://api.openai.com/v1"
-                  {...register('api_base')}
-                />
-              </div>
-
-              {/* API Key */}
-              <div className="space-y-2">
-                <Label htmlFor="pf-key" className="flex items-center gap-1.5">
-                  <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
-                  {t('apiKey')}
-                </Label>
-                <Controller
-                  name="api_key"
-                  control={control}
-                  render={({ field }) => (
-                    <MaskedInput
-                      id="pf-key"
-                      value={field.value}
-                      onChange={field.onChange}
-                      isSet={isEdit && !!provider?.api_key_set}
-                      placeholder={
-                        isEdit && provider?.api_key_set
-                          ? 'sk-****  (leave blank to keep current)'
-                          : 'sk-\u2026'
-                      }
+                <section className="grid gap-4 xl:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="pf-name">{t('providerName')}</Label>
+                    <Input
+                      id="pf-name"
+                      placeholder="e.g. openai-main"
+                      disabled={isEdit}
+                      {...register('name', { required: !isEdit })}
+                      className={cn('h-11 rounded-2xl bg-card/90', errors.name && 'border-destructive')}
                     />
-                  )}
-                />
-              </div>
-
-              {/* Proxy Address */}
-              <div className="space-y-2">
-                <Label htmlFor="pf-proxy">{t('proxyAddress')}</Label>
-                <Input
-                  id="pf-proxy"
-                  placeholder="http://127.0.0.1:7890"
-                  {...register('proxy')}
-                />
-              </div>
-
-              {/* Timeout */}
-              <div className="space-y-2">
-                <Label htmlFor="pf-timeout">Timeout (s)</Label>
-                <Input
-                  id="pf-timeout"
-                  type="number"
-                  min={0}
-                  placeholder="30"
-                  {...register('timeout')}
-                />
-              </div>
-
-              {/* Models Section */}
-              {isEdit && (
-                <div className="space-y-3 pt-2 border-t">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">
-                      Models ({models.length})
-                    </Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={discoverModels.isPending}
-                      onClick={handleDiscover}
-                    >
-                      {discoverModels.isPending ? (
-                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                      ) : (
-                        <Search className="h-4 w-4 mr-1.5" />
-                      )}
-                      {discoverModels.isPending
-                        ? t('discoveringModels')
-                        : t('fetchModels')}
-                    </Button>
+                    {errors.name && <p className="text-xs text-destructive">{t('providerNameRequired')}</p>}
                   </div>
 
-                  {/* Model Picker (discovered) */}
-                  {showModelPicker && discoveredModels.length > 0 && (
-                    <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="text"
-                          placeholder={t('filterModels')}
-                          value={modelFilter}
-                          onChange={(e) => setModelFilter(e.target.value)}
-                          className="h-8 text-sm"
+                  <div className="space-y-2">
+                    <Label htmlFor="pf-api-key">{t('apiKey')}</Label>
+                    <Controller
+                      name="api_key"
+                      control={control}
+                      render={({ field }) => (
+                        <MaskedInput
+                          id="pf-api-key"
+                          value={field.value}
+                          onChange={field.onChange}
+                          isSet={isEdit && provider?.api_key_set}
+                          placeholder={isEdit && provider?.api_key_set ? 'Leave blank to keep current value' : 'sk-...'}
+                          className="h-11 rounded-2xl bg-card/90"
                         />
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>
-                          {t(
-                            'providerModelsSelected',
-                            String(selectedDiscovered.size),
-                            String(discoveredModels.length),
-                            String(filteredDiscovered.length),
-                          )}
-                        </span>
-                        <button
-                          type="button"
-                          className="text-primary hover:underline"
-                          onClick={selectAllVisible}
-                        >
-                          {t('selectAllModels')}
-                        </button>
-                        <button
-                          type="button"
-                          className="text-primary hover:underline"
-                          onClick={clearSelection}
-                        >
-                          {t('clearModelSelection')}
-                        </button>
-                      </div>
-                      <ScrollArea className="max-h-48">
-                        <div className="space-y-0.5">
-                          {filteredDiscovered.map((model) => {
-                            const checked = selectedDiscovered.has(model);
-                            return (
-                              <button
-                                key={model}
-                                type="button"
-                                className={cn(
-                                  'flex items-center gap-2 w-full text-left px-2 py-1 rounded text-sm hover:bg-accent transition-colors',
-                                  checked && 'bg-accent',
-                                )}
-                                onClick={() => toggleDiscoveredModel(model)}
-                              >
-                                <div
-                                  className={cn(
-                                    'h-4 w-4 rounded border flex items-center justify-center shrink-0',
-                                    checked
-                                      ? 'bg-primary border-primary text-primary-foreground'
-                                      : 'border-input',
-                                  )}
-                                >
-                                  {checked && <Check className="h-3 w-3" />}
-                                </div>
-                                <span className="truncate">{model}</span>
-                              </button>
-                            );
-                          })}
+                      )}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pf-api-base" className="flex items-center gap-2">
+                      <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                      {t('apiEndpoint')}
+                    </Label>
+                    <Input
+                      id="pf-api-base"
+                      placeholder={selectedType?.default_api_base || 'https://api.example.com/v1'}
+                      {...register('api_base')}
+                      className="h-11 rounded-2xl bg-card/90"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pf-proxy">{t('proxyAddress')}</Label>
+                    <Input
+                      id="pf-proxy"
+                      placeholder="http://127.0.0.1:7890"
+                      {...register('proxy')}
+                      className="h-11 rounded-2xl bg-card/90"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pf-timeout">Timeout (s)</Label>
+                    <Input
+                      id="pf-timeout"
+                      type="number"
+                      min={0}
+                      {...register('timeout')}
+                      className="h-11 rounded-2xl bg-card/90"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pf-weight">Default weight</Label>
+                    <Input
+                      id="pf-weight"
+                      type="number"
+                      min={1}
+                      {...register('default_weight')}
+                      className="h-11 rounded-2xl bg-card/90"
+                    />
+                  </div>
+                </section>
+
+                <section className="rounded-[24px] border border-border/70 bg-card/70 p-4">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1">
+                      <div className="text-sm font-semibold text-foreground">Connection state</div>
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        Keep the provider enabled for routing, and sync discovered models into the shared model catalog.
+                      </p>
+                    </div>
+                    <Controller
+                      name="enabled"
+                      control={control}
+                      render={({ field }) => (
+                        <div className="flex items-center gap-3 rounded-full border border-border/70 bg-background px-3 py-2">
+                          <span className="text-sm text-muted-foreground">Enabled</span>
+                          <Switch checked={field.value} onCheckedChange={field.onChange} />
                         </div>
-                      </ScrollArea>
+                      )}
+                    />
+                  </div>
+
+                  {selectedType?.supports_discovery && (
+                    <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-dashed border-border/70 bg-background/80 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                          <Search className="h-4 w-4" />
+                          {t('fetchModels')}
+                        </div>
+                        <p className="text-sm leading-6 text-muted-foreground">
+                          Discover available models from this provider and merge them into the shared Models workspace.
+                        </p>
+                      </div>
                       <Button
                         type="button"
-                        size="sm"
-                        onClick={applyDiscoveredSelection}
-                        className="w-full"
+                        variant="outline"
+                        className="rounded-full"
+                        onClick={applyDiscover}
+                        disabled={discoverModels.isPending}
                       >
-                        {t('applyModelSelection')}
+                        {discoverModels.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Search className="mr-2 h-4 w-4" />
+                        )}
+                        {discoverModels.isPending ? 'Syncing...' : t('fetchModels')}
                       </Button>
                     </div>
                   )}
 
-                  {/* Manual model add */}
-                  <div className="flex gap-2">
-                    <Input
-                      type="text"
-                      placeholder={t('manualModel')}
-                      value={manualModel}
-                      onChange={(e) => setManualModel(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          addManualModel();
-                        }
-                      }}
-                      className="flex-1"
-                    />
-                    <Button type="button" variant="outline" size="icon" onClick={addManualModel} aria-label={t('add')}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  {/* Current models list with filter and scroll */}
-                  {models.length > 0 && (
-                    <div className="space-y-2">
-                      <Input
-                        type="text"
-                        placeholder={t('filterConfiguredModels')}
-                        value={configuredModelFilter}
-                        onChange={(e) => setConfiguredModelFilter(e.target.value)}
-                        className="h-8 text-sm"
-                      />
-                      <ScrollArea className="max-h-48">
-                        <div className="flex flex-wrap gap-1.5">
-                          {filteredConfiguredModels.map((model) => (
-                            <span
-                              key={model}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-xs"
-                            >
-                              <span className="truncate max-w-[200px]">{model}</span>
-                              <button
-                                type="button"
-                                className="text-muted-foreground hover:text-foreground"
-                                onClick={() => removeModel(model)}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      </ScrollArea>
-                      <div className="text-xs text-muted-foreground">
-                        {t('showingModels', String(filteredConfiguredModels.length), String(models.length))}
-                      </div>
+                  {!selectedType?.supports_discovery && (
+                    <div className="mt-4 flex items-start gap-3 rounded-2xl border border-border/70 bg-background/80 p-4">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        This provider type does not expose automatic discovery. Add models and routes from the Models workspace after saving the connection.
+                      </p>
                     </div>
                   )}
-                </div>
-              )}
-            </div>
-          </ScrollArea>
+                </section>
+              </div>
+            </ScrollArea>
 
-          <DialogFooter className="pt-4 flex-shrink-0 gap-2">
-            {isEdit && (
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={deleteProvider.isPending}
-                className="mr-auto"
-              >
-                <Trash2 className="h-4 w-4 mr-1.5" />
-                {t('delete')}
-              </Button>
-            )}
-            <Button type="button" variant="outline" onClick={close}>
-              {t('cancel')}
-            </Button>
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                  {t('saving')}
-                </>
-              ) : (
-                t('save')
+            <DialogFooter className="gap-2 pt-4">
+              {isEdit && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={deleteProvider.isPending}
+                  className="mr-auto"
+                >
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  {t('delete')}
+                </Button>
               )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
+              <Button type="button" variant="outline" onClick={close}>
+                {t('cancel')}
+              </Button>
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    {t('saving')}
+                  </>
+                ) : (
+                  t('save')
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
         <DialogPortal>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
-              <DialogDescription>
-                {t('deleteConfirmDescription')}
-              </DialogDescription>
+              <DialogDescription>{t('deleteConfirmDescription')}</DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
@@ -617,9 +454,9 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
               </Button>
               <Button variant="destructive" onClick={confirmDelete} disabled={deleteProvider.isPending}>
                 {deleteProvider.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 ) : (
-                  <Trash2 className="h-4 w-4 mr-1.5" />
+                  <Trash2 className="mr-1.5 h-4 w-4" />
                 )}
                 {t('delete')}
               </Button>
