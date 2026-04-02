@@ -218,9 +218,123 @@
   - `model_count`
   - `default_model`
   - `has_default_model`
-- `ProviderForm.tsx` 仍负责 provider 内嵌模型发现和持久化管理。
-- `ProvidersPage.tsx` 仍按“provider 自带模型列表”渲染。
-- `ChatPage.tsx` / `ConfigPage.tsx` / `CronPage.tsx` 仍从 provider 列表推导 model options。
+
+## 2026-04-02 Context Economy chat route 透传补记
+
+### 本轮完成
+- `pkg/agent/agent.go`
+  - `ChatRouteResult` 已新增只读 context pressure 字段：
+    - `ContextBudgetStatus`
+    - `ContextBudgetReasons`
+    - `CompactionRecommended`
+    - `CompactionStrategy`
+  - `chatWithLegacyOrchestrator()` 现在会在真实 chat path 中复用现有 preview 计算逻辑，把预算状态和压缩建议挂到 route result。
+- `pkg/agent/context_sources.go`
+  - 抽出共享 helper，使：
+    - `/api/prompts/context-sources` 预览
+    - chat route metadata
+    使用同一套 context footprint / budget / compaction 计算逻辑。
+- `pkg/webui/server.go`
+  - websocket `route_result` 已透传：
+    - `context_budget_status`
+    - `context_budget_reasons`
+    - `compaction_recommended`
+    - `compaction_strategy`
+- `pkg/webui/frontend/src/pages/ChatPage.tsx`
+  - Chat 页“实际路由”卡片现在会展示：
+    - budget status badge
+    - budget reasons
+    - compaction strategy recommendation
+
+### 当前刻意没有做的事
+- 没有修改 provider request message。
+- 没有触发自动 compaction。
+- 没有根据 budget 状态拦截请求。
+- 没有开始把 preview 决策写回 session 或持久化存储。
+
+### 当前意义
+- 这一步把 `context economy` 从“只在 Prompts 页面可预览”推进到“真实聊天链路可观察”。
+- 但仍保持只读，所以不会引入新的隐式行为变化。
+
+### 当前验证
+- `go test -count=1 ./pkg/agent -run TestChatWithPromptContextDetailed_IncludesContextPressurePreview`
+- `go test -count=1 ./pkg/webui -run TestChatRouteStateJSONIncludesContextPressureFields`
+
+## 2026-04-03 Context Economy orchestrator 对齐补记
+
+### 本轮完成
+- `pkg/agent/blades_runtime.go`
+  - `chatWithBladesOrchestrator()` 已补齐与 legacy 路径一致的 route metadata 注入。
+  - 现在 blades 路径在 `resolvedPrompts` 后也会复用共享 context preview helper，把：
+    - `ContextBudgetStatus`
+    - `ContextBudgetReasons`
+    - `CompactionRecommended`
+    - `CompactionStrategy`
+    挂到 `ChatRouteResult`。
+- `pkg/agent/agent_test.go`
+  - 新增 blades 路径回归：
+    - `TestChatWithPromptContextDetailed_BladesIncludesContextPressurePreview`
+
+### 当前意义
+- 这一步不是新增功能面，而是补齐 orchestrator parity。
+- 避免 WebUI chat route 在 legacy / blades 下表现不一致。
+
+### 当前刻意没有做的事
+- 没有改变 blades 的 message compaction 行为。
+- 没有让 budget/compaction 决策变成自动执行逻辑。
+
+## 2026-04-03 Context Economy preflight decision 收口补记
+
+### 本轮完成
+- `pkg/agent/context_sources.go`
+  - 新增 `ContextPreflightDecision`。
+  - `ContextSourcesPreview` 现在除了保留原有平铺字段，还会返回嵌套：
+    - `preflight.budget_status`
+    - `preflight.budget_reasons`
+    - `preflight.compaction`
+- `pkg/agent/agent.go`
+  - `ChatRouteResult` 新增 `Preflight`。
+  - legacy / blades 两条 chat 主链都复用共享 preview 结果，把只读 preflight decision 挂到 route result。
+- `pkg/webui/server.go`
+  - websocket `route_result` 现在新增嵌套 `preflight` 对象。
+  - 现有平铺字段继续保留，作为兼容过渡。
+- `pkg/webui/frontend/src/hooks/useChat.ts`
+  - `ChatRouteResult` 类型已支持嵌套 `preflight`。
+- `pkg/webui/frontend/src/pages/ChatPage.tsx`
+  - Chat 页优先读取 `preflight`，旧平铺字段作为 fallback。
+
+### 当前意义
+- 这一步把原本分散的 budget/compaction 元数据收敛成一个更明确的“请求前决策面”。
+- 后续如果进入真正的 runtime decision point、auto compact 或 request blocking，可以直接在 `preflight` 这条边界上继续扩展，而不是再造第三套字段。
+
+### 当前刻意没有做的事
+- 没有删除现有平铺字段。
+- 没有把 `preflight` 变成自动执行策略。
+- 没有开始保存 decision history。
+
+## 2026-04-03 Context Economy preflight action 补记
+
+### 本轮完成
+- `pkg/agent/context_sources.go`
+  - `ContextPreflightDecision` 新增 `Action`。
+  - 当前建议动作规则非常窄：
+    - `ok -> proceed`
+    - `warning -> consider_compaction`
+    - `critical -> compact_before_run`
+- `pkg/agent/agent_test.go`
+  - preview / legacy / blades 三条路径都已补回归，锁定 `preflight.action`。
+- `pkg/webui/server_prompts_test.go`
+  - 预览 API 已锁定 `preflight.action` 回包。
+- `pkg/webui/frontend/src/pages/ChatPage.tsx`
+  - Chat 页“实际路由”卡片已最小展示 `preflight.action`。
+
+### 当前意义
+- 这一步把 `preflight` 从“结构化观测”推进到“结构化建议”。
+- 但仍然只是建议层，不参与自动执行。
+
+### 当前刻意没有做的事
+- 没有把 `consider_compaction` 或 `compact_before_run` 接到真正的 runtime 行为。
+- 没有因为 `critical` 自动拦截请求。
 
 ### 当前前端目标拆分
 1. 共享数据层
@@ -418,6 +532,73 @@
 - `internal/tui/model.go` 的状态很少：
   - `init`
   - `input`
+
+## 2026-04-02 AgentDefinition / context sources 收口补记
+
+### 本轮完成
+- `pkg/agent/definition.go`
+  - 新增 `AgentDefinition` compatibility bridge。
+  - 运行时默认 route / permission mode / tool policy / prompt section 边界现在可被显式读取。
+- `pkg/agent/context.go`
+  - 新增 `BuildPromptSections()`，把当前 system prompt 拆成稳定 section 和动态 section。
+- `pkg/agent/context_sources.go`
+  - 新增 `PreviewContextSources()`。
+  - 当前会聚合：
+    - `project_rules`
+    - `skills`
+    - `memory`
+    - `managed_prompts`
+    - `runtime_context`
+    - `mcp`
+  - 同时返回：
+    - resolved system/user prompt 文本
+    - preprocessed input
+    - 轻量 `footprint` 指标与 warning
+    - `budget_status` / `budget_reasons`
+    - `compaction` recommendation preview
+- `pkg/webui/server.go`
+  - 新增 `POST /api/prompts/context-sources`。
+- `pkg/webui/frontend/src/pages/PromptsPage.tsx`
+  - 新增最小 context sources 预览面板。
+  - 支持输入：
+    - channel
+    - session
+    - provider
+    - model
+    - user message
+  - 支持展示：
+    - processed input
+    - source summary
+    - stable/dynamic 标记
+    - metadata key/value
+    - footprint metrics
+    - 轻量 warning
+    - budget badge 与 reason 列表
+    - compaction 建议卡片
+
+### 当前刻意没做的事
+- 没有引入完整的 context budget / token accounting。
+- 当前的 `footprint` 只是字符量观测，不驱动真实 runtime 的自动 compaction / pruning。
+- 当前 `budget status` 只是基于现有配置做分级提示，不驱动真实 runtime 行为。
+- 当前 `compaction recommendation` 只是预览建议，不自动改写历史、memory 或文件注入策略。
+- 没有做来源优先级可视化或拖拽排序。
+- 没有在 `System` 页或 runtime topology 里重复放第二个入口。
+- 没有改写现有 prompt 组装主链，只是复用现有边界做 explainability preview。
+
+### 当前验证
+- `go test -count=1 ./pkg/agent ./pkg/webui -run 'Test(PreviewContextSources_IncludesKeySourceTypes|PromptHandlers_ContextSourcesPreview)'`
+- `go test -count=1 ./pkg/agent ./pkg/webui ./pkg/prompts`
+- `npm run build`（`pkg/webui/frontend`）
+
+### 当前结论
+- `AgentDefinition` 和 `context sources` 现在已经形成了一条连续边界：
+  - `AgentDefinition` 负责暴露“当前主 agent 是怎么定义的”
+  - `context sources` 负责暴露“一次请求实际会吃到哪些上下文来源”
+- 后续如果继续做 `context economy`，应直接在这条边界上扩展：
+  - 预算
+  - 排序
+  - explainability 细化
+  - 来源治理
   - `querying`
   - `permission`
 - 这说明它在终端交互上是刻意压复杂度的。
@@ -2953,3 +3134,150 @@ type CronJobState struct {
   2. `tool governance`
   3. `context economy`
   4. `permission rules` / `context sources`
+
+## 2026-04-02 tool governance / permission rules 设计收口补记
+
+### 当前代码现状
+- 现有 `pkg/approval.Manager` 已具备：
+  - `mode`
+  - `allowlist`
+  - `denylist`
+  - pending approval queue
+  - session mode override
+- 现有工具权限决策主要集中在：
+  - `pkg/agent/agent.go -> executeToolCall()`
+- 当前没有：
+  - 独立持久化规则层
+  - 可解释的规则命中结果
+  - 可扩展到 classifier/hooks 的治理入口
+
+### 已锁定的第一版边界
+- 所有 tool call 统一先进入 `permission rules` evaluator。
+- 第一版规则匹配字段只做：
+  - `tool_name`
+  - `session_id`
+  - `runtime_id`
+- 第一版 action 只做：
+  - `allow`
+  - `deny`
+  - `ask`
+- 未命中规则时，回落到现有 approval mode。
+
+### 为什么不先改 `approval.Manager`
+- 如果直接把 rules 塞进 `approval.Manager`，它会同时承担：
+  - queue
+  - mode
+  - policy
+  - 后续 hooks glue
+- 这会让 `approval` 很快变成脏对象，不利于后续：
+  - `AgentDefinition`
+  - `tool governance pipeline`
+  - `context sources`
+
+### 为什么不先做 `context sources`
+- 现在还没有稳定的：
+  - `AgentDefinition`
+  - prompt section registry
+  - context assembler
+- 先做 `context sources` 很容易只做成一层临时展示，后面返工概率高。
+- 相比之下，`permission rules` 已经有清晰的执行入口，闭环更容易成立。
+
+## 2026-04-02 tool governance / permission rules 实现补记
+
+### 本轮完成
+- 存储层
+  - 新增 `pkg/storage/ent/schema/permissionrule.go`
+  - 生成 `pkg/storage/ent/permissionrule*` 相关 ent 代码
+  - 新增 `pkg/permissionrules/manager.go`
+  - 新增 `pkg/permissionrules/evaluator.go`
+- approval / agent 接线
+  - `pkg/approval/approval.go`
+    - 新增强制排队的 `EnqueueRequest()`，使 `ask` 不受当前 auto/manual mode 影响
+  - `pkg/agent/agent.go`
+    - `executeToolCall()` 统一先走 permission rules evaluator
+    - 命中 `deny` 时直接拒绝
+    - 命中 `ask` 时强制进入 pending approval queue
+    - 命中 `allow` 时跳过 approval fallback
+    - 未命中时继续走旧 approval mode
+  - `pkg/agent/fx.go`
+    - 生产注入链已显式接收并挂载 `permissionrules.Manager`
+  - `cmd/nekobot/{main,tui,acp,cron,service}.go`
+    - 全部补挂 `permissionrules.Module`，避免不同运行模式行为不一致
+- WebUI
+  - `pkg/webui/server.go`
+    - 新增：
+      - `GET /api/permission-rules`
+      - `POST /api/permission-rules`
+      - `PUT /api/permission-rules/:id`
+      - `DELETE /api/permission-rules/:id`
+  - 前端新增：
+    - `pkg/webui/frontend/src/hooks/usePermissionRules.ts`
+    - `pkg/webui/frontend/src/pages/PermissionRulesPage.tsx`
+    - `App.tsx` 路由
+    - `Sidebar.tsx` 入口
+    - `public/i18n/{en,zh-CN,ja}.json` 文案
+
+### 当前落地语义
+- 规则字段第一版保持最小集合：
+  - `tool_name`
+  - `session_id`
+  - `runtime_id`
+  - `action=allow|deny|ask`
+  - `priority`
+  - `enabled`
+- evaluator 命中顺序：
+  - `priority desc`
+  - 作用域特异性 desc
+  - `updated_at desc`
+  - `id asc`
+- `ask` 的语义已锁定为：
+  - 无论当前 approval mode 是 `auto` 还是 `manual`
+  - 都强制进入待审批队列
+
+### 本轮测试
+- `go test -count=1 ./pkg/agent -run 'TestProvideAgent_WiresPermissionRuleManager|TestExecuteToolCallPermissionRule'`
+- `go test -count=1 ./pkg/permissionrules ./pkg/approval ./pkg/agent ./pkg/webui`
+- `cd pkg/webui/frontend && npm run build`
+
+### 额外注意
+- `pkg/webui/frontend/dist` 当前受版本控制，因此前端构建会同步刷新产物；这不是新增设计决策，只是仓库现状。
+
+## 2026-04-02 AgentDefinition / prompt boundary 桥接补记
+
+### 本轮完成
+- `pkg/agent/definition.go`
+  - 新增 `AgentDefinition` compatibility bridge：
+    - `Route`
+    - `PermissionMode`
+    - `ToolPolicy`
+    - `MaxToolIterations`
+    - `PromptSections`
+  - 新增 `AgentDefinitionFromRuntimeConfig()`
+- `pkg/agent/context.go`
+  - 新增 `PromptSection`
+  - 新增 `BuildPromptSections()`
+  - `BuildSystemPrompt()`、`buildStaticPromptBlock()`、`buildDynamicPromptBlock()` 现在统一通过 section 列表装配
+- `pkg/agent/agent.go`
+  - `Agent` 初始化时会保留当前 definition snapshot
+  - 新增 `Definition()` accessor
+- `pkg/webui/server.go`
+  - `/api/status` 现已返回 `agent_definition`
+- `pkg/webui/frontend/src/pages/SystemPage.tsx`
+  - 新增只读 definition 区块：
+    - route
+    - permission mode
+    - allow/deny list
+    - static/dynamic sections
+
+### 当前语义
+- 这一步还不是完整的多-definition runtime。
+- 但当前主 agent 已经有一个稳定的“定义快照”可被读取，后续：
+  - `context sources`
+  - definition-driven task runtime
+  - prompt section registry
+  都可以直接复用这层边界，而不用继续从 `config + context builder + approval` 三处分散推导。
+
+### 本轮测试
+- `go test -count=1 ./pkg/agent -run 'TestContextBuilderBuildPromptSections_SeparatesStaticAndDynamic|TestAgentDefinitionFromRuntimeConfig_BridgesCurrentDefaults|TestNewAgent_SeedsDefinitionSnapshot'`
+- `go test -count=1 ./pkg/webui -run 'TestHandleStatus_'`
+- `cd pkg/webui/frontend && npm run build`

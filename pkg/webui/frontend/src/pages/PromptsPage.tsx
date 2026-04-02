@@ -34,7 +34,9 @@ import {
   useDeletePrompt,
   useDeletePromptBinding,
   usePromptBindings,
+  usePreviewContextSources,
   usePrompts,
+  type ContextSourceRecord,
   useUpdatePrompt,
   type PromptBindingInput,
   type PromptBindingRecord,
@@ -89,6 +91,7 @@ export default function PromptsPage() {
   const deletePrompt = useDeletePrompt();
   const createBinding = useCreatePromptBinding();
   const deleteBinding = useDeletePromptBinding();
+  const previewContextSources = usePreviewContextSources();
 
   const [selectedPromptID, setSelectedPromptID] = useState<string>('');
   const [draft, setDraft] = useState<PromptInput>(emptyPromptDraft());
@@ -96,6 +99,11 @@ export default function PromptsPage() {
   const [bindingDraft, setBindingDraft] = useState<PromptBindingInput>(emptyBindingDraft());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ type: 'prompt' | 'binding'; id: string } | null>(null);
+  const [previewSessionID, setPreviewSessionID] = useState('webui-preview');
+  const [previewChannel, setPreviewChannel] = useState('webui');
+  const [previewProvider, setPreviewProvider] = useState('');
+  const [previewModel, setPreviewModel] = useState('');
+  const [previewMessage, setPreviewMessage] = useState('hello');
 
   const selectedPrompt = useMemo(
     () => prompts.find((item) => item.id === selectedPromptID) ?? null,
@@ -183,6 +191,21 @@ export default function PromptsPage() {
     setShowDeleteConfirm(false);
     setDeleteTarget(null);
   }
+
+  async function handlePreviewContextSources() {
+    await previewContextSources.mutateAsync({
+      channel: previewChannel.trim(),
+      session_id: previewSessionID.trim(),
+      requested_provider: previewProvider.trim(),
+      requested_model: previewModel.trim(),
+      user_message: previewMessage,
+    });
+  }
+
+  const previewData = previewContextSources.data;
+  const previewBudgetStatus = previewData?.preflight.budget_status ?? previewData?.budget_status ?? 'ok';
+  const previewBudgetReasons = previewData?.preflight.budget_reasons ?? previewData?.budget_reasons ?? [];
+  const previewCompaction = previewData?.preflight.compaction ?? previewData?.compaction;
 
   return (
     <>
@@ -279,6 +302,175 @@ export default function PromptsPage() {
                           {t('promptGoToChat')}
                         </Button>
                       </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-[1.4rem] border border-border/70 bg-card/80 p-4">
+                  <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] text-primary">
+                    <Wand2 className="h-3.5 w-3.5" />
+                    {t('promptContextSourcesBadge')}
+                  </div>
+                  <h3 className="mt-3 text-base font-semibold text-foreground">{t('promptContextSourcesTitle')}</h3>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('promptContextSourcesDescription')}</p>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>{t('promptPreviewChannel')}</Label>
+                      <Input value={previewChannel} onChange={(event) => setPreviewChannel(event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t('promptPreviewSession')}</Label>
+                      <Input value={previewSessionID} onChange={(event) => setPreviewSessionID(event.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t('defaultProvider')}</Label>
+                      <Input value={previewProvider} onChange={(event) => setPreviewProvider(event.target.value)} placeholder="openai" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t('defaultModel')}</Label>
+                      <Input value={previewModel} onChange={(event) => setPreviewModel(event.target.value)} placeholder="gpt-5.4" />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    <Label>{t('promptPreviewMessage')}</Label>
+                    <Textarea value={previewMessage} onChange={(event) => setPreviewMessage(event.target.value)} rows={3} />
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-4 rounded-2xl"
+                    onClick={handlePreviewContextSources}
+                    disabled={previewContextSources.isPending}
+                  >
+                    {previewContextSources.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                    {t('promptPreviewContextSources')}
+                  </Button>
+
+                  {previewData ? (
+                    <div className="mt-4 space-y-3">
+                      {previewData.preflight.action ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-border/70 bg-card px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                            {previewData.preflight.action}
+                          </span>
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={cn(
+                            'rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em]',
+                            contextBudgetTone(previewBudgetStatus),
+                          )}
+                        >
+                          {t(`promptContextBudget_${previewBudgetStatus}`)}
+                        </span>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <ContextMetricCard
+                          label={t('promptContextMetricTotal')}
+                          value={String(previewData.footprint.total_chars)}
+                        />
+                        <ContextMetricCard
+                          label={t('promptContextMetricSystem')}
+                          value={String(previewData.footprint.system_chars)}
+                        />
+                        <ContextMetricCard
+                          label={t('promptContextMetricUser')}
+                          value={String(previewData.footprint.final_user_chars)}
+                        />
+                        <ContextMetricCard
+                          label={t('promptContextMetricMentions')}
+                          value={String(previewData.footprint.mention_count)}
+                        />
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        <ContextMetricCard
+                          label={t('promptContextMetricMemory')}
+                          value={String(previewData.footprint.memory_chars)}
+                          hint={
+                            previewData.footprint.memory_limit_chars > 0
+                              ? t(
+                                  'promptContextMetricMemoryLimit',
+                                  String(previewData.footprint.memory_limit_chars),
+                                )
+                              : undefined
+                          }
+                        />
+                        <ContextMetricCard
+                          label={t('promptContextMetricManaged')}
+                          value={String(previewData.footprint.managed_prompt_chars)}
+                        />
+                        <ContextMetricCard
+                          label={t('promptContextMetricReferenced')}
+                          value={String(previewData.footprint.file_reference_chars)}
+                        />
+                      </div>
+                      {previewData.warnings && previewData.warnings.length > 0 ? (
+                        <div className="rounded-[1.2rem] border border-amber-300/40 bg-amber-500/10 p-3 text-sm text-amber-800 dark:text-amber-200">
+                          <div className="text-xs font-medium uppercase tracking-[0.18em]">
+                            {t('promptContextWarnings')}
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {previewData.warnings.map((warning, index) => (
+                              <div key={`${warning}-${index}`}>{warning}</div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {previewBudgetReasons.length > 0 ? (
+                        <div className="rounded-[1.2rem] border border-border/70 bg-muted/35 p-3 text-sm text-muted-foreground">
+                          <div className="text-xs font-medium uppercase tracking-[0.18em]">
+                            {t('promptContextBudgetReasons')}
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            {previewBudgetReasons.map((reason, index) => (
+                              <div key={`${reason}-${index}`}>{reason}</div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {previewCompaction?.recommended ? (
+                        <div className="rounded-[1.2rem] border border-sky-300/40 bg-sky-500/10 p-3 text-sm text-sky-900 dark:text-sky-100">
+                          <div className="text-xs font-medium uppercase tracking-[0.18em]">
+                            {t('promptContextCompactionTitle')}
+                          </div>
+                          <div className="mt-2">
+                            {t(
+                              'promptContextCompactionStrategy',
+                              t(`promptContextCompaction_${previewCompaction.strategy ?? 'drop_oldest_history'}`),
+                            )}
+                          </div>
+                          {previewCompaction.estimated_chars_saved ? (
+                            <div className="mt-1 text-xs text-sky-800/80 dark:text-sky-100/80">
+                              {t(
+                                'promptContextCompactionSaved',
+                                String(previewCompaction.estimated_chars_saved),
+                              )}
+                            </div>
+                          ) : null}
+                          {previewCompaction.reasons && previewCompaction.reasons.length > 0 ? (
+                            <div className="mt-2 space-y-1">
+                              {previewCompaction.reasons.map((reason, index) => (
+                                <div key={`${reason}-${index}`}>{reason}</div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <div className="rounded-[1.2rem] border border-border/70 bg-muted/35 p-3 text-sm text-muted-foreground">
+                        <div className="text-xs font-medium uppercase tracking-[0.18em]">{t('promptPreviewProcessedInput')}</div>
+                        <div className="mt-2 break-words text-foreground">{previewData.preprocessed_input || t('none')}</div>
+                      </div>
+                      {previewData.sources.map((source, index) => (
+                        <ContextSourceCard key={`${source.kind}-${index}`} source={source} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-[1.2rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                      {t('promptContextSourcesEmpty')}
                     </div>
                   )}
                 </div>
@@ -627,4 +819,93 @@ function BindingCard({
       </div>
     </div>
   );
+}
+
+function ContextSourceCard({ source }: { source: ContextSourceRecord }) {
+  const metadataEntries = Object.entries(source.metadata ?? {});
+
+  return (
+    <div className="rounded-[1.2rem] border border-border/70 bg-card/90 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-foreground">{source.title}</div>
+          <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="rounded-full bg-muted px-2.5 py-1">{source.kind}</span>
+            <span
+              className={cn(
+                'rounded-full px-2.5 py-1 font-medium',
+                source.stable
+                  ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-amber-500/12 text-amber-700 dark:text-amber-300',
+              )}
+            >
+              {t(source.stable ? 'promptContextStable' : 'promptContextDynamic')}
+            </span>
+            {source.item_count ? (
+              <span className="rounded-full bg-muted px-2.5 py-1">
+                {t('promptContextItemCount', String(source.item_count))}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {source.summary ? (
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">{source.summary}</p>
+      ) : null}
+
+      {metadataEntries.length > 0 ? (
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {metadataEntries.map(([key, value]) => (
+            <div key={key} className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{key}</div>
+              <div className="mt-1 break-all text-sm text-foreground">{formatContextMetadataValue(value)}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatContextMetadataValue(value: unknown): string {
+  if (value == null) {
+    return t('none');
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item)).join(', ');
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function ContextMetricCard({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className="rounded-[1.2rem] border border-border/70 bg-muted/30 px-4 py-3">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-foreground">{value}</div>
+      {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
+    </div>
+  );
+}
+
+function contextBudgetTone(status: 'ok' | 'warning' | 'critical') {
+  switch (status) {
+    case 'critical':
+      return 'bg-rose-500/15 text-rose-700 dark:text-rose-300';
+    case 'warning':
+      return 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
+    default:
+      return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+  }
 }

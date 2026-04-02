@@ -51,6 +51,72 @@ export interface PromptBindingInput {
   priority: number;
 }
 
+export interface ContextSourceRecord {
+  kind: string;
+  title: string;
+  stable: boolean;
+  summary?: string;
+  item_count?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ContextFootprintRecord {
+  system_chars: number;
+  identity_chars: number;
+  bootstrap_chars: number;
+  skills_chars: number;
+  memory_chars: number;
+  managed_prompt_chars: number;
+  user_prompt_chars: number;
+  raw_user_chars: number;
+  preprocessed_chars: number;
+  file_reference_chars: number;
+  final_user_chars: number;
+  total_chars: number;
+  memory_limit_chars: number;
+  mention_count: number;
+}
+
+export interface ContextCompactionRecord {
+  recommended: boolean;
+  strategy?: string;
+  reasons?: string[];
+  estimated_chars_saved?: number;
+}
+
+export interface ContextPreflightRecord {
+  action?: 'proceed' | 'consider_compaction' | 'compact_before_run';
+  budget_status?: 'ok' | 'warning' | 'critical';
+  budget_reasons?: string[];
+  compaction: ContextCompactionRecord;
+}
+
+export interface ContextSourcesPreview {
+  sources: ContextSourceRecord[];
+  system_prompt_text?: string;
+  user_prompt_text?: string;
+  preprocessed_input?: string;
+  footprint: ContextFootprintRecord;
+  preflight: ContextPreflightRecord;
+  budget_status?: 'ok' | 'warning' | 'critical';
+  budget_reasons?: string[];
+  compaction: ContextCompactionRecord;
+  warnings?: string[];
+}
+
+export interface ContextSourcesPreviewInput {
+  channel?: string;
+  session_id?: string;
+  user_id?: string;
+  username?: string;
+  requested_provider?: string;
+  requested_model?: string;
+  requested_fallback?: string[];
+  explicit_prompt_ids?: string[];
+  custom?: Record<string, unknown>;
+  user_message?: string;
+}
+
 const PROMPTS_KEY = ['prompts'] as const;
 const PROMPT_BINDINGS_KEY = ['prompt-bindings'] as const;
 const promptSessionBindingsKey = (sessionID: string) =>
@@ -205,5 +271,13 @@ export function useReplacePromptSessionBindings() {
       }
       toast.error(err.message);
     },
+  });
+}
+
+export function usePreviewContextSources() {
+  return useMutation({
+    mutationFn: (input: ContextSourcesPreviewInput) =>
+      api.post<ContextSourcesPreview>('/api/prompts/context-sources', input),
+    onError: (err: Error) => toast.error(err.message),
   });
 }

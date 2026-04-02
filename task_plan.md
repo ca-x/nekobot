@@ -1,6 +1,6 @@
 # Task Plan: nekobot 功能评估、迁移与收口
 
-> Last Updated: 2026-04-02
+> Last Updated: 2026-04-03
 
 ## Plan Index
 
@@ -70,6 +70,12 @@
     - `tool governance`
     - `context economy`
     - 以及 `codeany` 吸收项中的 `permission rules` / `context sources`
+  - 当前已锁定的最小下一切片：
+    - 已完成 `tool governance / permission rules`
+    - 已完成 `AgentDefinition / prompt boundary` 最小桥接切片
+    - 已完成 `context sources` explainability preview 与 chat route 只读透传
+    - 已完成 `readonly preflight` 结构收口、`preflight.action` 暴露，以及 `legacy / blades` orchestrator parity
+    - 下一步进入首个真实执行路径上的非只读 decision 点，但暂不自动压缩
 
 ### P1 次级收尾
 - `closure_task_plan.md` 中遗留的 `Phase 5: Verify, commit, and deliver` 仍未在主计划中正式关闭。
@@ -84,6 +90,26 @@
     - 显示当前 prompt/context 由哪些来源组成
     - 至少覆盖 skills / memory / project rules / runtime injected context / MCP related context
     - 目标是给 WebUI 与后续控制面一个 context sources 视图
+- 当前切片执行边界：
+  - 所有 tool call 统一走 permission rules 入口
+  - 第一版规则仅支持：
+    - `tool_name`
+    - `session_id`
+    - `runtime_id`
+    - `action = allow|deny|ask`
+  - 未命中规则时，继续回落到现有 `approval mode`
+  - `context economy` 当前只允许：
+    - preview explainability
+    - chat route 透传 budget / compaction decision
+    - 以 `preflight decision` 结构暴露只读决策结果
+    - 以 `preflight.action` 暴露建议动作，但不自动执行
+  - 当前仍然**不允许**：
+    - 自动 compaction
+    - 自动 pruning
+    - 因 budget 状态直接阻断请求
+  - `chat route` 的 context decision metadata 现在要求对齐所有主 orchestrator 路径：
+    - legacy
+    - blades
 
 ### Archived / Reference Only
 - `migration_task_plan.md`
@@ -237,10 +263,10 @@
 把 `codeany` 中确认对 `nekobot` 当前方向真正有价值的两点，正式接入主开发计划：一是可持久化权限规则层，二是上下文来源可解释面。
 
 ### Phases
-- [ ] Phase 1: 在 `tool governance` 计划阶段设计 `permission rules` 数据模型与存储入口
-- [ ] Phase 2: 在 `tool governance` 执行阶段实现规则匹配、持久化与解释信息输出
-- [ ] Phase 3: 在 `AgentDefinition / context economy` 计划阶段设计 `context sources` 结构与观测视图
-- [ ] Phase 4: 在后续 WebUI / control plane 阶段实现 context sources 展示
+- [x] Phase 1: 在 `tool governance` 计划阶段设计 `permission rules` 数据模型与存储入口
+- [x] Phase 2: 在 `tool governance` 执行阶段实现规则匹配、持久化与解释信息输出
+- [x] Phase 3: 在 `AgentDefinition / context economy` 计划阶段设计 `context sources` 结构与观测视图
+- [x] Phase 4: 在后续 WebUI / control plane 阶段实现 context sources 展示
 
 ### Decisions Made
 - 这两项来自 `codeany` 调研，但只吸收概念与产品边界，不迁入其终端/TUI 形态。
@@ -263,7 +289,170 @@
 - [`notes.md`](/home/czyt/code/nekobot/notes.md)
 
 ### Status
-**Planned** - 已纳入主计划；当前 `tasks.Service` 主线切片已完成，后续在对应治理与上下文阶段推进落地。
+**Initial Scope Completed** - 当前只读边界内的 `codeany` 吸收项已完成首轮落地：`permission rules` MVP、`AgentDefinition` bridge、`context sources` preview，以及 `context economy` 的 readonly `preflight` 元数据都已接入预览 API 与 chat route。后续剩余工作不再是“初始落地”，而是进入首个真实 runtime decision 切片。
+
+
+## 2026-04-02 tool governance / permission rules 最小闭环批次
+
+### Goal
+为 `nekobot` 引入第一版可持久化 `permission rules`，让所有 tool call 统一先经过规则评估，再回落到现有 `approval.Manager` 的 mode/pending 流程，形成最小可执行的 tool governance 闭环。
+
+### Phases
+- [x] Phase 1: 收敛当前 approval/tool execution 现状，并锁定最小设计边界
+- [x] Phase 2: 落 spec、计划与数据模型设计
+- [x] Phase 3: 实现 `permission rule store + evaluator`
+- [x] Phase 4: 实现 `agent tool execution -> permission rules -> approval fallback`
+- [x] Phase 5: 实现最小 API / WebUI 管理面并完成验证
+
+### Decisions Made
+- 先做独立的 `permission rules` 层，不把规则直接揉进 `approval.Manager`。
+- 所有 tool call 都走统一规则入口，但第一版匹配维度只做：
+  - `tool_name`
+  - `session_id`
+  - `runtime_id`
+  - `action`
+- 第一版 action 只有：
+  - `allow`
+  - `deny`
+  - `ask`
+- 第一版不做：
+  - 参数级匹配
+  - classifier
+  - pre/post/failure hooks
+  - 复杂 explainability UI
+- 未命中规则时，继续回落到现有 `approval mode` 行为，避免打散现有系统。
+
+### References
+- [`docs/superpowers/specs/2026-04-02-tool-governance-permission-rules-design.md`](/home/czyt/code/nekobot/docs/superpowers/specs/2026-04-02-tool-governance-permission-rules-design.md)
+- [`claude_code_alignment_plan.md`](/home/czyt/code/nekobot/claude_code_alignment_plan.md)
+
+### Status
+**Phase 5 Completed** - `permission rules` 最小闭环已落地：已补 ent schema、持久化 manager、evaluator、agent 执行入口接线、强制 pending approval 的 `ask` 语义、WebUI CRUD API，以及最小前端管理页。当前已通过定向 Go 回归与前端构建验证，下一步可进入 `AgentDefinition` 或 `context economy / context sources` 主线。
+
+
+## 2026-04-02 AgentDefinition / prompt boundary 最小桥接批次
+
+### Goal
+把当前运行中的主 agent 配置收敛成一个可读取的 `AgentDefinition` 兼容快照，并把 system prompt 明确拆成 stable/dynamic sections，为后续 `context sources` 和 definition-driven runtime 铺路。
+
+### Phases
+- [x] Phase 1: 复核当前 `AgentDefinition` 计划边界与现有 `ContextBuilder`/`Agent` 实现
+- [x] Phase 2: 先补 RED 测试，锁定 `AgentDefinition` compatibility bridge 与 prompt section 边界
+- [x] Phase 3: 实现 `AgentDefinitionFromRuntimeConfig` 与 `ContextBuilder.BuildPromptSections()`
+- [x] Phase 4: 把 definition 快照挂到 `Agent` 和 `/api/status`
+- [x] Phase 5: 更新计划并切到最小 `context sources` 预览
+
+### Decisions Made
+- 当前不直接切完整多-definition runtime，只先做 compatibility bridge。
+- 当前 `AgentDefinition` 第一版只覆盖：
+  - route default
+  - permission mode
+  - tool policy allow/deny
+  - max tool iterations
+  - prompt section boundary metadata
+- `ContextBuilder` 继续输出原有 system prompt 文本，但内部先统一经过 section 列表装配。
+- `System` 页先只读展示 definition snapshot，不提供编辑能力。
+- 下一切片不做完整 `context economy`，只先交付最小 explainability preview：
+  - 复用 `BuildPromptSections()`
+  - 复用 `prompts.Resolve(...)`
+  - 不额外引入第二套 prompt 装配系统
+
+### Status
+**Phase 5 Completed** - `AgentDefinition` 已从“规划概念”变成可读取运行时快照，`ContextBuilder` 也已有 stable/dynamic prompt section 边界；已确认下一步直接进入最小 `context sources` explainability preview，并已完成该切片的实现与验证。
+
+
+## 2026-04-02 context sources 最小 explainability preview 批次
+
+### Goal
+为当前 prompt/runtime 组合增加一个最小可解释的 `context sources` 预览能力，让 WebUI 能看到一次请求会由哪些上下文来源组成，而不提前引入完整的 context economy/token budget 系统。
+
+### Phases
+- [x] Phase 1: 基于现有 `ContextBuilder` / `prompts.Resolve` 收敛最小数据边界
+- [x] Phase 2: 先补 RED 测试，锁定 agent 侧和 WebUI 侧返回形状
+- [x] Phase 3: 实现 `Agent.PreviewContextSources()` 与 `/api/prompts/context-sources`
+- [x] Phase 4: 实现 Prompts 页预览面板与多语言文案
+- [x] Phase 5: 跑定向与扩大的回归验证
+
+### Decisions Made
+- 当前只做 explainability preview，不做 context 截断、权重预算、来源排序策略。
+- 数据来源复用现有运行时边界：
+  - prompt sections
+  - managed prompts resolve
+  - runtime route metadata
+  - MCP 配置
+  - preprocessor preview
+- 当前至少覆盖这些来源类型：
+  - `project_rules`
+  - `skills`
+  - `memory`
+  - `managed_prompts`
+  - `runtime_context`
+  - `mcp`
+- 当前额外补了一层轻量 `footprint` 观测：
+  - system chars
+  - memory chars
+  - managed prompt chars
+  - final user chars
+  - referenced file chars
+  - mention count
+  - warning signals
+- 当前进一步补了显式 `budget status`：
+  - `ok`
+  - `warning`
+  - `critical`
+  - 以及 `budget reasons`
+- 当前再补了一层 `compaction recommendation`：
+  - 是否建议压缩
+  - 建议策略
+  - 预计可节省字符数
+  - recommendation reasons
+- 这层 `footprint` 只做 explainability，不参与真实 runtime 的自动裁剪或 provider request budget 决策。
+- `budget status` 当前也只做 explainability 和前端提示，不触发真实 runtime 的自动 compaction / pruning / request blocking。
+- `compaction recommendation` 当前也只做 explainability，不会自动改写会话历史、memory 或引用文件载荷。
+- 展示入口先放在 `Prompts` 页面，作为 prompt/runtime 解释工具；暂不扩到独立控制面页面。
+
+### Verification
+- [x] `go test -count=1 ./pkg/agent ./pkg/webui -run 'Test(PreviewContextSources_IncludesKeySourceTypes|PromptHandlers_ContextSourcesPreview)'`
+- [x] `go test -count=1 ./pkg/agent ./pkg/webui ./pkg/prompts`
+- [x] `cd pkg/webui/frontend && npm run build`
+
+### Status
+**Phase 5 Completed** - `context sources` 最小 explainability preview 已落地，后端可按单次请求返回来源列表、managed prompt 文本、预处理输入、轻量 `footprint` 指标、显式 `budget status`、`compaction recommendation` 以及嵌套 `preflight` 决策结构，前端已在 `Prompts` 页面提供预览面板。下一步可继续沿 `context economy` 主线扩展真正的预算/排序/来源治理能力。
+
+
+## 2026-04-03 Context Economy readonly preflight / orchestrator parity 批次
+
+### Goal
+把 `context economy` 从“预览 explainability + chat route 平铺元数据”推进到统一的只读 `preflight` 决策面，补齐 `legacy / blades` 两条主 orchestrator 路径的一致性，并在前端展示最小建议动作。
+
+### Phases
+- [x] Phase 1: 收敛 preview / chat route 现有 budget 与 compaction 元数据边界
+- [x] Phase 2: 实现嵌套 `preflight` 结构，并保留平铺字段作为兼容过渡
+- [x] Phase 3: 补齐 `legacy / blades` 两条 chat 主链的 readonly preflight parity
+- [x] Phase 4: 在 Chat / Prompts 前端接上 `preflight` 契约并补 `warning` 路径验证
+- [x] Phase 5: 跑定向 Go 回归与前端构建，确认该切片可独立收口
+
+### Decisions Made
+- `preflight` 当前只表达只读建议，不直接驱动真实 runtime 行为。
+- 当前建议动作规则保持最小集合：
+  - `ok -> proceed`
+  - `warning -> consider_compaction`
+  - `critical -> compact_before_run`
+- websocket chat route 和 preview API 优先暴露嵌套 `preflight`，但保留原有平铺 budget/compaction 字段，避免一次性打断现有前端消费方。
+- `Prompts` 页面与 `Chat` 页面都优先读取 `preflight`，旧字段只作为兼容 fallback。
+- 当前仍然不做：
+  - 自动 compaction
+  - 自动 pruning
+  - 因 `critical` 直接阻断请求
+  - 决策历史持久化
+
+### Verification
+- [x] `go test -count=1 ./pkg/agent -run 'Test(PreviewContextSources_IncludesKeySourceTypes|PreviewContextSources_ReportsWarningBudgetStatusForMemoryPressure|PreviewContextSources_ReportsCriticalBudgetStatus|ChatWithPromptContextDetailed_IncludesContextPressurePreview|ChatWithPromptContextDetailed_BladesIncludesContextPressurePreview)'`
+- [x] `go test -count=1 ./pkg/webui -run 'Test(PromptHandlers_ContextSourcesPreview|ChatRouteStateJSONIncludesContextPressureFields)'`
+- [x] `cd pkg/webui/frontend && npm run build`
+
+### Status
+**Phase 5 Completed** - readonly `preflight` 已作为 canonical 决策结构接入 preview API 与 chat route，`preflight.action` 已在 Chat 和 Prompts 侧最小展示，`legacy / blades` orchestrator 已完成一致性对齐，旧平铺字段继续保留作兼容过渡。下一步若继续推进，应进入首个非只读 runtime decision 切片，而不是继续补 preview 元数据。
 
 
 ## 2026-04-02 watch executeCommand -> tasks.Service 接线批次

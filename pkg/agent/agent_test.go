@@ -14,15 +14,22 @@ import (
 
 	"github.com/go-kratos/blades"
 	bladestools "github.com/go-kratos/blades/tools"
+	"go.uber.org/fx"
 	"nekobot/pkg/approval"
+	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/memory"
 	promptmemory "nekobot/pkg/memory/prompt"
 	"nekobot/pkg/modelroute"
 	"nekobot/pkg/modelstore"
+	"nekobot/pkg/permissionrules"
+	"nekobot/pkg/process"
+	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
+	"nekobot/pkg/providerstore"
 	"nekobot/pkg/session"
+	"nekobot/pkg/skills"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
 	"nekobot/pkg/tools"
@@ -585,6 +592,485 @@ func TestBuildSystemPrompt_RespectsMemoryContextOptions(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "[Memory context truncated]") {
 		t.Fatalf("expected truncation marker, got %q", prompt)
+	}
+}
+
+func TestContextBuilderBuildPromptSections_SeparatesStaticAndDynamic(t *testing.T) {
+	workspace := t.TempDir()
+	store := promptmemory.NewStore(workspace)
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("bootstrap-note"), 0644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+	if err := store.WriteLongTerm("long-term-note"); err != nil {
+		t.Fatalf("write long term memory: %v", err)
+	}
+
+	cb := NewContextBuilderWithMemory(workspace, store)
+	cb.SetToolDescriptionsFunc(func() []string { return []string{"read file tool"} })
+
+	sections := cb.BuildPromptSections()
+	if len(sections) == 0 {
+		t.Fatal("expected prompt sections")
+	}
+
+	seenIdentity := false
+	seenBootstrap := false
+	seenMemory := false
+	for _, section := range sections {
+		switch section.ID {
+		case "identity":
+			seenIdentity = true
+			if !section.Stable {
+				t.Fatalf("expected identity section to be stable")
+			}
+		case "bootstrap":
+			seenBootstrap = true
+			if !section.Stable {
+				t.Fatalf("expected bootstrap section to be stable")
+			}
+		case "memory":
+			seenMemory = true
+			if section.Stable {
+				t.Fatalf("expected memory section to be dynamic")
+			}
+		}
+	}
+
+	if !seenIdentity || !seenBootstrap || !seenMemory {
+		t.Fatalf("missing expected sections: identity=%v bootstrap=%v memory=%v", seenIdentity, seenBootstrap, seenMemory)
+	}
+}
+
+func TestAgentDefinitionFromRuntimeConfig_BridgesCurrentDefaults(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "openai-primary"
+	cfg.Agents.Defaults.Model = "gpt-5.4"
+	cfg.Agents.Defaults.Orchestrator = orchestratorBlades
+	cfg.Agents.Defaults.MaxToolIterations = 7
+	cfg.Approval.Mode = "manual"
+	cfg.Approval.Allowlist = []string{"read_file"}
+	cfg.Approval.Denylist = []string{"exec"}
+
+	def := AgentDefinitionFromRuntimeConfig(cfg)
+	if def.ID != "main" {
+		t.Fatalf("expected main definition id, got %q", def.ID)
+	}
+	if def.Route.Provider != "openai-primary" || def.Route.Model != "gpt-5.4" {
+		t.Fatalf("unexpected route: %+v", def.Route)
+	}
+	if def.Orchestrator != orchestratorBlades {
+		t.Fatalf("unexpected orchestrator %q", def.Orchestrator)
+	}
+	if def.PermissionMode != approval.ModeManual {
+		t.Fatalf("unexpected permission mode %q", def.PermissionMode)
+	}
+	if def.MaxToolIterations != 7 {
+		t.Fatalf("unexpected max tool iterations %d", def.MaxToolIterations)
+	}
+	if !reflect.DeepEqual(def.ToolPolicy.Allowlist, []string{"read_file"}) {
+		t.Fatalf("unexpected allowlist: %+v", def.ToolPolicy.Allowlist)
+	}
+	if !reflect.DeepEqual(def.ToolPolicy.Denylist, []string{"exec"}) {
+		t.Fatalf("unexpected denylist: %+v", def.ToolPolicy.Denylist)
+	}
+	if len(def.PromptSections.Static) == 0 {
+		t.Fatalf("expected prompt sections metadata to be present")
+	}
+}
+
+func TestNewAgent_SeedsDefinitionSnapshot(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "anthropic"
+	cfg.Agents.Defaults.Model = "claude-sonnet"
+	cfg.Approval.Mode = "prompt"
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModePrompt}), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	def := ag.Definition()
+	if def.Route.Provider != "anthropic" || def.Route.Model != "claude-sonnet" {
+		t.Fatalf("unexpected definition route: %+v", def.Route)
+	}
+	if def.PermissionMode != approval.ModePrompt {
+		t.Fatalf("unexpected definition permission mode: %q", def.PermissionMode)
+	}
+}
+
+func TestPreviewContextSources_IncludesKeySourceTypes(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("project-rules"), 0644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = workspace
+	cfg.Agents.Defaults.MCPServers = []config.MCPServerConfig{{Name: "filesystem", Transport: "stdio"}}
+	cfg.Memory.Context.Enabled = true
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	client := newRuntimeEntClient(t, cfg)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	promptMgr, err := prompts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new prompt manager: %v", err)
+	}
+	promptItem, err := promptMgr.CreatePrompt(context.Background(), prompts.Prompt{
+		Key:      "ops",
+		Name:     "Ops",
+		Mode:     prompts.ModeSystem,
+		Template: "provider={{route.provider}}",
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("create prompt: %v", err)
+	}
+	if _, err := promptMgr.CreateBinding(context.Background(), prompts.Binding{
+		Scope:    prompts.ScopeGlobal,
+		PromptID: promptItem.ID,
+		Enabled:  true,
+		Priority: 100,
+	}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, client, promptMgr)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	if err := ag.context.GetMemory().WriteLongTerm("long-term-memory"); err != nil {
+		t.Fatalf("write long-term memory: %v", err)
+	}
+
+	preview, err := ag.PreviewContextSources(context.Background(), PromptContext{
+		Channel:           "wechat",
+		SessionID:         "s-1",
+		RequestedProvider: "openai",
+		RequestedModel:    "gpt-5.4",
+		Custom: map[string]any{
+			"runtime_id": "runtime-a",
+			"role":       "ops",
+		},
+	}, "hello")
+	if err != nil {
+		t.Fatalf("PreviewContextSources failed: %v", err)
+	}
+
+	kinds := make(map[string]bool)
+	for _, item := range preview.Sources {
+		kinds[item.Kind] = true
+	}
+	for _, required := range []string{
+		"project_rules",
+		"memory",
+		"managed_prompts",
+		"runtime_context",
+		"mcp",
+	} {
+		if !kinds[required] {
+			t.Fatalf("expected source kind %q in %+v", required, preview.Sources)
+		}
+	}
+	if preview.Footprint.SystemChars <= 0 {
+		t.Fatalf("expected positive system footprint, got %+v", preview.Footprint)
+	}
+	if preview.Footprint.MemoryLimitChars != cfg.Memory.Context.MaxChars {
+		t.Fatalf("expected memory limit %d, got %+v", cfg.Memory.Context.MaxChars, preview.Footprint)
+	}
+	if preview.Footprint.FinalUserChars <= 0 {
+		t.Fatalf("expected positive final user chars, got %+v", preview.Footprint)
+	}
+	if preview.Footprint.TotalChars < preview.Footprint.SystemChars+preview.Footprint.FinalUserChars {
+		t.Fatalf("expected total chars to cover system and user content, got %+v", preview.Footprint)
+	}
+	if len(preview.Warnings) != 0 {
+		t.Fatalf("expected no warnings for simple preview, got %+v", preview.Warnings)
+	}
+	if preview.BudgetStatus != "ok" {
+		t.Fatalf("expected ok budget status, got %+v", preview)
+	}
+	if preview.Preflight.Action != "proceed" {
+		t.Fatalf("expected proceed preflight action, got %+v", preview.Preflight)
+	}
+	if len(preview.BudgetReasons) != 0 {
+		t.Fatalf("expected no budget reasons for simple preview, got %+v", preview.BudgetReasons)
+	}
+	if preview.Compaction.Recommended {
+		t.Fatalf("expected no compaction recommendation for simple preview, got %+v", preview.Compaction)
+	}
+}
+
+func TestPreviewContextSources_ReportsCriticalBudgetStatus(t *testing.T) {
+	workspace := t.TempDir()
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = workspace
+	cfg.Agents.Defaults.MaxTokens = 20
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	client := newRuntimeEntClient(t, cfg)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	promptMgr, err := prompts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new prompt manager: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, client, promptMgr)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	preview, err := ag.PreviewContextSources(context.Background(), PromptContext{}, strings.Repeat("x", 400))
+	if err != nil {
+		t.Fatalf("PreviewContextSources failed: %v", err)
+	}
+	if preview.BudgetStatus != "critical" {
+		t.Fatalf("expected critical budget status, got %+v", preview)
+	}
+	if preview.Preflight.Action != "compact_before_run" {
+		t.Fatalf("expected compact_before_run preflight action, got %+v", preview.Preflight)
+	}
+	if len(preview.BudgetReasons) == 0 {
+		t.Fatalf("expected budget reasons, got %+v", preview)
+	}
+	if !preview.Compaction.Recommended {
+		t.Fatalf("expected compaction recommendation, got %+v", preview.Compaction)
+	}
+	if preview.Compaction.Strategy == "" {
+		t.Fatalf("expected compaction strategy, got %+v", preview.Compaction)
+	}
+	if preview.Compaction.EstimatedCharsSaved <= 0 {
+		t.Fatalf("expected estimated savings, got %+v", preview.Compaction)
+	}
+}
+
+func TestPreviewContextSources_ReportsWarningBudgetStatusForMemoryPressure(t *testing.T) {
+	workspace := t.TempDir()
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = workspace
+	cfg.Agents.Defaults.MaxTokens = 10_000
+	cfg.Memory.Context.Enabled = true
+	cfg.Memory.Context.MaxChars = 100
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	client := newRuntimeEntClient(t, cfg)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	promptMgr, err := prompts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new prompt manager: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, client, promptMgr)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	if err := ag.context.GetMemory().WriteLongTerm(strings.Repeat("memory ", 20)); err != nil {
+		t.Fatalf("write long-term memory: %v", err)
+	}
+
+	preview, err := ag.PreviewContextSources(context.Background(), PromptContext{}, "hello")
+	if err != nil {
+		t.Fatalf("PreviewContextSources failed: %v", err)
+	}
+	if preview.BudgetStatus != "warning" {
+		t.Fatalf("expected warning budget status, got %+v", preview)
+	}
+	if preview.Preflight.BudgetStatus != "warning" {
+		t.Fatalf("expected warning preflight budget status, got %+v", preview.Preflight)
+	}
+	if preview.Preflight.Action != "consider_compaction" {
+		t.Fatalf("expected consider_compaction preflight action, got %+v", preview.Preflight)
+	}
+	if len(preview.BudgetReasons) == 0 {
+		t.Fatalf("expected budget reasons, got %+v", preview)
+	}
+	if !preview.Compaction.Recommended {
+		t.Fatalf("expected compaction recommendation, got %+v", preview.Compaction)
+	}
+	if preview.Compaction.Strategy != "compress_memory" {
+		t.Fatalf("expected compress_memory strategy, got %+v", preview.Compaction)
+	}
+	if preview.Compaction.EstimatedCharsSaved <= 0 {
+		t.Fatalf("expected estimated savings, got %+v", preview.Compaction)
+	}
+}
+
+func TestChatWithPromptContextDetailed_IncludesContextPressurePreview(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Orchestrator = orchestratorLegacy
+	cfg.Agents.Defaults.Provider = "test-primary"
+	cfg.Agents.Defaults.Model = "gpt-5.4"
+	cfg.Agents.Defaults.MaxTokens = 20
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Providers = []config.ProviderProfile{
+		{
+			Name:         "test-primary",
+			ProviderKind: failoverTestProviderKind(t, "primary"),
+		},
+	}
+
+	callCount := 0
+	registerFailoverTestProvider(t, cfg.Providers[0].ProviderKind, &callCount, "final answer", nil)
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	response, routeResult, err := ag.ChatWithPromptContextDetailed(
+		context.Background(),
+		&testSession{},
+		strings.Repeat("x", 400),
+		PromptContext{
+			SessionID:         "webui-chat:tester",
+			Channel:           "webui",
+			RequestedProvider: "test-primary",
+			RequestedModel:    "gpt-5.4",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithPromptContextDetailed failed: %v", err)
+	}
+	if response != "final answer" {
+		t.Fatalf("expected final answer, got %q", response)
+	}
+	if routeResult.ContextBudgetStatus != "critical" {
+		t.Fatalf("expected critical budget status, got %+v", routeResult)
+	}
+	if len(routeResult.ContextBudgetReasons) == 0 {
+		t.Fatalf("expected budget reasons, got %+v", routeResult)
+	}
+	if !routeResult.CompactionRecommended {
+		t.Fatalf("expected compaction recommendation, got %+v", routeResult)
+	}
+	if routeResult.CompactionStrategy == "" {
+		t.Fatalf("expected compaction strategy, got %+v", routeResult)
+	}
+	if routeResult.Preflight.BudgetStatus != "critical" {
+		t.Fatalf("expected critical preflight budget status, got %+v", routeResult.Preflight)
+	}
+	if routeResult.Preflight.Action != "compact_before_run" {
+		t.Fatalf("expected compact_before_run preflight action, got %+v", routeResult.Preflight)
+	}
+	if !routeResult.Preflight.Compaction.Recommended {
+		t.Fatalf("expected preflight compaction recommendation, got %+v", routeResult.Preflight)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected one provider call, got %d", callCount)
+	}
+}
+
+func TestChatWithPromptContextDetailed_BladesIncludesContextPressurePreview(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Orchestrator = orchestratorBlades
+	cfg.Agents.Defaults.Provider = "test-primary"
+	cfg.Agents.Defaults.Model = "gpt-5.4"
+	cfg.Agents.Defaults.MaxTokens = 20
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Providers = []config.ProviderProfile{
+		{
+			Name:         "test-primary",
+			ProviderKind: failoverTestProviderKind(t, "primary"),
+		},
+	}
+
+	callCount := 0
+	registerFailoverTestProvider(t, cfg.Providers[0].ProviderKind, &callCount, "final answer", nil)
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	response, routeResult, err := ag.ChatWithPromptContextDetailed(
+		context.Background(),
+		&testSession{},
+		strings.Repeat("x", 400),
+		PromptContext{
+			SessionID:         "webui-chat:tester",
+			Channel:           "webui",
+			RequestedProvider: "test-primary",
+			RequestedModel:    "gpt-5.4",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithPromptContextDetailed failed: %v", err)
+	}
+	if response != "final answer" {
+		t.Fatalf("expected final answer, got %q", response)
+	}
+	if routeResult.ContextBudgetStatus != "critical" {
+		t.Fatalf("expected critical budget status, got %+v", routeResult)
+	}
+	if len(routeResult.ContextBudgetReasons) == 0 {
+		t.Fatalf("expected budget reasons, got %+v", routeResult)
+	}
+	if !routeResult.CompactionRecommended {
+		t.Fatalf("expected compaction recommendation, got %+v", routeResult)
+	}
+	if routeResult.CompactionStrategy == "" {
+		t.Fatalf("expected compaction strategy, got %+v", routeResult)
+	}
+	if routeResult.Preflight.BudgetStatus != "critical" {
+		t.Fatalf("expected critical preflight budget status, got %+v", routeResult.Preflight)
+	}
+	if routeResult.Preflight.Action != "compact_before_run" {
+		t.Fatalf("expected compact_before_run preflight action, got %+v", routeResult.Preflight)
+	}
+	if !routeResult.Preflight.Compaction.Recommended {
+		t.Fatalf("expected preflight compaction recommendation, got %+v", routeResult.Preflight)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected one provider call, got %d", callCount)
 	}
 }
 
@@ -1211,6 +1697,170 @@ func TestExecuteToolCallTracksPendingApprovalInTaskStore(t *testing.T) {
 	}
 }
 
+func TestExecuteToolCallPermissionRuleAllowBypassesApproval(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.approval = approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	tool := &toolExecutionResultStubTool{
+		name:        "permission_allow_tool",
+		description: "allowed by permission rule",
+	}
+	ag.tools.MustRegister(tool)
+	ag.permissionRules = newTestPermissionRuleManager(t, permissionrules.Rule{
+		ToolName: "permission_allow_tool",
+		Action:   permissionrules.ActionAllow,
+		Enabled:  true,
+	})
+
+	ctx := context.WithValue(context.Background(), promptContextSessionKey, "wechat-user-allow")
+	result, err := ag.executeToolCall(ctx, providers.UnifiedToolCall{
+		Name:      "permission_allow_tool",
+		Arguments: map[string]interface{}{"x": 1},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if result != "ok" {
+		t.Fatalf("unexpected tool result: %q", result)
+	}
+	if tool.callCount() != 1 {
+		t.Fatalf("expected tool to execute once, got %d", tool.callCount())
+	}
+	if len(ag.approval.GetPending()) != 0 {
+		t.Fatalf("expected no pending approvals, got %d", len(ag.approval.GetPending()))
+	}
+}
+
+func TestExecuteToolCallPermissionRuleDenyBlocksTool(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.approval = approval.NewManager(approval.Config{Mode: approval.ModeAuto})
+	tool := &toolExecutionResultStubTool{
+		name:        "permission_deny_tool",
+		description: "denied by permission rule",
+	}
+	ag.tools.MustRegister(tool)
+	ag.permissionRules = newTestPermissionRuleManager(t, permissionrules.Rule{
+		ToolName: "permission_deny_tool",
+		Action:   permissionrules.ActionDeny,
+		Enabled:  true,
+	})
+
+	result, err := ag.executeToolCall(context.Background(), providers.UnifiedToolCall{
+		Name:      "permission_deny_tool",
+		Arguments: map[string]interface{}{"x": 1},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if result != "Tool call denied by permission rule" {
+		t.Fatalf("unexpected tool result: %q", result)
+	}
+	if tool.callCount() != 0 {
+		t.Fatalf("expected tool not to execute, got %d", tool.callCount())
+	}
+}
+
+func TestExecuteToolCallPermissionRuleAskQueuesApproval(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.approval = approval.NewManager(approval.Config{Mode: approval.ModeAuto})
+	ag.taskStore = tasks.NewStore()
+	ag.tools.MustRegister(&toolExecutionResultStubTool{
+		name:        "permission_ask_tool",
+		description: "asks by permission rule",
+	})
+	ag.permissionRules = newTestPermissionRuleManager(t, permissionrules.Rule{
+		ToolName: "permission_ask_tool",
+		Action:   permissionrules.ActionAsk,
+		Enabled:  true,
+	})
+
+	ctx := context.WithValue(context.Background(), promptContextSessionKey, "wechat-user-ask")
+	result, err := ag.executeToolCall(ctx, providers.UnifiedToolCall{
+		Name:      "permission_ask_tool",
+		Arguments: map[string]interface{}{"x": 1},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if result != "Tool call pending approval" {
+		t.Fatalf("unexpected tool result: %q", result)
+	}
+	pending := ag.approval.GetPending()
+	if len(pending) != 1 {
+		t.Fatalf("expected 1 pending approval, got %d", len(pending))
+	}
+	if pending[0].ToolName != "permission_ask_tool" {
+		t.Fatalf("unexpected pending request: %+v", pending[0])
+	}
+	states := ag.taskStore.ListSessionStates()
+	if len(states) != 1 || states[0].PendingRequestID == "" {
+		t.Fatalf("expected pending approval state to be tracked, got %+v", states)
+	}
+}
+
+func TestExecuteToolCallPermissionRuleFallsBackToApprovalMode(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.approval = approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	ag.permissionRules = newTestPermissionRuleManager(t)
+	ag.tools.MustRegister(&toolExecutionResultStubTool{
+		name:        "permission_fallback_tool",
+		description: "falls back to approval mode",
+	})
+
+	ctx := context.WithValue(context.Background(), promptContextSessionKey, "wechat-user-fallback")
+	result, err := ag.executeToolCall(ctx, providers.UnifiedToolCall{
+		Name:      "permission_fallback_tool",
+		Arguments: map[string]interface{}{"x": 1},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if result != "Tool call pending approval" {
+		t.Fatalf("unexpected tool result: %q", result)
+	}
+	if len(ag.approval.GetPending()) != 1 {
+		t.Fatalf("expected fallback approval pending request, got %d", len(ag.approval.GetPending()))
+	}
+}
+
+func TestExecuteToolCallPermissionRuleUsesRuntimeID(t *testing.T) {
+	ag := newRoutingTestAgent(t, orchestratorBlades)
+	ag.approval = approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	tool := &toolExecutionResultStubTool{
+		name:        "permission_runtime_tool",
+		description: "allowed only for runtime scoped rule",
+	}
+	ag.tools.MustRegister(tool)
+	ag.permissionRules = newTestPermissionRuleManager(t,
+		permissionrules.Rule{
+			ToolName:  "permission_runtime_tool",
+			RuntimeID: "runtime-1",
+			Action:    permissionrules.ActionAllow,
+			Enabled:   true,
+		},
+		permissionrules.Rule{
+			ToolName: "permission_runtime_tool",
+			Action:   permissionrules.ActionDeny,
+			Priority: -1,
+			Enabled:  true,
+		},
+	)
+
+	ctx := context.WithValue(context.Background(), promptContextRuntimeKey, "runtime-1")
+	result, err := ag.executeToolCall(ctx, providers.UnifiedToolCall{
+		Name:      "permission_runtime_tool",
+		Arguments: map[string]interface{}{"x": 1},
+	})
+	if err != nil {
+		t.Fatalf("executeToolCall failed: %v", err)
+	}
+	if result != "ok" {
+		t.Fatalf("unexpected tool result: %q", result)
+	}
+	if tool.callCount() != 1 {
+		t.Fatalf("expected tool to execute, got %d", tool.callCount())
+	}
+}
+
 func TestBuildBladesToolsResolver_UsesBladesMemoryToolAndSkipsLegacyMemoryTool(t *testing.T) {
 	ag := newRoutingTestAgent(t, orchestratorBlades)
 	ag.config.Memory.Enabled = true
@@ -1480,6 +2130,93 @@ func newRoutingTestAgent(t *testing.T, orchestrator string) *Agent {
 	ag.context.SetToolDescriptionsFunc(ag.tools.GetDescriptions)
 
 	return ag
+}
+
+func newTestPermissionRuleManager(t *testing.T, rules ...permissionrules.Rule) *permissionrules.Manager {
+	t.Helper()
+
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	client := newRuntimeEntClient(t, cfg)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	mgr, err := permissionrules.NewManager(cfg, testLogger(t), client)
+	if err != nil {
+		t.Fatalf("new permission rule manager: %v", err)
+	}
+	for _, rule := range rules {
+		if _, err := mgr.Create(context.Background(), rule); err != nil {
+			t.Fatalf("seed permission rule failed: %v", err)
+		}
+	}
+	return mgr
+}
+
+func TestProvideAgent_WiresPermissionRuleManager(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := testLogger(t)
+	client := newRuntimeEntClient(t, cfg)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+
+	skillsMgr := skills.NewManager(log, filepath.Join(cfg.WorkspacePath(), "skills"), false)
+	processMgr := process.NewManager(log)
+	approvalMgr := approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	providerMgr, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	promptMgr, err := prompts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new prompt manager: %v", err)
+	}
+	rulesMgr, err := permissionrules.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new permission rules manager: %v", err)
+	}
+	localBus := bus.NewLocalBus(log, 8)
+	if err := localBus.Start(); err != nil {
+		t.Fatalf("start local bus: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := localBus.Stop(); err != nil {
+			t.Fatalf("stop local bus: %v", err)
+		}
+	})
+
+	var ag *Agent
+	app := fx.New(
+		fx.Supply(cfg, log, client, skillsMgr, processMgr, approvalMgr, providerMgr, promptMgr, rulesMgr),
+		fx.Provide(func() bus.Bus { return localBus }),
+		Module,
+		fx.Populate(&ag),
+		fx.NopLogger,
+	)
+	ctx := context.Background()
+	if err := app.Start(ctx); err != nil {
+		t.Fatalf("start fx app: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := app.Stop(context.Background()); err != nil {
+			t.Fatalf("stop fx app: %v", err)
+		}
+	})
+
+	if ag == nil {
+		t.Fatal("expected agent to be populated")
+	}
+	if ag.permissionRules == nil {
+		t.Fatal("expected permission rules manager to be wired")
+	}
+	if ag.permissionRules != rulesMgr {
+		t.Fatal("expected provided permission rules manager instance to be attached to agent")
+	}
 }
 
 type failoverTestAdaptor struct {
