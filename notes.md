@@ -3473,6 +3473,31 @@ type CronJobState struct {
 - 本轮没有修改 `pkg/channels/wechat/runtime.go`。
 - 但定向与扩大的回归已经证明当前 WeChat runtime 可以直接兼容这次 contract 收口，不需要额外适配代码。
 
+## 2026-04-04 conversation/thread binding rebinding 语义补记
+
+### 本轮完成
+- `pkg/conversationbindings/service_test.go`
+  - 新增 `TestServiceRebindingPromotesDeterministicPrimaryConversation`。
+  - 先用 RED 锁定：同一 conversation 从旧 session rebind 到新 session 后，旧 session 提升新的 primary conversation key 不能再依赖历史写入顺序。
+- `pkg/conversationbindings/service.go`
+  - 在 rebinding 清理路径和持久化路径上都统一复用 `sortBindingStates()`。
+  - 旧 session 失去当前 primary conversation 时，现在会按稳定排序提升剩余 conversation 中最小的那个作为新的 primary key，而不是泄露 metadata 历史写入顺序。
+
+### 当前语义
+- 这一步继续做基础契约收口，不扩消费者和存储边界。
+- 当前规则：
+  - rebinding 仍保证一个 conversation 只绑定到一个 session。
+  - 被移出该 conversation 的旧 session 会保留剩余 binding。
+  - 若旧 session 失去原 primary conversation，则新的 primary conversation key 按稳定排序选择。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/conversationbindings -run 'TestServiceRebindingPromotesDeterministicPrimaryConversation$'`
+- GREEN:
+  - `go test -count=1 ./pkg/conversationbindings -run 'TestServiceRebindingPromotesDeterministicPrimaryConversation$'`
+  - `go test -count=1 ./pkg/conversationbindings`
+  - `go test -count=1 ./pkg/toolsessions ./pkg/conversationbindings ./pkg/channels/wechat`
+
 ### 本轮测试
 - RED:
   - `go test -count=1 ./pkg/conversationbindings -run 'TestServiceBindingQueriesReturnDeterministicConversationOrder'`

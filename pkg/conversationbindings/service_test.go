@@ -537,6 +537,83 @@ func TestServiceBindingQueriesReturnDeterministicConversationOrder(t *testing.T)
 	}
 }
 
+func TestServiceRebindingPromotesDeterministicPrimaryConversation(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	mgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	svc := New(mgr, toolsessions.SourceChannel, "wechat", "wx:")
+	ctx := context.Background()
+
+	primarySess, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "user-1",
+		Source:  toolsessions.SourceChannel,
+		Channel: "wechat",
+		Tool:    "codex",
+		Command: "codex",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create primary session: %v", err)
+	}
+	secondarySess, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "user-1",
+		Source:  toolsessions.SourceChannel,
+		Channel: "wechat",
+		Tool:    "claude",
+		Command: "claude",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create secondary session: %v", err)
+	}
+
+	if err := svc.Bind(ctx, "chat-b", primarySess.ID); err != nil {
+		t.Fatalf("bind chat-b: %v", err)
+	}
+	if err := svc.Bind(ctx, "chat-a", primarySess.ID); err != nil {
+		t.Fatalf("bind chat-a: %v", err)
+	}
+	if err := svc.Bind(ctx, "chat-c", primarySess.ID); err != nil {
+		t.Fatalf("bind chat-c: %v", err)
+	}
+
+	if err := svc.Bind(ctx, "chat-c", secondarySess.ID); err != nil {
+		t.Fatalf("rebind chat-c: %v", err)
+	}
+
+	updatedPrimary, err := mgr.GetSession(ctx, primarySess.ID)
+	if err != nil {
+		t.Fatalf("get updated primary session: %v", err)
+	}
+	if got := updatedPrimary.ConversationKey; got != "wx:chat-a" {
+		t.Fatalf("expected deterministic primary conversation key wx:chat-a, got %q", got)
+	}
+
+	updatedSecondary, err := mgr.GetSession(ctx, secondarySess.ID)
+	if err != nil {
+		t.Fatalf("get updated secondary session: %v", err)
+	}
+	if got := updatedSecondary.ConversationKey; got != "wx:chat-c" {
+		t.Fatalf("expected rebound session conversation key wx:chat-c, got %q", got)
+	}
+}
+
 func newTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()

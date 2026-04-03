@@ -1789,7 +1789,7 @@
 ### P1（高价值缺口）
 - [ ] **通用 conversation/thread binding 层**
   - 现状：`pkg/conversationbindings/service.go` 只是在 tool session 之上做 source/channel/conversation 绑定，缺跨 account/conversation/session 的通用记录、清理与路由抽象。
-  - 进度：已完成首批基础层增强，支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；本轮又补齐绑定查询结果的稳定排序语义，`ListBindings` / `GetBindingsBySession` / session 级 record 展开不再依赖写入顺序。当前仍复用 `tool sessions` 持久化，尚未抽出独立存储与跨 account 统一模型。
+  - 进度：已完成首批基础层增强，支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；已补齐绑定查询结果的稳定排序语义，`ListBindings` / `GetBindingsBySession` / session 级 record 展开不再依赖写入顺序；本轮继续补齐 rebinding 语义，旧 session 在失去主 conversation 后会按稳定排序提升新的 primary conversation key。当前仍复用 `tool sessions` 持久化，尚未抽出独立存储与跨 account 统一模型。
   - 当前已锁定的下一实现边界：先补强通用绑定查询/写入契约、确定性排序和 rebinding 语义，再让 `pkg/channels/wechat/runtime.go` 对齐新契约；暂不引入独立存储，也不在同批次接入 `gateway`。
   - 目标：抽出可复用于 channels / gateway / external agent runtime 的统一绑定层。
   - 来源：`goclaw/channels/thread_bindings.go`、`thread_binding_storage.go`。

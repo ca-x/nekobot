@@ -410,6 +410,7 @@ func (s *Service) removeConversationBindingFromOtherSessions(
 			continue
 		}
 		states := s.bindingStates(session)
+		sortBindingStates(states)
 		updated := make([]bindingState, 0, len(states))
 		removed := false
 		for _, state := range states {
@@ -458,6 +459,7 @@ func (s *Service) persistBindingStates(
 	}
 
 	primaryConversationID = strings.TrimSpace(primaryConversationID)
+	sortBindingStates(states)
 	if primaryConversationID == "" {
 		primaryConversationID = states[0].ConversationID
 	}

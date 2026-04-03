@@ -12,6 +12,15 @@
   - `go test -count=1 ./pkg/tools -run 'Test(ResolveBrowserMode|BrowserSessionStartWithModeRelay|BrowserToolStartModeFromParams|BrowserToolExecuteRejectsInvalidMode)$'` passed.
   - `go test -count=1 ./pkg/tools` passed.
 
+- Completed conversation/thread binding slice 3 (deterministic rebinding promotion):
+  - added a rebinding regression test to prove that when one conversation moves to a different session, the old session promotes its next primary conversation deterministically instead of depending on metadata write order.
+  - updated the rebinding cleanup and persistence paths in `pkg/conversationbindings/service.go` to reuse the same stable state ordering already used by binding queries.
+  - verified the existing WeChat runtime consumer still works without adaptation after the rebinding contract tightened.
+- Verification run:
+  - `go test -count=1 ./pkg/conversationbindings -run 'TestServiceRebindingPromotesDeterministicPrimaryConversation$'` passed.
+  - `go test -count=1 ./pkg/conversationbindings` passed.
+  - `go test -count=1 ./pkg/toolsessions ./pkg/conversationbindings ./pkg/channels/wechat` passed.
+
 - Completed Slack interactive flow phase 4:
   - added a third concrete shortcut/modal business closure: `model` shortcut now opens a modal and submission reuses the existing `/model` command semantics.
   - kept the slice intentionally narrow by using the existing command path and returning the result as an ephemeral Slack response, instead of inventing Slack-only model inspection behavior.
