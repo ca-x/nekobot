@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"strings"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -37,6 +38,20 @@ func TestScopedInlineKeyboardDropsButtonsOutsideSupportedScope(t *testing.T) {
 	groupKeyboard := channel.scopedInlineKeyboard("group", keyboard)
 	if groupKeyboard != nil {
 		t.Fatal("expected group chat keyboard to be suppressed")
+	}
+}
+
+func TestSkillInstallPromptFallsBackToTextConfirmationWithoutInlineButtons(t *testing.T) {
+	channel := newTestChannel(t)
+
+	groupPrompt := channel.skillInstallPromptText("group", "en", "owner/repo")
+	if !strings.Contains(groupPrompt, "/yes") || !strings.Contains(groupPrompt, "/no") {
+		t.Fatalf("expected text confirmation hints in group prompt, got %q", groupPrompt)
+	}
+
+	privatePrompt := channel.skillInstallPromptText("private", "en", "owner/repo")
+	if strings.Contains(privatePrompt, "/yes") || strings.Contains(privatePrompt, "/no") {
+		t.Fatalf("expected private prompt to rely on buttons, got %q", privatePrompt)
 	}
 }
 

@@ -20,9 +20,10 @@
   - wired `pkg/channels/telegram/telegram.go` to evaluate the declared `inline_buttons` capability before attaching inline keyboards to the settings menu and skill-install confirmation flow.
   - kept the scope mapping intentionally narrow: `private` chats map to `dm`; `group` and `supergroup` map to `group`.
   - made Telegram's default `inline_buttons=dm` capability real at runtime, so group/supergroup chats no longer receive those inline keyboards while private chats keep them.
-  - added regression tests for capability scope evaluation and keyboard suppression outside the supported scope.
+  - added a text fallback for skill-install confirmation prompts when inline buttons are suppressed, so group chats still get a usable `/yes` `/no` confirmation path.
+  - added regression tests for capability scope evaluation, keyboard suppression outside the supported scope, and the text fallback prompt.
 - Verification run:
-  - `go test -count=1 ./pkg/channels/telegram -run 'Test(SupportsInlineButtonsRespectsDefaultCapabilityScope|ScopedInlineKeyboardDropsButtonsOutsideSupportedScope)$'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/channels/telegram -run 'Test(SupportsInlineButtonsRespectsDefaultCapabilityScope|ScopedInlineKeyboardDropsButtonsOutsideSupportedScope|SkillInstallPromptFallsBackToTextConfirmationWithoutInlineButtons)$'` failed first, then passed after the fix.
   - `go test -count=1 ./pkg/channels/telegram` passed.
 
 - Completed browser session migration phase 3 (relay attach-only mode):

@@ -4149,10 +4149,15 @@ type CronJobState struct {
     - `private` -> `dm`
     - `group/supergroup` -> `group`
   - 由于默认矩阵声明 `telegram.inline_buttons=dm`，群聊里的这些 inline keyboard 现在会被抑制，不再继续无条件发送。
+  - 为技能安装确认补上无按钮场景的文本降级：
+    - 当 inline buttons 被 capability 关闭时
+    - 提示文本会明确要求用户回复 `/yes` 确认，或 `/no` `/cancel` 拒绝
+    - 避免群聊里只看到“请点击按钮确认”但实际没有按钮。
 - `pkg/channels/telegram/telegram_test.go`
   - 新增回归测试，锁定 Telegram 默认 capability 下：
     - 私聊允许 inline buttons。
     - 群聊/超级群禁用 inline buttons。
+    - 群聊技能安装提示会自动退化为 `/yes` `/no` 文本确认。
 
 ### 当前语义
 - 这一步只收口 Telegram 内联按钮 capability 的首个真实消费点，不扩到 threads / streaming / polls，也不改动按钮文案和交互协议本身。
@@ -4160,10 +4165,11 @@ type CronJobState struct {
   - `telegram` 默认 `inline_buttons=dm`。
   - 设置面板与技能安装确认按钮在私聊继续保留。
   - 群聊/超级群里这些 inline keyboard 会被省略。
+  - 群聊里技能安装确认会改用文本交互提示，而不是继续提示用户点击不存在的按钮。
 
 ### 本轮测试
 - RED:
   - `go test -count=1 ./pkg/channels/telegram -run 'Test(SupportsInlineButtonsRespectsDefaultCapabilityScope|ScopedInlineKeyboardDropsButtonsOutsideSupportedScope)$'`
 - GREEN:
-  - `go test -count=1 ./pkg/channels/telegram -run 'Test(SupportsInlineButtonsRespectsDefaultCapabilityScope|ScopedInlineKeyboardDropsButtonsOutsideSupportedScope)$'`
+  - `go test -count=1 ./pkg/channels/telegram -run 'Test(SupportsInlineButtonsRespectsDefaultCapabilityScope|ScopedInlineKeyboardDropsButtonsOutsideSupportedScope|SkillInstallPromptFallsBackToTextConfirmationWithoutInlineButtons)$'`
   - `go test -count=1 ./pkg/channels/telegram`

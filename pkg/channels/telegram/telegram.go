@@ -643,11 +643,7 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 			message.Chat.ID,
 			message.MessageID,
 			thinkingMsgID,
-			c.settingsText("zh",
-				fmt.Sprintf("已找到候选技能：%s\n请点击下方按钮确认是否安装。", proposal.Repo),
-				fmt.Sprintf("Found candidate skill: %s\nPlease confirm installation below.", proposal.Repo),
-				fmt.Sprintf("候補スキルが見つかりました: %s\n下のボタンでインストール確認してください。", proposal.Repo),
-			),
+			c.skillInstallPromptText(message.Chat.Type, "zh", proposal.Repo),
 		)
 		commandName := cmdName
 		if strings.TrimSpace(resp.Interaction.Command) != "" {
@@ -1132,6 +1128,22 @@ func (c *Channel) scopedInlineKeyboard(
 
 	keyboardCopy := keyboard
 	return &keyboardCopy
+}
+
+func (c *Channel) skillInstallPromptText(chatType, lang, repo string) string {
+	if c.supportsInlineButtons(chatType) {
+		return c.settingsText(lang,
+			fmt.Sprintf("已找到候选技能：%s\n请点击下方按钮确认是否安装。", repo),
+			fmt.Sprintf("Found candidate skill: %s\nPlease confirm installation below.", repo),
+			fmt.Sprintf("候補スキルが見つかりました: %s\n下のボタンでインストール確認してください。", repo),
+		)
+	}
+
+	return c.settingsText(lang,
+		fmt.Sprintf("已找到候选技能：%s\n请回复 /yes 确认安装，回复 /no 或 /cancel 取消。", repo),
+		fmt.Sprintf("Found candidate skill: %s\nReply /yes to confirm installation, or /no /cancel to decline.", repo),
+		fmt.Sprintf("候補スキルが見つかりました: %s\n/install 確認には /yes、拒否には /no または /cancel を返信してください。", repo),
+	)
 }
 
 func chatTypeForChatID(chatID int64) string {
