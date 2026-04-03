@@ -31,6 +31,13 @@
 - Verification run:
   - `go test -count=1 ./pkg/gateway -run 'TestGateway(StatusEndpointRejectsMemberRole|ConnectionsEndpointRejectsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'` passed.
   - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+- Completed Slack interactive flow phase 3:
+  - added a second real shortcut/modal business closure on top of the existing Slack interactive routing skeleton: `settings` shortcut now opens a modal and submission reuses the existing `/settings` command semantics.
+  - kept the slice intentionally narrow by treating the modal as a thin UI shell over the already-existing settings command, instead of inventing a parallel Slack-only settings protocol.
+  - added regression coverage for settings shortcut modal open and modal submission command execution.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(Settings|FindSkills)Modal|ViewSubmissionExecutes(Settings|FindSkills)Command)$'` passed.
+  - `go test -count=1 ./pkg/channels/slack ./pkg/commands` passed.
 
 - Completed context economy preflight execution telemetry slice:
   - added `preflight.applied` to the shared preflight decision shape so route metadata can distinguish "recommended" from "actually executed".

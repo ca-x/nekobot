@@ -3518,6 +3518,43 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/channels/slack`
   - `go test -count=1 ./pkg/channels/slack ./pkg/commands`
 
+## 2026-04-03 Slack settings shortcut/modal 闭环补记
+
+### 本轮完成
+- `pkg/channels/slack/slack.go`
+  - `handleShortcut()` 现在额外处理 `settings` shortcut，并打开一个最小 settings modal。
+  - `handleViewSubmission()` 现在按 callback id 分发到：
+    - `find_skills_modal`
+    - `settings_modal`
+  - 新增 `handleSettingsViewSubmission()`：
+    - 从 modal 里读取 `action` 和 `value`
+    - 组装成现有 `/settings` command 的 args
+    - 继续复用已存在的 `settings` command handler
+    - 以 ephemeral message 返回结果
+  - 新增 `buildSettingsModal()`，只提供最小输入：
+    - action
+    - value
+- `pkg/channels/slack/slack_test.go`
+  - 新增：
+    - `TestHandleShortcutOpensSettingsModal`
+    - `TestHandleViewSubmissionExecutesSettingsCommand`
+
+### 当前语义
+- 这一步继续只补“现有命令的第二个真实 modal 消费者”，不混入：
+  - Slack 通用表单框架
+  - 更复杂的多字段 settings UX
+  - 新的后端设置协议
+- 当前只把 Slack modal 作为 `/settings` 的薄 UI 壳：
+  - modal 输入 -> 现有 command args
+  - command handler 决定保存/校验/返回文案
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(Settings|FindSkills)Modal|ViewSubmissionExecutes(Settings|FindSkills)Command)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(Settings|FindSkills)Modal|ViewSubmissionExecutes(Settings|FindSkills)Command)$'`
+  - `go test -count=1 ./pkg/channels/slack ./pkg/commands`
+
 ## 2026-04-03 gateway origin allowlist 首批治理补记
 
 ### 本轮完成

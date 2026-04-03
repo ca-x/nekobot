@@ -1777,7 +1777,7 @@
   - 位置：`pkg/channels/wechat/*`、`pkg/wechat/*`。
 - [ ] **Slack interactive callback 扩展为完整交互闭环**
   - 现状：仅有 block actions 中的 skill install confirm/cancel，而且确认流没有像 Telegram / Discord 一样的 pending state、expiry、原消息更新和统一执行路径；shortcut / modal submission 也仍未处理。
-  - 进度：已补齐技能安装确认的完整闭环（pending state / expiry / 原消息更新 / 统一执行路径），并加上 shortcut / modal submission 的可扩展路由入口。本轮又补上首个真实业务闭环：`find_skills` shortcut -> modal -> `find-skills` command -> install confirm message；后续仍可继续扩更多 shortcut/modal 业务。
+  - 进度：已补齐技能安装确认的完整闭环（pending state / expiry / 原消息更新 / 统一执行路径），并加上 shortcut / modal submission 的可扩展路由入口；已补上首个真实业务闭环：`find_skills` shortcut -> modal -> `find-skills` command -> install confirm message；本轮继续补上第二个真实业务闭环：`settings` shortcut -> modal -> 复用现有 `/settings` command 语义返回 ephemeral 结果；后续仍可继续扩更多 shortcut/modal 业务。
   - 目标：继续在现有路由骨架上补具体 shortcut / modal submission 业务。
   - 来源：当前 `pkg/channels/slack/slack.go` 缺口 + `gua` Presenter/Action 思路。
   - 位置：`pkg/channels/slack/slack.go`。

@@ -69,6 +69,12 @@ const (
 	findSkillsModalCallbackID    = "find_skills_modal"
 	findSkillsModalBlockID       = "skill_query"
 	findSkillsModalActionID      = "query_input"
+	settingsShortcutCallbackID   = "settings"
+	settingsModalCallbackID      = "settings_modal"
+	settingsActionBlockID        = "settings_action"
+	settingsActionInputID        = "settings_action_input"
+	settingsValueBlockID         = "settings_value"
+	settingsValueInputID         = "settings_value_input"
 )
 
 // NewChannel creates a new Slack channel.
@@ -536,16 +542,22 @@ func (c *Channel) handleShortcut(callback slack.InteractionCallback) {
 		zap.String("callback_id", callback.CallbackID),
 		zap.String("user_id", callback.User.ID))
 
-	if callback.CallbackID != findSkillsShortcutCallbackID {
-		return
-	}
-
 	if callback.TriggerID == "" {
 		c.log.Warn("Slack shortcut missing trigger id", zap.String("callback_id", callback.CallbackID))
 		return
 	}
 
-	if _, err := c.api.OpenView(callback.TriggerID, buildFindSkillsModal()); err != nil {
+	var view slack.ModalViewRequest
+	switch callback.CallbackID {
+	case findSkillsShortcutCallbackID:
+		view = buildFindSkillsModal()
+	case settingsShortcutCallbackID:
+		view = buildSettingsModal()
+	default:
+		return
+	}
+
+	if _, err := c.api.OpenView(callback.TriggerID, view); err != nil {
 		c.log.Error("Failed to open Slack shortcut modal",
 			zap.String("callback_id", callback.CallbackID),
 			zap.Error(err),
@@ -558,10 +570,17 @@ func (c *Channel) handleViewSubmission(callback slack.InteractionCallback) {
 		zap.String("callback_id", callback.View.CallbackID),
 		zap.String("user_id", callback.User.ID))
 
-	if callback.View.CallbackID != findSkillsModalCallbackID {
+	switch callback.View.CallbackID {
+	case findSkillsModalCallbackID:
+		c.handleFindSkillsViewSubmission(callback)
+	case settingsModalCallbackID:
+		c.handleSettingsViewSubmission(callback)
+	default:
 		return
 	}
+}
 
+func (c *Channel) handleFindSkillsViewSubmission(callback slack.InteractionCallback) {
 	commandName := strings.TrimSpace(callback.View.PrivateMetadata)
 	if commandName == "" {
 		commandName = "find-skills"
@@ -655,6 +674,91 @@ func (c *Channel) handleViewSubmission(callback slack.InteractionCallback) {
 	}
 }
 
+func (c *Channel) handleSettingsViewSubmission(callback slack.InteractionCallback) {
+	commandName := strings.TrimSpace(callback.View.PrivateMetadata)
+	if commandName == "" {
+		commandName = "settings"
+	}
+
+	action := strings.TrimSpace(readViewInputValue(
+		callback.View.State,
+		settingsActionBlockID,
+		settingsActionInputID,
+	))
+	value := strings.TrimSpace(readViewInputValue(
+		callback.View.State,
+		settingsValueBlockID,
+		settingsValueInputID,
+	))
+	args := strings.TrimSpace(action)
+	if value != "" {
+		args = strings.TrimSpace(action + " " + value)
+	}
+	if args == "" {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("Please provide a settings action.", false),
+		); err != nil {
+			c.log.Error("Failed to send Slack settings modal validation message", zap.Error(err))
+		}
+		return
+	}
+
+	cmd, exists := c.commands.Get(commandName)
+	if !exists {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command not found: "+commandName, false),
+		); err != nil {
+			c.log.Error("Failed to send Slack settings modal command-not-found message", zap.Error(err))
+		}
+		return
+	}
+
+	req := commands.CommandRequest{
+		Channel:  c.ID(),
+		ChatID:   callback.Channel.ID,
+		UserID:   callback.User.ID,
+		Username: callback.User.Name,
+		Command:  commandName,
+		Args:     args,
+		Metadata: map[string]string{
+			"team_id":    callback.Team.ID,
+			"trigger_id": callback.TriggerID,
+			"runtime_id": c.ID(),
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		if _, sendErr := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command failed: "+err.Error(), false),
+		); sendErr != nil {
+			c.log.Error("Failed to send Slack settings modal command error", zap.Error(sendErr))
+		}
+		return
+	}
+
+	if strings.TrimSpace(resp.Content) == "" {
+		return
+	}
+
+	if _, err := c.api.PostEphemeral(
+		callback.Channel.ID,
+		callback.User.ID,
+		slack.MsgOptionText(resp.Content, false),
+	); err != nil {
+		c.log.Error("Failed to send Slack settings modal response", zap.Error(err))
+	}
+}
+
 func buildFindSkillsModal() slack.ModalViewRequest {
 	queryPlaceholder := slack.NewTextBlockObject(slack.PlainTextType, "Search skills", false, false)
 	queryLabel := slack.NewTextBlockObject(slack.PlainTextType, "What do you want to install?", false, false)
@@ -676,6 +780,40 @@ func buildFindSkillsModal() slack.ModalViewRequest {
 		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Search", false, false),
 		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
 		Blocks:          slack.Blocks{BlockSet: []slack.Block{queryBlock}},
+	}
+}
+
+func buildSettingsModal() slack.ModalViewRequest {
+	actionPlaceholder := slack.NewTextBlockObject(slack.PlainTextType, "lang | name | prefs | skillmode | show", false, false)
+	actionLabel := slack.NewTextBlockObject(slack.PlainTextType, "Action", false, false)
+	actionHint := slack.NewTextBlockObject(
+		slack.PlainTextType,
+		"Examples: lang, name, prefs, skillmode, show",
+		false,
+		false,
+	)
+	actionInput := slack.NewPlainTextInputBlockElement(actionPlaceholder, settingsActionInputID)
+	actionBlock := slack.NewInputBlock(settingsActionBlockID, actionLabel, actionHint, actionInput)
+
+	valuePlaceholder := slack.NewTextBlockObject(slack.PlainTextType, "en | Alice | concise replies | npx", false, false)
+	valueLabel := slack.NewTextBlockObject(slack.PlainTextType, "Value", false, false)
+	valueHint := slack.NewTextBlockObject(
+		slack.PlainTextType,
+		"Optional for show. Examples: en, Alice, concise replies, npx",
+		false,
+		false,
+	)
+	valueInput := slack.NewPlainTextInputBlockElement(valuePlaceholder, settingsValueInputID)
+	valueBlock := slack.NewInputBlock(settingsValueBlockID, valueLabel, valueHint, valueInput).WithOptional(true)
+
+	return slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      settingsModalCallbackID,
+		PrivateMetadata: "settings",
+		Title:           slack.NewTextBlockObject(slack.PlainTextType, "Settings", false, false),
+		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Save", false, false),
+		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+		Blocks:          slack.Blocks{BlockSet: []slack.Block{actionBlock, valueBlock}},
 	}
 }
 
