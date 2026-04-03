@@ -3883,28 +3883,30 @@ type CronJobState struct {
 - `pkg/gateway/server.go`
   - 抽出共享 `authenticateRequest()`，统一解析 gateway JWT 的 `sub` / `uid` / `role`。
   - websocket chat 入口改为复用这条共享认证路径，但仍保持“任意有效已鉴权 token 可接入聊天 websocket”的现有兼容语义。
-  - `requireAuthenticatedAPI()` 现在在 JWT 鉴权之后继续校验 control-plane role，只允许 `admin` / `owner` 访问 REST 控制面。
+  - `requireAuthenticatedAPI()` 现在接受 endpoint scope，并在 JWT 鉴权之后继续校验 control-plane role。
   - 对不带 `role` claim 的旧 token 保持兼容，按 legacy admin token 语义回落到 `admin`。
 - `pkg/gateway/server_test.go`
   - 新增：
-    - `TestGatewayStatusEndpointRejectsMemberRole`
-    - `TestGatewayConnectionsEndpointRejectsMemberRole`
+    - `TestGatewayStatusEndpointAllowsMemberRole`
+    - `TestGatewayConnectionsEndpointAllowsMemberRole`
+    - `TestGetConnectionEndpointAllowsMemberRole`
+    - `TestDeleteConnectionEndpointRejectsMemberRole`
     - `TestGatewayAuthenticateRequestAllowsMemberRoleForWebsocketPath`
 
 ### 当前语义
 - 这一步只补最小 control-plane auth scope，不混入：
   - device pairing / enrollment
-  - finer-grained endpoint/action scopes
   - tenant-aware gateway partitioning
   - websocket chat 本身的权限模型重做
 - 当前规则：
   - 任意有效 gateway JWT 仍可用于 websocket chat。
-  - `GET /api/v1/status`、`GET /api/v1/connections`、`GET /api/v1/connections/{id}`、`DELETE /api/v1/connections/{id}` 现在只允许 `admin` / `owner`。
+  - `GET /api/v1/status`、`GET /api/v1/connections`、`GET /api/v1/connections/{id}` 现在允许 `member` / `admin` / `owner`。
+  - `DELETE /api/v1/connections/{id}` 继续只允许 `admin` / `owner`。
   - 旧的只含 `sub`、不含 `role` / `uid` 的 token 继续按 admin token 兼容，避免现有控制面 token 立即失效。
 
 ### 本轮测试
 - RED:
-  - `go test -count=1 ./pkg/gateway -run 'TestGateway(StatusEndpointRejectsMemberRole|ConnectionsEndpointRejectsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'`
+  - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointAllowsMemberRole|ConnectionsEndpointAllowsMemberRole)|DeleteConnectionEndpointRejectsMemberRole|GetConnectionEndpointAllowsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'`
 - GREEN:
-  - `go test -count=1 ./pkg/gateway -run 'TestGateway(StatusEndpointRejectsMemberRole|ConnectionsEndpointRejectsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'`
+  - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointAllowsMemberRole|ConnectionsEndpointAllowsMemberRole)|DeleteConnectionEndpointRejectsMemberRole|GetConnectionEndpointAllowsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'`
   - `go test -count=1 ./pkg/gateway ./pkg/config`

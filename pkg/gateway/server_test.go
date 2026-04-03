@@ -254,7 +254,7 @@ func TestGatewayConnectionsEndpointRequiresAuth(t *testing.T) {
 	}
 }
 
-func TestGatewayStatusEndpointRejectsMemberRole(t *testing.T) {
+func TestGatewayStatusEndpointAllowsMemberRole(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
@@ -266,12 +266,12 @@ func TestGatewayStatusEndpointRejectsMemberRole(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
 
-func TestGatewayConnectionsEndpointRejectsMemberRole(t *testing.T) {
+func TestGatewayConnectionsEndpointAllowsMemberRole(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
@@ -283,8 +283,8 @@ func TestGatewayConnectionsEndpointRejectsMemberRole(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
 
@@ -371,6 +371,23 @@ func TestDeleteConnectionEndpointRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestDeleteConnectionEndpointRejectsMemberRole(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"role": "member",
+	})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections/test-client", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
 func TestGetConnectionEndpointReturnsConnectionDetails(t *testing.T) {
 	s, token := newAuthedTestServer(t)
 	now := time.Unix(1_700_001_000, 0).UTC()
@@ -414,6 +431,29 @@ func TestGetConnectionEndpointReturnsConnectionDetails(t *testing.T) {
 	}
 	if got := body["connected_at"]; got != now.Format(time.RFC3339) {
 		t.Fatalf("expected connected_at %q, got %v", now.Format(time.RFC3339), got)
+	}
+}
+
+func TestGetConnectionEndpointAllowsMemberRole(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"role": "member",
+	})
+	s.clients["client-a"] = &Client{
+		id:       "client-a",
+		send:     make(chan []byte, 1),
+		userID:   "user-a",
+		username: "alice",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/client-a", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 }
 

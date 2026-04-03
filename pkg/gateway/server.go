@@ -96,6 +96,13 @@ type authContext struct {
 	role     string
 }
 
+type gatewayControlPlaneScope string
+
+const (
+	gatewayControlPlaneScopeRead   gatewayControlPlaneScope = "read"
+	gatewayControlPlaneScopeManage gatewayControlPlaneScope = "manage"
+)
+
 // NewServer creates a new gateway server.
 func NewServer(
 	cfg *config.Config,
@@ -464,7 +471,7 @@ func (s *Server) removeClient(client *Client) {
 // --- REST Handlers ---
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuthenticatedAPI(w, r) {
+	if !s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead) {
 		return
 	}
 
@@ -489,7 +496,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuthenticatedAPI(w, r) {
+	if !s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead) {
 		return
 	}
 
@@ -511,7 +518,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuthenticatedAPI(w, r) {
+	if !s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead) {
 		return
 	}
 
@@ -536,7 +543,7 @@ func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuthenticatedAPI(w, r) {
+	if !s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage) {
 		return
 	}
 
@@ -559,7 +566,11 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) requireAuthenticatedAPI(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) requireAuthenticatedAPI(
+	w http.ResponseWriter,
+	r *http.Request,
+	scope gatewayControlPlaneScope,
+) bool {
 	if err := s.checkClientIP(r); err != nil {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return false
@@ -574,7 +585,7 @@ func (s *Server) requireAuthenticatedAPI(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return false
 	}
-	if !isGatewayControlPlaneRoleAllowed(authCtx.role) {
+	if !isGatewayControlPlaneRoleAllowed(authCtx.role, scope) {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return false
 	}
@@ -738,10 +749,12 @@ func (s *Server) authenticateRequest(r *http.Request) (*authContext, error) {
 	}, nil
 }
 
-func isGatewayControlPlaneRoleAllowed(role string) bool {
+func isGatewayControlPlaneRoleAllowed(role string, scope gatewayControlPlaneScope) bool {
 	switch strings.ToLower(strings.TrimSpace(role)) {
 	case "admin", "owner":
 		return true
+	case "member":
+		return scope == gatewayControlPlaneScopeRead
 	default:
 		return false
 	}

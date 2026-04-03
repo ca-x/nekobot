@@ -4,6 +4,14 @@
 
 ## 2026-04-03
 
+- Completed gateway control-plane hardening phase 10 (endpoint-scoped REST auth):
+  - refined the previous role gate into explicit read/manage scopes in `pkg/gateway/server.go` instead of treating every REST control-plane endpoint as equally privileged.
+  - allowed `member` tokens to read `/api/v1/status`, `/api/v1/connections`, and `/api/v1/connections/{id}` while keeping `DELETE /api/v1/connections/{id}` restricted to `admin` / `owner`.
+  - preserved websocket chat compatibility by continuing to allow any valid authenticated token there, and preserved legacy tokens without a `role` claim as admin-compatible.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointAllowsMemberRole|ConnectionsEndpointAllowsMemberRole)|DeleteConnectionEndpointRejectsMemberRole|GetConnectionEndpointAllowsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+
 - Continued backlog execution from `task_plan.md`:
   - re-read the persistent planning artifacts and GoalX run state.
   - confirmed the previous GoalX run is complete, while the next approved mainline remains `gateway control-plane hardening`.
