@@ -467,6 +467,76 @@ func TestServiceClearPromotesRemainingBindingForSession(t *testing.T) {
 	}
 }
 
+func TestServiceBindingQueriesReturnDeterministicConversationOrder(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	mgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	svc := New(mgr, toolsessions.SourceChannel, "wechat", "wx:")
+	ctx := context.Background()
+
+	sess, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "user-1",
+		Source:  toolsessions.SourceChannel,
+		Channel: "wechat",
+		Tool:    "codex",
+		Command: "codex",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if err := svc.Bind(ctx, "chat-b", sess.ID); err != nil {
+		t.Fatalf("bind chat-b: %v", err)
+	}
+	if err := svc.Bind(ctx, "chat-a", sess.ID); err != nil {
+		t.Fatalf("bind chat-a: %v", err)
+	}
+
+	records, err := svc.ListBindings(ctx)
+	if err != nil {
+		t.Fatalf("list bindings: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 binding records, got %d", len(records))
+	}
+	if records[0].Conversation.ConversationID != "chat-a" || records[1].Conversation.ConversationID != "chat-b" {
+		t.Fatalf("expected ListBindings order [chat-a chat-b], got [%s %s]",
+			records[0].Conversation.ConversationID,
+			records[1].Conversation.ConversationID,
+		)
+	}
+
+	bySession, err := svc.GetBindingsBySession(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("get bindings by session: %v", err)
+	}
+	if len(bySession) != 2 {
+		t.Fatalf("expected 2 session binding records, got %d", len(bySession))
+	}
+	if bySession[0].Conversation.ConversationID != "chat-a" || bySession[1].Conversation.ConversationID != "chat-b" {
+		t.Fatalf("expected GetBindingsBySession order [chat-a chat-b], got [%s %s]",
+			bySession[0].Conversation.ConversationID,
+			bySession[1].Conversation.ConversationID,
+		)
+	}
+}
+
 func newTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()

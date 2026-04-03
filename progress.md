@@ -2,6 +2,18 @@
 
 ## 2026-03-26
 
+## 2026-04-03
+
+- Completed conversation/thread binding slice 2 (deterministic query order):
+  - added `TestServiceBindingQueriesReturnDeterministicConversationOrder` in `pkg/conversationbindings/service_test.go` to lock a real missing contract with TDD.
+  - confirmed RED first: `ListBindings()` returned `[chat-b chat-a]` when bindings were created in non-sorted order.
+  - updated `pkg/conversationbindings/service.go` so `sessionToBindingRecords`, `ListBindings`, and `GetBindingsBySession` now return a stable order by `conversation_id` instead of leaking metadata write order.
+  - verified the existing WeChat runtime consumer remained compatible without code changes.
+- Verification run:
+  - `go test -count=1 ./pkg/conversationbindings -run 'TestServiceBindingQueriesReturnDeterministicConversationOrder'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/conversationbindings` passed.
+  - `go test -count=1 ./pkg/toolsessions ./pkg/conversationbindings ./pkg/channels/wechat` passed.
+
 - Completed channel capability matrix phase 1:
   - added `pkg/channels/capabilities.go` to import the core `goclaw` capability model: capability types, scope parsing, enablement checks, merge behavior, and per-channel default matrices.
   - kept this slice intentionally low risk by landing the shared declaration/evaluation layer first without forcing all channel runtimes to consume it in the same commit.

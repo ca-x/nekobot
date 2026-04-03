@@ -85,6 +85,12 @@
     - 已补齐 `route_result.preflight.action` 的 websocket 透传契约：
       - ChatPage 现在能真正收到并显示后端 preflight action
       - 不新增动作语义，仅补齐已存在字段的对外输出
+  - 当前已批准的下一开发主线：
+    - 先做 `conversation/thread binding` 首批收口
+    - 目标不是立刻抽独立存储或接入所有消费者
+    - 而是先把 `pkg/conversationbindings` 收敛成真正可复用的通用绑定层
+    - 再用现有 `pkg/channels/wechat/runtime.go` 作为首个真实消费者验证该契约
+    - `gateway` / `external agent runtime` / 更完整控制面接入留到后续批次
 
 ### P1 次级收尾
 - `closure_task_plan.md` 中遗留的 `Phase 5: Verify, commit, and deliver` 仍未在主计划中正式关闭。
@@ -178,6 +184,37 @@
     - alias / regex lookup
   - 定向验证通过：
     - `go test -count=1 ./pkg/modelstore ./pkg/modelroute`
+
+## 2026-04-03 Conversation/Thread Binding 计划收敛批次
+
+### Goal
+把 `conversation/thread binding` 从“已有首批能力但边界仍薄”的 backlog 项，收敛为一个可直接执行的实现计划，并锁定下一批开发只覆盖通用绑定层与 WeChat 首个消费者验证。
+
+### Phases
+- [x] Phase 1: 复核 `pkg/conversationbindings`、`pkg/toolsessions`、`pkg/channels/wechat/runtime` 与 `pkg/gateway` 的当前状态
+- [x] Phase 2: 比较下一批候选主线，确认 `conversation/thread binding` 优先于 `Slack interactive callback` 收尾
+- [x] Phase 3: 形成独立实现计划并接入主计划引用
+- [x] Phase 4: 执行通用 binding service 首批收口
+- [x] Phase 5: 执行 WeChat runtime 消费者对齐与验证
+- [ ] Phase 6: 基于结果决定下一批切到 `gateway adoption` 还是 `Slack interactive callback`
+
+### Decisions Made
+- 当前优先级已明确调整为：先做 `conversation/thread binding`，后做 `Slack interactive callback` 具体业务闭环。
+- 本批次不引入新的 Ent schema，继续复用 `tool sessions` 的 `conversation_key + metadata` 作为持久化边界。
+- 本批次不把 `gateway`、`external agent runtime`、`WeChat presenter` 混入同一实现切片。
+- 首个消费者验证固定为现有 `pkg/channels/wechat/runtime.go`，因为它已经真实依赖该层，验证价值高且回归面清晰。
+- 本轮实现先收口“确定性查询顺序”这一条通用契约：
+  - `ListBindings()`
+  - `GetBindingsBySession()`
+  - `sessionToBindingRecords()`
+  现已统一按 `conversation_id` 稳定排序，避免消费者继续依赖写入顺序这一隐式行为。
+- WeChat runtime 本轮验证后无需代码改动，说明当前消费者可直接兼容这次通用契约收口。
+
+### References
+- [`docs/superpowers/plans/2026-04-03-conversation-thread-binding.md`](/home/czyt/code/go/nekobot/docs/superpowers/plans/2026-04-03-conversation-thread-binding.md)
+
+### Status
+**Phase 5 Completed** - 已完成 `conversationbindings.Service` 首个通用契约收口：补齐绑定查询结果的稳定排序语义，并用 WeChat runtime 做了消费者回归验证。下一步只剩 Phase 6，决定后续优先切 `gateway adoption` 还是回到 `Slack interactive callback` 业务闭环。
 - [x] runtime model resolution 改造
   - `agent` 已优先通过 `modelroute` 解析 provider 对应的实际模型
   - route metadata 当前支持 `provider_model_id`
@@ -1746,10 +1783,12 @@
 ### P1（高价值缺口）
 - [ ] **通用 conversation/thread binding 层**
   - 现状：`pkg/conversationbindings/service.go` 只是在 tool session 之上做 source/channel/conversation 绑定，缺跨 account/conversation/session 的通用记录、清理与路由抽象。
-  - 进度：已完成首批基础层增强，支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；当前仍复用 `tool sessions` 持久化，尚未抽出独立存储与跨 account 统一模型。
+  - 进度：已完成首批基础层增强，支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；本轮又补齐绑定查询结果的稳定排序语义，`ListBindings` / `GetBindingsBySession` / session 级 record 展开不再依赖写入顺序。当前仍复用 `tool sessions` 持久化，尚未抽出独立存储与跨 account 统一模型。
+  - 当前已锁定的下一实现边界：先补强通用绑定查询/写入契约、确定性排序和 rebinding 语义，再让 `pkg/channels/wechat/runtime.go` 对齐新契约；暂不引入独立存储，也不在同批次接入 `gateway`。
   - 目标：抽出可复用于 channels / gateway / external agent runtime 的统一绑定层。
   - 来源：`goclaw/channels/thread_bindings.go`、`thread_binding_storage.go`。
   - 位置：新建 `pkg/conversationbindings/*` 或扩展现有模块。
+  - 计划：`docs/superpowers/plans/2026-04-03-conversation-thread-binding.md`
 - [x] **Memory 检索质量增强包**
   - 现状：已有 hybrid search 与 QMD fallback；首轮质量增强项已全部补齐。
   - 进度：已完成引用格式切片、首批 MMR 重排接入、时间衰减接入与 embedding LRU cache，补齐统一 citation 生成、builtin memory 搜索后的多样性重排、时间感知排序以及重复文本的 embedding 复用。
@@ -1825,6 +1864,7 @@
 
 ### Batch D（goclaw 高价值迁移）
 - [ ] conversation/thread binding 层
+  - 当前执行顺序：先做通用 service 契约收口，再做 WeChat runtime 消费者验证，最后再决定是否扩到 gateway/external runtime。
 - [x] memory quality pack（MMR / temporal decay / citations / cache）
 - [ ] gateway control plane hardening
 - [ ] browser session dual-mode / advanced extraction

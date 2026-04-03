@@ -3,6 +3,7 @@ package conversationbindings
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -220,6 +221,7 @@ func (s *Service) ListBindings(ctx context.Context) ([]*BindingRecord, error) {
 	for _, item := range items {
 		out = append(out, s.sessionToBindingRecords(item)...)
 	}
+	sortBindingRecords(out)
 	return out, nil
 }
 
@@ -245,6 +247,7 @@ func (s *Service) GetBindingsBySession(ctx context.Context, sessionID string) ([
 	if len(records) == 0 {
 		return []*BindingRecord{}, nil
 	}
+	sortBindingRecords(records)
 	return records, nil
 }
 
@@ -310,11 +313,40 @@ func (s *Service) sessionToBindingRecords(session *toolsessions.Session) []*Bind
 		return []*BindingRecord{}
 	}
 	states := s.bindingStates(session)
+	sortBindingStates(states)
 	out := make([]*BindingRecord, 0, len(states))
 	for _, state := range states {
 		out = append(out, s.bindingRecordFromState(session, state))
 	}
 	return out
+}
+
+func sortBindingStates(states []bindingState) {
+	sort.SliceStable(states, func(i, j int) bool {
+		left := strings.TrimSpace(states[i].ConversationID)
+		right := strings.TrimSpace(states[j].ConversationID)
+		if left != right {
+			return left < right
+		}
+		return strings.TrimSpace(states[i].Label) < strings.TrimSpace(states[j].Label)
+	})
+}
+
+func sortBindingRecords(records []*BindingRecord) {
+	sort.SliceStable(records, func(i, j int) bool {
+		left := records[i]
+		right := records[j]
+		if left == nil || right == nil {
+			return right != nil
+		}
+		if left.Conversation.ConversationID != right.Conversation.ConversationID {
+			return left.Conversation.ConversationID < right.Conversation.ConversationID
+		}
+		if left.TargetSessionID != right.TargetSessionID {
+			return left.TargetSessionID < right.TargetSessionID
+		}
+		return left.Metadata.Label < right.Metadata.Label
+	})
 }
 
 func (s *Service) bindingRecordFromState(session *toolsessions.Session, state bindingState) *BindingRecord {

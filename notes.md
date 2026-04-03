@@ -3361,3 +3361,92 @@ type CronJobState struct {
   - 包含 `definition.go`、`BuildPromptSections()`、`Agent.Definition()`、`/api/status` 的 `agent_definition`、System 页只读展示
   - 不混入 `context sources` 预览 API
   - 不混入 Chat route readonly `preflight`
+
+## 2026-04-03 conversation/thread binding 计划复核补记
+
+### 本轮复核范围
+- `pkg/conversationbindings/service.go`
+- `pkg/conversationbindings/service_test.go`
+- `pkg/toolsessions/manager.go`
+- `pkg/channels/wechat/runtime.go`
+- `pkg/channels/wechat/runtime_test.go`
+- `pkg/gateway/server.go`
+- `task_plan.md`
+- `progress.md`
+
+### 当前判断
+- `Slack interactive callback` 仍是明确缺口，但属于局部收尾项，主要价值在 Slack 通道本身。
+- `conversation/thread binding` 虽然现在已有首批能力，但它直接影响后续：
+  - `gateway`
+  - `external agent runtime`
+  - 弱交互通道上的长期 runtime 绑定
+- 因此下一开发主线更适合先落在 `conversation/thread binding`，把基础层做扎实后再扩消费者。
+
+### 已锁定的下一切片边界
+- 本轮只规划，不实现代码。
+- 下一批实现只做两件事：
+  1. 收口 `pkg/conversationbindings` 的通用契约：
+     - rebinding 语义
+     - 确定性记录顺序
+     - 多 session / 多 conversation 下的稳定查询行为
+  2. 用 `pkg/channels/wechat/runtime.go` 作为首个真实消费者重新验证契约
+- 明确不在同批次内做：
+  - 独立 Ent schema / 独立 binding store
+  - gateway 接线
+  - external agent runtime 接线
+  - WeChat presenter / 交互协议扩展
+
+### 为什么先不扩到 gateway
+- `pkg/gateway/server.go` 当前还没有任何 binding consumer 代码。
+- 如果把 gateway adoption 和 binding service 收口混在一起，失败时很难判断问题出在：
+  - 基础契约
+  - 消费方接线
+  - gateway 自己的控制面边界
+- 先用现有 WeChat runtime 做消费者验证，回归面更窄，能更快确认基础层是否成立。
+
+### 计划产物
+- 已新增独立实现计划：
+  - `docs/superpowers/plans/2026-04-03-conversation-thread-binding.md`
+- 主计划已更新为：
+  - 下一主线先做 `conversation/thread binding`
+  - `Slack interactive callback` 延后为后续收尾项
+
+## 2026-04-03 conversation/thread binding 首批实现补记
+
+### 本轮完成
+- `pkg/conversationbindings/service_test.go`
+  - 新增 `TestServiceBindingQueriesReturnDeterministicConversationOrder`。
+  - 先以 RED 方式锁定：
+    - `ListBindings()` 结果不能再依赖写入顺序
+    - `GetBindingsBySession()` 结果不能再依赖写入顺序
+- `pkg/conversationbindings/service.go`
+  - 新增稳定排序逻辑：
+    - `sortBindingStates()`
+    - `sortBindingRecords()`
+  - 当前 `sessionToBindingRecords()`、`ListBindings()`、`GetBindingsBySession()` 都统一按 `conversation_id` 稳定排序。
+
+### 当前语义
+- 这一步不是新功能扩张，而是把现有通用 binding 查询行为从“隐式依赖 metadata 写入顺序”收敛成“显式稳定顺序”。
+- 这样后续消费者：
+  - WeChat runtime
+  - gateway
+  - external agent runtime
+  可以共享一致的读取语义，不需要各自再做二次排序或假设写入先后。
+
+### WeChat 消费者验证结果
+- 本轮没有修改 `pkg/channels/wechat/runtime.go`。
+- 但定向与扩大的回归已经证明当前 WeChat runtime 可以直接兼容这次 contract 收口，不需要额外适配代码。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/conversationbindings -run 'TestServiceBindingQueriesReturnDeterministicConversationOrder'`
+- GREEN:
+  - `go test -count=1 ./pkg/conversationbindings -run 'TestServiceBindingQueriesReturnDeterministicConversationOrder'`
+  - `go test -count=1 ./pkg/conversationbindings`
+  - `go test -count=1 ./pkg/toolsessions ./pkg/conversationbindings ./pkg/channels/wechat`
+
+### 仍然延后
+- standalone binding store
+- gateway adoption
+- external agent runtime adoption
+- WeChat presenter / 更广泛交互协议
