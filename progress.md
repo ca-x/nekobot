@@ -14,6 +14,16 @@
   - `go test -count=1 ./pkg/conversationbindings` passed.
   - `go test -count=1 ./pkg/toolsessions ./pkg/conversationbindings ./pkg/channels/wechat` passed.
 
+- Completed Slack interactive flow phase 2:
+  - extended the Slack API abstraction with `OpenView(...)` so shortcut handlers can open modals through the existing channel abstraction.
+  - implemented the first real shortcut/modal business flow: `find_skills` shortcut now opens a modal, and `find_skills_modal` submission re-runs the existing `find-skills` command with the submitted query.
+  - kept the flow narrow by reusing the existing skill-install confirmation message path instead of inventing a second install-confirm mechanism for modals.
+  - added regression coverage in `pkg/channels/slack/slack_test.go` for shortcut modal open and view-submission command execution.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensFindSkillsModal|ViewSubmissionExecutesFindSkillsCommand)'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/channels/slack` passed.
+  - `go test -count=1 ./pkg/channels/slack ./pkg/commands` passed.
+
 - Completed channel capability matrix phase 1:
   - added `pkg/channels/capabilities.go` to import the core `goclaw` capability model: capability types, scope parsing, enablement checks, merge behavior, and per-channel default matrices.
   - kept this slice intentionally low risk by landing the shared declaration/evaluation layer first without forcing all channel runtimes to consume it in the same commit.

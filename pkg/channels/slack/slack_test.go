@@ -21,6 +21,10 @@ type stubSlackAPI struct {
 	postMessageTS      string
 	postMessageErr     error
 
+	openViewTriggerID string
+	openViewRequest   *slackapi.ModalViewRequest
+	openViewErr       error
+
 	updateMessageChannel string
 	updateMessageTS      string
 	updateMessageOpts    []slackapi.MsgOption
@@ -54,6 +58,16 @@ func (s *stubSlackAPI) PostMessage(channelID string, options ...slackapi.MsgOpti
 
 func (s *stubSlackAPI) PostMessageContext(ctx context.Context, channelID string, options ...slackapi.MsgOption) (string, string, error) {
 	return s.PostMessage(channelID, options...)
+}
+
+func (s *stubSlackAPI) OpenView(triggerID string, view slackapi.ModalViewRequest) (*slackapi.ViewResponse, error) {
+	s.openViewTriggerID = triggerID
+	viewCopy := view
+	s.openViewRequest = &viewCopy
+	if s.openViewErr != nil {
+		return nil, s.openViewErr
+	}
+	return &slackapi.ViewResponse{}, nil
 }
 
 func (s *stubSlackAPI) UpdateMessage(channelID, timestamp string, options ...slackapi.MsgOption) (string, string, string, error) {
@@ -358,6 +372,105 @@ func TestExecuteConfirmedSkillInstallUsesRuntimeChannelID(t *testing.T) {
 	})
 	if result != "installed" {
 		t.Fatalf("unexpected result: %q", result)
+	}
+}
+
+func TestHandleShortcutOpensFindSkillsModal(t *testing.T) {
+	ch := newTestChannel(t)
+	api := &stubSlackAPI{}
+	ch.api = api
+
+	callback := slackapi.InteractionCallback{
+		Type:       slackapi.InteractionTypeShortcut,
+		CallbackID: "find_skills",
+		TriggerID:  "trigger-123",
+		User:       slackapi.User{ID: "U123", Name: "alice"},
+	}
+
+	ch.handleShortcut(callback)
+
+	if api.openViewTriggerID != "trigger-123" {
+		t.Fatalf("expected modal to open with trigger trigger-123, got %q", api.openViewTriggerID)
+	}
+	if api.openViewRequest == nil {
+		t.Fatal("expected modal view request")
+	}
+	if api.openViewRequest.CallbackID != "find_skills_modal" {
+		t.Fatalf("unexpected modal callback id: %q", api.openViewRequest.CallbackID)
+	}
+	if api.openViewRequest.PrivateMetadata != "find-skills" {
+		t.Fatalf("unexpected private metadata: %q", api.openViewRequest.PrivateMetadata)
+	}
+}
+
+func TestHandleViewSubmissionExecutesFindSkillsCommand(t *testing.T) {
+	ch := newTestChannel(t)
+	api := &stubSlackAPI{}
+	ch.api = api
+
+	if err := ch.commands.Register(&commands.Command{
+		Name: "find-skills",
+		Handler: func(ctx context.Context, req commands.CommandRequest) (commands.CommandResponse, error) {
+			if req.Channel != "slack" {
+				t.Fatalf("unexpected channel: %q", req.Channel)
+			}
+			if req.Command != "find-skills" {
+				t.Fatalf("unexpected command: %q", req.Command)
+			}
+			if req.Args != "search qmd memory" {
+				t.Fatalf("unexpected args: %q", req.Args)
+			}
+			if req.UserID != "U123" {
+				t.Fatalf("unexpected user: %q", req.UserID)
+			}
+			if req.Metadata["team_id"] != "T123" {
+				t.Fatalf("unexpected team id: %q", req.Metadata["team_id"])
+			}
+			if req.Metadata["runtime_id"] != "slack" {
+				t.Fatalf("unexpected runtime id: %q", req.Metadata["runtime_id"])
+			}
+			return commands.CommandResponse{
+				Content: "candidate found",
+				Interaction: &commands.CommandInteraction{
+					Type:    commands.InteractionTypeSkillInstallConfirm,
+					Repo:    "owner/repo",
+					Reason:  "best match",
+					Message: "Please confirm install.",
+					Command: "find-skills",
+				},
+			}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register command: %v", err)
+	}
+
+	callback := slackapi.InteractionCallback{
+		Type: slackapi.InteractionTypeViewSubmission,
+		User: slackapi.User{ID: "U123", Name: "alice"},
+		Team: slackapi.Team{ID: "T123"},
+		View: slackapi.View{
+			CallbackID:      "find_skills_modal",
+			PrivateMetadata: "find-skills",
+			State: &slackapi.ViewState{
+				Values: map[string]map[string]slackapi.BlockAction{
+					"skill_query": {
+						"query_input": {
+							Value: "search qmd memory",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ch.handleViewSubmission(callback)
+
+	pending, ok := ch.getPendingSkillInstall(api.postMessageTS)
+	if !ok {
+		t.Fatal("expected pending skill install to be stored")
+	}
+	if pending.UserID != "U123" || pending.Command != "find-skills" || pending.Repo != "owner/repo" {
+		t.Fatalf("unexpected pending state: %+v", pending)
 	}
 }
 

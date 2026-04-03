@@ -3450,3 +3450,34 @@ type CronJobState struct {
 - gateway adoption
 - external agent runtime adoption
 - WeChat presenter / 更广泛交互协议
+
+## 2026-04-03 Slack shortcut/modal 首批业务闭环补记
+
+### 本轮完成
+- `pkg/channels/slack/slack.go`
+  - 为 Slack API 抽象补上 `OpenView(...)` 能力。
+  - `handleShortcut()` 现在会处理 `find_skills` shortcut，并打开一个最小 modal。
+  - `handleViewSubmission()` 现在会处理 `find_skills_modal`：
+    - 读取用户输入的 query
+    - 重新走现有 `find-skills` command handler
+    - 如返回 `skill_install_confirm` interaction，则继续复用现有 install confirmation message 流
+    - 否则以 ephemeral message 返回结果
+- `pkg/channels/slack/slack_test.go`
+  - 新增：
+    - `TestHandleShortcutOpensFindSkillsModal`
+    - `TestHandleViewSubmissionExecutesFindSkillsCommand`
+
+### 当前语义
+- 这一步不是要把 Slack modal 框架一次性做全，而是先补一个真实的可用业务切片：
+  - `find_skills` shortcut
+  - `find-skills` modal submission
+  - skill install confirmation follow-up
+- 这样 Slack interactive callback 不再只剩“有路由入口但没业务”的状态。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensFindSkillsModal|ViewSubmissionExecutesFindSkillsCommand)'`
+- GREEN:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensFindSkillsModal|ViewSubmissionExecutesFindSkillsCommand)'`
+  - `go test -count=1 ./pkg/channels/slack`
+  - `go test -count=1 ./pkg/channels/slack ./pkg/commands`

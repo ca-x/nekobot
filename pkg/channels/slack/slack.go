@@ -28,6 +28,7 @@ type slackAPI interface {
 	PostEphemeral(channelID, userID string, options ...slack.MsgOption) (string, error)
 	PostMessage(channelID string, options ...slack.MsgOption) (string, string, error)
 	PostMessageContext(ctx context.Context, channelID string, options ...slack.MsgOption) (string, string, error)
+	OpenView(triggerID string, view slack.ModalViewRequest) (*slack.ViewResponse, error)
 	UpdateMessage(channelID, timestamp string, options ...slack.MsgOption) (string, string, string, error)
 }
 
@@ -62,6 +63,13 @@ type pendingSkillInstall struct {
 	CreatedAt   time.Time
 	ResponseURL string
 }
+
+const (
+	findSkillsShortcutCallbackID = "find_skills"
+	findSkillsModalCallbackID    = "find_skills_modal"
+	findSkillsModalBlockID       = "skill_query"
+	findSkillsModalActionID      = "query_input"
+)
 
 // NewChannel creates a new Slack channel.
 func NewChannel(
@@ -527,12 +535,163 @@ func (c *Channel) handleShortcut(callback slack.InteractionCallback) {
 	c.log.Debug("Shortcut interaction received",
 		zap.String("callback_id", callback.CallbackID),
 		zap.String("user_id", callback.User.ID))
+
+	if callback.CallbackID != findSkillsShortcutCallbackID {
+		return
+	}
+
+	if callback.TriggerID == "" {
+		c.log.Warn("Slack shortcut missing trigger id", zap.String("callback_id", callback.CallbackID))
+		return
+	}
+
+	if _, err := c.api.OpenView(callback.TriggerID, buildFindSkillsModal()); err != nil {
+		c.log.Error("Failed to open Slack shortcut modal",
+			zap.String("callback_id", callback.CallbackID),
+			zap.Error(err),
+		)
+	}
 }
 
 func (c *Channel) handleViewSubmission(callback slack.InteractionCallback) {
 	c.log.Debug("View submission received",
 		zap.String("callback_id", callback.View.CallbackID),
 		zap.String("user_id", callback.User.ID))
+
+	if callback.View.CallbackID != findSkillsModalCallbackID {
+		return
+	}
+
+	commandName := strings.TrimSpace(callback.View.PrivateMetadata)
+	if commandName == "" {
+		commandName = "find-skills"
+	}
+
+	query := strings.TrimSpace(readViewInputValue(
+		callback.View.State,
+		findSkillsModalBlockID,
+		findSkillsModalActionID,
+	))
+	if query == "" {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("Please provide a search query.", false),
+		); err != nil {
+			c.log.Error("Failed to send Slack modal validation message", zap.Error(err))
+		}
+		return
+	}
+
+	cmd, exists := c.commands.Get(commandName)
+	if !exists {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command not found: "+commandName, false),
+		); err != nil {
+			c.log.Error("Failed to send Slack modal command-not-found message", zap.Error(err))
+		}
+		return
+	}
+
+	req := commands.CommandRequest{
+		Channel:  c.ID(),
+		ChatID:   callback.Channel.ID,
+		UserID:   callback.User.ID,
+		Username: callback.User.Name,
+		Command:  commandName,
+		Args:     query,
+		Metadata: map[string]string{
+			"team_id":    callback.Team.ID,
+			"trigger_id": callback.TriggerID,
+			"runtime_id": c.ID(),
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		if _, sendErr := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command failed: "+err.Error(), false),
+		); sendErr != nil {
+			c.log.Error("Failed to send Slack modal command error", zap.Error(sendErr))
+		}
+		return
+	}
+
+	if resp.Interaction != nil && resp.Interaction.Type == commands.InteractionTypeSkillInstallConfirm {
+		cmd := slack.SlashCommand{
+			ChannelID: callback.Channel.ID,
+			UserID:    callback.User.ID,
+		}
+		if err := c.sendSkillInstallConfirmation(cmd, commandName, resp); err != nil {
+			c.log.Error("Failed to send Slack modal skill install confirmation", zap.Error(err))
+			if _, sendErr := c.api.PostEphemeral(
+				callback.Channel.ID,
+				callback.User.ID,
+				slack.MsgOptionText("Failed to create install confirmation: "+err.Error(), false),
+			); sendErr != nil {
+				c.log.Error("Failed to send Slack modal confirmation error", zap.Error(sendErr))
+			}
+		}
+		return
+	}
+
+	if strings.TrimSpace(resp.Content) == "" {
+		return
+	}
+
+	if _, err := c.api.PostEphemeral(
+		callback.Channel.ID,
+		callback.User.ID,
+		slack.MsgOptionText(resp.Content, false),
+	); err != nil {
+		c.log.Error("Failed to send Slack modal response", zap.Error(err))
+	}
+}
+
+func buildFindSkillsModal() slack.ModalViewRequest {
+	queryPlaceholder := slack.NewTextBlockObject(slack.PlainTextType, "Search skills", false, false)
+	queryLabel := slack.NewTextBlockObject(slack.PlainTextType, "What do you want to install?", false, false)
+	queryHint := slack.NewTextBlockObject(
+		slack.PlainTextType,
+		"Describe the capability you need, for example: qmd memory search",
+		false,
+		false,
+	)
+
+	queryInput := slack.NewPlainTextInputBlockElement(queryPlaceholder, findSkillsModalActionID)
+	queryBlock := slack.NewInputBlock(findSkillsModalBlockID, queryLabel, queryHint, queryInput)
+
+	return slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      findSkillsModalCallbackID,
+		PrivateMetadata: "find-skills",
+		Title:           slack.NewTextBlockObject(slack.PlainTextType, "Find Skills", false, false),
+		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Search", false, false),
+		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+		Blocks:          slack.Blocks{BlockSet: []slack.Block{queryBlock}},
+	}
+}
+
+func readViewInputValue(state *slack.ViewState, blockID, actionID string) string {
+	if state == nil {
+		return ""
+	}
+	blockValues, ok := state.Values[blockID]
+	if !ok {
+		return ""
+	}
+	value, ok := blockValues[actionID]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(value.Value)
 }
 
 func (c *Channel) sendSkillInstallConfirmation(
