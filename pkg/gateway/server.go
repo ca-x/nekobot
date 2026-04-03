@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +59,8 @@ type Client struct {
 	session  agent.SessionInterface
 	userID   string
 	username string
+	connectedAt time.Time
+	remoteAddr  string
 }
 
 // Server is the WebSocket/REST gateway server.
@@ -190,12 +193,14 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := &Client{
-		id:       clientID,
-		conn:     conn,
-		send:     make(chan []byte, 256),
-		session:  sess,
-		userID:   userID,
-		username: username,
+		id:          clientID,
+		conn:        conn,
+		send:        make(chan []byte, 256),
+		session:     sess,
+		userID:      userID,
+		username:    username,
+		connectedAt: time.Now().UTC(),
+		remoteAddr:  r.RemoteAddr,
 	}
 
 	s.mu.Lock()
@@ -457,14 +462,36 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	conns := make([]map[string]string, 0, len(s.clients))
+	type connectionStatus struct {
+		ID          string  `json:"id"`
+		UserID      string  `json:"user_id"`
+		Username    string  `json:"username"`
+		SessionID   *string `json:"session_id"`
+		ConnectedAt string  `json:"connected_at"`
+		RemoteAddr  string  `json:"remote_addr"`
+	}
+
+	conns := make([]connectionStatus, 0, len(s.clients))
 	for _, client := range s.clients {
-		conns = append(conns, map[string]string{
-			"id":       client.id,
-			"user_id":  client.userID,
-			"username": client.username,
+		var sessionID *string
+		if identifiable, ok := client.session.(interface{ GetID() string }); ok {
+			id := strings.TrimSpace(identifiable.GetID())
+			if id != "" {
+				sessionID = &id
+			}
+		}
+		conns = append(conns, connectionStatus{
+			ID:          client.id,
+			UserID:      client.userID,
+			Username:    client.username,
+			SessionID:   sessionID,
+			ConnectedAt: client.connectedAt.UTC().Format(time.RFC3339),
+			RemoteAddr:  client.remoteAddr,
 		})
 	}
+	sort.Slice(conns, func(i, j int) bool {
+		return conns[i].ID < conns[j].ID
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(conns); err != nil {

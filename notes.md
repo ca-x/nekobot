@@ -3578,3 +3578,38 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/gateway -run 'TestDeleteConnectionEndpoint(RemovesClient|ReturnsNotFoundForUnknownClient|RequiresAuth)$'`
   - `go test -count=1 ./pkg/gateway`
   - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway 连接列表稳定化补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - 为 `Client` 新增：
+    - `connectedAt`
+    - `remoteAddr`
+  - websocket 建连时现在会记录连接建立时间和远端地址。
+  - `GET /api/v1/connections` 现在返回稳定按 `id` 排序的连接列表，而不是直接泄露 Go map 遍历顺序。
+  - 连接列表返回体补上基本控制面元数据：
+    - `connected_at`
+    - `remote_addr`
+    - `session_id`
+- `pkg/gateway/server_test.go`
+  - 强化 `TestConnectionsEndpoint`，锁定：
+    - 返回顺序稳定
+    - 元数据字段存在且值正确
+  - 新增 `TestStatusEndpointCountsConnectionsDeterministically`，补一个最小状态端点回归。
+
+### 当前语义
+- 这一步仍然只做“连接可观测性”最小增强，不混入：
+  - richer connection state machine
+  - IP / rate limit
+  - pairing / scope
+  - 更多 runtime diagnostics
+- 目标是先让 gateway 控制面返回可读、可比较、不会因 map 顺序抖动的连接视图。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'Test(ConnectionsEndpoint|StatusEndpointCountsConnectionsDeterministically)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'Test(ConnectionsEndpoint|StatusEndpointCountsConnectionsDeterministically)$'`
+  - `go test -count=1 ./pkg/gateway`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`

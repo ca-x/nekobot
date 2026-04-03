@@ -22,6 +22,15 @@
   - `go test -count=1 ./pkg/gateway` passed.
   - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
 
+- Completed gateway control-plane hardening phase 4 (stable connection list metadata):
+  - extended gateway clients with connection metadata capture for `connected_at` and `remote_addr`.
+  - changed `GET /api/v1/connections` to return a stable, sorted connection list with `session_id`, `connected_at`, and `remote_addr` fields instead of depending on Go map iteration order.
+  - added regression coverage in `pkg/gateway/server_test.go` for sorted connection output and status reporting with active connections.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(ConnectionsEndpoint|StatusEndpointCountsConnectionsDeterministically)$'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/gateway` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+
 - Completed conversation/thread binding slice 2 (deterministic query order):
   - added `TestServiceBindingQueriesReturnDeterministicConversationOrder` in `pkg/conversationbindings/service_test.go` to lock a real missing contract with TDD.
   - confirmed RED first: `ListBindings()` returned `[chat-b chat-a]` when bindings were created in non-sorted order.

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
@@ -160,6 +162,24 @@ func TestStatusEndpoint(t *testing.T) {
 func TestConnectionsEndpoint(t *testing.T) {
 	s, token := newAuthedTestServer(t)
 
+	now := time.Unix(1_700_000_000, 0).UTC()
+	s.clients["client-b"] = &Client{
+		id:          "client-b",
+		send:        make(chan []byte, 1),
+		userID:      "user-b",
+		username:    "bob",
+		connectedAt: now.Add(2 * time.Minute),
+		remoteAddr:  "10.0.0.2:1234",
+	}
+	s.clients["client-a"] = &Client{
+		id:          "client-a",
+		send:        make(chan []byte, 1),
+		userID:      "user-a",
+		username:    "alice",
+		connectedAt: now,
+		remoteAddr:  "10.0.0.1:1234",
+	}
+
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
@@ -169,12 +189,33 @@ func TestConnectionsEndpoint(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var body []map[string]string
+	var body []map[string]any
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode connections response: %v", err)
 	}
-	if len(body) != 0 {
-		t.Fatalf("expected 0 connections, got %d", len(body))
+	if len(body) != 2 {
+		t.Fatalf("expected 2 connections, got %d", len(body))
+	}
+	if got := body[0]["id"]; got != "client-a" {
+		t.Fatalf("expected first connection client-a, got %v", got)
+	}
+	if got := body[1]["id"]; got != "client-b" {
+		t.Fatalf("expected second connection client-b, got %v", got)
+	}
+	if got := body[0]["user_id"]; got != "user-a" {
+		t.Fatalf("expected first user_id user-a, got %v", got)
+	}
+	if got := body[0]["username"]; got != "alice" {
+		t.Fatalf("expected first username alice, got %v", got)
+	}
+	if got := body[0]["remote_addr"]; got != "10.0.0.1:1234" {
+		t.Fatalf("expected first remote_addr, got %v", got)
+	}
+	if got := body[0]["connected_at"]; got != now.Format(time.RFC3339) {
+		t.Fatalf("expected first connected_at %q, got %v", now.Format(time.RFC3339), got)
+	}
+	if got := body[0]["session_id"]; got != nil {
+		t.Fatalf("expected nil session_id without session, got %v", got)
 	}
 }
 
@@ -256,6 +297,24 @@ func TestDeleteConnectionEndpointRequiresAuth(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestStatusEndpointCountsConnectionsDeterministically(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.clients["client-b"] = &Client{id: "client-b", send: make(chan []byte, 1)}
+	s.clients["client-a"] = &Client{id: "client-a", send: make(chan []byte, 1)}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "\"connections\":2") {
+		t.Fatalf("expected response to report 2 connections, got %s", rec.Body.String())
 	}
 }
 
