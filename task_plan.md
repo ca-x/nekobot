@@ -82,6 +82,9 @@
       - 不改写 session/history
       - 不阻断请求
       - 不做自动 summary / pruning
+    - 已补齐 `route_result.preflight.action` 的 websocket 透传契约：
+      - ChatPage 现在能真正收到并显示后端 preflight action
+      - 不新增动作语义，仅补齐已存在字段的对外输出
 
 ### P1 次级收尾
 - `closure_task_plan.md` 中遗留的 `Phase 5: Verify, commit, and deliver` 仍未在主计划中正式关闭。
@@ -110,6 +113,7 @@
     - 以 `preflight decision` 结构暴露只读决策结果
     - 以 `preflight.action` 暴露建议动作
     - 对 `compact_before_run` 执行一次瞬时 outbound compression
+    - 通过 websocket `route_result.preflight.action` 把建议动作原样透传给 WebUI
   - 当前仍然**不允许**：
     - 对 `warning/consider_compaction` 自动 compaction
     - 自动 pruning

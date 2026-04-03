@@ -298,6 +298,22 @@
 - `go test -count=1 ./pkg/agent -run 'TestChatWithPromptContextDetailed_(AutoCompressesCriticalPreflightBeforeLegacyCall|DoesNotAutoCompressWarningPreflightBeforeLegacyCall|AutoCompressesCriticalPreflightBeforeBladesCall)$'`
 - `go test -count=1 ./pkg/webui -run TestChatRouteStateJSONIncludesContextPressureFields`
 
+## 2026-04-03 Context Economy preflight action websocket 契约补记
+
+### 本轮完成
+- `pkg/webui/server.go`
+  - `chatRoutePreflightState` 已新增 `action` 字段。
+  - chat websocket 的 `route_result.preflight` 现在会透传 `routeResult.Preflight.Action`。
+- `pkg/webui/server_chat_test.go`
+  - 已补 JSON 契约测试，锁定 `preflight.action` 会进入 websocket route payload。
+
+### 当前意义
+- `ChatPage` 之前已经优先读取 `routeResult.preflight.action`，但后端没有真正发出这个字段。
+- 这一步只补齐现有 contract gap，不改变任何 preflight 语义，也不引入新的 runtime 行为。
+
+### 本轮验证
+- `go test -count=1 ./pkg/webui -run '^TestChatRouteStateJSONIncludesContextPressureFields$'`
+
 ## 2026-04-03 Context Economy orchestrator 对齐补记
 
 ### 本轮完成

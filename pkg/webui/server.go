@@ -5565,21 +5565,22 @@ type chatRouteSettings struct {
 }
 
 type chatRouteState struct {
-	RequestedProvider string   `json:"requested_provider"`
-	RequestedModel    string   `json:"requested_model"`
-	RequestedFallback []string `json:"requested_fallback"`
-	ResolvedOrder     []string `json:"resolved_order"`
-	ActualProvider    string   `json:"actual_provider"`
-	ActualModel       string   `json:"actual_model"`
+	RequestedProvider     string                   `json:"requested_provider"`
+	RequestedModel        string                   `json:"requested_model"`
+	RequestedFallback     []string                 `json:"requested_fallback"`
+	ResolvedOrder         []string                 `json:"resolved_order"`
+	ActualProvider        string                   `json:"actual_provider"`
+	ActualModel           string                   `json:"actual_model"`
 	Preflight             *chatRoutePreflightState `json:"preflight,omitempty"`
-	ContextBudgetStatus   string   `json:"context_budget_status,omitempty"`
-	ContextBudgetReasons  []string `json:"context_budget_reasons,omitempty"`
-	CompactionRecommended bool     `json:"compaction_recommended,omitempty"`
-	CompactionStrategy    string   `json:"compaction_strategy,omitempty"`
-	RuntimeID         string   `json:"runtime_id,omitempty"`
+	ContextBudgetStatus   string                   `json:"context_budget_status,omitempty"`
+	ContextBudgetReasons  []string                 `json:"context_budget_reasons,omitempty"`
+	CompactionRecommended bool                     `json:"compaction_recommended,omitempty"`
+	CompactionStrategy    string                   `json:"compaction_strategy,omitempty"`
+	RuntimeID             string                   `json:"runtime_id,omitempty"`
 }
 
 type chatRoutePreflightState struct {
+	Action        string                   `json:"action,omitempty"`
 	BudgetStatus  string                   `json:"budget_status,omitempty"`
 	BudgetReasons []string                 `json:"budget_reasons,omitempty"`
 	Compaction    chatRouteCompactionState `json:"compaction"`
@@ -5980,13 +5981,14 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Timestamp: time.Now().Unix(),
 				SessionID: sessionID,
 				Route: &chatRouteState{
-					RequestedProvider:     routeResult.RequestedProvider,
-					RequestedModel:        routeResult.RequestedModel,
-					RequestedFallback:     append([]string(nil), routeResult.RequestedFallback...),
-					ResolvedOrder:         append([]string(nil), routeResult.ResolvedOrder...),
-					ActualProvider:        routeResult.ActualProvider,
-					ActualModel:           routeResult.ActualModel,
+					RequestedProvider: routeResult.RequestedProvider,
+					RequestedModel:    routeResult.RequestedModel,
+					RequestedFallback: append([]string(nil), routeResult.RequestedFallback...),
+					ResolvedOrder:     append([]string(nil), routeResult.ResolvedOrder...),
+					ActualProvider:    routeResult.ActualProvider,
+					ActualModel:       routeResult.ActualModel,
 					Preflight: &chatRoutePreflightState{
+						Action:        routeResult.Preflight.Action,
 						BudgetStatus:  routeResult.Preflight.BudgetStatus,
 						BudgetReasons: append([]string(nil), routeResult.Preflight.BudgetReasons...),
 						Compaction: chatRouteCompactionState{

@@ -19,13 +19,14 @@ import (
 
 func TestChatRouteStateJSONIncludesContextPressureFields(t *testing.T) {
 	state := chatRouteState{
-		RequestedProvider:     "openai",
-		RequestedModel:        "gpt-5.4",
-		RequestedFallback:     []string{"anthropic"},
-		ResolvedOrder:         []string{"openai", "anthropic"},
-		ActualProvider:        "openai",
-		ActualModel:           "gpt-5.4",
+		RequestedProvider: "openai",
+		RequestedModel:    "gpt-5.4",
+		RequestedFallback: []string{"anthropic"},
+		ResolvedOrder:     []string{"openai", "anthropic"},
+		ActualProvider:    "openai",
+		ActualModel:       "gpt-5.4",
 		Preflight: &chatRoutePreflightState{
+			Action:        "consider_compaction",
 			BudgetStatus:  "warning",
 			BudgetReasons: []string{"Approximate prompt chars are near the configured max tokens budget."},
 			Compaction: chatRouteCompactionState{
@@ -65,6 +66,9 @@ func TestChatRouteStateJSONIncludesContextPressureFields(t *testing.T) {
 	}
 	if preflight["budget_status"] != "warning" {
 		t.Fatalf("unexpected preflight budget_status: %+v", preflight["budget_status"])
+	}
+	if preflight["action"] != "consider_compaction" {
+		t.Fatalf("unexpected preflight action: %+v", preflight["action"])
 	}
 	compaction, ok := preflight["compaction"].(map[string]any)
 	if !ok {
