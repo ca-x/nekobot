@@ -13,6 +13,15 @@
   - `go test -count=1 ./pkg/gateway` passed.
   - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
 
+- Completed gateway control-plane hardening phase 3 (connection delete endpoint):
+  - added `DELETE /api/v1/connections/{id}` in `pkg/gateway/server.go` so the control plane can actively terminate a single websocket client connection.
+  - kept the endpoint behind the same JWT auth gate used by the other control-plane REST endpoints.
+  - added regression coverage in `pkg/gateway/server_test.go` for successful removal, unknown-client `404`, and unauthenticated `401`.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'TestDeleteConnectionEndpoint(RemovesClient|ReturnsNotFoundForUnknownClient|RequiresAuth)$'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/gateway` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+
 - Completed conversation/thread binding slice 2 (deterministic query order):
   - added `TestServiceBindingQueriesReturnDeterministicConversationOrder` in `pkg/conversationbindings/service_test.go` to lock a real missing contract with TDD.
   - confirmed RED first: `ListBindings()` returned `[chat-b chat-a]` when bindings were created in non-sorted order.

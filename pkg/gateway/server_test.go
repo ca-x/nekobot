@@ -202,6 +202,63 @@ func TestGatewayConnectionsEndpointRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestDeleteConnectionEndpointRemovesClient(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	client := &Client{
+		id:       "test-client",
+		send:     make(chan []byte, 1),
+		userID:   "user-1",
+		username: "alice",
+	}
+	s.clients[client.id] = client
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections/"+client.id, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+	if len(s.clients) != 0 {
+		t.Fatalf("expected client to be removed, got %d active clients", len(s.clients))
+	}
+	select {
+	case _, ok := <-client.send:
+		if ok {
+			t.Fatal("expected client send channel to be closed")
+		}
+	default:
+		t.Fatal("expected client send channel to be closed")
+	}
+}
+
+func TestDeleteConnectionEndpointReturnsNotFoundForUnknownClient(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections/missing", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestDeleteConnectionEndpointRequiresAuth(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections/test-client", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
 func TestWSChatRequiresAuth(t *testing.T) {
 	s := newTestServer(t)
 

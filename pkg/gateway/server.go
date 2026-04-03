@@ -109,6 +109,7 @@ func (s *Server) setupRoutes() {
 	// REST endpoints
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
 	mux.HandleFunc("GET /api/v1/connections", s.handleConnections)
+	mux.HandleFunc("DELETE /api/v1/connections/{id}", s.handleDeleteConnection)
 
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -469,6 +470,30 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(conns); err != nil {
 		s.logger.Warn("Failed to encode gateway connections", zap.Error(err))
 	}
+}
+
+func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuthenticatedAPI(w, r) {
+		return
+	}
+
+	clientID := strings.TrimSpace(r.PathValue("id"))
+	if clientID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.mu.RLock()
+	client, ok := s.clients[clientID]
+	s.mu.RUnlock()
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.removeClient(client)
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) requireAuthenticatedAPI(w http.ResponseWriter, r *http.Request) bool {

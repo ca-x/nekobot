@@ -3548,3 +3548,33 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointRequiresAuth|ConnectionsEndpointRequiresAuth)|StatusEndpoint|ConnectionsEndpoint)$'`
   - `go test -count=1 ./pkg/gateway`
   - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway 连接断开控制面补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - 新增 `DELETE /api/v1/connections/{id}`。
+  - 该接口复用现有 `requireAuthenticatedAPI()`，只允许已鉴权调用。
+  - 命中已存在连接时，会主动移除 client、关闭其 send channel，并返回 `204 No Content`。
+  - 目标连接不存在时返回 `404 Not Found`。
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestDeleteConnectionEndpointRemovesClient`
+    - `TestDeleteConnectionEndpointReturnsNotFoundForUnknownClient`
+    - `TestDeleteConnectionEndpointRequiresAuth`
+
+### 当前语义
+- 这一步仍然只扩一个最小的真实控制面动作，不混入：
+  - 批量踢连接
+  - IP / rate limit
+  - pairing / scope
+  - 更复杂的 connection metadata protocol
+- 目标是让 gateway 控制面不只会“看连接”，还可以安全地管理单条 websocket 连接生命周期。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'TestDeleteConnectionEndpoint(RemovesClient|ReturnsNotFoundForUnknownClient|RequiresAuth)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'TestDeleteConnectionEndpoint(RemovesClient|ReturnsNotFoundForUnknownClient|RequiresAuth)$'`
+  - `go test -count=1 ./pkg/gateway`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`
