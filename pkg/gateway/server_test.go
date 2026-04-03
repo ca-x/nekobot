@@ -774,6 +774,51 @@ func TestWSChatAllowsRequestedLegacyGatewaySessionWithEmptySource(t *testing.T) 
 		t.Fatalf("expected legacy session id, got %q", msg.SessionID)
 	}
 }
+
+func TestWSChatRejectsSecondLiveConnectionForRequestedSession(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	if _, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway); err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	server := httptest.NewServer(s.mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/chat?session_id=" + url.QueryEscape("paired-session")
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+
+	firstConn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		status := "<nil>"
+		if resp != nil {
+			status = fmt.Sprintf("%d", resp.StatusCode)
+		}
+		t.Fatalf("first websocket dial failed: %v (status=%s)", err, status)
+	}
+	defer firstConn.Close()
+
+	var firstMsg WSMessage
+	if err := firstConn.ReadJSON(&firstMsg); err != nil {
+		t.Fatalf("read first welcome message: %v", err)
+	}
+	if firstMsg.SessionID != "paired-session" {
+		t.Fatalf("expected first session id paired-session, got %q", firstMsg.SessionID)
+	}
+
+	secondConn, secondResp, secondErr := websocket.DefaultDialer.Dial(wsURL, header)
+	if secondErr == nil {
+		secondConn.Close()
+		t.Fatal("expected second websocket dial to fail for already-active paired session")
+	}
+	if secondResp == nil {
+		t.Fatalf("expected second handshake response, got nil error=%v", secondErr)
+	}
+	if secondResp.StatusCode != http.StatusConflict {
+		t.Fatalf("expected second dial to return 409, got %d", secondResp.StatusCode)
+	}
+}
 func TestProcessMessagePassesExplicitRuntimeIDToRouter(t *testing.T) {
 	s := newTestServer(t)
 	router := &stubGatewayRouter{reply: "router reply"}

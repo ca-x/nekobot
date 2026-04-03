@@ -224,6 +224,10 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid session_id"}`, http.StatusBadRequest)
 		return
 	}
+	if err := s.ensureSessionNotAlreadyAttached(sessionID); err != nil {
+		http.Error(w, `{"error":"session already attached"}`, http.StatusConflict)
+		return
+	}
 
 	// Upgrade to WebSocket
 	upgrader.CheckOrigin = s.checkOrigin
@@ -302,6 +306,22 @@ func (s *Server) resolveGatewaySessionID(r *http.Request, fallbackSessionID stri
 		return "", fmt.Errorf("session %q is not a gateway session", requestedSessionID)
 	}
 	return requestedSessionID, nil
+}
+
+func (s *Server) ensureSessionNotAlreadyAttached(sessionID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, client := range s.clients {
+		if gatewaySessionID(client) == sessionID {
+			return fmt.Errorf("session %q already attached to an active websocket client", sessionID)
+		}
+	}
+	return nil
 }
 
 func (s *Server) readPump(client *Client) {
