@@ -4,6 +4,15 @@
 
 ## 2026-04-03
 
+- Completed gateway control-plane hardening phase 2 (REST auth gate):
+  - added a shared `requireAuthenticatedAPI()` gate in `pkg/gateway/server.go`.
+  - changed `GET /api/v1/status` and `GET /api/v1/connections` to require the same JWT authentication path already used by websocket clients instead of exposing control-plane data anonymously.
+  - added regression coverage in `pkg/gateway/server_test.go` for both unauthorized and authorized REST access paths.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointRequiresAuth|ConnectionsEndpointRequiresAuth)|StatusEndpoint|ConnectionsEndpoint)$'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/gateway` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+
 - Completed conversation/thread binding slice 2 (deterministic query order):
   - added `TestServiceBindingQueriesReturnDeterministicConversationOrder` in `pkg/conversationbindings/service_test.go` to lock a real missing contract with TDD.
   - confirmed RED first: `ListBindings()` returned `[chat-b chat-a]` when bindings were created in non-sorted order.

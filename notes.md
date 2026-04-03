@@ -3516,3 +3516,35 @@ type CronJobState struct {
 - GREEN:
   - `go test -count=1 ./pkg/gateway -run 'TestGatewayCheckOrigin(AllowsConfiguredOrigins|AllowsRequestsWithoutOrigin)'`
   - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway REST 控制面鉴权补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - 新增 `requireAuthenticatedAPI()`。
+  - `handleStatus()` 和 `handleConnections()` 现在统一复用现有 `authenticateWS()` 的 JWT 校验。
+  - 未携带有效 token 的 REST 控制面请求现在返回 `401 unauthorized`，不再默认裸露状态与连接信息。
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestGatewayStatusEndpointRequiresAuth`
+    - `TestGatewayConnectionsEndpointRequiresAuth`
+  - 同时把原有 `TestStatusEndpoint`、`TestConnectionsEndpoint` 改成显式带 JWT 的成功路径，锁定控制面“鉴权失败返回 401、鉴权成功才返回 200”的语义。
+
+### 当前语义
+- 这一步继续只收口 gateway 控制面边界，不混入：
+  - IP 限制
+  - scope / pairing
+  - rate limit
+  - 更完整 control plane protocol
+- 目标是先消除最直接的信息暴露面：
+  - `/api/v1/status`
+  - `/api/v1/connections`
+  现在已经和 websocket 一样要求有效 JWT。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointRequiresAuth|ConnectionsEndpointRequiresAuth)|StatusEndpoint|ConnectionsEndpoint)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointRequiresAuth|ConnectionsEndpointRequiresAuth)|StatusEndpoint|ConnectionsEndpoint)$'`
+  - `go test -count=1 ./pkg/gateway`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`

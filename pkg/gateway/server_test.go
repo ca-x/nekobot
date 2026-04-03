@@ -7,10 +7,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
+
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/session"
+	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/version"
 )
 
@@ -62,6 +65,53 @@ func newTestServer(t *testing.T) *Server {
 	return s
 }
 
+func newAuthedTestServer(t *testing.T) (*Server, string) {
+	t.Helper()
+
+	s := newTestServer(t)
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	passwordHash, err := config.HashPassword("secret")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if err := config.SaveAdminCredentialFromConfig(cfg, &config.AdminCredential{
+		Username:     "admin",
+		Nickname:     "Admin",
+		PasswordHash: passwordHash,
+		JWTSecret:    "gateway-jwt-secret",
+	}); err != nil {
+		t.Fatalf("save admin credential: %v", err)
+	}
+
+	dbPath, err := config.RuntimeDBPath(cfg)
+	if err != nil {
+		t.Fatalf("runtime db path: %v", err)
+	}
+	client, err := ent.Open("sqlite3", "file:"+dbPath+"?_fk=1")
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": "admin",
+	})
+	tokenString, err := token.SignedString([]byte("gateway-jwt-secret"))
+	if err != nil {
+		t.Fatalf("sign jwt: %v", err)
+	}
+
+	s.entClient = client
+	return s, tokenString
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	s := newTestServer(t)
 
@@ -83,9 +133,10 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestStatusEndpoint(t *testing.T) {
-	s := newTestServer(t)
+	s, token := newAuthedTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
@@ -107,9 +158,10 @@ func TestStatusEndpoint(t *testing.T) {
 }
 
 func TestConnectionsEndpoint(t *testing.T) {
-	s := newTestServer(t)
+	s, token := newAuthedTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
@@ -123,6 +175,30 @@ func TestConnectionsEndpoint(t *testing.T) {
 	}
 	if len(body) != 0 {
 		t.Fatalf("expected 0 connections, got %d", len(body))
+	}
+}
+
+func TestGatewayStatusEndpointRequiresAuth(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestGatewayConnectionsEndpointRequiresAuth(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
 	}
 }
 

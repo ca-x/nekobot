@@ -424,6 +424,10 @@ func (s *Server) removeClient(client *Client) {
 // --- REST Handlers ---
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuthenticatedAPI(w, r) {
+		return
+	}
+
 	s.mu.RLock()
 	connCount := len(s.clients)
 	s.mu.RUnlock()
@@ -445,6 +449,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuthenticatedAPI(w, r) {
+		return
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -461,6 +469,14 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(conns); err != nil {
 		s.logger.Warn("Failed to encode gateway connections", zap.Error(err))
 	}
+}
+
+func (s *Server) requireAuthenticatedAPI(w http.ResponseWriter, r *http.Request) bool {
+	if _, _, err := s.authenticateWS(r); err != nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return false
+	}
+	return true
 }
 
 // --- Auth ---

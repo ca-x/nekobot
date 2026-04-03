@@ -196,7 +196,7 @@
 - [x] Phase 3: 形成独立实现计划并接入主计划引用
 - [x] Phase 4: 执行通用 binding service 首批收口
 - [x] Phase 5: 执行 WeChat runtime 消费者对齐与验证
-- [ ] Phase 6: 基于结果决定下一批切到 `gateway adoption` 还是 `Slack interactive callback`
+- [x] Phase 6: 基于结果决定下一批切到 `gateway adoption` 还是 `Slack interactive callback`
 
 ### Decisions Made
 - 当前优先级已明确调整为：先做 `conversation/thread binding`，后做 `Slack interactive callback` 具体业务闭环。
@@ -209,12 +209,13 @@
   - `sessionToBindingRecords()`
   现已统一按 `conversation_id` 稳定排序，避免消费者继续依赖写入顺序这一隐式行为。
 - WeChat runtime 本轮验证后无需代码改动，说明当前消费者可直接兼容这次通用契约收口。
+- 当前下一批主线已确定切到 `gateway control-plane hardening`，优先继续补控制面边界与连接治理，而不是先回到 Slack 继续扩 modal 业务。
 
 ### References
 - [`docs/superpowers/plans/2026-04-03-conversation-thread-binding.md`](/home/czyt/code/go/nekobot/docs/superpowers/plans/2026-04-03-conversation-thread-binding.md)
 
 ### Status
-**Phase 5 Completed** - 已完成 `conversationbindings.Service` 首个通用契约收口：补齐绑定查询结果的稳定排序语义，并用 WeChat runtime 做了消费者回归验证。下一步只剩 Phase 6，决定后续优先切 `gateway adoption` 还是回到 `Slack interactive callback` 业务闭环。
+**Completed** - 已完成 `conversationbindings.Service` 首个通用契约收口：补齐绑定查询结果的稳定排序语义，并用 WeChat runtime 做了消费者回归验证。后续已明确优先切到 `gateway control-plane hardening`，先继续收口 gateway 控制面与连接治理，再视结果回到 Slack interactive callback 的后续业务扩展。
 - [x] runtime model resolution 改造
   - `agent` 已优先通过 `modelroute` 解析 provider 对应的实际模型
   - route metadata 当前支持 `provider_model_id`
@@ -1797,7 +1798,7 @@
   - 位置：`pkg/memory/*`。
 - [ ] **Gateway 控制面与连接治理增强**
   - 现状：`pkg/gateway/server.go` 原先是开放 `CheckOrigin`、简单 WS/REST 模式；本轮已补第一层 origin allowlist，当前仍缺 IP/scope/rate limit/pairing 等更深治理。
-  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”。
+  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；本轮继续把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权。
   - 目标：补控制面协议与连接策略，避免 gateway 只停留在“聊天 socket”。
   - 来源：`goclaw/gateway/openclaw/*`。
   - 位置：`pkg/gateway/*`。
