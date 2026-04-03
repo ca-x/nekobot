@@ -258,6 +258,44 @@
 
 ### 当前验证
 - `go test -count=1 ./pkg/agent -run TestChatWithPromptContextDetailed_IncludesContextPressurePreview`
+
+## 2026-04-03 Context Economy 首个非只读 decision 点补记
+
+### 本轮完成
+- `pkg/agent/agent.go`
+  - `chatWithLegacyOrchestrator()` 现在会在首次 provider 调用前检查 `routeResult.Preflight.Action`。
+  - 当动作为 `compact_before_run` 时，对 outbound `providerMessages` 执行一次 `forceCompressMessages()`。
+- `pkg/agent/blades_runtime.go`
+  - `chatWithBladesOrchestrator()` 会把 `preflight.action` 传入 `bladesModelProvider`。
+  - `bladesModelProvider.Generate()` 会在首次底层 provider 调用前执行同样的一次性瞬时压缩。
+- `pkg/agent/agent_test.go`
+  - 已补 legacy critical 路径测试：
+    - 首次 provider request 已被压缩。
+    - session history 未被改写。
+  - 已补 blades critical 路径测试：
+    - 首次 provider request 已被压缩。
+    - session history 未被改写。
+  - 已补 warning 路径测试：
+    - `consider_compaction` 仅保留建议，不自动压缩。
+
+### 当前明确边界
+- 只对 `preflight.action == compact_before_run` 自动执行。
+- 只压缩一次首次 outbound request，不写回 session/history。
+- 不新增阻断逻辑。
+- 不自动生成摘要。
+- 不做 memory / managed prompts / file context pruning。
+- 如果 provider 之后仍报 context-limit，原有 retry-based emergency compression 逻辑继续保留。
+
+### 语义影响
+- `preflight` 从“只读建议”进入了最小真实执行路径，但仍保持 transient。
+- UI 看到的 `preflight/action` 元数据不变；变化仅在 runtime 首次实际发给模型的 messages。
+- 由于 preflight 是估算，仍可能出现：
+  - 预压缩后 provider 仍报 context-limit
+  - 同一次请求上再走原有 retry compression
+  这两者当前都接受，属于既有 emergency path 的延续
+
+### 本轮验证
+- `go test -count=1 ./pkg/agent -run 'TestChatWithPromptContextDetailed_(AutoCompressesCriticalPreflightBeforeLegacyCall|DoesNotAutoCompressWarningPreflightBeforeLegacyCall|AutoCompressesCriticalPreflightBeforeBladesCall)$'`
 - `go test -count=1 ./pkg/webui -run TestChatRouteStateJSONIncludesContextPressureFields`
 
 ## 2026-04-03 Context Economy orchestrator 对齐补记

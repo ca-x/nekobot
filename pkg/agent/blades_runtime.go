@@ -28,6 +28,7 @@ type bladesModelProvider struct {
 	primaryProvider string
 	providerOrder   []string
 	requestedModel  string
+	preflightAction string
 	clientCache     map[string]*providers.Client
 	mu              sync.RWMutex
 	lastRoute       ChatRouteSnapshot
@@ -39,12 +40,18 @@ type ChatRouteSnapshot struct {
 	Model    string
 }
 
-func newBladesModelProvider(a *Agent, primaryProvider string, providerOrder []string, requestedModel string) *bladesModelProvider {
+func newBladesModelProvider(
+	a *Agent,
+	primaryProvider string,
+	providerOrder []string,
+	requestedModel, preflightAction string,
+) *bladesModelProvider {
 	return &bladesModelProvider{
 		agent:           a,
 		primaryProvider: primaryProvider,
 		providerOrder:   providerOrder,
 		requestedModel:  requestedModel,
+		preflightAction: strings.TrimSpace(preflightAction),
 		clientCache:     make(map[string]*providers.Client),
 	}
 }
@@ -60,6 +67,18 @@ func (p *bladesModelProvider) Generate(ctx context.Context, req *blades.ModelReq
 	unifiedReq, err := p.toUnifiedRequest(req)
 	if err != nil {
 		return nil, err
+	}
+	if p.preflightAction == "compact_before_run" {
+		compressedMessages := forceCompressMessages(unifiedReq.Messages)
+		if len(compressedMessages) != len(unifiedReq.Messages) {
+			p.agent.logger.Info("Applying preflight message compression before first blades model call",
+				zap.Int("messages_before", len(unifiedReq.Messages)),
+				zap.Int("messages_after", len(compressedMessages)),
+				zap.Int("estimated_tokens", estimateTokens(compressedMessages)),
+			)
+		}
+		unifiedReq.Messages = compressedMessages
+		p.preflightAction = ""
 	}
 
 	const maxContextRetries = 2
@@ -562,7 +581,6 @@ func (a *Agent) chatWithBladesOrchestrator(
 	routeResult.ResolvedOrder = append([]string(nil), providerOrder...)
 	primaryProvider := providerOrder[0]
 
-	modelProvider := newBladesModelProvider(a, primaryProvider, providerOrder, model)
 	toolResolver, mcpResolver, err := a.buildBladesToolsResolver()
 	if state, ok := a.lookupACPSessionState(sess); ok && len(state.mcpServers) > 0 {
 		toolResolver, mcpResolver, err = a.buildBladesToolsResolverWithMCP(state.mcpServers)
@@ -583,6 +601,7 @@ func (a *Agent) chatWithBladesOrchestrator(
 		return "", routeResult, err
 	}
 	routeResult = a.enrichChatRouteResultWithContextPreview(routeResult, resolvedPrompts, promptCtx, userMessage)
+	modelProvider := newBladesModelProvider(a, primaryProvider, providerOrder, model, routeResult.Preflight.Action)
 	instruction := a.context.BuildSystemPromptWithInjected(resolvedPrompts)
 	agentOpts := []blades.AgentOption{
 		blades.WithModel(modelProvider),

@@ -83,12 +83,12 @@ type subagentAgentAdapter struct {
 
 // ChatRouteResult describes the routing request and the actual provider/model used.
 type ChatRouteResult struct {
-	RequestedProvider string
-	RequestedModel    string
-	RequestedFallback []string
-	ResolvedOrder     []string
-	ActualProvider    string
-	ActualModel       string
+	RequestedProvider     string
+	RequestedModel        string
+	RequestedFallback     []string
+	ResolvedOrder         []string
+	ActualProvider        string
+	ActualModel           string
 	Preflight             ContextPreflightDecision
 	ContextBudgetStatus   string
 	ContextBudgetReasons  []string
@@ -719,6 +719,17 @@ func (a *Agent) chatWithLegacyOrchestrator(
 
 	// Convert to provider format
 	providerMessages := a.convertToProviderMessages(messages)
+	if routeResult.Preflight.Action == "compact_before_run" {
+		compressedMessages := forceCompressMessages(providerMessages)
+		if len(compressedMessages) != len(providerMessages) {
+			a.logger.Info("Applying preflight message compression before first legacy model call",
+				zap.Int("messages_before", len(providerMessages)),
+				zap.Int("messages_after", len(compressedMessages)),
+				zap.Int("estimated_tokens", estimateTokens(compressedMessages)),
+			)
+		}
+		providerMessages = compressedMessages
+	}
 
 	// Tool definitions
 	toolDefs := a.convertToolDefinitions()

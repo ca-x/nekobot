@@ -75,7 +75,13 @@
     - 已完成 `AgentDefinition / prompt boundary` 最小桥接切片
     - 已完成 `context sources` explainability preview 与 chat route 只读透传
     - 已完成 `readonly preflight` 结构收口、`preflight.action` 暴露，以及 `legacy / blades` orchestrator parity
-    - 下一步进入首个真实执行路径上的非只读 decision 点，但暂不自动压缩
+    - 已完成首个真实执行路径上的非只读 decision 点：
+      - 仅当 `preflight.action == compact_before_run` 时
+      - 在首次模型调用前做一次瞬时 message compression
+      - 覆盖 `legacy / blades` orchestrator parity
+      - 不改写 session/history
+      - 不阻断请求
+      - 不做自动 summary / pruning
 
 ### P1 次级收尾
 - `closure_task_plan.md` 中遗留的 `Phase 5: Verify, commit, and deliver` 仍未在主计划中正式关闭。
@@ -102,11 +108,14 @@
     - preview explainability
     - chat route 透传 budget / compaction decision
     - 以 `preflight decision` 结构暴露只读决策结果
-    - 以 `preflight.action` 暴露建议动作，但不自动执行
+    - 以 `preflight.action` 暴露建议动作
+    - 对 `compact_before_run` 执行一次瞬时 outbound compression
   - 当前仍然**不允许**：
-    - 自动 compaction
+    - 对 `warning/consider_compaction` 自动 compaction
     - 自动 pruning
     - 因 budget 状态直接阻断请求
+    - 改写持久化 session/history
+    - 自动 summary 生成
   - `chat route` 的 context decision metadata 现在要求对齐所有主 orchestrator 路径：
     - legacy
     - blades

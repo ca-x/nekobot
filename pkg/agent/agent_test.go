@@ -1074,6 +1074,298 @@ func TestChatWithPromptContextDetailed_BladesIncludesContextPressurePreview(t *t
 	}
 }
 
+func TestChatWithPromptContextDetailed_AutoCompressesCriticalPreflightBeforeLegacyCall(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Orchestrator = orchestratorLegacy
+	cfg.Agents.Defaults.Provider = "test-primary"
+	cfg.Agents.Defaults.Model = "gpt-5.4"
+	cfg.Agents.Defaults.MaxTokens = 20
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Providers = []config.ProviderProfile{
+		{
+			Name:         "test-primary",
+			ProviderKind: failoverTestProviderKind(t, "primary"),
+		},
+	}
+
+	callCount := 0
+	var captured *providers.UnifiedRequest
+	registerFailoverTestProviderWithCapture(
+		t,
+		cfg.Providers[0].ProviderKind,
+		&callCount,
+		"final answer",
+		nil,
+		func(req *providers.UnifiedRequest) {
+			captured = req
+		},
+	)
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	sess := &testSession{
+		messages: []Message{
+			{Role: "user", Content: "first"},
+			{Role: "assistant", Content: "second"},
+			{Role: "user", Content: "third"},
+			{Role: "assistant", Content: "fourth"},
+		},
+	}
+
+	_, routeResult, err := ag.ChatWithPromptContextDetailed(
+		context.Background(),
+		sess,
+		strings.Repeat("x", 400),
+		PromptContext{
+			SessionID:         "webui-chat:tester",
+			Channel:           "webui",
+			RequestedProvider: "test-primary",
+			RequestedModel:    "gpt-5.4",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithPromptContextDetailed failed: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected one provider call, got %d", callCount)
+	}
+	if captured == nil {
+		t.Fatal("expected captured provider request")
+	}
+	if routeResult.Preflight.Action != "compact_before_run" {
+		t.Fatalf("expected compact_before_run preflight action, got %+v", routeResult.Preflight)
+	}
+
+	expectedBefore := ag.convertToProviderMessages(
+		ag.context.BuildMessagesWithPromptSet(
+			sess.GetMessages(),
+			strings.Repeat("x", 400),
+			prompts.ResolvedPromptSet{},
+		),
+	)
+	expectedAfter := forceCompressMessages(expectedBefore)
+	if len(captured.Messages) != len(expectedAfter) {
+		t.Fatalf("expected %d outbound messages after compression, got %d", len(expectedAfter), len(captured.Messages))
+	}
+	if captured.Messages[0].Content != expectedAfter[0].Content {
+		t.Fatalf("expected compressed system message note, got %q", captured.Messages[0].Content)
+	}
+	if reflect.DeepEqual(captured.Messages, expectedBefore) {
+		t.Fatalf("expected outbound request to differ from uncompressed messages")
+	}
+	if !reflect.DeepEqual(captured.Messages, expectedAfter) {
+		t.Fatalf("expected outbound request to match force-compressed messages")
+	}
+	if !reflect.DeepEqual(sess.GetMessages(), []Message{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "second"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "fourth"},
+	}) {
+		t.Fatalf("expected session history to remain unchanged, got %#v", sess.GetMessages())
+	}
+}
+
+func TestChatWithPromptContextDetailed_DoesNotAutoCompressWarningPreflightBeforeLegacyCall(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Orchestrator = orchestratorLegacy
+	cfg.Agents.Defaults.Provider = "test-primary"
+	cfg.Agents.Defaults.Model = "gpt-5.4"
+	cfg.Agents.Defaults.MaxTokens = 10_000
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Memory.Context.Enabled = true
+	cfg.Memory.Context.MaxChars = 100
+	cfg.Providers = []config.ProviderProfile{
+		{
+			Name:         "test-primary",
+			ProviderKind: failoverTestProviderKind(t, "primary"),
+		},
+	}
+
+	callCount := 0
+	var captured *providers.UnifiedRequest
+	registerFailoverTestProviderWithCapture(
+		t,
+		cfg.Providers[0].ProviderKind,
+		&callCount,
+		"final answer",
+		nil,
+		func(req *providers.UnifiedRequest) {
+			captured = req
+		},
+	)
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	if err := ag.context.GetMemory().WriteLongTerm(strings.Repeat("memory ", 20)); err != nil {
+		t.Fatalf("write long-term memory: %v", err)
+	}
+
+	_, routeResult, err := ag.ChatWithPromptContextDetailed(
+		context.Background(),
+		&testSession{},
+		"hello",
+		PromptContext{
+			SessionID:         "webui-chat:tester",
+			Channel:           "webui",
+			RequestedProvider: "test-primary",
+			RequestedModel:    "gpt-5.4",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithPromptContextDetailed failed: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected one provider call, got %d", callCount)
+	}
+	if captured == nil {
+		t.Fatal("expected captured provider request")
+	}
+	if routeResult.Preflight.Action != "consider_compaction" {
+		t.Fatalf("expected consider_compaction preflight action, got %+v", routeResult.Preflight)
+	}
+
+	expectedMessages := ag.convertToProviderMessages(
+		ag.context.BuildMessagesWithPromptSet(
+			nil,
+			"hello",
+			prompts.ResolvedPromptSet{},
+		),
+	)
+	if !reflect.DeepEqual(captured.Messages, expectedMessages) {
+		t.Fatalf("expected warning request to remain uncompressed")
+	}
+}
+
+func TestChatWithPromptContextDetailed_AutoCompressesCriticalPreflightBeforeBladesCall(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Orchestrator = orchestratorBlades
+	cfg.Agents.Defaults.Provider = "test-primary"
+	cfg.Agents.Defaults.Model = "gpt-5.4"
+	cfg.Agents.Defaults.MaxTokens = 20
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Providers = []config.ProviderProfile{
+		{
+			Name:         "test-primary",
+			ProviderKind: failoverTestProviderKind(t, "primary"),
+		},
+	}
+
+	callCount := 0
+	var captured *providers.UnifiedRequest
+	registerFailoverTestProviderWithCapture(
+		t,
+		cfg.Providers[0].ProviderKind,
+		&callCount,
+		"final answer",
+		nil,
+		func(req *providers.UnifiedRequest) {
+			captured = req
+		},
+	)
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	sess := &testSession{
+		messages: []Message{
+			{Role: "user", Content: "first"},
+			{Role: "assistant", Content: "second"},
+			{Role: "user", Content: "third"},
+			{Role: "assistant", Content: "fourth"},
+		},
+	}
+
+	_, routeResult, err := ag.ChatWithPromptContextDetailed(
+		context.Background(),
+		sess,
+		strings.Repeat("x", 400),
+		PromptContext{
+			SessionID:         "webui-chat:tester",
+			Channel:           "webui",
+			RequestedProvider: "test-primary",
+			RequestedModel:    "gpt-5.4",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithPromptContextDetailed failed: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected one provider call, got %d", callCount)
+	}
+	if captured == nil {
+		t.Fatal("expected captured provider request")
+	}
+	if routeResult.Preflight.Action != "compact_before_run" {
+		t.Fatalf("expected compact_before_run preflight action, got %+v", routeResult.Preflight)
+	}
+
+	expectedBefore := &providers.UnifiedRequest{
+		Model:       "gpt-5.4",
+		MaxTokens:   ag.config.Agents.Defaults.MaxTokens,
+		Temperature: ag.config.Agents.Defaults.Temperature,
+		Messages: append(
+			append(
+				[]providers.UnifiedMessage{{
+					Role:    "system",
+					Content: ag.context.BuildSystemPromptWithInjected(prompts.ResolvedPromptSet{}),
+				}},
+				ag.convertToProviderMessages(sanitizeHistory(trimTrailingCurrentUserMessage(sess.GetMessages(), strings.Repeat("x", 400))))...,
+			),
+			providers.UnifiedMessage{
+				Role:    "user",
+				Content: strings.Repeat("x", 400),
+			},
+		),
+	}
+	expectedAfter := forceCompressMessages(expectedBefore.Messages)
+	if reflect.DeepEqual(captured.Messages, expectedBefore.Messages) {
+		t.Fatalf("expected blades outbound request to differ from uncompressed messages")
+	}
+	if !reflect.DeepEqual(captured.Messages, expectedAfter) {
+		t.Fatalf("expected blades outbound request to match force-compressed messages")
+	}
+	if !reflect.DeepEqual(sess.GetMessages(), []Message{
+		{Role: "user", Content: "first"},
+		{Role: "assistant", Content: "second"},
+		{Role: "user", Content: "third"},
+		{Role: "assistant", Content: "fourth"},
+	}) {
+		t.Fatalf("expected session history to remain unchanged, got %#v", sess.GetMessages())
+	}
+}
+
 func TestBuildMessages_DeduplicatesTrailingCurrentUserMessage(t *testing.T) {
 	workspace := t.TempDir()
 	cb := NewContextBuilderWithMemory(workspace, promptmemory.NewStoreWithBackend(workspace, promptmemory.NewNoopBackend()))
@@ -2223,6 +2515,7 @@ type failoverTestAdaptor struct {
 	callCount *int
 	content   string
 	err       error
+	onRequest func(*providers.UnifiedRequest)
 }
 
 func (a *failoverTestAdaptor) Init(info *providers.RelayInfo) error {
@@ -2242,6 +2535,26 @@ func (a *failoverTestAdaptor) SetupRequestHeader(req *http.Request, info *provid
 }
 
 func (a *failoverTestAdaptor) ConvertRequest(unified *providers.UnifiedRequest, info *providers.RelayInfo) ([]byte, error) {
+	if a.onRequest != nil && unified != nil {
+		clone := &providers.UnifiedRequest{
+			Model:       unified.Model,
+			MaxTokens:   unified.MaxTokens,
+			Temperature: unified.Temperature,
+		}
+		if len(unified.Messages) > 0 {
+			clone.Messages = append([]providers.UnifiedMessage(nil), unified.Messages...)
+		}
+		if len(unified.Tools) > 0 {
+			clone.Tools = append([]providers.UnifiedTool(nil), unified.Tools...)
+		}
+		if unified.Extra != nil {
+			clone.Extra = map[string]interface{}{}
+			for k, v := range unified.Extra {
+				clone.Extra[k] = v
+			}
+		}
+		a.onRequest(clone)
+	}
 	_ = unified
 	_ = info
 	return []byte(`{"ok":true}`), nil
@@ -2287,9 +2600,25 @@ func failoverTestProviderKind(t *testing.T, label string) string {
 }
 
 func registerFailoverTestProvider(t *testing.T, providerKind string, callCount *int, content string, err error) {
+	registerFailoverTestProviderWithCapture(t, providerKind, callCount, content, err, nil)
+}
+
+func registerFailoverTestProviderWithCapture(
+	t *testing.T,
+	providerKind string,
+	callCount *int,
+	content string,
+	err error,
+	onRequest func(*providers.UnifiedRequest),
+) {
 	t.Helper()
 	providers.Register(providerKind, func() providers.Adaptor {
-		return &failoverTestAdaptor{callCount: callCount, content: content, err: err}
+		return &failoverTestAdaptor{
+			callCount: callCount,
+			content:   content,
+			err:       err,
+			onRequest: onRequest,
+		}
 	})
 	t.Cleanup(func() {
 		providers.Unregister(providerKind)
