@@ -924,6 +924,95 @@ func TestProcessMessageUsesPairedSessionIDForRouterAndResponse(t *testing.T) {
 	}
 }
 
+func TestProcessMessageRejectsMismatchedInboundSessionID(t *testing.T) {
+	s := newTestServer(t)
+	router := &stubGatewayRouter{reply: "router reply"}
+	s.router = router
+
+	sess, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	client := &Client{
+		id:       "connection-1",
+		send:     make(chan []byte, 1),
+		userID:   "user-1",
+		username: "alice",
+		session:  sess,
+	}
+
+	s.processMessage(client, WSMessage{
+		Type:      "message",
+		Content:   "hello",
+		SessionID: "other-session",
+	})
+
+	select {
+	case payload := <-client.send:
+		var msg WSMessage
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			t.Fatalf("unmarshal ws message: %v", err)
+		}
+		if msg.Type != "error" {
+			t.Fatalf("expected error message, got %#v", msg)
+		}
+		if !strings.Contains(msg.Content, "session mismatch") {
+			t.Fatalf("expected session mismatch error, got %q", msg.Content)
+		}
+	default:
+		t.Fatal("expected websocket error reply")
+	}
+	if got := router.lastRuntimeID; got != "" {
+		t.Fatalf("expected router not to be called, got runtime id %q", got)
+	}
+}
+
+func TestProcessMessageAllowsMatchingInboundSessionID(t *testing.T) {
+	s := newTestServer(t)
+	router := &stubGatewayRouter{reply: "router reply"}
+	s.router = router
+
+	sess, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	client := &Client{
+		id:       "connection-1",
+		send:     make(chan []byte, 1),
+		userID:   "user-1",
+		username: "alice",
+		session:  sess,
+	}
+
+	s.processMessage(client, WSMessage{
+		Type:      "message",
+		Content:   "hello",
+		SessionID: "paired-session",
+		RuntimeID: "runtime-explicit",
+	})
+
+	select {
+	case payload := <-client.send:
+		var msg WSMessage
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			t.Fatalf("unmarshal ws message: %v", err)
+		}
+		if msg.Type != "message" {
+			t.Fatalf("expected message reply, got %#v", msg)
+		}
+		if msg.SessionID != "paired-session" {
+			t.Fatalf("expected paired session_id, got %q", msg.SessionID)
+		}
+	default:
+		t.Fatal("expected websocket reply")
+	}
+	if got := router.lastRuntimeID; got != "runtime-explicit" {
+		t.Fatalf("expected runtime id %q, got %q", "runtime-explicit", got)
+	}
+}
+
 func TestProcessMessageDoesNotFallbackWhenExplicitRuntimeFails(t *testing.T) {
 	s := newTestServer(t)
 	router := &stubGatewayRouter{err: context.DeadlineExceeded}

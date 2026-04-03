@@ -437,11 +437,17 @@ func (s *Server) writePump(client *Client) {
 }
 
 func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
+	activeSessionID := gatewaySessionID(client)
+	if msgSessionID := strings.TrimSpace(wsMsg.SessionID); msgSessionID != "" && msgSessionID != activeSessionID {
+		s.sendError(client, fmt.Sprintf("session mismatch: active=%s message=%s", activeSessionID, msgSessionID))
+		return
+	}
+
 	// Also send via bus for logging/routing
 	busMsg := &bus.Message{
 		ID:        uuid.New().String(),
 		ChannelID: "websocket",
-		SessionID: gatewaySessionID(client),
+		SessionID: activeSessionID,
 		UserID:    client.userID,
 		Username:  client.username,
 		Type:      bus.MessageTypeText,
@@ -459,7 +465,7 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 			context.Background(),
 			client.userID,
 			client.username,
-			gatewaySessionID(client),
+			activeSessionID,
 			wsMsg.Content,
 			wsMsg.RuntimeID,
 		)
@@ -495,7 +501,7 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 	respMsg := WSMessage{
 		Type:      "message",
 		Content:   response,
-		SessionID: gatewaySessionID(client),
+		SessionID: activeSessionID,
 		MessageID: uuid.New().String(),
 		Timestamp: time.Now().Unix(),
 	}
