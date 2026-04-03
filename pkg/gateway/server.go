@@ -471,7 +471,7 @@ func (s *Server) removeClient(client *Client) {
 // --- REST Handlers ---
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead) {
+	if _, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage); !ok {
 		return
 	}
 
@@ -496,7 +496,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead) {
+	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead)
+	if !ok {
 		return
 	}
 
@@ -505,6 +506,9 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 
 	conns := make([]connectionStatus, 0, len(s.clients))
 	for _, client := range s.clients {
+		if !gatewayControlPlaneCanReadConnection(authCtx, client) {
+			continue
+		}
 		conns = append(conns, describeConnection(client))
 	}
 	sort.Slice(conns, func(i, j int) bool {
@@ -518,7 +522,8 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead) {
+	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead)
+	if !ok {
 		return
 	}
 
@@ -535,6 +540,10 @@ func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !gatewayControlPlaneCanReadConnection(authCtx, client) {
+		http.NotFound(w, r)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(describeConnection(client)); err != nil {
@@ -543,7 +552,7 @@ func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage) {
+	if _, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage); !ok {
 		return
 	}
 
@@ -570,26 +579,26 @@ func (s *Server) requireAuthenticatedAPI(
 	w http.ResponseWriter,
 	r *http.Request,
 	scope gatewayControlPlaneScope,
-) bool {
+) (*authContext, bool) {
 	if err := s.checkClientIP(r); err != nil {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
-		return false
+		return nil, false
 	}
 	if err := s.checkRateLimit(r); err != nil {
 		http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
-		return false
+		return nil, false
 	}
 
 	authCtx, err := s.authenticateRequest(r)
 	if err != nil {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return false
+		return nil, false
 	}
 	if !isGatewayControlPlaneRoleAllowed(authCtx.role, scope) {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
-		return false
+		return nil, false
 	}
-	return true
+	return authCtx, true
 }
 
 func (s *Server) checkClientIP(r *http.Request) error {
@@ -755,6 +764,20 @@ func isGatewayControlPlaneRoleAllowed(role string, scope gatewayControlPlaneScop
 		return true
 	case "member":
 		return scope == gatewayControlPlaneScopeRead
+	default:
+		return false
+	}
+}
+
+func gatewayControlPlaneCanReadConnection(authCtx *authContext, client *Client) bool {
+	if authCtx == nil || client == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(authCtx.role)) {
+	case "admin", "owner":
+		return true
+	case "member":
+		return strings.TrimSpace(authCtx.userID) != "" && strings.TrimSpace(authCtx.userID) == strings.TrimSpace(client.userID)
 	default:
 		return false
 	}

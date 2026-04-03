@@ -254,10 +254,11 @@ func TestGatewayConnectionsEndpointRequiresAuth(t *testing.T) {
 	}
 }
 
-func TestGatewayStatusEndpointAllowsMemberRole(t *testing.T) {
+func TestGatewayStatusEndpointRejectsMemberRole(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
+		"uid":  "viewer-id",
 		"role": "member",
 	})
 
@@ -266,17 +267,34 @@ func TestGatewayStatusEndpointAllowsMemberRole(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
 	}
 }
 
-func TestGatewayConnectionsEndpointAllowsMemberRole(t *testing.T) {
+func TestGatewayConnectionsEndpointAllowsMemberRoleForOwnedConnectionsOnly(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
+		"uid":  "viewer-id",
 		"role": "member",
 	})
+	s.clients["client-b"] = &Client{
+		id:          "client-b",
+		send:        make(chan []byte, 1),
+		userID:      "other-id",
+		username:    "other",
+		connectedAt: time.Unix(1_700_000_100, 0).UTC(),
+		remoteAddr:  "10.0.0.2:1234",
+	}
+	s.clients["client-a"] = &Client{
+		id:          "client-a",
+		send:        make(chan []byte, 1),
+		userID:      "viewer-id",
+		username:    "viewer",
+		connectedAt: time.Unix(1_700_000_000, 0).UTC(),
+		remoteAddr:  "10.0.0.1:1234",
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -285,6 +303,20 @@ func TestGatewayConnectionsEndpointAllowsMemberRole(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode member connections response: %v", err)
+	}
+	if len(body) != 1 {
+		t.Fatalf("expected 1 owned connection, got %d", len(body))
+	}
+	if got := body[0]["id"]; got != "client-a" {
+		t.Fatalf("expected owned connection client-a, got %v", got)
+	}
+	if got := body[0]["user_id"]; got != "viewer-id" {
+		t.Fatalf("expected owned user_id viewer-id, got %v", got)
 	}
 }
 
@@ -434,17 +466,18 @@ func TestGetConnectionEndpointReturnsConnectionDetails(t *testing.T) {
 	}
 }
 
-func TestGetConnectionEndpointAllowsMemberRole(t *testing.T) {
+func TestGetConnectionEndpointAllowsMemberRoleForOwnedConnection(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
+		"uid":  "viewer-id",
 		"role": "member",
 	})
 	s.clients["client-a"] = &Client{
 		id:       "client-a",
 		send:     make(chan []byte, 1),
-		userID:   "user-a",
-		username: "alice",
+		userID:   "viewer-id",
+		username: "viewer",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/client-a", nil)
@@ -454,6 +487,30 @@ func TestGetConnectionEndpointAllowsMemberRole(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestGetConnectionEndpointRejectsMemberRoleForOtherUsersConnection(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"uid":  "viewer-id",
+		"role": "member",
+	})
+	s.clients["client-a"] = &Client{
+		id:       "client-a",
+		send:     make(chan []byte, 1),
+		userID:   "other-id",
+		username: "other",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/client-a", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
