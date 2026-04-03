@@ -4044,6 +4044,37 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/gateway -run 'Test(WSChatRejectsUnknownRequestedSessionBeforeUpgrade|ResolveGatewaySessionIDRejectsUnknownRequestedSession)$'`
   - `go test -count=1 ./pkg/gateway`
 
+## 2026-04-04 gateway pairing hardening 补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - `resolveGatewaySessionID()` 现在兼容 legacy 空 `source` 的旧 gateway session，不再把这类历史 session 误判为非 gateway。
+  - 新增 paired session 保留与并发 attach 串行化：
+    - 同一 `session_id` 在 attach 窗口内只允许一个 websocket 成功建立。
+    - 已有 active websocket client 占用该 paired session 时，新的 attach 返回 `409 Conflict`。
+  - `processMessage()` 现在校验 websocket 入站消息自带的 `session_id`：
+    - 为空时继续兼容旧行为。
+    - 非空且与当前 active paired session 不一致时，立即返回 websocket error，不再继续路由。
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestWSChatUsesRequestedExistingGatewaySession`
+    - `TestWSChatAllowsRequestedLegacyGatewaySessionWithEmptySource`
+    - `TestWSChatRejectsSecondLiveConnectionForRequestedSession`
+    - `TestProcessMessageRejectsMismatchedInboundSessionID`
+    - `TestProcessMessageAllowsMatchingInboundSessionID`
+
+### 当前语义
+- 这一步继续只做 pairing hardening，不引入新的 pairing enrollment/ownership 协议。
+- 当前规则：
+  - 旧数据里 `source == ""` 的 gateway session 仍可被 websocket pairing 复用。
+  - 同一 paired session 只允许一个 live websocket attach。
+  - 入站 websocket 消息如果显式带了 `session_id`，必须与当前 active paired session 一致。
+
+### 本轮测试
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'Test(WSChat(RejectsUnknownRequestedSessionBeforeUpgrade|UsesRequestedExistingGatewaySession|AllowsRequestedLegacyGatewaySessionWithEmptySource|RejectsSecondLiveConnectionForRequestedSession)|ProcessMessage(RejectsMismatchedInboundSessionID|AllowsMatchingInboundSessionID)|ProcessMessageUsesPairedSessionIDForRouterAndResponse)$'`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`
+
 ## 2026-04-03 browser relay mode 首批收口补记
 
 ### 本轮完成

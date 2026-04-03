@@ -21,6 +21,14 @@
   - `go test -count=1 ./pkg/conversationbindings` passed.
   - `go test -count=1 ./pkg/toolsessions ./pkg/conversationbindings ./pkg/channels/wechat` passed.
 
+- Completed gateway control-plane hardening phase 14 (pairing consistency hardening):
+  - allowed legacy gateway sessions with empty `source` metadata to be reused during websocket pairing, preserving old gateway session compatibility instead of rejecting them as non-gateway sessions.
+  - rejected duplicate live attaches for the same paired `session_id` and serialized the attach window so concurrent websocket upgrades cannot race into the same paired session.
+  - enforced websocket inbound `session_id` consistency: when clients send a non-empty session id, it must match the active paired gateway session or the message is rejected before routing.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(WSChat(RejectsUnknownRequestedSessionBeforeUpgrade|UsesRequestedExistingGatewaySession|AllowsRequestedLegacyGatewaySessionWithEmptySource|RejectsSecondLiveConnectionForRequestedSession)|ProcessMessage(RejectsMismatchedInboundSessionID|AllowsMatchingInboundSessionID)|ProcessMessageUsesPairedSessionIDForRouterAndResponse)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+
 - Completed Slack interactive flow phase 4:
   - added a third concrete shortcut/modal business closure: `model` shortcut now opens a modal and submission reuses the existing `/model` command semantics.
   - kept the slice intentionally narrow by using the existing command path and returning the result as an ephemeral Slack response, instead of inventing Slack-only model inspection behavior.
