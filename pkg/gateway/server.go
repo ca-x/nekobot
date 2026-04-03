@@ -297,7 +297,8 @@ func (s *Server) resolveGatewaySessionID(r *http.Request, fallbackSessionID stri
 	if existing == nil {
 		return "", fmt.Errorf("session %q unavailable", requestedSessionID)
 	}
-	if strings.TrimSpace(existing.Source) != session.SourceGateway {
+	existingSource := strings.TrimSpace(existing.Source)
+	if existingSource != "" && existingSource != session.SourceGateway {
 		return "", fmt.Errorf("session %q is not a gateway session", requestedSessionID)
 	}
 	return requestedSessionID, nil

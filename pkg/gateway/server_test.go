@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -703,6 +704,76 @@ func TestResolveGatewaySessionIDRejectsNonGatewaySession(t *testing.T) {
 	}
 }
 
+func TestWSChatUsesRequestedExistingGatewaySession(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	if _, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway); err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	server := httptest.NewServer(s.mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/chat?session_id=" + url.QueryEscape("paired-session")
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		status := "<nil>"
+		if resp != nil {
+			status = fmt.Sprintf("%d", resp.StatusCode)
+		}
+		t.Fatalf("websocket dial failed: %v (status=%s)", err, status)
+	}
+	defer conn.Close()
+
+	var msg WSMessage
+	if err := conn.ReadJSON(&msg); err != nil {
+		t.Fatalf("read welcome message: %v", err)
+	}
+	if msg.Type != "system" {
+		t.Fatalf("expected system welcome message, got %#v", msg)
+	}
+	if msg.SessionID != "paired-session" {
+		t.Fatalf("expected paired session id, got %q", msg.SessionID)
+	}
+}
+
+func TestWSChatAllowsRequestedLegacyGatewaySessionWithEmptySource(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	legacySession, err := s.sessionMgr.GetWithSource("legacy-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+	legacySession.Source = ""
+
+	server := httptest.NewServer(s.mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/chat?session_id=" + url.QueryEscape("legacy-session")
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		status := "<nil>"
+		if resp != nil {
+			status = fmt.Sprintf("%d", resp.StatusCode)
+		}
+		t.Fatalf("websocket dial failed: %v (status=%s)", err, status)
+	}
+	defer conn.Close()
+
+	var msg WSMessage
+	if err := conn.ReadJSON(&msg); err != nil {
+		t.Fatalf("read welcome message: %v", err)
+	}
+	if msg.SessionID != "legacy-session" {
+		t.Fatalf("expected legacy session id, got %q", msg.SessionID)
+	}
+}
 func TestProcessMessagePassesExplicitRuntimeIDToRouter(t *testing.T) {
 	s := newTestServer(t)
 	router := &stubGatewayRouter{reply: "router reply"}
