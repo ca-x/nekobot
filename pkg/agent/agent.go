@@ -89,6 +89,11 @@ type ChatRouteResult struct {
 	ResolvedOrder     []string
 	ActualProvider    string
 	ActualModel       string
+	Preflight             ContextPreflightDecision
+	ContextBudgetStatus   string
+	ContextBudgetReasons  []string
+	CompactionRecommended bool
+	CompactionStrategy    string
 }
 
 // acpSessionState stores ACP session-scoped routing and cancellation state.
@@ -709,6 +714,7 @@ func (a *Agent) chatWithLegacyOrchestrator(
 	if err != nil {
 		return "", routeResult, err
 	}
+	routeResult = a.enrichChatRouteResultWithContextPreview(routeResult, resolvedPrompts, promptCtx, userMessage)
 	messages := a.context.BuildMessagesWithPromptSet(history, userMessage, resolvedPrompts)
 
 	// Convert to provider format
@@ -836,6 +842,25 @@ func (a *Agent) chatWithLegacyOrchestrator(
 	return "", routeResult, fmt.Errorf("max iterations (%d) reached without final response", a.maxIterations)
 }
 
+func (a *Agent) enrichChatRouteResultWithContextPreview(
+	routeResult ChatRouteResult,
+	resolved prompts.ResolvedPromptSet,
+	promptCtx PromptContext,
+	userMessage string,
+) ChatRouteResult {
+	if a == nil || a.context == nil {
+		return routeResult
+	}
+
+	preview := a.buildContextSourcesPreviewFromResolved(resolved, promptCtx, userMessage)
+	routeResult.Preflight = preview.Preflight
+	routeResult.ContextBudgetStatus = preview.BudgetStatus
+	routeResult.ContextBudgetReasons = append([]string(nil), preview.BudgetReasons...)
+	routeResult.CompactionRecommended = preview.Compaction.Recommended
+	routeResult.CompactionStrategy = preview.Compaction.Strategy
+	return routeResult
+}
+
 func (a *Agent) resolvePromptSet(
 	ctx context.Context,
 	provider, model string,
@@ -846,18 +871,7 @@ func (a *Agent) resolvePromptSet(
 		return prompts.ResolvedPromptSet{}, nil
 	}
 
-	input := prompts.ResolveInput{
-		Channel:           strings.TrimSpace(promptCtx.Channel),
-		SessionID:         strings.TrimSpace(promptCtx.SessionID),
-		UserID:            strings.TrimSpace(promptCtx.UserID),
-		Username:          strings.TrimSpace(promptCtx.Username),
-		RequestedProvider: firstNonEmpty(strings.TrimSpace(promptCtx.RequestedProvider), strings.TrimSpace(provider)),
-		RequestedModel:    firstNonEmpty(strings.TrimSpace(promptCtx.RequestedModel), strings.TrimSpace(model)),
-		RequestedFallback: normalizePromptFallback(promptCtx.RequestedFallback, fallback),
-		Workspace:         a.config.WorkspacePath(),
-		ExplicitPromptIDs: normalizePromptFallback(promptCtx.ExplicitPromptIDs, nil),
-		Custom:            clonePromptCustom(promptCtx.Custom),
-	}
+	input := a.buildPromptResolveInput(provider, model, fallback, promptCtx)
 
 	resolved, err := a.promptManager.Resolve(ctx, input)
 	if err != nil {

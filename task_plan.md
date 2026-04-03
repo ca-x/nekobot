@@ -358,7 +358,7 @@
   - 不额外引入第二套 prompt 装配系统
 
 ### Status
-**Phase 5 Completed** - `AgentDefinition` 已从“规划概念”变成可读取运行时快照，`ContextBuilder` 也已有 stable/dynamic prompt section 边界；当前该批次正按独立功能切片重新整理提交边界，只包含 definition snapshot、`/api/status` 暴露与 System 页只读展示，不混入 `context sources` / readonly `preflight`。
+**Phase 5 Completed** - `AgentDefinition` 已作为独立功能批次完成并推送；当前剩余活跃切片已收敛为 `context sources` explainability 与 readonly `preflight` chat-route parity 的独立收口，不再混入 definition snapshot 相关改动。
 
 
 ## 2026-04-02 context sources 最小 explainability preview 批次
@@ -452,7 +452,7 @@
 - [x] `cd pkg/webui/frontend && npm run build`
 
 ### Status
-**Phase 5 Completed** - readonly `preflight` 已作为 canonical 决策结构接入 preview API 与 chat route，`preflight.action` 已在 Chat 和 Prompts 侧最小展示，`legacy / blades` orchestrator 已完成一致性对齐，旧平铺字段继续保留作兼容过渡。下一步若继续推进，应进入首个非只读 runtime decision 切片，而不是继续补 preview 元数据。
+**Phase 5 Completed** - readonly `preflight` 已作为 canonical 决策结构接入 preview API 与 chat route，`preflight.action` 已在 Chat 和 Prompts 侧最小展示，`legacy / blades` orchestrator 已完成一致性对齐，旧平铺字段继续保留作兼容过渡。当前该批次正按独立功能切片提交收口；提交推送后，下一步才进入首个非只读 runtime decision 切片。
 
 
 ## 2026-04-02 watch executeCommand -> tasks.Service 接线批次

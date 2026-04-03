@@ -582,6 +582,7 @@ func (a *Agent) chatWithBladesOrchestrator(
 	if err != nil {
 		return "", routeResult, err
 	}
+	routeResult = a.enrichChatRouteResultWithContextPreview(routeResult, resolvedPrompts, promptCtx, userMessage)
 	instruction := a.context.BuildSystemPromptWithInjected(resolvedPrompts)
 	agentOpts := []blades.AgentOption{
 		blades.WithModel(modelProvider),

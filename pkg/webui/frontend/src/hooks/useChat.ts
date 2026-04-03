@@ -28,6 +28,21 @@ export interface ChatRouteResult {
   resolved_order: string[];
   actual_provider: string;
   actual_model: string;
+  preflight?: {
+    action?: 'proceed' | 'consider_compaction' | 'compact_before_run';
+    budget_status?: 'ok' | 'warning' | 'critical';
+    budget_reasons?: string[];
+    compaction?: {
+      recommended?: boolean;
+      strategy?: string;
+      reasons?: string[];
+      estimated_chars_saved?: number;
+    };
+  };
+  context_budget_status?: 'ok' | 'warning' | 'critical';
+  context_budget_reasons?: string[];
+  compaction_recommended?: boolean;
+  compaction_strategy?: string;
   runtime_id?: string;
 }
 

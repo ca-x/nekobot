@@ -357,6 +357,7 @@ func (s *Server) setup() {
 	api.PUT("/prompts/bindings/:id", s.handleUpdatePromptBinding)
 	api.DELETE("/prompts/bindings/:id", s.handleDeletePromptBinding)
 	api.POST("/prompts/resolve", s.handleResolvePrompts)
+	api.POST("/prompts/context-sources", s.handlePreviewContextSources)
 	api.GET("/chat/prompts/session/:id", s.handleGetChatSessionPrompts)
 	api.PUT("/chat/prompts/session/:id", s.handlePutChatSessionPrompts)
 	api.DELETE("/chat/prompts/session/:id", s.handleDeleteChatSessionPrompts)
@@ -5570,7 +5571,25 @@ type chatRouteState struct {
 	ResolvedOrder     []string `json:"resolved_order"`
 	ActualProvider    string   `json:"actual_provider"`
 	ActualModel       string   `json:"actual_model"`
+	Preflight             *chatRoutePreflightState `json:"preflight,omitempty"`
+	ContextBudgetStatus   string   `json:"context_budget_status,omitempty"`
+	ContextBudgetReasons  []string `json:"context_budget_reasons,omitempty"`
+	CompactionRecommended bool     `json:"compaction_recommended,omitempty"`
+	CompactionStrategy    string   `json:"compaction_strategy,omitempty"`
 	RuntimeID         string   `json:"runtime_id,omitempty"`
+}
+
+type chatRoutePreflightState struct {
+	BudgetStatus  string                   `json:"budget_status,omitempty"`
+	BudgetReasons []string                 `json:"budget_reasons,omitempty"`
+	Compaction    chatRouteCompactionState `json:"compaction"`
+}
+
+type chatRouteCompactionState struct {
+	Recommended         bool     `json:"recommended"`
+	Strategy            string   `json:"strategy,omitempty"`
+	Reasons             []string `json:"reasons,omitempty"`
+	EstimatedCharsSaved int      `json:"estimated_chars_saved,omitempty"`
 }
 
 type toolWSMessage struct {
@@ -5961,13 +5980,27 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Timestamp: time.Now().Unix(),
 				SessionID: sessionID,
 				Route: &chatRouteState{
-					RequestedProvider: routeResult.RequestedProvider,
-					RequestedModel:    routeResult.RequestedModel,
-					RequestedFallback: append([]string(nil), routeResult.RequestedFallback...),
-					ResolvedOrder:     append([]string(nil), routeResult.ResolvedOrder...),
-					ActualProvider:    routeResult.ActualProvider,
-					ActualModel:       routeResult.ActualModel,
-					RuntimeID:         runtimeID,
+					RequestedProvider:     routeResult.RequestedProvider,
+					RequestedModel:        routeResult.RequestedModel,
+					RequestedFallback:     append([]string(nil), routeResult.RequestedFallback...),
+					ResolvedOrder:         append([]string(nil), routeResult.ResolvedOrder...),
+					ActualProvider:        routeResult.ActualProvider,
+					ActualModel:           routeResult.ActualModel,
+					Preflight: &chatRoutePreflightState{
+						BudgetStatus:  routeResult.Preflight.BudgetStatus,
+						BudgetReasons: append([]string(nil), routeResult.Preflight.BudgetReasons...),
+						Compaction: chatRouteCompactionState{
+							Recommended:         routeResult.Preflight.Compaction.Recommended,
+							Strategy:            routeResult.Preflight.Compaction.Strategy,
+							Reasons:             append([]string(nil), routeResult.Preflight.Compaction.Reasons...),
+							EstimatedCharsSaved: routeResult.Preflight.Compaction.EstimatedCharsSaved,
+						},
+					},
+					ContextBudgetStatus:   routeResult.ContextBudgetStatus,
+					ContextBudgetReasons:  append([]string(nil), routeResult.ContextBudgetReasons...),
+					CompactionRecommended: routeResult.CompactionRecommended,
+					CompactionStrategy:    routeResult.CompactionStrategy,
+					RuntimeID:             runtimeID,
 				},
 			}
 			if data, err := json.Marshal(routeResp); err == nil {
@@ -6451,6 +6484,34 @@ func (s *Server) handleResolvePrompts(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, resolved)
+}
+
+func (s *Server) handlePreviewContextSources(c *echo.Context) error {
+	if s.agent == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "agent not available"})
+	}
+	var body struct {
+		prompts.ResolveInput
+		UserMessage string `json:"user_message"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	preview, err := s.agent.PreviewContextSources(c.Request().Context(), agent.PromptContext{
+		Channel:           body.Channel,
+		SessionID:         body.SessionID,
+		UserID:            body.UserID,
+		Username:          body.Username,
+		RequestedProvider: body.RequestedProvider,
+		RequestedModel:    body.RequestedModel,
+		RequestedFallback: body.RequestedFallback,
+		ExplicitPromptIDs: body.ExplicitPromptIDs,
+		Custom:            body.Custom,
+	}, body.UserMessage)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, preview)
 }
 
 func (s *Server) handleListRuntimeAgents(c *echo.Context) error {

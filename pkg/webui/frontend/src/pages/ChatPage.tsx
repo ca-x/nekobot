@@ -261,6 +261,17 @@ function StatusPill({
   );
 }
 
+function contextBudgetTone(status: 'ok' | 'warning' | 'critical') {
+  switch (status) {
+    case 'critical':
+      return 'bg-rose-500/15 text-rose-700 dark:text-rose-300';
+    case 'warning':
+      return 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
+    default:
+      return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+  }
+}
+
 export default function ChatPage() {
   const providersQuery = useProviders();
   const configQuery = useAppConfig();
@@ -385,6 +396,23 @@ export default function ChatPage() {
   const actualProvider = routeResult?.actual_provider?.trim() || '';
   const actualModel = routeResult?.actual_model?.trim() || '';
   const resolvedOrder = routeResult?.resolved_order ?? [];
+  const contextBudgetStatus =
+    routeResult?.preflight?.budget_status ??
+    routeResult?.context_budget_status ??
+    'ok';
+  const preflightAction = routeResult?.preflight?.action?.trim() || '';
+  const contextBudgetReasons =
+    routeResult?.preflight?.budget_reasons ??
+    routeResult?.context_budget_reasons ??
+    [];
+  const compactionRecommended =
+    routeResult?.preflight?.compaction?.recommended ??
+    routeResult?.compaction_recommended ??
+    false;
+  const compactionStrategy =
+    routeResult?.preflight?.compaction?.strategy?.trim() ||
+    routeResult?.compaction_strategy?.trim() ||
+    '';
   const enabledRuntimes = useMemo(
     () => runtimes.filter((runtime) => runtime.enabled),
     [runtimes],
@@ -725,6 +753,19 @@ export default function ChatPage() {
                         {t('chatResolvedOrder')}: {resolvedOrder.join(' -> ')}
                       </span>
                     )}
+                    <span
+                      className={cn(
+                        'max-w-full break-all rounded-full px-3 py-1.5 text-xs font-medium',
+                        contextBudgetTone(contextBudgetStatus),
+                      )}
+                    >
+                      {t(`promptContextBudget_${contextBudgetStatus}`)}
+                    </span>
+                    {preflightAction ? (
+                      <span className="max-w-full break-all rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
+                        {preflightAction}
+                      </span>
+                    ) : null}
                   </>
                 ) : (
                   <span className="rounded-full bg-[hsl(var(--gray-100))] px-3 py-1.5 text-xs font-medium text-muted-foreground dark:bg-[hsl(var(--gray-200))]">
@@ -732,6 +773,37 @@ export default function ChatPage() {
                   </span>
                 )}
               </div>
+              {actualProvider || actualModel ? (
+                <>
+                  {contextBudgetReasons.length > 0 && (
+                    <div className="mt-3 rounded-2xl border border-border/70 bg-card/80 p-3">
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                        {t('promptContextBudgetReasons')}
+                      </div>
+                      <div className="mt-2 space-y-1.5">
+                        {contextBudgetReasons.map((reason, index) => (
+                          <p key={`${reason}-${index}`} className="text-xs leading-5 text-muted-foreground">
+                            {reason}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {compactionRecommended && (
+                    <div className="mt-3 rounded-2xl border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))]/60 p-3 dark:border-[hsl(var(--brand-800))] dark:bg-[hsl(var(--brand-950))]/20">
+                      <div className="text-[11px] uppercase tracking-[0.16em] text-[hsl(var(--brand-700))] dark:text-[hsl(var(--brand-300))]">
+                        {t('promptContextCompactionTitle')}
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-[hsl(var(--brand-800))] dark:text-[hsl(var(--brand-200))]">
+                        {t(
+                          'promptContextCompactionStrategy',
+                          t(`promptContextCompaction_${compactionStrategy || 'drop_oldest_history'}`),
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : null}
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 {t('chatActualRouteHint')}
               </p>

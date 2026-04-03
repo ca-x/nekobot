@@ -10,6 +10,8 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"nekobot/pkg/agent"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/config"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/prompts"
@@ -128,6 +130,118 @@ func TestPromptHandlers_CRUDAndResolve(t *testing.T) {
 	}
 	if len(bindings) != 0 {
 		t.Fatalf("expected prompt bindings to be removed with prompt delete, got %+v", bindings)
+	}
+}
+
+func TestPromptHandlers_ContextSourcesPreview(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.MCPServers = []config.MCPServerConfig{{Name: "filesystem", Transport: "stdio"}}
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	promptMgr, err := prompts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new prompt manager: %v", err)
+	}
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, client, promptMgr)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		prompts:   promptMgr,
+		agent:     ag,
+		entClient: client,
+	}
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/prompts/context-sources", strings.NewReader(`{
+		"channel":"wechat",
+		"session_id":"s-1",
+		"requested_provider":"openai",
+		"requested_model":"gpt-5.4",
+		"custom":{"runtime_id":"runtime-a"},
+		"user_message":"hello"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handlePreviewContextSources(ctx); err != nil {
+		t.Fatalf("handlePreviewContextSources failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Preflight struct {
+			Action        string   `json:"action"`
+			BudgetStatus  string   `json:"budget_status"`
+			BudgetReasons []string `json:"budget_reasons"`
+			Compaction    struct {
+				Recommended         bool   `json:"recommended"`
+				Strategy            string `json:"strategy"`
+				EstimatedCharsSaved int    `json:"estimated_chars_saved"`
+			} `json:"compaction"`
+		} `json:"preflight"`
+		BudgetStatus  string   `json:"budget_status"`
+		BudgetReasons []string `json:"budget_reasons"`
+		Compaction    struct {
+			Recommended         bool   `json:"recommended"`
+			Strategy            string `json:"strategy"`
+			EstimatedCharsSaved int    `json:"estimated_chars_saved"`
+		} `json:"compaction"`
+		Footprint struct {
+			TotalChars       int `json:"total_chars"`
+			SystemChars      int `json:"system_chars"`
+			FinalUserChars   int `json:"final_user_chars"`
+			MemoryLimitChars int `json:"memory_limit_chars"`
+		} `json:"footprint"`
+		Warnings []string `json:"warnings"`
+		Sources  []struct {
+			Kind string `json:"kind"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal context sources preview: %v", err)
+	}
+	if len(payload.Sources) == 0 {
+		t.Fatalf("expected non-empty sources payload")
+	}
+	if payload.Footprint.TotalChars <= 0 || payload.Footprint.SystemChars <= 0 || payload.Footprint.FinalUserChars <= 0 {
+		t.Fatalf("expected populated footprint payload, got %+v", payload.Footprint)
+	}
+	if len(payload.Warnings) != 0 {
+		t.Fatalf("expected no warnings for simple payload, got %+v", payload.Warnings)
+	}
+	if payload.BudgetStatus != "ok" {
+		t.Fatalf("expected ok budget status, got %+v", payload)
+	}
+	if payload.Preflight.BudgetStatus != payload.BudgetStatus {
+		t.Fatalf("expected preflight budget status to mirror budget status, got %+v", payload.Preflight)
+	}
+	if payload.Preflight.Action != "proceed" {
+		t.Fatalf("expected proceed preflight action, got %+v", payload.Preflight)
+	}
+	if len(payload.BudgetReasons) != 0 {
+		t.Fatalf("expected no budget reasons for simple payload, got %+v", payload.BudgetReasons)
+	}
+	if payload.Preflight.Compaction.Recommended != payload.Compaction.Recommended {
+		t.Fatalf("expected preflight compaction to mirror legacy fields, got %+v vs %+v", payload.Preflight.Compaction, payload.Compaction)
+	}
+	if payload.Compaction.Recommended {
+		t.Fatalf("expected no compaction recommendation for simple payload, got %+v", payload.Compaction)
 	}
 }
 

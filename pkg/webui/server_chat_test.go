@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -15,6 +16,71 @@ import (
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
 )
+
+func TestChatRouteStateJSONIncludesContextPressureFields(t *testing.T) {
+	state := chatRouteState{
+		RequestedProvider:     "openai",
+		RequestedModel:        "gpt-5.4",
+		RequestedFallback:     []string{"anthropic"},
+		ResolvedOrder:         []string{"openai", "anthropic"},
+		ActualProvider:        "openai",
+		ActualModel:           "gpt-5.4",
+		Preflight: &chatRoutePreflightState{
+			BudgetStatus:  "warning",
+			BudgetReasons: []string{"Approximate prompt chars are near the configured max tokens budget."},
+			Compaction: chatRouteCompactionState{
+				Recommended: true,
+				Strategy:    "compress_memory",
+			},
+		},
+		ContextBudgetStatus:   "warning",
+		ContextBudgetReasons:  []string{"Approximate prompt chars are near the configured max tokens budget."},
+		CompactionRecommended: true,
+		CompactionStrategy:    "compress_memory",
+		RuntimeID:             "runtime-1",
+	}
+
+	payload, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("marshal route state failed: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal route state failed: %v", err)
+	}
+
+	if decoded["context_budget_status"] != "warning" {
+		t.Fatalf("unexpected context_budget_status: %+v", decoded["context_budget_status"])
+	}
+	if decoded["compaction_strategy"] != "compress_memory" {
+		t.Fatalf("unexpected compaction_strategy: %+v", decoded["compaction_strategy"])
+	}
+	if decoded["compaction_recommended"] != true {
+		t.Fatalf("unexpected compaction_recommended: %+v", decoded["compaction_recommended"])
+	}
+	preflight, ok := decoded["preflight"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected preflight object, got %+v", decoded["preflight"])
+	}
+	if preflight["budget_status"] != "warning" {
+		t.Fatalf("unexpected preflight budget_status: %+v", preflight["budget_status"])
+	}
+	compaction, ok := preflight["compaction"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected preflight compaction object, got %+v", preflight["compaction"])
+	}
+	if compaction["strategy"] != "compress_memory" {
+		t.Fatalf("unexpected preflight compaction strategy: %+v", compaction["strategy"])
+	}
+	reasons, ok := decoded["context_budget_reasons"].([]any)
+	if !ok {
+		t.Fatalf("expected context_budget_reasons array, got %+v", decoded["context_budget_reasons"])
+	}
+	if !reflect.DeepEqual(reasons, []any{"Approximate prompt chars are near the configured max tokens budget."}) {
+		t.Fatalf("unexpected context_budget_reasons: %+v", reasons)
+	}
+}
 
 func TestPersistChatRoutingPersistsModel(t *testing.T) {
 	cfg := config.DefaultConfig()

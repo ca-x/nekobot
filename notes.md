@@ -332,6 +332,15 @@
 - 这一步把 `preflight` 从“结构化观测”推进到“结构化建议”。
 - 但仍然只是建议层，不参与自动执行。
 
+### 当前提交状态
+- `AgentDefinition bridge` 已作为独立功能批次提交并推送：
+  - commit: `df08d2f feat(agent): add definition bridge snapshot`
+  - remote: `origin/main`
+- 当前剩余未提交代码已收敛为：
+  - `context sources` 预览 API 与 explainability 数据结构
+  - `readonly preflight` 在 chat route / Chat UI 的只读透传
+  - `legacy / blades` orchestrator parity
+
 ### 当前刻意没有做的事
 - 没有把 `consider_compaction` 或 `compact_before_run` 接到真正的 runtime 行为。
 - 没有因为 `critical` 自动拦截请求。
