@@ -43,6 +43,7 @@ func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
 	source.Gateway.Host = "127.0.0.1"
 	source.Gateway.Port = 19090
 	source.Gateway.MaxConnections = 42
+	source.Gateway.AllowedIPs = []string{"127.0.0.1", "::1"}
 	source.Gateway.AllowedOrigins = []string{"https://allowed.example.com"}
 	source.Logger.Level = "debug"
 	source.Logger.OutputPath = filepath.Join(t.TempDir(), "nekobot.log")
@@ -56,6 +57,8 @@ func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
 	if target.Gateway.Host != source.Gateway.Host ||
 		target.Gateway.Port != source.Gateway.Port ||
 		target.Gateway.MaxConnections != source.Gateway.MaxConnections ||
+		len(target.Gateway.AllowedIPs) != len(source.Gateway.AllowedIPs) ||
+		target.Gateway.AllowedIPs[0] != source.Gateway.AllowedIPs[0] ||
 		len(target.Gateway.AllowedOrigins) != len(source.Gateway.AllowedOrigins) ||
 		target.Gateway.AllowedOrigins[0] != source.Gateway.AllowedOrigins[0] {
 		t.Fatalf("expected gateway copied, got %+v want %+v", target.Gateway, source.Gateway)
@@ -78,5 +81,31 @@ func TestValidatorRejectsNegativeGatewayMaxConnections(t *testing.T) {
 	}
 	if got := err.Error(); got == "" || !strings.Contains(got, "gateway.max_connections") {
 		t.Fatalf("expected gateway.max_connections validation error, got %v", err)
+	}
+}
+
+func TestValidatorRejectsBlankGatewayAllowedIPs(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gateway.AllowedIPs = []string{"127.0.0.1", " "}
+
+	err := NewValidator().Validate(cfg)
+	if err == nil {
+		t.Fatal("expected validation error for blank allowed_ips entry")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "gateway.allowed_ips[1]") {
+		t.Fatalf("expected gateway.allowed_ips[1] validation error, got %v", err)
+	}
+}
+
+func TestValidatorRejectsInvalidGatewayAllowedIPs(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gateway.AllowedIPs = []string{"not-an-ip"}
+
+	err := NewValidator().Validate(cfg)
+	if err == nil {
+		t.Fatal("expected validation error for invalid allowed_ips entry")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "gateway.allowed_ips[0]") {
+		t.Fatalf("expected gateway.allowed_ips[0] validation error, got %v", err)
 	}
 }

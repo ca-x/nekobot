@@ -3720,3 +3720,81 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(RejectsConnectionsAboveConfiguredLimit|AllowsConnectionsWhenLimitUnset)|ValidatorRejectsNegativeGatewayMaxConnections)$'`
   - `go test -count=1 ./pkg/gateway`
   - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway IP allowlist 下一切片预备
+
+### 当前判断
+- `gateway control-plane hardening` 下一步继续沿“最小连接治理”推进。
+- 当前优先补 IP allowlist，而不是直接跳到：
+  - rate limit
+  - pairing / scope
+  - 更复杂控制面协议
+- 原因：
+  - 现有 gateway 已有 origin allowlist、JWT、连接详情/删除、最大连接数。
+  - 但远端地址仍未形成任何可配置入口控制，REST 与 websocket 共享边界也还没有这层显式治理。
+  - 这是比 rate limit 更基础、实现面更小且验证清晰的收口点。
+
+### 锁定边界
+- 新增 `gateway.allowed_ips` 配置。
+- 第一版仅支持精确 IP 匹配，不做 CIDR、代理信任链或 `X-Forwarded-For` 解析。
+- 同时覆盖：
+  - websocket 握手入口
+  - REST 控制面入口
+- 语义保持最小化：
+  - 空列表表示不限制
+  - 非空列表表示仅允许命中的远端 IP
+  - 解析不到合法 IP 时拒绝访问
+
+### 计划中的验证
+- RED:
+  - 为 websocket 和 REST 分别补未命中 allowlist 时被拒绝的测试。
+  - 补空 allowlist 放行与命中 allowlist 放行测试。
+- GREEN:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(IPAllowlist|CheckClientIP)|ValidatorRejectsBlankGatewayAllowedIPs)$'`
+  - `go test -count=1 ./pkg/gateway`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway IP allowlist 收口补记
+
+### 本轮完成
+- `pkg/config/config.go`
+  - 为 `GatewayConfig` 新增 `AllowedIPs []string`。
+- `pkg/config/validator.go`
+  - 新增 `gateway.allowed_ips` 校验：
+    - 不允许空字符串
+    - 必须是合法字面 IP
+- `pkg/config/path_test.go`
+  - 更新 runtime reload copy 断言，覆盖 `AllowedIPs`。
+  - 新增：
+    - `TestValidatorRejectsBlankGatewayAllowedIPs`
+    - `TestValidatorRejectsInvalidGatewayAllowedIPs`
+- `pkg/gateway/server.go`
+  - 新增 `checkClientIP()`。
+  - websocket 握手入口和 REST 控制面入口现在都先做远端 IP allowlist 校验。
+  - 当前语义：
+    - `allowed_ips` 为空表示不限制
+    - 非空时仅允许命中的远端 IP
+    - `RemoteAddr` 解析失败或 IP 不合法时直接拒绝
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestGatewayCheckClientIPAllowsRequestsWhenListUnset`
+    - `TestGatewayCheckClientIPAllowsConfiguredIP`
+    - `TestGatewayCheckClientIPRejectsUnconfiguredIP`
+    - `TestGatewayStatusEndpointRejectsDisallowedIP`
+    - `TestGatewayStatusEndpointAllowsConfiguredIP`
+    - `TestWSChatRejectsDisallowedIP`
+
+### 当前语义
+- 这一步继续只做共享入口级的最小连接治理，不混入：
+  - CIDR
+  - `X-Forwarded-For`
+  - rate limit
+  - pairing / scope
+- 目标是先让 gateway 在 JWT/origin/max_connections 之外，再补上一层显式的远端地址准入边界。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(CheckClientIP(AllowsRequestsWhenListUnset|AllowsConfiguredIP|RejectsUnconfiguredIP)|StatusEndpoint(RejectsDisallowedIP|AllowsConfiguredIP)|WSChatRejectsDisallowedIP)|ValidatorRejectsBlankGatewayAllowedIPs)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(CheckClientIP(AllowsRequestsWhenListUnset|AllowsConfiguredIP|RejectsUnconfiguredIP)|StatusEndpoint(RejectsDisallowedIP|AllowsConfiguredIP)|WSChatRejectsDisallowedIP)|ValidatorRejects(BlankGatewayAllowedIPs|InvalidGatewayAllowedIPs))$'`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`

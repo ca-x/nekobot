@@ -634,6 +634,83 @@ func TestGatewayCheckOriginAllowsRequestsWithoutOrigin(t *testing.T) {
 	}
 }
 
+func TestGatewayCheckClientIPAllowsRequestsWhenListUnset(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+
+	if err := s.checkClientIP(req); err != nil {
+		t.Fatalf("expected empty allowlist to permit request, got %v", err)
+	}
+}
+
+func TestGatewayCheckClientIPAllowsConfiguredIP(t *testing.T) {
+	s := newTestServer(t)
+	s.config.Gateway.AllowedIPs = []string{"203.0.113.10", "::1"}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+
+	if err := s.checkClientIP(req); err != nil {
+		t.Fatalf("expected configured ip to be allowed, got %v", err)
+	}
+}
+
+func TestGatewayCheckClientIPRejectsUnconfiguredIP(t *testing.T) {
+	s := newTestServer(t)
+	s.config.Gateway.AllowedIPs = []string{"203.0.113.10"}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.RemoteAddr = "198.51.100.7:4321"
+
+	if err := s.checkClientIP(req); err == nil {
+		t.Fatal("expected unconfigured ip to be rejected")
+	}
+}
+
+func TestGatewayStatusEndpointRejectsDisallowedIP(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.config.Gateway.AllowedIPs = []string{"203.0.113.10"}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.RemoteAddr = "198.51.100.7:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
+func TestGatewayStatusEndpointAllowsConfiguredIP(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.config.Gateway.AllowedIPs = []string{"203.0.113.10"}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.RemoteAddr = "203.0.113.10:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestWSChatRejectsDisallowedIP(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.config.Gateway.AllowedIPs = []string{"203.0.113.10"}
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.RemoteAddr = "198.51.100.7:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
 func TestGatewayRejectsConnectionsAboveConfiguredLimit(t *testing.T) {
 	s := newTestServer(t)
 	s.config.Gateway.MaxConnections = 1

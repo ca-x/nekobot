@@ -1803,7 +1803,7 @@
   - 位置：`pkg/memory/*`。
 - [ ] **Gateway 控制面与连接治理增强**
   - 现状：`pkg/gateway/server.go` 原先是开放 `CheckOrigin`、简单 WS/REST 模式；本轮已补第一层 origin allowlist，当前仍缺 IP/scope/rate limit/pairing 等更深治理。
-  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；已把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性；已补上已鉴权的 `GET /api/v1/connections/{id}`，让控制面可以查询单连接详情而不必扫全量列表；本轮继续新增 `gateway.max_connections` 配置与 server 内硬限制，开始收口最基本的连接数量治理。
+  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；已把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性；已补上已鉴权的 `GET /api/v1/connections/{id}`，让控制面可以查询单连接详情而不必扫全量列表；已新增 `gateway.max_connections` 配置与 server 内硬限制，开始收口最基本的连接数量治理；本轮已完成 `gateway.allowed_ips`，补齐基于远端地址的 allowlist，并同时覆盖 websocket 握手与 REST 控制面入口；后续剩余更深治理仍聚焦在 rate limit / pairing / scope。
   - 目标：补控制面协议与连接策略，避免 gateway 只停留在“聊天 socket”。
   - 来源：`goclaw/gateway/openclaw/*`。
   - 位置：`pkg/gateway/*`。
@@ -1874,6 +1874,7 @@
   - 当前执行顺序：先做通用 service 契约收口，再做 WeChat runtime 消费者验证，最后再决定是否扩到 gateway/external runtime。
 - [x] memory quality pack（MMR / temporal decay / citations / cache）
 - [ ] gateway control plane hardening
+  - 当前已完成切片：`gateway.allowed_ips`，完成最小 IP allowlist；下一批仍不混入过多变更，优先考虑 rate limit、pairing、scope 中的单一最小切片。
 - [ ] browser session dual-mode / advanced extraction
 - **验收**: 每项独立测试通过，按功能独立提交与推送。
 

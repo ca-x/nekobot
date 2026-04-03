@@ -4,6 +4,19 @@
 
 ## 2026-04-03
 
+- Continued backlog execution from `task_plan.md`:
+  - re-read the persistent planning artifacts and GoalX run state.
+  - confirmed the previous GoalX run is complete, while the next approved mainline remains `gateway control-plane hardening`.
+  - narrowed the next minimal slice to `gateway.allowed_ips` so gateway gets a shared IP allowlist across websocket handshake and REST control-plane entrypoints.
+- Completed gateway control-plane hardening phase 7 (IP allowlist):
+  - added `gateway.allowed_ips` to `pkg/config.GatewayConfig` and kept it runtime-reloadable.
+  - validated `allowed_ips` entries so blanks and non-IP literals fail fast in config validation instead of deferring to runtime surprises.
+  - added a shared `checkClientIP()` gate in `pkg/gateway/server.go` and applied it to both websocket handshake and REST control-plane entrypoints.
+  - kept the first version intentionally narrow: exact literal IP matching only, no CIDR, no forwarded-header trust chain, no pairing/scope semantics.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(CheckClientIP(AllowsRequestsWhenListUnset|AllowsConfiguredIP|RejectsUnconfiguredIP)|StatusEndpoint(RejectsDisallowedIP|AllowsConfiguredIP)|WSChatRejectsDisallowedIP)|ValidatorRejects(BlankGatewayAllowedIPs|InvalidGatewayAllowedIPs))$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+
 - Completed context economy preflight execution telemetry slice:
   - added `preflight.applied` to the shared preflight decision shape so route metadata can distinguish "recommended" from "actually executed".
   - updated both legacy and blades orchestrators to mark `applied=true` only when `compact_before_run` really executes, while warning-only paths stay `false`.

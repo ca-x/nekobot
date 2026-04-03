@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -350,6 +351,23 @@ func (v *Validator) validateGateway(cfg *GatewayConfig) {
 
 	if cfg.MaxConnections < 0 {
 		v.addError("gateway.max_connections", "max_connections must be greater than or equal to 0")
+	}
+
+	for idx, allowedIP := range cfg.AllowedIPs {
+		trimmedIP := strings.TrimSpace(allowedIP)
+		if trimmedIP == "" {
+			v.addError(
+				fmt.Sprintf("gateway.allowed_ips[%d]", idx),
+				"ip must not be empty",
+			)
+			continue
+		}
+		if net.ParseIP(trimmedIP) == nil {
+			v.addError(
+				fmt.Sprintf("gateway.allowed_ips[%d]", idx),
+				"ip must be a valid literal IP address",
+			)
+		}
 	}
 
 	for idx, origin := range cfg.AllowedOrigins {

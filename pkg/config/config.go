@@ -298,6 +298,7 @@ type GatewayConfig struct {
 	Host           string   `mapstructure:"host" json:"host"`
 	Port           int      `mapstructure:"port" json:"port"`
 	MaxConnections int      `mapstructure:"max_connections" json:"max_connections"`
+	AllowedIPs     []string `mapstructure:"allowed_ips" json:"allowed_ips"`
 	AllowedOrigins []string `mapstructure:"allowed_origins" json:"allowed_origins"`
 }
 

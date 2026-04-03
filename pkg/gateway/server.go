@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -53,12 +54,12 @@ type websocketRouter interface {
 
 // Client represents a connected WebSocket client.
 type Client struct {
-	id       string
-	conn     *websocket.Conn
-	send     chan []byte
-	session  agent.SessionInterface
-	userID   string
-	username string
+	id          string
+	conn        *websocket.Conn
+	send        chan []byte
+	session     agent.SessionInterface
+	userID      string
+	username    string
 	connectedAt time.Time
 	remoteAddr  string
 }
@@ -180,6 +181,11 @@ func (s *Server) Stop(ctx context.Context) error {
 // --- WebSocket Handler ---
 
 func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
+	if err := s.checkClientIP(r); err != nil {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
 	// Authenticate via token query param or Authorization header
 	userID, username, err := s.authenticateWS(r)
 	if err != nil {
@@ -541,11 +547,38 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) requireAuthenticatedAPI(w http.ResponseWriter, r *http.Request) bool {
+	if err := s.checkClientIP(r); err != nil {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return false
+	}
+
 	if _, _, err := s.authenticateWS(r); err != nil {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return false
 	}
 	return true
+}
+
+func (s *Server) checkClientIP(r *http.Request) error {
+	if s == nil || s.config == nil || len(s.config.Gateway.AllowedIPs) == 0 {
+		return nil
+	}
+
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil {
+		return fmt.Errorf("parse remote addr: %w", err)
+	}
+	if net.ParseIP(host) == nil {
+		return fmt.Errorf("remote addr %q does not contain a valid ip", r.RemoteAddr)
+	}
+
+	for _, allowedIP := range s.config.Gateway.AllowedIPs {
+		if strings.TrimSpace(allowedIP) == host {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("ip %s not allowed", host)
 }
 
 func (s *Server) checkConnectionLimit() error {
