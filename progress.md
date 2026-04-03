@@ -31,6 +31,15 @@
   - `go test -count=1 ./pkg/gateway` passed.
   - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
 
+- Completed gateway control-plane hardening phase 5 (connection detail endpoint):
+  - added `GET /api/v1/connections/{id}` in `pkg/gateway/server.go` so the control plane can inspect a single websocket connection without fetching the full list.
+  - reused the same JWT auth gate and shared connection serialization shape as the list endpoint.
+  - added regression coverage in `pkg/gateway/server_test.go` for success, unknown-client `404`, and unauthenticated `401`.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'TestGetConnectionEndpoint(ReturnsConnectionDetails|ReturnsNotFoundForUnknownClient|RequiresAuth)$'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/gateway` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+
 - Completed conversation/thread binding slice 2 (deterministic query order):
   - added `TestServiceBindingQueriesReturnDeterministicConversationOrder` in `pkg/conversationbindings/service_test.go` to lock a real missing contract with TDD.
   - confirmed RED first: `ListBindings()` returned `[chat-b chat-a]` when bindings were created in non-sorted order.

@@ -300,6 +300,77 @@ func TestDeleteConnectionEndpointRequiresAuth(t *testing.T) {
 	}
 }
 
+func TestGetConnectionEndpointReturnsConnectionDetails(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	now := time.Unix(1_700_001_000, 0).UTC()
+
+	sess, err := s.sessionMgr.GetWithSource("gateway-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	s.clients["client-a"] = &Client{
+		id:          "client-a",
+		send:        make(chan []byte, 1),
+		userID:      "user-a",
+		username:    "alice",
+		session:     sess,
+		connectedAt: now,
+		remoteAddr:  "10.0.0.5:1234",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/client-a", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode connection response: %v", err)
+	}
+	if got := body["id"]; got != "client-a" {
+		t.Fatalf("expected id client-a, got %v", got)
+	}
+	if got := body["session_id"]; got != "gateway-session" {
+		t.Fatalf("expected session_id gateway-session, got %v", got)
+	}
+	if got := body["remote_addr"]; got != "10.0.0.5:1234" {
+		t.Fatalf("expected remote_addr 10.0.0.5:1234, got %v", got)
+	}
+	if got := body["connected_at"]; got != now.Format(time.RFC3339) {
+		t.Fatalf("expected connected_at %q, got %v", now.Format(time.RFC3339), got)
+	}
+}
+
+func TestGetConnectionEndpointReturnsNotFoundForUnknownClient(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/missing", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestGetConnectionEndpointRequiresAuth(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/client-a", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
 func TestStatusEndpointCountsConnectionsDeterministically(t *testing.T) {
 	s, token := newAuthedTestServer(t)
 	s.clients["client-b"] = &Client{id: "client-b", send: make(chan []byte, 1)}

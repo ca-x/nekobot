@@ -3613,3 +3613,36 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/gateway -run 'Test(ConnectionsEndpoint|StatusEndpointCountsConnectionsDeterministically)$'`
   - `go test -count=1 ./pkg/gateway`
   - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway 单连接详情控制面补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - 新增 `GET /api/v1/connections/{id}`。
+  - 复用已有 `requireAuthenticatedAPI()` 做 JWT 鉴权。
+  - 复用共享 `describeConnection()`，让单连接详情与连接列表保持同一套返回字段与编码逻辑。
+  - 目标连接不存在时返回 `404 Not Found`。
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestGetConnectionEndpointReturnsConnectionDetails`
+    - `TestGetConnectionEndpointReturnsNotFoundForUnknownClient`
+    - `TestGetConnectionEndpointRequiresAuth`
+
+### 当前语义
+- 这一步仍然只补最小控制面读路径，不混入：
+  - 批量详情查询
+  - richer runtime diagnostics
+  - IP / rate limit
+  - pairing / scope
+- 目标是让 gateway 控制面在“列表”和“单连接详情”之间形成最小闭环：
+  - list all
+  - inspect one
+  - delete one
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'TestGetConnectionEndpoint(ReturnsConnectionDetails|ReturnsNotFoundForUnknownClient|RequiresAuth)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'TestGetConnectionEndpoint(ReturnsConnectionDetails|ReturnsNotFoundForUnknownClient|RequiresAuth)$'`
+  - `go test -count=1 ./pkg/gateway`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`

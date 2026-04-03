@@ -1798,7 +1798,7 @@
   - 位置：`pkg/memory/*`。
 - [ ] **Gateway 控制面与连接治理增强**
   - 现状：`pkg/gateway/server.go` 原先是开放 `CheckOrigin`、简单 WS/REST 模式；本轮已补第一层 origin allowlist，当前仍缺 IP/scope/rate limit/pairing 等更深治理。
-  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；本轮继续把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性。
+  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；已把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性；本轮继续补上已鉴权的 `GET /api/v1/connections/{id}`，让控制面可以查询单连接详情而不必扫全量列表。
   - 目标：补控制面协议与连接策略，避免 gateway 只停留在“聊天 socket”。
   - 来源：`goclaw/gateway/openclaw/*`。
   - 位置：`pkg/gateway/*`。

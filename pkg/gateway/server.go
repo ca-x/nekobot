@@ -78,6 +78,15 @@ type Server struct {
 	mu         sync.RWMutex
 }
 
+type connectionStatus struct {
+	ID          string  `json:"id"`
+	UserID      string  `json:"user_id"`
+	Username    string  `json:"username"`
+	SessionID   *string `json:"session_id"`
+	ConnectedAt string  `json:"connected_at"`
+	RemoteAddr  string  `json:"remote_addr"`
+}
+
 // NewServer creates a new gateway server.
 func NewServer(
 	cfg *config.Config,
@@ -112,6 +121,7 @@ func (s *Server) setupRoutes() {
 	// REST endpoints
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
 	mux.HandleFunc("GET /api/v1/connections", s.handleConnections)
+	mux.HandleFunc("GET /api/v1/connections/{id}", s.handleConnection)
 	mux.HandleFunc("DELETE /api/v1/connections/{id}", s.handleDeleteConnection)
 
 	// Health check
@@ -462,32 +472,9 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	type connectionStatus struct {
-		ID          string  `json:"id"`
-		UserID      string  `json:"user_id"`
-		Username    string  `json:"username"`
-		SessionID   *string `json:"session_id"`
-		ConnectedAt string  `json:"connected_at"`
-		RemoteAddr  string  `json:"remote_addr"`
-	}
-
 	conns := make([]connectionStatus, 0, len(s.clients))
 	for _, client := range s.clients {
-		var sessionID *string
-		if identifiable, ok := client.session.(interface{ GetID() string }); ok {
-			id := strings.TrimSpace(identifiable.GetID())
-			if id != "" {
-				sessionID = &id
-			}
-		}
-		conns = append(conns, connectionStatus{
-			ID:          client.id,
-			UserID:      client.userID,
-			Username:    client.username,
-			SessionID:   sessionID,
-			ConnectedAt: client.connectedAt.UTC().Format(time.RFC3339),
-			RemoteAddr:  client.remoteAddr,
-		})
+		conns = append(conns, describeConnection(client))
 	}
 	sort.Slice(conns, func(i, j int) bool {
 		return conns[i].ID < conns[j].ID
@@ -496,6 +483,31 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(conns); err != nil {
 		s.logger.Warn("Failed to encode gateway connections", zap.Error(err))
+	}
+}
+
+func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuthenticatedAPI(w, r) {
+		return
+	}
+
+	clientID := strings.TrimSpace(r.PathValue("id"))
+	if clientID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.mu.RLock()
+	client, ok := s.clients[clientID]
+	s.mu.RUnlock()
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(describeConnection(client)); err != nil {
+		s.logger.Warn("Failed to encode gateway connection", zap.Error(err))
 	}
 }
 
@@ -529,6 +541,25 @@ func (s *Server) requireAuthenticatedAPI(w http.ResponseWriter, r *http.Request)
 		return false
 	}
 	return true
+}
+
+func describeConnection(client *Client) connectionStatus {
+	var sessionID *string
+	if identifiable, ok := client.session.(interface{ GetID() string }); ok {
+		id := strings.TrimSpace(identifiable.GetID())
+		if id != "" {
+			sessionID = &id
+		}
+	}
+
+	return connectionStatus{
+		ID:          client.id,
+		UserID:      client.userID,
+		Username:    client.username,
+		SessionID:   sessionID,
+		ConnectedAt: client.connectedAt.UTC().Format(time.RFC3339),
+		RemoteAddr:  client.remoteAddr,
+	}
 }
 
 // --- Auth ---
