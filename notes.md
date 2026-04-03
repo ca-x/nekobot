@@ -4018,3 +4018,40 @@ type CronJobState struct {
 - GREEN:
   - `go test -count=1 ./pkg/gateway -run 'Test(WSChatRejectsUnknownRequestedSessionBeforeUpgrade|ResolveGatewaySessionIDRejectsUnknownRequestedSession)$'`
   - `go test -count=1 ./pkg/gateway`
+
+## 2026-04-03 browser relay mode 首批收口补记
+
+### 本轮完成
+- `pkg/tools/browser_session.go`
+  - 新增 `BrowserModeRelay`。
+  - `StartWithMode(relay)` 当前语义先收口为：
+    - 只尝试连接已存在的浏览器实例。
+    - 不会自动 launch 新实例。
+    - 所有候选端口连接失败时直接返回错误。
+- `pkg/tools/browser.go`
+  - `browser` tool 的 `mode` schema 现在接受 `relay`。
+  - `mode=relay` 的对外语义现在与 session 层保持一致：attach-only，不做 launch fallback。
+- `pkg/tools/browser_session_test.go`
+  - 新增 relay 模式启动回归：
+    - 复用已有实例时成功。
+    - 没有可复用实例时失败且不触发 launch。
+- `pkg/tools/browser_test.go`
+  - 更新 `startMode()` 覆盖，允许 `relay`。
+  - `invalid mode` 回归改为显式拒绝 `invalid`，不再把 `relay` 视为非法值。
+
+### 当前语义
+- 这一步只补最小可用 relay 模式，不混入：
+  - 独立 relay 进程管理
+  - relay transport/proxy 协议
+  - 更多 relay-aware CDP 高级动作
+- 当前规则：
+  - `auto`：优先复用，复用不到再 launch。
+  - `direct`：直连默认端口，失败则 launch。
+  - `relay`：只复用既有实例，失败直接报错。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/tools -run 'Test(ResolveBrowserMode|BrowserSessionStartWithModeRelay|BrowserToolStartModeFromParams|BrowserToolExecuteRejectsInvalidMode)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/tools -run 'Test(ResolveBrowserMode|BrowserSessionStartWithModeRelay|BrowserToolStartModeFromParams|BrowserToolExecuteRejectsInvalidMode)$'`
+  - `go test -count=1 ./pkg/tools`

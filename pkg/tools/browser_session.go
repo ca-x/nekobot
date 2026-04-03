@@ -26,6 +26,7 @@ type BrowserConnectionMode string
 const (
 	BrowserModeAuto   BrowserConnectionMode = "auto"
 	BrowserModeDirect BrowserConnectionMode = "direct"
+	BrowserModeRelay  BrowserConnectionMode = "relay"
 )
 
 // BrowserSession manages a persistent browser session.
@@ -89,6 +90,14 @@ func (s *BrowserSession) StartWithMode(timeout time.Duration, mode BrowserConnec
 			return nil
 		}
 		return s.launchFn(s.timeout)
+	case BrowserModeRelay:
+		for _, port := range []int{9222, 9223, 9224} {
+			if err := s.connectFn(port, s.timeout); err == nil {
+				s.mode = BrowserModeRelay
+				return nil
+			}
+		}
+		return fmt.Errorf("relay browser session not available")
 	default:
 		for _, port := range []int{9222, 9223, 9224} {
 			if err := s.connectFn(port, s.timeout); err == nil {
@@ -237,6 +246,8 @@ func resolveBrowserMode(mode string) BrowserConnectionMode {
 	switch strings.TrimSpace(strings.ToLower(mode)) {
 	case string(BrowserModeDirect):
 		return BrowserModeDirect
+	case string(BrowserModeRelay):
+		return BrowserModeRelay
 	default:
 		return BrowserModeAuto
 	}

@@ -4,6 +4,14 @@
 
 ## 2026-04-03
 
+- Completed browser session migration phase 3 (relay attach-only mode):
+  - added the first narrow `relay` browser connection mode instead of continuing to reject it at the tool boundary.
+  - kept the semantics intentionally strict: relay mode only attaches to an existing browser instance and never launches a new one, so the first slice is real but bounded.
+  - added regression coverage for relay mode parsing, relay start behavior with and without an existing instance, and invalid-mode rejection using a truly unsupported value.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'Test(ResolveBrowserMode|BrowserSessionStartWithModeRelay|BrowserToolStartModeFromParams|BrowserToolExecuteRejectsInvalidMode)$'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
+
 - Completed Slack interactive flow phase 4:
   - added a third concrete shortcut/modal business closure: `model` shortcut now opens a modal and submission reuses the existing `/model` command semantics.
   - kept the slice intentionally narrow by using the existing command path and returning the result as an ephemeral Slack response, instead of inventing Slack-only model inspection behavior.

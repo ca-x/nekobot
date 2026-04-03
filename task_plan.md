@@ -1809,7 +1809,7 @@
   - 位置：`pkg/gateway/*`。
 - [ ] **Browser session 双模式与高级提取动作**
   - 现状：`pkg/tools/browser_session.go` 仍缺 relay 模式与更丰富的高级浏览器动作。
-  - 进度：已完成首批 session 层增强，支持 `auto/direct` 模式和优先复用已运行 Chrome 的连接策略；浏览器工具现已暴露 `mode` 参数并显式拒绝未支持的模式；高级提取动作已补 `print_pdf`、`extract_structured_data`、`get_text`；relay 模式与更多 CDP 高级动作仍待继续迁移。
+  - 进度：已完成首批 session 层增强，支持 `auto/direct` 模式和优先复用已运行 Chrome 的连接策略；浏览器工具现已暴露 `mode` 参数；本轮补上第一版 `relay` 模式，语义先收口为“只连接既有浏览器实例、绝不自行 launch”；高级提取动作已补 `print_pdf`、`extract_structured_data`、`get_text`；后续仍可继续迁移更完整的 relay/CDP 高级动作。
   - 目标：提升浏览器工具的可靠性和能力上限。
   - 来源：`goclaw/agent/tools/browser_session.go`、`browser_relay.go`、`browser_cdp.go`。
   - 位置：`pkg/tools/browser*.go`。

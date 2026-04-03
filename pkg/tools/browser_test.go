@@ -24,6 +24,14 @@ func TestBrowserToolStartModeFromParams(t *testing.T) {
 	if got != BrowserModeDirect {
 		t.Fatalf("expected direct mode, got %q", got)
 	}
+
+	got, err = tool.startMode(map[string]interface{}{"mode": "relay"})
+	if err != nil {
+		t.Fatalf("startMode returned error for relay mode: %v", err)
+	}
+	if got != BrowserModeRelay {
+		t.Fatalf("expected relay mode, got %q", got)
+	}
 }
 
 func TestBrowserToolExecuteRejectsInvalidMode(t *testing.T) {
@@ -32,7 +40,7 @@ func TestBrowserToolExecuteRejectsInvalidMode(t *testing.T) {
 	_, err := tool.Execute(context.Background(), map[string]interface{}{
 		"action": "navigate",
 		"url":    "https://example.com",
-		"mode":   "relay",
+		"mode":   "invalid",
 	})
 	if err == nil {
 		t.Fatal("expected invalid mode error")

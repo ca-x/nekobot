@@ -109,8 +109,8 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 			},
 			"mode": map[string]interface{}{
 				"type":        "string",
-				"enum":        []string{"auto", "direct"},
-				"description": "Browser session startup mode. auto reuses existing Chrome before launching; direct only uses direct CDP attach/launch.",
+				"enum":        []string{"auto", "direct", "relay"},
+				"description": "Browser session startup mode. auto reuses existing Chrome before launching; direct only uses direct CDP attach/launch; relay only attaches to an existing browser and never launches a new one.",
 			},
 			"landscape": map[string]interface{}{
 				"type":        "boolean",
