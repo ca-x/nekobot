@@ -4,6 +4,15 @@
 
 ## 2026-04-03
 
+- Completed Slack interactive flow phase 4:
+  - added a third concrete shortcut/modal business closure: `model` shortcut now opens a modal and submission reuses the existing `/model` command semantics.
+  - kept the slice intentionally narrow by using the existing command path and returning the result as an ephemeral Slack response, instead of inventing Slack-only model inspection behavior.
+  - added regression coverage for model shortcut modal open and modal submission command execution, plus a combined regression pack covering all three real modal flows.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensModelModal|ViewSubmissionExecutesModelCommand)$'` passed.
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(FindSkills|Settings|Model)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model)Command)$'` passed.
+  - `go test -count=1 ./pkg/channels/slack ./pkg/commands` passed.
+
 - Completed gateway control-plane hardening phase 13 (pairing handshake validation order):
   - fixed the first pairing slice so invalid websocket `session_id` values are rejected before websocket upgrade instead of after the connection has already been hijacked.
   - added a real websocket-dial regression test to prove clients now receive an actual HTTP `400` for unknown requested sessions.

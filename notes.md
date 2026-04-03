@@ -3555,6 +3555,34 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(Settings|FindSkills)Modal|ViewSubmissionExecutes(Settings|FindSkills)Command)$'`
   - `go test -count=1 ./pkg/channels/slack ./pkg/commands`
 
+## 2026-04-03 Slack model shortcut/modal 闭环补记
+
+### 本轮完成
+- `pkg/channels/slack/slack.go`
+  - 新增 `model` shortcut/modal 常量与 modal 构造。
+  - `handleShortcut()` 现在会处理 `model` shortcut，并打开一个最小 provider/action 输入 modal。
+  - `handleViewSubmission()` 现在会处理 `model_modal`，复用现有 `/model` command 执行路径。
+  - modal submission 结果继续按现有 Slack 交互风格走 ephemeral 回复，不引入新的 Slack 专用协议。
+- `pkg/channels/slack/slack_test.go`
+  - 新增：
+    - `TestHandleShortcutOpensModelModal`
+    - `TestHandleViewSubmissionExecutesModelCommand`
+
+### 当前语义
+- 这一步继续沿“在现有路由骨架上补真实业务闭环”的方向推进，不混入新的命令语义。
+- 当前规则：
+  - `model` shortcut 打开最小 modal。
+  - modal submission 把输入原样作为 `/model` 参数执行。
+  - 成功结果按 ephemeral message 返回给发起人。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensModelModal|ViewSubmissionExecutesModelCommand)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensModelModal|ViewSubmissionExecutesModelCommand)$'`
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(FindSkills|Settings|Model)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model)Command)$'`
+  - `go test -count=1 ./pkg/channels/slack ./pkg/commands`
+
 ## 2026-04-03 gateway origin allowlist 首批治理补记
 
 ### 本轮完成

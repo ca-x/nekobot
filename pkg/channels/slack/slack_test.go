@@ -502,6 +502,34 @@ func TestHandleShortcutOpensSettingsModal(t *testing.T) {
 	}
 }
 
+func TestHandleShortcutOpensModelModal(t *testing.T) {
+	ch := newTestChannel(t)
+	api := &stubSlackAPI{}
+	ch.api = api
+
+	callback := slackapi.InteractionCallback{
+		Type:       slackapi.InteractionTypeShortcut,
+		CallbackID: "model",
+		TriggerID:  "trigger-model",
+		User:       slackapi.User{ID: "U123", Name: "alice"},
+	}
+
+	ch.handleShortcut(callback)
+
+	if api.openViewTriggerID != "trigger-model" {
+		t.Fatalf("expected model modal to open with trigger trigger-model, got %q", api.openViewTriggerID)
+	}
+	if api.openViewRequest == nil {
+		t.Fatal("expected modal view request")
+	}
+	if api.openViewRequest.CallbackID != "model_modal" {
+		t.Fatalf("unexpected model modal callback id: %q", api.openViewRequest.CallbackID)
+	}
+	if api.openViewRequest.PrivateMetadata != "model" {
+		t.Fatalf("unexpected model modal private metadata: %q", api.openViewRequest.PrivateMetadata)
+	}
+}
+
 func TestHandleViewSubmissionExecutesSettingsCommand(t *testing.T) {
 	ch := newTestChannel(t)
 	api := &stubSlackAPI{}
@@ -558,6 +586,77 @@ func TestHandleViewSubmissionExecutesSettingsCommand(t *testing.T) {
 					"settings_value": {
 						"settings_value_input": {
 							Value: "en",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	ch.handleViewSubmission(callback)
+
+	if api.ephemeralChannel != "C123" {
+		t.Fatalf("unexpected ephemeral target channel: %q", api.ephemeralChannel)
+	}
+	if api.ephemeralUser != "U123" {
+		t.Fatalf("expected ephemeral response for U123, got %q", api.ephemeralUser)
+	}
+	if len(api.ephemeralOpts) == 0 {
+		t.Fatal("expected ephemeral response options to be sent")
+	}
+}
+
+func TestHandleViewSubmissionExecutesModelCommand(t *testing.T) {
+	ch := newTestChannel(t)
+	api := &stubSlackAPI{}
+	ch.api = api
+
+	if err := ch.commands.Register(&commands.Command{
+		Name: "model",
+		Handler: func(ctx context.Context, req commands.CommandRequest) (commands.CommandResponse, error) {
+			if req.Channel != "slack" {
+				t.Fatalf("unexpected channel: %q", req.Channel)
+			}
+			if req.Command != "model" {
+				t.Fatalf("unexpected command: %q", req.Command)
+			}
+			if req.Args != "openai" {
+				t.Fatalf("unexpected args: %q", req.Args)
+			}
+			if req.UserID != "U123" {
+				t.Fatalf("unexpected user: %q", req.UserID)
+			}
+			if req.Metadata["team_id"] != "T123" {
+				t.Fatalf("unexpected team id: %q", req.Metadata["team_id"])
+			}
+			if req.Metadata["runtime_id"] != "slack" {
+				t.Fatalf("unexpected runtime id: %q", req.Metadata["runtime_id"])
+			}
+			return commands.CommandResponse{
+				Content: "🤖 **Provider: openai**",
+			}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register command: %v", err)
+	}
+
+	callback := slackapi.InteractionCallback{
+		Type: slackapi.InteractionTypeViewSubmission,
+		User: slackapi.User{ID: "U123", Name: "alice"},
+		Team: slackapi.Team{ID: "T123"},
+		Channel: slackapi.Channel{
+			GroupConversation: slackapi.GroupConversation{
+				Conversation: slackapi.Conversation{ID: "C123"},
+			},
+		},
+		View: slackapi.View{
+			CallbackID:      "model_modal",
+			PrivateMetadata: "model",
+			State: &slackapi.ViewState{
+				Values: map[string]map[string]slackapi.BlockAction{
+					"model_query": {
+						"model_query_input": {
+							Value: "openai",
 						},
 					},
 				},

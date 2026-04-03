@@ -69,6 +69,10 @@ const (
 	findSkillsModalCallbackID    = "find_skills_modal"
 	findSkillsModalBlockID       = "skill_query"
 	findSkillsModalActionID      = "query_input"
+	modelShortcutCallbackID      = "model"
+	modelModalCallbackID         = "model_modal"
+	modelModalBlockID            = "model_query"
+	modelModalActionID           = "model_query_input"
 	settingsShortcutCallbackID   = "settings"
 	settingsModalCallbackID      = "settings_modal"
 	settingsActionBlockID        = "settings_action"
@@ -551,6 +555,8 @@ func (c *Channel) handleShortcut(callback slack.InteractionCallback) {
 	switch callback.CallbackID {
 	case findSkillsShortcutCallbackID:
 		view = buildFindSkillsModal()
+	case modelShortcutCallbackID:
+		view = buildModelModal()
 	case settingsShortcutCallbackID:
 		view = buildSettingsModal()
 	default:
@@ -573,6 +579,8 @@ func (c *Channel) handleViewSubmission(callback slack.InteractionCallback) {
 	switch callback.View.CallbackID {
 	case findSkillsModalCallbackID:
 		c.handleFindSkillsViewSubmission(callback)
+	case modelModalCallbackID:
+		c.handleModelViewSubmission(callback)
 	case settingsModalCallbackID:
 		c.handleSettingsViewSubmission(callback)
 	default:
@@ -759,6 +767,82 @@ func (c *Channel) handleSettingsViewSubmission(callback slack.InteractionCallbac
 	}
 }
 
+func (c *Channel) handleModelViewSubmission(callback slack.InteractionCallback) {
+	commandName := strings.TrimSpace(callback.View.PrivateMetadata)
+	if commandName == "" {
+		commandName = "model"
+	}
+
+	query := strings.TrimSpace(readViewInputValue(
+		callback.View.State,
+		modelModalBlockID,
+		modelModalActionID,
+	))
+	if query == "" {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("Please provide a provider name or `list`.", false),
+		); err != nil {
+			c.log.Error("Failed to send Slack model modal validation message", zap.Error(err))
+		}
+		return
+	}
+
+	cmd, exists := c.commands.Get(commandName)
+	if !exists {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command not found: "+commandName, false),
+		); err != nil {
+			c.log.Error("Failed to send Slack model modal command-not-found message", zap.Error(err))
+		}
+		return
+	}
+
+	req := commands.CommandRequest{
+		Channel:  c.ID(),
+		ChatID:   callback.Channel.ID,
+		UserID:   callback.User.ID,
+		Username: callback.User.Name,
+		Command:  commandName,
+		Args:     query,
+		Metadata: map[string]string{
+			"team_id":    callback.Team.ID,
+			"trigger_id": callback.TriggerID,
+			"runtime_id": c.ID(),
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		if _, sendErr := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command failed: "+err.Error(), false),
+		); sendErr != nil {
+			c.log.Error("Failed to send Slack model modal command error", zap.Error(sendErr))
+		}
+		return
+	}
+
+	if strings.TrimSpace(resp.Content) == "" {
+		return
+	}
+
+	if _, err := c.api.PostEphemeral(
+		callback.Channel.ID,
+		callback.User.ID,
+		slack.MsgOptionText(resp.Content, false),
+	); err != nil {
+		c.log.Error("Failed to send Slack model modal response", zap.Error(err))
+	}
+}
+
 func buildFindSkillsModal() slack.ModalViewRequest {
 	queryPlaceholder := slack.NewTextBlockObject(slack.PlainTextType, "Search skills", false, false)
 	queryLabel := slack.NewTextBlockObject(slack.PlainTextType, "What do you want to install?", false, false)
@@ -778,6 +862,30 @@ func buildFindSkillsModal() slack.ModalViewRequest {
 		PrivateMetadata: "find-skills",
 		Title:           slack.NewTextBlockObject(slack.PlainTextType, "Find Skills", false, false),
 		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Search", false, false),
+		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+		Blocks:          slack.Blocks{BlockSet: []slack.Block{queryBlock}},
+	}
+}
+
+func buildModelModal() slack.ModalViewRequest {
+	queryPlaceholder := slack.NewTextBlockObject(slack.PlainTextType, "openai | anthropic | list", false, false)
+	queryLabel := slack.NewTextBlockObject(slack.PlainTextType, "Provider or action", false, false)
+	queryHint := slack.NewTextBlockObject(
+		slack.PlainTextType,
+		"Examples: openai, anthropic, list",
+		false,
+		false,
+	)
+
+	queryInput := slack.NewPlainTextInputBlockElement(queryPlaceholder, modelModalActionID)
+	queryBlock := slack.NewInputBlock(modelModalBlockID, queryLabel, queryHint, queryInput)
+
+	return slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      modelModalCallbackID,
+		PrivateMetadata: "model",
+		Title:           slack.NewTextBlockObject(slack.PlainTextType, "Model", false, false),
+		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Run", false, false),
 		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
 		Blocks:          slack.Blocks{BlockSet: []slack.Block{queryBlock}},
 	}
