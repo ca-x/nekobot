@@ -218,18 +218,18 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clientID := uuid.New().String()
+	sessionID, err := s.resolveGatewaySessionID(r, clientID)
+	if err != nil {
+		http.Error(w, `{"error":"invalid session_id"}`, http.StatusBadRequest)
+		return
+	}
+
 	// Upgrade to WebSocket
 	upgrader.CheckOrigin = s.checkOrigin
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Error("WebSocket upgrade failed", zap.Error(err))
-		return
-	}
-
-	clientID := uuid.New().String()
-	sessionID, err := s.resolveGatewaySessionID(r, clientID)
-	if err != nil {
-		http.Error(w, `{"error":"invalid session_id"}`, http.StatusBadRequest)
 		return
 	}
 	sess, err := s.getOrCreateSession(sessionID)

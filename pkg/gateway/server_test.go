@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/websocket"
 
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
@@ -654,6 +656,36 @@ func TestResolveGatewaySessionIDRejectsUnknownRequestedSession(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestWSChatRejectsUnknownRequestedSessionBeforeUpgrade(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	server := httptest.NewServer(s.mux)
+	t.Cleanup(server.Close)
+
+	wsURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse server url: %v", err)
+	}
+	wsURL.Scheme = "ws"
+	wsURL.Path = "/ws/chat"
+	query := wsURL.Query()
+	query.Set("session_id", "missing-session")
+	wsURL.RawQuery = query.Encode()
+
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+
+	_, resp, err := websocket.DefaultDialer.Dial(wsURL.String(), header)
+	if err == nil {
+		t.Fatal("expected websocket dial to fail")
+	}
+	if resp == nil {
+		t.Fatalf("expected http response, got nil (err=%v)", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
 	}
 }
 

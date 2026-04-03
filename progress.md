@@ -4,6 +4,28 @@
 
 ## 2026-04-03
 
+- Completed gateway control-plane hardening phase 13 (pairing handshake validation order):
+  - fixed the first pairing slice so invalid websocket `session_id` values are rejected before websocket upgrade instead of after the connection has already been hijacked.
+  - added a real websocket-dial regression test to prove clients now receive an actual HTTP `400` for unknown requested sessions.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(WSChatRejectsUnknownRequestedSessionBeforeUpgrade|ResolveGatewaySessionIDRejectsUnknownRequestedSession)$'` passed.
+  - `go test -count=1 ./pkg/gateway` passed.
+
+- Completed gateway control-plane hardening phase 11 (member read-scope correction):
+  - corrected the previous endpoint-scope auth slice so `member` no longer reads global gateway status.
+  - narrowed member access on `/api/v1/connections` and `/api/v1/connections/{id}` to only the caller's own `uid`-owned connections, while keeping delete operations restricted to `admin` / `owner`.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointRejectsMemberRole|ConnectionsEndpointAllowsMemberRoleForOwnedConnectionsOnly)|AuthenticateRequestAllowsMemberRoleForWebsocketPath|GetConnectionEndpoint(AllowsMemberRoleForOwnedConnection|RejectsMemberRoleForOtherUsersConnection))$'` passed.
+  - `go test -count=1 ./pkg/gateway` passed.
+
+- Completed gateway control-plane hardening phase 12 (websocket session pairing reuse):
+  - added a thin pairing path so `/ws/chat?session_id=<gateway-session>` can reuse an existing gateway session instead of always minting a transient connection-scoped one.
+  - rejected unknown `session_id` values and non-gateway sessions with `400`, keeping the first pairing slice tightly bounded inside gateway-owned sessions only.
+  - aligned router input and websocket reply `session_id` values to the paired gateway session, so reconnect/reuse flows keep a stable session identity.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(ResolveGatewaySessionID(UsesRequestedExistingGatewaySession|RejectsUnknownRequestedSession|RejectsNonGatewaySession)|ProcessMessageUsesPairedSessionIDForRouterAndResponse)$'` passed.
+  - `go test -count=1 ./pkg/gateway` passed.
+
 - Completed gateway control-plane hardening phase 10 (endpoint-scoped REST auth):
   - refined the previous role gate into explicit read/manage scopes in `pkg/gateway/server.go` instead of treating every REST control-plane endpoint as equally privileged.
   - allowed `member` tokens to read `/api/v1/status`, `/api/v1/connections`, and `/api/v1/connections/{id}` while keeping `DELETE /api/v1/connections/{id}` restricted to `admin` / `owner`.

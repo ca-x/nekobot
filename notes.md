@@ -3910,3 +3910,83 @@ type CronJobState struct {
 - GREEN:
   - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointAllowsMemberRole|ConnectionsEndpointAllowsMemberRole)|DeleteConnectionEndpointRejectsMemberRole|GetConnectionEndpointAllowsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'`
   - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway member 只读范围收紧补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - `requireAuthenticatedAPI()` 现在返回 `authContext`，让后续读路径可以继续做 caller-aware 过滤。
+  - `GET /api/v1/status` 再次收紧为只允许 `admin` / `owner`，避免把全局连接计数暴露给 `member`。
+  - `GET /api/v1/connections` 与 `GET /api/v1/connections/{id}` 现在对 `member` 只返回其本人 `uid` 对应的连接。
+  - 新增 `gatewayControlPlaneCanReadConnection()`，把 member 只读范围显式收口到“仅本人连接元数据”。
+- `pkg/gateway/server_test.go`
+  - 调整并新增：
+    - `TestGatewayStatusEndpointRejectsMemberRole`
+    - `TestGatewayConnectionsEndpointAllowsMemberRoleForOwnedConnectionsOnly`
+    - `TestGetConnectionEndpointAllowsMemberRoleForOwnedConnection`
+    - `TestGetConnectionEndpointRejectsMemberRoleForOtherUsersConnection`
+
+### 当前语义
+- 这一步是对上一条 endpoint-scope 授权的修正收口，不新增新的控制面协议。
+- 当前规则：
+  - `status` 仍属于高敏感全局视图，只允许 `admin` / `owner`。
+  - `member` 可以看连接，但只能看自己 `uid` 对应的连接列表/详情。
+  - `DELETE /api/v1/connections/{id}` 继续只允许 `admin` / `owner`。
+
+### 本轮测试
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'Test(Gateway(StatusEndpointRejectsMemberRole|ConnectionsEndpointAllowsMemberRoleForOwnedConnectionsOnly)|AuthenticateRequestAllowsMemberRoleForWebsocketPath|GetConnectionEndpoint(AllowsMemberRoleForOwnedConnection|RejectsMemberRoleForOtherUsersConnection))$'`
+  - `go test -count=1 ./pkg/gateway`
+
+## 2026-04-03 gateway websocket session pairing reuse 补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - websocket 握手新增 `resolveGatewaySessionID()`，支持从 `?session_id=` 复用既有 gateway session。
+  - 仅允许复用已经存在且 `source == gateway` 的 session；未知 session 或非 gateway session 直接返回 `400`。
+  - `processMessage()`、router 调用和 websocket 回复现在统一使用配对后的 gateway session id，而不是临时连接 id。
+  - 新增 `gatewaySessionID()`，从 client 绑定的 session 中稳定提取真实 session id。
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestResolveGatewaySessionIDUsesRequestedExistingGatewaySession`
+    - `TestResolveGatewaySessionIDRejectsUnknownRequestedSession`
+    - `TestResolveGatewaySessionIDRejectsNonGatewaySession`
+    - `TestProcessMessageUsesPairedSessionIDForRouterAndResponse`
+
+### 当前语义
+- 这一步只补首个 pairing 薄切片，不混入：
+  - enrollment / claim token
+  - 多设备绑定协议
+  - 更复杂的 session ownership 模型
+- 当前规则：
+  - `/ws/chat?session_id=<gateway-session>` 可复用既有 gateway session。
+  - 非 gateway 来源的 session 不允许被 websocket pairing 复用。
+  - 配对成功后，消息路由与 websocket 返回的 `session_id` 都稳定对齐到被复用的 gateway session。
+  - 无效 `session_id` 现在会在 websocket upgrade 之前被拒绝，真实客户端可观测到 `400`，不再出现先 hijack 再写 HTTP 错误的伪路径。
+
+### 本轮测试
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'Test(ResolveGatewaySessionID(UsesRequestedExistingGatewaySession|RejectsUnknownRequestedSession|RejectsNonGatewaySession)|ProcessMessageUsesPairedSessionIDForRouterAndResponse)$'`
+  - `go test -count=1 ./pkg/gateway`
+
+## 2026-04-03 gateway pairing 握手时序修正补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - 将 `resolveGatewaySessionID()` 前移到 websocket upgrade 之前。
+  - 无效或不可复用的 `session_id` 现在直接走普通 HTTP 错误路径，避免先升级 websocket 再尝试写 `400`。
+- `pkg/gateway/server_test.go`
+  - 新增 `TestWSChatRejectsUnknownRequestedSessionBeforeUpgrade`，用真实 websocket dial 锁定这个回归点。
+
+### 当前语义
+- 这一步不扩展 pairing 能力，只修正已有 pairing 薄切片的握手边界。
+- 当前规则：
+  - session 复用资格必须先验证通过，才允许 websocket upgrade。
+  - 失败时客户端拿到真实 `400 Bad Request`，而不是升级后的连接错误。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'Test(WSChatRejectsUnknownRequestedSessionBeforeUpgrade|ResolveGatewaySessionIDRejectsUnknownRequestedSession)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'Test(WSChatRejectsUnknownRequestedSessionBeforeUpgrade|ResolveGatewaySessionIDRejectsUnknownRequestedSession)$'`
+  - `go test -count=1 ./pkg/gateway`
