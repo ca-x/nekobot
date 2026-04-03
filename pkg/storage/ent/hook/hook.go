@@ -116,6 +116,18 @@ func (f ModelRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelRouteMutation", m)
 }
 
+// The PermissionRuleFunc type is an adapter to allow the use of ordinary
+// function as PermissionRule mutator.
+type PermissionRuleFunc func(context.Context, *ent.PermissionRuleMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f PermissionRuleFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.PermissionRuleMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.PermissionRuleMutation", m)
+}
+
 // The PromptFunc type is an adapter to allow the use of ordinary
 // function as Prompt mutator.
 type PromptFunc func(context.Context, *ent.PromptMutation) (ent.Value, error)

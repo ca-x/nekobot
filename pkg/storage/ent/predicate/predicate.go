@@ -33,6 +33,9 @@ type ModelCatalog func(*sql.Selector)
 // ModelRoute is the predicate function for modelroute builders.
 type ModelRoute func(*sql.Selector)
 
+// PermissionRule is the predicate function for permissionrule builders.
+type PermissionRule func(*sql.Selector)
+
 // Prompt is the predicate function for prompt builders.
 type Prompt func(*sql.Selector)
 

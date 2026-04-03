@@ -327,7 +327,7 @@
 - [`claude_code_alignment_plan.md`](/home/czyt/code/nekobot/claude_code_alignment_plan.md)
 
 ### Status
-**Phase 5 Completed** - `permission rules` 最小闭环已落地：已补 ent schema、持久化 manager、evaluator、agent 执行入口接线、强制 pending approval 的 `ask` 语义、WebUI CRUD API，以及最小前端管理页。当前已通过定向 Go 回归与前端构建验证，下一步可进入 `AgentDefinition` 或 `context economy / context sources` 主线。
+**Phase 5 Completed** - `permission rules` 最小闭环已落地并已切成独立功能批次：已补 ent schema、持久化 manager、evaluator、agent 执行入口接线、强制 pending approval 的 `ask` 语义、WebUI CRUD API，以及最小前端管理页。当前已通过定向 Go 回归、`cmd/nekobot` 回归与前端构建验证；该批次提交后，主线继续进入首个真实 runtime decision 切片，而不再新增只读 preview 面。
 
 
 ## 2026-04-02 AgentDefinition / prompt boundary 最小桥接批次

@@ -23,6 +23,7 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
@@ -185,6 +186,7 @@ func runTUI(cmd *cobra.Command, args []string) {
 		watch.Module,
 		prompts.Module,
 		providerstore.Module,
+		permissionrules.Module,
 		runtimeagents.Module,
 		channelaccounts.Module,
 		accountbindings.Module,

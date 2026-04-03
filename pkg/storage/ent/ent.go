@@ -15,6 +15,7 @@ import (
 	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/modelcatalog"
 	"nekobot/pkg/storage/ent/modelroute"
+	"nekobot/pkg/storage/ent/permissionrule"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
@@ -97,6 +98,7 @@ func checkColumn(t, c string) error {
 			membership.Table:     membership.ValidColumn,
 			modelcatalog.Table:   modelcatalog.ValidColumn,
 			modelroute.Table:     modelroute.ValidColumn,
+			permissionrule.Table: permissionrule.ValidColumn,
 			prompt.Table:         prompt.ValidColumn,
 			promptbinding.Table:  promptbinding.ValidColumn,
 			provider.Table:       provider.ValidColumn,

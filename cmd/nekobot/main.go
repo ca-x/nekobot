@@ -25,6 +25,7 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
@@ -171,6 +172,7 @@ func runOneShot(ctx context.Context, cancel context.CancelFunc) {
 		watch.Module,
 		prompts.Module,
 		providerstore.Module,
+		permissionrules.Module,
 		runtimeagents.Module,
 		channelaccounts.Module,
 		accountbindings.Module,
@@ -238,6 +240,7 @@ func runInteractive(ctx context.Context, cancel context.CancelFunc) {
 		watch.Module,
 		prompts.Module,
 		providerstore.Module,
+		permissionrules.Module,
 		runtimeagents.Module,
 		channelaccounts.Module,
 		accountbindings.Module,

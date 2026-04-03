@@ -112,6 +112,15 @@ func (m *Manager) CheckApproval(toolName string, args map[string]interface{}, se
 	}
 }
 
+// EnqueueRequest forces a tool call into the pending approval queue, bypassing mode checks.
+func (m *Manager) EnqueueRequest(toolName string, args map[string]interface{}, sessionID string) (string, error) {
+	trimmedTool := toolName
+	if trimmedTool == "" {
+		return "", fmt.Errorf("tool name is required")
+	}
+	return m.enqueue(trimmedTool, args, sessionID), nil
+}
+
 // SetSessionMode overrides approval mode for one session.
 func (m *Manager) SetSessionMode(sessionID string, mode Mode) {
 	trimmedID := sessionID

@@ -11,6 +11,7 @@ import (
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
@@ -51,19 +52,20 @@ var Module = fx.Module("agent",
 type provideAgentDeps struct {
 	fx.In
 
-	Cfg           *config.Config
-	Log           *logger.Logger
-	SkillsMgr     *skills.Manager
-	ProcessMgr    *process.Manager
-	ApprovalMgr   *approval.Manager
-	Bus           bus.Bus
-	ToolSessMgr   *toolsessions.Manager `optional:"true"`
-	LC            fx.Lifecycle
-	ProviderStore *providerstore.Manager `optional:"true"`
-	KVStore       state.KV               `optional:"true"`
-	EntClient     *ent.Client            `optional:"true"`
-	PromptMgr     *prompts.Manager       `optional:"true"`
-	AuditLogger   *audit.Logger          `optional:"true"`
+	Cfg             *config.Config
+	Log             *logger.Logger
+	SkillsMgr       *skills.Manager
+	ProcessMgr      *process.Manager
+	ApprovalMgr     *approval.Manager
+	Bus             bus.Bus
+	ToolSessMgr     *toolsessions.Manager `optional:"true"`
+	LC              fx.Lifecycle
+	ProviderStore   *providerstore.Manager   `optional:"true"`
+	PermissionRules *permissionrules.Manager `optional:"true"`
+	KVStore         state.KV                 `optional:"true"`
+	EntClient       *ent.Client              `optional:"true"`
+	PromptMgr       *prompts.Manager         `optional:"true"`
+	AuditLogger     *audit.Logger            `optional:"true"`
 }
 
 // ProvideAgent provides an agent instance.
@@ -76,6 +78,7 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 	toolSessMgr := deps.ToolSessMgr
 	lc := deps.LC
 	providerStore := deps.ProviderStore
+	permissionRules := deps.PermissionRules
 	kvStore := deps.KVStore
 	entClient := deps.EntClient
 	promptMgr := deps.PromptMgr
@@ -128,6 +131,7 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	agent.permissionRules = permissionRules
 
 	// Set skills manager on context builder
 	agent.context.SetSkillsManager(skillsMgr)

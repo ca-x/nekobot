@@ -30,6 +30,8 @@ type Tx struct {
 	ModelCatalog *ModelCatalogClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// PermissionRule is the client for interacting with the PermissionRule builders.
+	PermissionRule *PermissionRuleClient
 	// Prompt is the client for interacting with the Prompt builders.
 	Prompt *PromptClient
 	// PromptBinding is the client for interacting with the PromptBinding builders.
@@ -184,6 +186,7 @@ func (tx *Tx) init() {
 	tx.Membership = NewMembershipClient(tx.config)
 	tx.ModelCatalog = NewModelCatalogClient(tx.config)
 	tx.ModelRoute = NewModelRouteClient(tx.config)
+	tx.PermissionRule = NewPermissionRuleClient(tx.config)
 	tx.Prompt = NewPromptClient(tx.config)
 	tx.PromptBinding = NewPromptBindingClient(tx.config)
 	tx.Provider = NewProviderClient(tx.config)

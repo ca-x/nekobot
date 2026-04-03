@@ -16,6 +16,7 @@ import (
 	"nekobot/pkg/memory"
 	promptmemory "nekobot/pkg/memory/prompt"
 	"nekobot/pkg/modelroute"
+	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/preprocess"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
@@ -53,6 +54,9 @@ type Agent struct {
 	tools    *tools.Registry
 	context  *ContextBuilder
 	approval *approval.Manager
+
+	permissionRules *permissionrules.Manager
+	definition      AgentDefinition
 
 	skillsManager  *skills.Manager
 	semanticMemory memory.SearchManager
@@ -506,6 +510,11 @@ func (a *Agent) chatWithProviderModelDetailed(
 ) (string, ChatRouteResult, error) {
 	ctx = context.WithValue(ctx, promptContextChannelKey, strings.TrimSpace(promptCtx.Channel))
 	ctx = context.WithValue(ctx, promptContextSessionKey, strings.TrimSpace(promptCtx.SessionID))
+	if promptCtx.Custom != nil {
+		if runtimeID, ok := promptCtx.Custom["runtime_id"].(string); ok {
+			ctx = context.WithValue(ctx, promptContextRuntimeKey, strings.TrimSpace(runtimeID))
+		}
+	}
 
 	sessionID := strings.TrimSpace(promptCtx.SessionID)
 	if sessionID == "" {
@@ -1179,9 +1188,49 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 		zap.Any("args", toolCall.Arguments),
 	)
 
+	sessionID := ctxStringValue(ctx, promptContextSessionKey)
+	runtimeID := ctxStringValue(ctx, promptContextRuntimeKey)
+	skipApproval := false
+
+	if a.permissionRules != nil {
+		result, err := a.permissionRules.Evaluate(ctx, permissionrules.Input{
+			ToolName:  toolCall.Name,
+			SessionID: sessionID,
+			RuntimeID: runtimeID,
+		})
+		if err != nil {
+			return "", fmt.Errorf("permission rule evaluation failed: %w", err)
+		}
+		if result.Matched {
+			switch result.Action {
+			case permissionrules.ActionDeny:
+				if a.taskStore != nil {
+					a.taskStore.ClearSessionPendingAction(sessionID)
+				}
+				return "Tool call denied by permission rule", nil
+			case permissionrules.ActionAsk:
+				if a.approval == nil {
+					return "", fmt.Errorf("approval manager is unavailable")
+				}
+				requestID, err := a.approval.EnqueueRequest(toolCall.Name, toolCall.Arguments, sessionID)
+				if err != nil {
+					return "", fmt.Errorf("enqueue approval request: %w", err)
+				}
+				if a.taskStore != nil {
+					a.taskStore.SetSessionPendingAction(sessionID, toolCall.Name, requestID)
+				}
+				return "Tool call pending approval", nil
+			case permissionrules.ActionAllow:
+				if a.taskStore != nil {
+					a.taskStore.ClearSessionPendingAction(sessionID)
+				}
+				skipApproval = true
+			}
+		}
+	}
+
 	// Check approval
-	if a.approval != nil {
-		sessionID := ctxStringValue(ctx, promptContextSessionKey)
+	if a.approval != nil && !skipApproval {
 		decision, requestID, err := a.approval.CheckApproval(
 			toolCall.Name,
 			toolCall.Arguments,
@@ -1223,6 +1272,9 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 	if sessionID := ctxStringValue(ctx, promptContextSessionKey); sessionID != "" {
 		ctx = context.WithValue(ctx, "session_id", sessionID)
 	}
+	if runtimeID := ctxStringValue(ctx, promptContextRuntimeKey); runtimeID != "" {
+		ctx = context.WithValue(ctx, "runtime_id", runtimeID)
+	}
 
 	result, err := a.tools.Execute(ctx, toolCall.Name, toolCall.Arguments)
 	if err != nil {
@@ -1237,6 +1289,7 @@ type promptContextKey string
 const (
 	promptContextChannelKey promptContextKey = "prompt_channel"
 	promptContextSessionKey promptContextKey = "prompt_session_id"
+	promptContextRuntimeKey promptContextKey = "prompt_runtime_id"
 )
 
 func ctxStringValue(ctx context.Context, key promptContextKey) string {

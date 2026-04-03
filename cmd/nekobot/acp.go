@@ -19,6 +19,7 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
@@ -69,6 +70,7 @@ func runACP(cmd *cobra.Command, args []string) {
 		toolsessions.Module,
 		prompts.Module,
 		providerstore.Module,
+		permissionrules.Module,
 		runtimeagents.Module,
 		channelaccounts.Module,
 		accountbindings.Module,

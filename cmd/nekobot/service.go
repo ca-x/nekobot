@@ -28,6 +28,7 @@ import (
 	"nekobot/pkg/heartbeat"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providerstore"
@@ -107,6 +108,7 @@ func (s *GatewayService) run() {
 		toolsessions.Module,
 		prompts.Module,
 		providerstore.Module,
+		permissionrules.Module,
 		runtimeagents.Module,
 		channelaccounts.Module,
 		accountbindings.Module,
@@ -297,6 +299,7 @@ func runGatewayForeground() {
 		toolsessions.Module,
 		prompts.Module,
 		providerstore.Module,
+		permissionrules.Module,
 		runtimeagents.Module,
 		channelaccounts.Module,
 		accountbindings.Module,

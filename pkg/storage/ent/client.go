@@ -20,6 +20,7 @@ import (
 	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/modelcatalog"
 	"nekobot/pkg/storage/ent/modelroute"
+	"nekobot/pkg/storage/ent/permissionrule"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
@@ -57,6 +58,8 @@ type Client struct {
 	ModelCatalog *ModelCatalogClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// PermissionRule is the client for interacting with the PermissionRule builders.
+	PermissionRule *PermissionRuleClient
 	// Prompt is the client for interacting with the Prompt builders.
 	Prompt *PromptClient
 	// PromptBinding is the client for interacting with the PromptBinding builders.
@@ -91,6 +94,7 @@ func (c *Client) init() {
 	c.Membership = NewMembershipClient(c.config)
 	c.ModelCatalog = NewModelCatalogClient(c.config)
 	c.ModelRoute = NewModelRouteClient(c.config)
+	c.PermissionRule = NewPermissionRuleClient(c.config)
 	c.Prompt = NewPromptClient(c.config)
 	c.PromptBinding = NewPromptBindingClient(c.config)
 	c.Provider = NewProviderClient(c.config)
@@ -199,6 +203,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Membership:     NewMembershipClient(cfg),
 		ModelCatalog:   NewModelCatalogClient(cfg),
 		ModelRoute:     NewModelRouteClient(cfg),
+		PermissionRule: NewPermissionRuleClient(cfg),
 		Prompt:         NewPromptClient(cfg),
 		PromptBinding:  NewPromptBindingClient(cfg),
 		Provider:       NewProviderClient(cfg),
@@ -234,6 +239,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Membership:     NewMembershipClient(cfg),
 		ModelCatalog:   NewModelCatalogClient(cfg),
 		ModelRoute:     NewModelRouteClient(cfg),
+		PermissionRule: NewPermissionRuleClient(cfg),
 		Prompt:         NewPromptClient(cfg),
 		PromptBinding:  NewPromptBindingClient(cfg),
 		Provider:       NewProviderClient(cfg),
@@ -272,8 +278,8 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
 		c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog, c.ModelRoute,
-		c.Prompt, c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession,
-		c.User,
+		c.PermissionRule, c.Prompt, c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent,
+		c.ToolSession, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -285,8 +291,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
 		c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog, c.ModelRoute,
-		c.Prompt, c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession,
-		c.User,
+		c.PermissionRule, c.Prompt, c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent,
+		c.ToolSession, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -313,6 +319,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ModelCatalog.mutate(ctx, m)
 	case *ModelRouteMutation:
 		return c.ModelRoute.mutate(ctx, m)
+	case *PermissionRuleMutation:
+		return c.PermissionRule.mutate(ctx, m)
 	case *PromptMutation:
 		return c.Prompt.mutate(ctx, m)
 	case *PromptBindingMutation:
@@ -1561,6 +1569,139 @@ func (c *ModelRouteClient) mutate(ctx context.Context, m *ModelRouteMutation) (V
 	}
 }
 
+// PermissionRuleClient is a client for the PermissionRule schema.
+type PermissionRuleClient struct {
+	config
+}
+
+// NewPermissionRuleClient returns a client for the PermissionRule from the given config.
+func NewPermissionRuleClient(c config) *PermissionRuleClient {
+	return &PermissionRuleClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `permissionrule.Hooks(f(g(h())))`.
+func (c *PermissionRuleClient) Use(hooks ...Hook) {
+	c.hooks.PermissionRule = append(c.hooks.PermissionRule, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `permissionrule.Intercept(f(g(h())))`.
+func (c *PermissionRuleClient) Intercept(interceptors ...Interceptor) {
+	c.inters.PermissionRule = append(c.inters.PermissionRule, interceptors...)
+}
+
+// Create returns a builder for creating a PermissionRule entity.
+func (c *PermissionRuleClient) Create() *PermissionRuleCreate {
+	mutation := newPermissionRuleMutation(c.config, OpCreate)
+	return &PermissionRuleCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of PermissionRule entities.
+func (c *PermissionRuleClient) CreateBulk(builders ...*PermissionRuleCreate) *PermissionRuleCreateBulk {
+	return &PermissionRuleCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *PermissionRuleClient) MapCreateBulk(slice any, setFunc func(*PermissionRuleCreate, int)) *PermissionRuleCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &PermissionRuleCreateBulk{err: fmt.Errorf("calling to PermissionRuleClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*PermissionRuleCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &PermissionRuleCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for PermissionRule.
+func (c *PermissionRuleClient) Update() *PermissionRuleUpdate {
+	mutation := newPermissionRuleMutation(c.config, OpUpdate)
+	return &PermissionRuleUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *PermissionRuleClient) UpdateOne(_m *PermissionRule) *PermissionRuleUpdateOne {
+	mutation := newPermissionRuleMutation(c.config, OpUpdateOne, withPermissionRule(_m))
+	return &PermissionRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *PermissionRuleClient) UpdateOneID(id string) *PermissionRuleUpdateOne {
+	mutation := newPermissionRuleMutation(c.config, OpUpdateOne, withPermissionRuleID(id))
+	return &PermissionRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for PermissionRule.
+func (c *PermissionRuleClient) Delete() *PermissionRuleDelete {
+	mutation := newPermissionRuleMutation(c.config, OpDelete)
+	return &PermissionRuleDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *PermissionRuleClient) DeleteOne(_m *PermissionRule) *PermissionRuleDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *PermissionRuleClient) DeleteOneID(id string) *PermissionRuleDeleteOne {
+	builder := c.Delete().Where(permissionrule.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &PermissionRuleDeleteOne{builder}
+}
+
+// Query returns a query builder for PermissionRule.
+func (c *PermissionRuleClient) Query() *PermissionRuleQuery {
+	return &PermissionRuleQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypePermissionRule},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a PermissionRule entity by its id.
+func (c *PermissionRuleClient) Get(ctx context.Context, id string) (*PermissionRule, error) {
+	return c.Query().Where(permissionrule.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *PermissionRuleClient) GetX(ctx context.Context, id string) *PermissionRule {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *PermissionRuleClient) Hooks() []Hook {
+	return c.hooks.PermissionRule
+}
+
+// Interceptors returns the client interceptors.
+func (c *PermissionRuleClient) Interceptors() []Interceptor {
+	return c.inters.PermissionRule
+}
+
+func (c *PermissionRuleClient) mutate(ctx context.Context, m *PermissionRuleMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&PermissionRuleCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&PermissionRuleUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&PermissionRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&PermissionRuleDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown PermissionRule mutation op: %q", m.Op())
+	}
+}
+
 // PromptClient is a client for the Prompt schema.
 type PromptClient struct {
 	config
@@ -2528,12 +2669,12 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 type (
 	hooks struct {
 		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
-		CronJob, Membership, ModelCatalog, ModelRoute, Prompt, PromptBinding, Provider,
-		Tenant, ToolEvent, ToolSession, User []ent.Hook
+		CronJob, Membership, ModelCatalog, ModelRoute, PermissionRule, Prompt,
+		PromptBinding, Provider, Tenant, ToolEvent, ToolSession, User []ent.Hook
 	}
 	inters struct {
 		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
-		CronJob, Membership, ModelCatalog, ModelRoute, Prompt, PromptBinding, Provider,
-		Tenant, ToolEvent, ToolSession, User []ent.Interceptor
+		CronJob, Membership, ModelCatalog, ModelRoute, PermissionRule, Prompt,
+		PromptBinding, Provider, Tenant, ToolEvent, ToolSession, User []ent.Interceptor
 	}
 )

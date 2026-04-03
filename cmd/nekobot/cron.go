@@ -18,6 +18,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/providerstore"
@@ -379,6 +380,7 @@ func buildCronManagerOrExit() (*cron.Manager, func()) {
 		watch.Module,
 		prompts.Module,
 		providerstore.Module,
+		permissionrules.Module,
 		runtimeagents.Module,
 		channelaccounts.Module,
 		accountbindings.Module,

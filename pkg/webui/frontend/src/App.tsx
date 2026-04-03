@@ -10,6 +10,7 @@ const SessionsPage = lazy(() => import('./pages/SessionsPage'));
 const ToolSessionsPage = lazy(() => import('./pages/ToolSessionsPage'));
 const ProvidersPage = lazy(() => import('./pages/ProvidersPage'));
 const ModelsPage = lazy(() => import('./pages/ModelsPage'));
+const PermissionRulesPage = lazy(() => import('./pages/PermissionRulesPage'));
 const ChannelsPage = lazy(() => import('./pages/ChannelsPage'));
 const MarketplacePage = lazy(() => import('./pages/MarketplacePage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/tools" element={<ToolSessionsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/models" element={<ModelsPage />} />
+          <Route path="/permission-rules" element={<PermissionRulesPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/marketplace" element={<MarketplacePage />} />
           <Route path="/prompts" element={<PromptsPage />} />

@@ -51,6 +51,7 @@ import (
 	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/modelroute"
 	"nekobot/pkg/modelstore"
+	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providerregistry"
@@ -320,6 +321,10 @@ func (s *Server) setup() {
 	api.POST("/models", s.handleCreateModel)
 	api.GET("/model-routes", s.handleGetModelRoutes)
 	api.PUT("/model-routes/:modelID/:providerName", s.handleUpdateModelRoute)
+	api.GET("/permission-rules", s.handleGetPermissionRules)
+	api.POST("/permission-rules", s.handleCreatePermissionRule)
+	api.PUT("/permission-rules/:id", s.handleUpdatePermissionRule)
+	api.DELETE("/permission-rules/:id", s.handleDeletePermissionRule)
 
 	// Channel routes
 	api.GET("/channels", s.handleGetChannels)
@@ -6886,6 +6891,62 @@ func (s *Server) handleDenyRequest(c *echo.Context) error {
 		s.taskStore.ClearSessionPendingAction(req.SessionID)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "denied", "id": id})
+}
+
+func (s *Server) handleGetPermissionRules(c *echo.Context) error {
+	manager, err := permissionrules.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	items, err := manager.List(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleCreatePermissionRule(c *echo.Context) error {
+	var input permissionrules.Rule
+	if err := c.Bind(&input); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	manager, err := permissionrules.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	item, err := manager.Create(c.Request().Context(), input)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, map[string]interface{}{"status": "created", "rule": item})
+}
+
+func (s *Server) handleUpdatePermissionRule(c *echo.Context) error {
+	var input permissionrules.Rule
+	if err := c.Bind(&input); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	manager, err := permissionrules.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	item, err := manager.Update(c.Request().Context(), strings.TrimSpace(c.Param("id")), input)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{"status": "updated", "rule": item})
+}
+
+func (s *Server) handleDeletePermissionRule(c *echo.Context) error {
+	manager, err := permissionrules.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if err := manager.Delete(c.Request().Context(), id); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted", "id": id})
 }
 
 // --- Helpers ---

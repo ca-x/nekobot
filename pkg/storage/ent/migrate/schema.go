@@ -364,6 +364,52 @@ var (
 			},
 		},
 	}
+	// PermissionRulesColumns holds the columns for the "permission_rules" table.
+	PermissionRulesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "priority", Type: field.TypeInt, Default: 0},
+		{Name: "tool_name", Type: field.TypeString},
+		{Name: "session_id", Type: field.TypeString, Default: ""},
+		{Name: "runtime_id", Type: field.TypeString, Default: ""},
+		{Name: "action", Type: field.TypeString},
+		{Name: "description", Type: field.TypeString, Default: ""},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// PermissionRulesTable holds the schema information for the "permission_rules" table.
+	PermissionRulesTable = &schema.Table{
+		Name:       "permission_rules",
+		Columns:    PermissionRulesColumns,
+		PrimaryKey: []*schema.Column{PermissionRulesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "permissionrule_tool_name",
+				Unique:  false,
+				Columns: []*schema.Column{PermissionRulesColumns[3]},
+			},
+			{
+				Name:    "permissionrule_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{PermissionRulesColumns[1]},
+			},
+			{
+				Name:    "permissionrule_priority",
+				Unique:  false,
+				Columns: []*schema.Column{PermissionRulesColumns[2]},
+			},
+			{
+				Name:    "permissionrule_session_id",
+				Unique:  false,
+				Columns: []*schema.Column{PermissionRulesColumns[4]},
+			},
+			{
+				Name:    "permissionrule_runtime_id",
+				Unique:  false,
+				Columns: []*schema.Column{PermissionRulesColumns[5]},
+			},
+		},
+	}
 	// PromptsColumns holds the columns for the "prompts" table.
 	PromptsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -627,6 +673,7 @@ var (
 		MembershipsTable,
 		ModelCatalogsTable,
 		ModelRoutesTable,
+		PermissionRulesTable,
 		PromptsTable,
 		PromptBindingsTable,
 		ProvidersTable,

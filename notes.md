@@ -3233,14 +3233,22 @@ type CronJobState struct {
 - `ask` 的语义已锁定为：
   - 无论当前 approval mode 是 `auto` 还是 `manual`
   - 都强制进入待审批队列
+- 当前切片边界已锁定为独立提交：
+  - 包含 `permission rules` 持久化、执行接线、API、WebUI 管理页
+  - 不混入 `context sources` 预览
+  - 不混入 `readonly preflight`
+  - 不混入 `AgentDefinition` System 页展示
 
 ### 本轮测试
 - `go test -count=1 ./pkg/agent -run 'TestProvideAgent_WiresPermissionRuleManager|TestExecuteToolCallPermissionRule'`
 - `go test -count=1 ./pkg/permissionrules ./pkg/approval ./pkg/agent ./pkg/webui`
+- `go test -count=1 ./cmd/nekobot`
 - `cd pkg/webui/frontend && npm run build`
 
 ### 额外注意
 - `pkg/webui/frontend/dist` 当前受版本控制，因此前端构建会同步刷新产物；这不是新增设计决策，只是仓库现状。
+- `pkg/agent/agent.go`、`pkg/webui/server.go`、`public/i18n/{en,ja,zh-CN}.json` 当前存在跨切片改动，因此本轮通过部分暂存只提交 permission-rules 相关 hunks。
+- 下一步不再继续扩只读 explainability，而是进入首个真实 runtime decision 点切片。
 
 ## 2026-04-02 AgentDefinition / prompt boundary 桥接补记
 

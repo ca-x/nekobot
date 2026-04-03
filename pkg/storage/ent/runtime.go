@@ -12,6 +12,7 @@ import (
 	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/modelcatalog"
 	"nekobot/pkg/storage/ent/modelroute"
+	"nekobot/pkg/storage/ent/permissionrule"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
@@ -395,6 +396,50 @@ func init() {
 	modelrouteDescID := modelrouteFields[0].Descriptor()
 	// modelroute.DefaultID holds the default value on creation for the id field.
 	modelroute.DefaultID = modelrouteDescID.Default.(func() string)
+	permissionruleFields := schema.PermissionRule{}.Fields()
+	_ = permissionruleFields
+	// permissionruleDescEnabled is the schema descriptor for enabled field.
+	permissionruleDescEnabled := permissionruleFields[1].Descriptor()
+	// permissionrule.DefaultEnabled holds the default value on creation for the enabled field.
+	permissionrule.DefaultEnabled = permissionruleDescEnabled.Default.(bool)
+	// permissionruleDescPriority is the schema descriptor for priority field.
+	permissionruleDescPriority := permissionruleFields[2].Descriptor()
+	// permissionrule.DefaultPriority holds the default value on creation for the priority field.
+	permissionrule.DefaultPriority = permissionruleDescPriority.Default.(int)
+	// permissionruleDescToolName is the schema descriptor for tool_name field.
+	permissionruleDescToolName := permissionruleFields[3].Descriptor()
+	// permissionrule.ToolNameValidator is a validator for the "tool_name" field. It is called by the builders before save.
+	permissionrule.ToolNameValidator = permissionruleDescToolName.Validators[0].(func(string) error)
+	// permissionruleDescSessionID is the schema descriptor for session_id field.
+	permissionruleDescSessionID := permissionruleFields[4].Descriptor()
+	// permissionrule.DefaultSessionID holds the default value on creation for the session_id field.
+	permissionrule.DefaultSessionID = permissionruleDescSessionID.Default.(string)
+	// permissionruleDescRuntimeID is the schema descriptor for runtime_id field.
+	permissionruleDescRuntimeID := permissionruleFields[5].Descriptor()
+	// permissionrule.DefaultRuntimeID holds the default value on creation for the runtime_id field.
+	permissionrule.DefaultRuntimeID = permissionruleDescRuntimeID.Default.(string)
+	// permissionruleDescAction is the schema descriptor for action field.
+	permissionruleDescAction := permissionruleFields[6].Descriptor()
+	// permissionrule.ActionValidator is a validator for the "action" field. It is called by the builders before save.
+	permissionrule.ActionValidator = permissionruleDescAction.Validators[0].(func(string) error)
+	// permissionruleDescDescription is the schema descriptor for description field.
+	permissionruleDescDescription := permissionruleFields[7].Descriptor()
+	// permissionrule.DefaultDescription holds the default value on creation for the description field.
+	permissionrule.DefaultDescription = permissionruleDescDescription.Default.(string)
+	// permissionruleDescCreatedAt is the schema descriptor for created_at field.
+	permissionruleDescCreatedAt := permissionruleFields[8].Descriptor()
+	// permissionrule.DefaultCreatedAt holds the default value on creation for the created_at field.
+	permissionrule.DefaultCreatedAt = permissionruleDescCreatedAt.Default.(func() time.Time)
+	// permissionruleDescUpdatedAt is the schema descriptor for updated_at field.
+	permissionruleDescUpdatedAt := permissionruleFields[9].Descriptor()
+	// permissionrule.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	permissionrule.DefaultUpdatedAt = permissionruleDescUpdatedAt.Default.(func() time.Time)
+	// permissionrule.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	permissionrule.UpdateDefaultUpdatedAt = permissionruleDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// permissionruleDescID is the schema descriptor for id field.
+	permissionruleDescID := permissionruleFields[0].Descriptor()
+	// permissionrule.DefaultID holds the default value on creation for the id field.
+	permissionrule.DefaultID = permissionruleDescID.Default.(func() string)
 	promptFields := schema.Prompt{}.Fields()
 	_ = promptFields
 	// promptDescPromptKey is the schema descriptor for prompt_key field.
