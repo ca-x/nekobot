@@ -4,6 +4,18 @@
 
 ## 2026-04-03
 
+## 2026-04-04
+
+- Completed channel capability matrix phase 2 (first runtime consumer):
+  - extracted the shared capability evaluation/model code into `pkg/channelcapabilities` so channel runtime packages can consume the matrix without importing `pkg/channels` and creating a cycle.
+  - kept `pkg/channels/capabilities.go` as a thin compatibility wrapper so existing callers and tests continue to use the same API surface.
+  - wired `pkg/channels/whatsapp/whatsapp.go` to respect the declared `native_commands` capability before routing slash commands, making WhatsApp's default `native_commands=off` matrix real at runtime.
+  - added a regression test proving WhatsApp now forwards `/help ...` as plain inbound text instead of executing the command handler when native commands are disabled.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/whatsapp -run TestHandleInboundTreatsSlashCommandAsPlainTextWhenNativeCommandsDisabled` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/channels/whatsapp ./pkg/channels -run 'Test(HandleInboundTreatsSlashCommandAsPlainTextWhenNativeCommandsDisabled|GetDefaultCapabilitiesForChannel|IsCapabilityEnabled|MergeCapabilities)$'` passed.
+  - `go test -count=1 ./pkg/channels/...` passed.
+
 - Completed browser session migration phase 3 (relay attach-only mode):
   - added the first narrow `relay` browser connection mode instead of continuing to reject it at the tool boundary.
   - kept the semantics intentionally strict: relay mode only attaches to an existing browser instance and never launches a new one, so the first slice is real but bounded.

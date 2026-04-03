@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -214,8 +215,8 @@ func (c *Channel) handleInbound(rawMsg map[string]interface{}) {
 		return
 	}
 
-	// Check for slash commands
-	if c.commands.IsCommand(content) {
+	// Respect the channel capability matrix before routing native commands.
+	if c.supportsNativeCommands(senderID, chatID) && c.commands.IsCommand(content) {
 		c.handleCommand(rawMsg, senderID, chatID, content)
 		return
 	}
@@ -236,6 +237,20 @@ func (c *Channel) handleInbound(rawMsg map[string]interface{}) {
 	if err := c.bus.SendInbound(msg); err != nil {
 		c.log.Error("Failed to send inbound message", zap.Error(err))
 	}
+}
+
+func (c *Channel) supportsNativeCommands(senderID, chatID string) bool {
+	scope := channelcapabilities.CapabilityScopeDM
+	if chatID != "" && chatID != senderID {
+		scope = channelcapabilities.CapabilityScopeGroup
+	}
+
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ID()),
+		channelcapabilities.CapabilityNativeCommands,
+		scope,
+		false,
+	)
 }
 
 // handleCommand processes a command message.

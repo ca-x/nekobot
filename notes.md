@@ -4111,3 +4111,31 @@ type CronJobState struct {
 - GREEN:
   - `go test -count=1 ./pkg/tools -run 'Test(ResolveBrowserMode|BrowserSessionStartWithModeRelay|BrowserToolStartModeFromParams|BrowserToolExecuteRejectsInvalidMode)$'`
   - `go test -count=1 ./pkg/tools`
+
+## 2026-04-04 channel capability 首个运行时消费补记
+
+### 本轮完成
+- `pkg/channelcapabilities/capabilities.go`
+  - 把 capability 矩阵实现抽到独立包，避免 `pkg/channels/*` 子 channel 直接依赖 `pkg/channels` 时形成循环导入。
+- `pkg/channels/capabilities.go`
+  - 保留原有对外 API，改为薄转发到独立 capability 包，避免现有调用点和测试受影响。
+- `pkg/channels/whatsapp/whatsapp.go`
+  - `handleInbound()` 现在在识别 slash/native command 前，先读取该 channel 的默认 capability 矩阵。
+  - 对 `whatsapp` 而言，默认 `native_commands=off`，因此 `/help` 这类消息现在按普通文本进 bus，而不是直接执行命令。
+- `pkg/channels/whatsapp/whatsapp_test.go`
+  - 新增真实行为回归，锁定 WhatsApp 默认禁用 native commands 时，slash command 不再走命令处理器。
+
+### 当前语义
+- 这一步只收口 `native_commands` 在 `whatsapp` 的首个真实消费点，不扩到全部 capability 类型，也不一次性改所有 channel。
+- 当前规则：
+  - `whatsapp` 默认 capability 继续声明 `native_commands=off`。
+  - 运行时现在真正尊重这条声明。
+  - slash 文本在 WhatsApp 中会继续作为普通消息进入 agent 总线。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/channels/whatsapp -run TestHandleInboundTreatsSlashCommandAsPlainTextWhenNativeCommandsDisabled`
+- GREEN:
+  - `go test -count=1 ./pkg/channels/whatsapp -run TestHandleInboundTreatsSlashCommandAsPlainTextWhenNativeCommandsDisabled`
+  - `go test -count=1 ./pkg/channels/whatsapp ./pkg/channels -run 'Test(HandleInboundTreatsSlashCommandAsPlainTextWhenNativeCommandsDisabled|GetDefaultCapabilitiesForChannel|IsCapabilityEnabled|MergeCapabilities)$'`
+  - `go test -count=1 ./pkg/channels/...`
