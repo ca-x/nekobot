@@ -62,6 +62,16 @@ type trackedFileState struct {
 	mtime  int64
 }
 
+// PromptSection describes one rendered system-prompt block together with its
+// stability boundary so future context-sources and AgentDefinition views can
+// inspect prompt composition without reparsing raw text.
+type PromptSection struct {
+	ID      string
+	Title   string
+	Content string
+	Stable  bool
+}
+
 // NewContextBuilder creates a new context builder for the given workspace.
 func NewContextBuilder(workspace string) *ContextBuilder {
 	return NewContextBuilderWithMemory(workspace, promptmemory.NewStore(workspace))
@@ -261,16 +271,88 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	return strings.Join(parts, "\n\n---\n\n")
 }
 
+// BuildPromptSections returns the current prompt as explicit sections with a
+// stable/dynamic boundary, without changing the existing rendered prompt shape.
+func (cb *ContextBuilder) BuildPromptSections() []PromptSection {
+	sections := make([]PromptSection, 0, 5)
+
+	identity := strings.TrimSpace(cb.getIdentity())
+	if identity != "" {
+		sections = append(sections, PromptSection{
+			ID:      "identity",
+			Title:   "Identity",
+			Content: identity,
+			Stable:  true,
+		})
+	}
+
+	bootstrapContent := strings.TrimSpace(cb.LoadBootstrapFiles())
+	if bootstrapContent != "" {
+		sections = append(sections, PromptSection{
+			ID:      "bootstrap",
+			Title:   "Bootstrap Configuration",
+			Content: "# Bootstrap Configuration\n\n" + bootstrapContent,
+			Stable:  true,
+		})
+	}
+
+	skillsSection := strings.TrimSpace(cb.buildSkillsSection())
+	if skillsSection != "" {
+		sections = append(sections, PromptSection{
+			ID:      "skills",
+			Title:   "Skills",
+			Content: skillsSection,
+			Stable:  false,
+		})
+	}
+
+	memoryContext := ""
+	if cb.composer != nil {
+		memoryContext = strings.TrimSpace(cb.composer.Build())
+	}
+	if memoryContext != "" {
+		sections = append(sections, PromptSection{
+			ID:      "memory",
+			Title:   "Memory",
+			Content: "# Memory\n\n" + memoryContext,
+			Stable:  false,
+		})
+	}
+
+	return sections
+}
+
 // BuildSystemPrompt builds the complete system prompt.
 // This includes identity, bootstrap files, tools, skills, and memory.
 func (cb *ContextBuilder) BuildSystemPrompt() string {
-	staticBlock := cb.buildStaticPromptBlock()
+	sections := cb.BuildPromptSections()
+	if len(sections) == 0 {
+		return ""
+	}
+
+	staticParts := make([]string, 0, len(sections))
+	dynamicParts := make([]string, 0, len(sections))
+	for _, section := range sections {
+		if strings.TrimSpace(section.Content) == "" {
+			continue
+		}
+		if section.Stable {
+			staticParts = append(staticParts, section.Content)
+			continue
+		}
+		dynamicParts = append(dynamicParts, section.Content)
+	}
+
+	staticBlock := strings.Join(staticParts, "\n\n---\n\n")
 	currentTime := time.Now().Format("2006-01-02 15:04 (Monday)")
 	staticBlock = strings.ReplaceAll(staticBlock, currentTimePlaceholder, currentTime)
 
-	dynamicBlock := cb.buildDynamicPromptBlock()
+	dynamicBlock := strings.Join(dynamicParts, "\n\n---\n\n")
 	if dynamicBlock == "" {
 		return staticBlock
+	}
+	if staticBlock == "" {
+		return dynamicBlock
 	}
 	return staticBlock + "\n\n---\n\n" + dynamicBlock
 }
@@ -304,11 +386,11 @@ func (cb *ContextBuilder) buildStaticPromptBlock() string {
 	}
 
 	var parts []string
-	parts = append(parts, cb.getIdentity())
-
-	bootstrapContent := cb.LoadBootstrapFiles()
-	if bootstrapContent != "" {
-		parts = append(parts, "# Bootstrap Configuration\n\n"+bootstrapContent)
+	for _, section := range cb.BuildPromptSections() {
+		if !section.Stable || strings.TrimSpace(section.Content) == "" {
+			continue
+		}
+		parts = append(parts, section.Content)
 	}
 
 	cached := strings.Join(parts, "\n\n---\n\n")
@@ -322,18 +404,11 @@ func (cb *ContextBuilder) buildStaticPromptBlock() string {
 
 func (cb *ContextBuilder) buildDynamicPromptBlock() string {
 	parts := make([]string, 0, 2)
-
-	skillsSection := cb.buildSkillsSection()
-	if skillsSection != "" {
-		parts = append(parts, skillsSection)
-	}
-
-	memoryContext := ""
-	if cb.composer != nil {
-		memoryContext = cb.composer.Build()
-	}
-	if memoryContext != "" {
-		parts = append(parts, "# Memory\n\n"+memoryContext)
+	for _, section := range cb.BuildPromptSections() {
+		if section.Stable || strings.TrimSpace(section.Content) == "" {
+			continue
+		}
+		parts = append(parts, section.Content)
 	}
 
 	return strings.Join(parts, "\n\n---\n\n")

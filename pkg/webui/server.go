@@ -5207,8 +5207,14 @@ func (s *Server) handleStatus(c *echo.Context) error {
 		"recent_tasks":           recentTasks,
 		"runtime_states":         runtimeStates,
 		"session_runtime_states": sessionStates,
-		"gateway_host":           s.config.Gateway.Host,
-		"gateway_port":           s.config.Gateway.Port,
+		"agent_definition": func() interface{} {
+			if s.agent == nil {
+				return nil
+			}
+			return s.agent.Definition()
+		}(),
+		"gateway_host": s.config.Gateway.Host,
+		"gateway_port": s.config.Gateway.Port,
 		"gateway": map[string]interface{}{
 			"host": s.config.Gateway.Host,
 			"port": s.config.Gateway.Port,

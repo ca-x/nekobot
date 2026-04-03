@@ -252,6 +252,7 @@ func New(
 		tools:            toolRegistry,
 		context:          contextBuilder,
 		approval:         approvalMgr,
+		definition:       AgentDefinitionFromRuntimeConfig(cfg),
 		semanticMemory:   semanticMemory,
 		promptManager:    promptMgr,
 		snapshotMgr:      snapshotMgr,
@@ -379,6 +380,14 @@ func (a *Agent) TaskService() *tasks.Service {
 		return nil
 	}
 	return a.taskService
+}
+
+// Definition exposes the current AgentDefinition compatibility snapshot.
+func (a *Agent) Definition() AgentDefinition {
+	if a == nil {
+		return AgentDefinition{}
+	}
+	return a.definition
 }
 
 // PreviewPreprocessedInput exposes the configured file-mention preprocessing

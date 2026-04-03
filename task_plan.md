@@ -358,7 +358,7 @@
   - 不额外引入第二套 prompt 装配系统
 
 ### Status
-**Phase 5 Completed** - `AgentDefinition` 已从“规划概念”变成可读取运行时快照，`ContextBuilder` 也已有 stable/dynamic prompt section 边界；已确认下一步直接进入最小 `context sources` explainability preview，并已完成该切片的实现与验证。
+**Phase 5 Completed** - `AgentDefinition` 已从“规划概念”变成可读取运行时快照，`ContextBuilder` 也已有 stable/dynamic prompt section 边界；当前该批次正按独立功能切片重新整理提交边界，只包含 definition snapshot、`/api/status` 暴露与 System 页只读展示，不混入 `context sources` / readonly `preflight`。
 
 
 ## 2026-04-02 context sources 最小 explainability preview 批次

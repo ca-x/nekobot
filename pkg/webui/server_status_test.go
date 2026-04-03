@@ -14,6 +14,8 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/accountbindings"
+	"nekobot/pkg/agent"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/config"
 	"nekobot/pkg/runtimeagents"
@@ -117,6 +119,7 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 		"task_count",
 		"task_state_counts",
 		"recent_tasks",
+		"agent_definition",
 		"gateway_host",
 		"gateway_port",
 	}
@@ -148,6 +151,9 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 	}
 	if sessionStates, ok := payload["session_runtime_states"].([]interface{}); !ok || len(sessionStates) != 0 {
 		t.Fatalf("expected empty session_runtime_states, got %+v", payload["session_runtime_states"])
+	}
+	if payload["agent_definition"] != nil {
+		t.Fatalf("expected nil agent_definition when server has no agent, got %+v", payload["agent_definition"])
 	}
 }
 
@@ -229,6 +235,63 @@ func TestHandleStatus_IncludesRecentTasks(t *testing.T) {
 	}
 	if payload.RecentTasks[1].ID != "task-running" {
 		t.Fatalf("expected second task to be task-running, got %q", payload.RecentTasks[1].ID)
+	}
+}
+
+func TestHandleStatus_IncludesAgentDefinition(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.Provider = "openai-main"
+	cfg.Agents.Defaults.Model = "gpt-5.4"
+	cfg.Approval.Mode = "manual"
+
+	log := newTestLogger(t)
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeManual}), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+
+	s := &Server{
+		config:    cfg,
+		agent:     ag,
+		startedAt: time.Now().Add(-2 * time.Second),
+		taskStore: tasks.NewStore(),
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleStatus(ctx); err != nil {
+		t.Fatalf("handleStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var payload struct {
+		AgentDefinition struct {
+			ID             string `json:"id"`
+			PermissionMode string `json:"permissionMode"`
+			Route          struct {
+				Provider string `json:"provider"`
+				Model    string `json:"model"`
+			} `json:"route"`
+		} `json:"agent_definition"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal status payload failed: %v", err)
+	}
+	if payload.AgentDefinition.ID != "main" {
+		t.Fatalf("expected agent definition id main, got %+v", payload.AgentDefinition)
+	}
+	if payload.AgentDefinition.Route.Provider != "openai-main" || payload.AgentDefinition.Route.Model != "gpt-5.4" {
+		t.Fatalf("unexpected agent definition route: %+v", payload.AgentDefinition.Route)
+	}
+	if payload.AgentDefinition.PermissionMode != "manual" {
+		t.Fatalf("unexpected permission mode: %+v", payload.AgentDefinition.PermissionMode)
 	}
 }
 

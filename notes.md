@@ -3249,6 +3249,9 @@ type CronJobState struct {
 - `pkg/webui/frontend/dist` 当前受版本控制，因此前端构建会同步刷新产物；这不是新增设计决策，只是仓库现状。
 - `pkg/agent/agent.go`、`pkg/webui/server.go`、`public/i18n/{en,ja,zh-CN}.json` 当前存在跨切片改动，因此本轮通过部分暂存只提交 permission-rules 相关 hunks。
 - 下一步不再继续扩只读 explainability，而是进入首个真实 runtime decision 点切片。
+- `permission rules` 已作为独立功能批次提交并推送：
+  - commit: `aad683b feat(governance): add persisted permission rules`
+  - remote: `origin/main`
 
 ## 2026-04-02 AgentDefinition / prompt boundary 桥接补记
 
@@ -3289,3 +3292,9 @@ type CronJobState struct {
 - `go test -count=1 ./pkg/agent -run 'TestContextBuilderBuildPromptSections_SeparatesStaticAndDynamic|TestAgentDefinitionFromRuntimeConfig_BridgesCurrentDefaults|TestNewAgent_SeedsDefinitionSnapshot'`
 - `go test -count=1 ./pkg/webui -run 'TestHandleStatus_'`
 - `cd pkg/webui/frontend && npm run build`
+
+### 当前切片边界
+- 当前正重新按独立提交收口 `AgentDefinition bridge`：
+  - 包含 `definition.go`、`BuildPromptSections()`、`Agent.Definition()`、`/api/status` 的 `agent_definition`、System 页只读展示
+  - 不混入 `context sources` 预览 API
+  - 不混入 Chat route readonly `preflight`

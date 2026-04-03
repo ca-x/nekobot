@@ -22,6 +22,7 @@ export default function SystemPage() {
   const recentTasks = status?.recent_tasks ?? [];
   const runtimeStates = status?.runtime_states ?? [];
   const sessionStates = status?.session_runtime_states ?? [];
+  const agentDefinition = status?.agent_definition ?? null;
 
   return (
     <div className="system-page flex h-full flex-col">
@@ -186,6 +187,66 @@ export default function SystemPage() {
             ) : (
               <div className="mt-4 rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                 {t('systemSessionRuntimeEmpty')}
+              </div>
+            )}
+          </Card>
+
+          <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{t('systemAgentDefinitionTitle')}</div>
+              <h3 className="mt-2 text-lg font-semibold text-foreground">
+                {t('systemAgentDefinitionHeadline')}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {t('systemAgentDefinitionDescription')}
+              </p>
+            </div>
+
+            {isLoading ? (
+              <div className="text-muted-foreground py-8 text-center animate-pulse">{t('systemLoading')}</div>
+            ) : agentDefinition ? (
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-3 md:grid-cols-4">
+                  <StatusMetric label={t('systemAgentDefinitionID')} value={agentDefinition.id || '-'} />
+                  <StatusMetric label={t('systemAgentDefinitionOrchestrator')} value={agentDefinition.orchestrator || '-'} />
+                  <StatusMetric label={t('systemAgentDefinitionPermissionMode')} value={agentDefinition.permissionMode || '-'} />
+                  <StatusMetric label={t('systemAgentDefinitionIterations')} value={String(agentDefinition.maxToolIterations ?? 0)} />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <StatusMetric label={t('defaultProvider')} value={agentDefinition.route.provider || '-'} />
+                  <StatusMetric label={t('defaultModel')} value={agentDefinition.route.model || '-'} />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <StatusMetric
+                    label={t('fallbackProviders')}
+                    value={agentDefinition.route.fallback?.length ? agentDefinition.route.fallback.join(', ') : t('none')}
+                  />
+                  <StatusMetric
+                    label={t('systemAgentDefinitionStaticSections')}
+                    value={agentDefinition.promptSections?.static?.length ? agentDefinition.promptSections.static.join(', ') : t('none')}
+                  />
+                  <StatusMetric
+                    label={t('systemAgentDefinitionDynamicSections')}
+                    value={agentDefinition.promptSections?.dynamic?.length ? agentDefinition.promptSections.dynamic.join(', ') : t('none')}
+                  />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <StatusMetric
+                    label={t('systemAgentDefinitionAllowlist')}
+                    value={agentDefinition.toolPolicy?.allowlist?.length ? agentDefinition.toolPolicy.allowlist.join(', ') : t('none')}
+                  />
+                  <StatusMetric
+                    label={t('systemAgentDefinitionDenylist')}
+                    value={agentDefinition.toolPolicy?.denylist?.length ? agentDefinition.toolPolicy.denylist.join(', ') : t('none')}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                {t('systemAgentDefinitionEmpty')}
               </div>
             )}
           </Card>

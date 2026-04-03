@@ -96,6 +96,26 @@ export interface SessionRuntimeState {
   updated_at: string;
 }
 
+export interface AgentDefinitionStatus {
+  id: string;
+  orchestrator: string;
+  permissionMode: string;
+  maxToolIterations: number;
+  route: {
+    provider: string;
+    model: string;
+    fallback: string[];
+  };
+  toolPolicy: {
+    allowlist: string[];
+    denylist: string[];
+  };
+  promptSections: {
+    static: string[];
+    dynamic: string[];
+  };
+}
+
 export interface StatusData {
   version: string;
   commit: string;
@@ -118,6 +138,7 @@ export interface StatusData {
   recent_tasks: StatusTask[];
   runtime_states: RuntimeAgent[];
   session_runtime_states: SessionRuntimeState[];
+  agent_definition?: AgentDefinitionStatus | null;
   gateway_host: string;
   gateway_port: number;
   gateway: {
