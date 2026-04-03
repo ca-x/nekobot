@@ -3481,3 +3481,38 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensFindSkillsModal|ViewSubmissionExecutesFindSkillsCommand)'`
   - `go test -count=1 ./pkg/channels/slack`
   - `go test -count=1 ./pkg/channels/slack ./pkg/commands`
+
+## 2026-04-03 gateway origin allowlist 首批治理补记
+
+### 本轮完成
+- `pkg/config/config.go`
+  - 为 `GatewayConfig` 新增 `AllowedOrigins []string`。
+- `pkg/config/validator.go`
+  - 新增 `gateway.allowed_origins[*]` 的空值校验。
+- `pkg/gateway/server.go`
+  - 移除全局 `CheckOrigin: true`。
+  - 新增 `Server.checkOrigin()`：
+    - 无 `Origin` 时允许，兼容非浏览器客户端
+    - `AllowedOrigins` 为空时继续兼容旧行为
+    - 非空时严格按 allowlist 放行
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestGatewayCheckOriginAllowsConfiguredOrigins`
+    - `TestGatewayCheckOriginAllowsRequestsWithoutOrigin`
+- `pkg/config/path_test.go`
+  - 更新 gateway copy 断言，兼容 `AllowedOrigins` 新字段。
+
+### 当前语义
+- 这一步只做第一层 origin 治理，不混入：
+  - IP 限制
+  - scope / pairing
+  - rate limit
+  - 更完整 control plane protocol
+- 目标是先把最明显的开放边界收口，同时保持现有非浏览器客户端兼容性。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'TestGatewayCheckOrigin(AllowsConfiguredOrigins|AllowsRequestsWithoutOrigin)'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'TestGatewayCheckOrigin(AllowsConfiguredOrigins|AllowsRequestsWithoutOrigin)'`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`

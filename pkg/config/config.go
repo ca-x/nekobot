@@ -295,8 +295,9 @@ type LoggerConfig struct {
 
 // GatewayConfig for gateway server.
 type GatewayConfig struct {
-	Host string `mapstructure:"host" json:"host"`
-	Port int    `mapstructure:"port" json:"port"`
+	Host           string   `mapstructure:"host" json:"host"`
+	Port           int      `mapstructure:"port" json:"port"`
+	AllowedOrigins []string `mapstructure:"allowed_origins" json:"allowed_origins"`
 }
 
 // TranscriptionConfig controls speech-to-text behavior.
@@ -460,8 +461,9 @@ func DefaultConfig() *Config {
 			TimeoutSeconds: 90,
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
-			Port: 18790,
+			Host:           "0.0.0.0",
+			Port:           18790,
+			AllowedOrigins: []string{},
 		},
 		Tools: ToolsConfig{
 			Web: WebToolsConfig{

@@ -340,3 +340,33 @@ func TestProcessMessageDoesNotFallbackWhenRouterReturnsEmptyReply(t *testing.T) 
 		t.Fatal("expected websocket error message")
 	}
 }
+
+func TestGatewayCheckOriginAllowsConfiguredOrigins(t *testing.T) {
+	s := newTestServer(t)
+	s.config.Gateway.AllowedOrigins = []string{
+		"https://allowed.example.com",
+		"https://console.example.com",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat", nil)
+	req.Header.Set("Origin", "https://allowed.example.com")
+	if !s.checkOrigin(req) {
+		t.Fatal("expected configured origin to be allowed")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/ws/chat", nil)
+	req.Header.Set("Origin", "https://blocked.example.com")
+	if s.checkOrigin(req) {
+		t.Fatal("expected unconfigured origin to be rejected")
+	}
+}
+
+func TestGatewayCheckOriginAllowsRequestsWithoutOrigin(t *testing.T) {
+	s := newTestServer(t)
+	s.config.Gateway.AllowedOrigins = []string{"https://allowed.example.com"}
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat", nil)
+	if !s.checkOrigin(req) {
+		t.Fatal("expected empty origin to be allowed for non-browser clients")
+	}
+}

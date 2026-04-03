@@ -24,6 +24,15 @@
   - `go test -count=1 ./pkg/channels/slack` passed.
   - `go test -count=1 ./pkg/channels/slack ./pkg/commands` passed.
 
+- Completed gateway control-plane hardening phase 1 (origin allowlist):
+  - added `gateway.allowed_origins` to `pkg/config.GatewayConfig`.
+  - replaced the fully-open websocket `CheckOrigin` behavior with a server-level allowlist check.
+  - kept requests without an `Origin` header allowed so existing non-browser clients still work.
+  - added regression coverage in `pkg/gateway/server_test.go` for allowed and blocked origins, and updated `pkg/config/path_test.go` for the new config field.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'TestGatewayCheckOrigin(AllowsConfiguredOrigins|AllowsRequestsWithoutOrigin)'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+
 - Completed channel capability matrix phase 1:
   - added `pkg/channels/capabilities.go` to import the core `goclaw` capability model: capability types, scope parsing, enablement checks, merge behavior, and per-channel default matrices.
   - kept this slice intentionally low risk by landing the shared declaration/evaluation layer first without forcing all channel runtimes to consume it in the same commit.

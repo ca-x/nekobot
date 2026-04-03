@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,7 +31,6 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
 // WSMessage is the JSON format for WebSocket messages.
@@ -174,6 +174,7 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Upgrade to WebSocket
+	upgrader.CheckOrigin = s.checkOrigin
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Error("WebSocket upgrade failed", zap.Error(err))
@@ -506,4 +507,28 @@ func (s *Server) authenticateWS(r *http.Request) (userID, username string, err e
 	}
 
 	return sub, sub, nil
+}
+
+func (s *Server) checkOrigin(r *http.Request) bool {
+	if s == nil || s.config == nil {
+		return true
+	}
+
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+
+	allowedOrigins := s.config.Gateway.AllowedOrigins
+	if len(allowedOrigins) == 0 {
+		return true
+	}
+
+	for _, allowed := range allowedOrigins {
+		if strings.TrimSpace(allowed) == origin {
+			return true
+		}
+	}
+
+	return false
 }

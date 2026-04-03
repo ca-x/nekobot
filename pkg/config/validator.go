@@ -347,6 +347,15 @@ func (v *Validator) validateGateway(cfg *GatewayConfig) {
 	if cfg.Host == "" {
 		v.addError("gateway.host", "host is required")
 	}
+
+	for idx, origin := range cfg.AllowedOrigins {
+		if strings.TrimSpace(origin) == "" {
+			v.addError(
+				fmt.Sprintf("gateway.allowed_origins[%d]", idx),
+				"origin must not be empty",
+			)
+		}
+	}
 }
 
 // validateTools validates tools configuration.

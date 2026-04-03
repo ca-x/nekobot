@@ -41,6 +41,7 @@ func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
 
 	source.Gateway.Host = "127.0.0.1"
 	source.Gateway.Port = 19090
+	source.Gateway.AllowedOrigins = []string{"https://allowed.example.com"}
 	source.Logger.Level = "debug"
 	source.Logger.OutputPath = filepath.Join(t.TempDir(), "nekobot.log")
 	source.WebUI.Enabled = false
@@ -50,7 +51,10 @@ func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
 
 	target.ApplyFrom(source)
 
-	if target.Gateway != source.Gateway {
+	if target.Gateway.Host != source.Gateway.Host ||
+		target.Gateway.Port != source.Gateway.Port ||
+		len(target.Gateway.AllowedOrigins) != len(source.Gateway.AllowedOrigins) ||
+		target.Gateway.AllowedOrigins[0] != source.Gateway.AllowedOrigins[0] {
 		t.Fatalf("expected gateway copied, got %+v want %+v", target.Gateway, source.Gateway)
 	}
 	if target.Logger != source.Logger {
