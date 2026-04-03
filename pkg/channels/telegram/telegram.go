@@ -17,6 +17,7 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -930,7 +931,9 @@ func (c *Channel) sendSettingsMenu(chatID, userID int64, replyTo int, notice str
 		msg.ReplyToMessageID = replyTo
 	}
 	kb := c.settingsMainKeyboard(lang)
-	msg.ReplyMarkup = kb
+	if scoped := c.scopedInlineKeyboard(chatTypeForChatID(chatID), kb); scoped != nil {
+		msg.ReplyMarkup = *scoped
+	}
 	if _, err := c.bot.Send(msg); err != nil {
 		c.log.Warn("Failed to send settings menu", zap.Error(err))
 	}
@@ -1067,12 +1070,15 @@ func (c *Channel) sendSkillInstallConfirmation(chatID, userID int64, replyTo int
 	if replyTo > 0 {
 		msg.ReplyToMessageID = replyTo
 	}
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "✅ 确认安装", "✅ Confirm Install", "✅ インストール"), "skillinstall:confirm"),
 			tgbotapi.NewInlineKeyboardButtonData(c.settingsText(lang, "❌ 取消", "❌ Cancel", "❌ キャンセル"), "skillinstall:cancel"),
 		),
 	)
+	if scoped := c.scopedInlineKeyboard(chatTypeForChatID(chatID), keyboard); scoped != nil {
+		msg.ReplyMarkup = *scoped
+	}
 	sent, err := c.bot.Send(msg)
 	if err != nil {
 		c.log.Warn("Failed to send skill install confirmation", zap.Error(err))
@@ -1088,13 +1094,51 @@ func (c *Channel) sendSkillInstallConfirmation(chatID, userID int64, replyTo int
 
 func (c *Channel) editSettingsMessage(chatID int64, messageID int, text string, kb tgbotapi.InlineKeyboardMarkup) {
 	edit := tgbotapi.NewEditMessageText(chatID, messageID, text)
-	edit.ReplyMarkup = &kb
+	if scoped := c.scopedInlineKeyboard(chatTypeForChatID(chatID), kb); scoped != nil {
+		edit.ReplyMarkup = scoped
+	}
 	if _, err := c.bot.Send(edit); err != nil {
 		c.log.Warn("Failed to edit settings message", zap.Error(err))
 		msg := tgbotapi.NewMessage(chatID, text)
-		msg.ReplyMarkup = kb
+		if scoped := c.scopedInlineKeyboard(chatTypeForChatID(chatID), kb); scoped != nil {
+			msg.ReplyMarkup = *scoped
+		}
 		_, _ = c.bot.Send(msg)
 	}
+}
+
+func (c *Channel) supportsInlineButtons(chatType string) bool {
+	scope := channelcapabilities.CapabilityScopeDM
+	switch strings.TrimSpace(strings.ToLower(chatType)) {
+	case "group", "supergroup":
+		scope = channelcapabilities.CapabilityScopeGroup
+	}
+
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityInlineButtons,
+		scope,
+		false,
+	)
+}
+
+func (c *Channel) scopedInlineKeyboard(
+	chatType string,
+	keyboard tgbotapi.InlineKeyboardMarkup,
+) *tgbotapi.InlineKeyboardMarkup {
+	if !c.supportsInlineButtons(chatType) {
+		return nil
+	}
+
+	keyboardCopy := keyboard
+	return &keyboardCopy
+}
+
+func chatTypeForChatID(chatID int64) string {
+	if chatID < 0 {
+		return "group"
+	}
+	return "private"
 }
 
 func (c *Channel) answerCallback(id, text string, alert bool) {

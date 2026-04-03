@@ -1825,7 +1825,10 @@
   - 目标：保持设备命令和 agent 出站链路都能稳定回到对应设备。
   - 位置：`pkg/channels/maixcam/maixcam.go`。
 - [ ] **Channel capability 矩阵**
-  - 现状：基础 capability 矩阵、scope 和默认平台映射已迁入；首个真实消费切片已落在 `whatsapp`，默认 `native_commands=off` 现在会在运行时生效，但各 channel/runtime 仍未全面消费这层声明。
+  - 现状：基础 capability 矩阵、scope 和默认平台映射已迁入；真实消费切片已落在：
+    - `whatsapp` 的 `native_commands=off`
+    - `telegram` 的 `inline_buttons=dm`
+    这两条默认矩阵现在都会在运行时生效，但各 channel/runtime 仍未全面消费这层声明。
   - 目标：统一 reactions / buttons / threads / polls / streaming / native commands 等能力声明，并逐步用于运行时决策。
   - 来源：`goclaw/channels/capabilities.go`。
   - 位置：`pkg/channels/*`。

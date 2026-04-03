@@ -16,6 +16,15 @@
   - `go test -count=1 ./pkg/channels/whatsapp ./pkg/channels -run 'Test(HandleInboundTreatsSlashCommandAsPlainTextWhenNativeCommandsDisabled|GetDefaultCapabilitiesForChannel|IsCapabilityEnabled|MergeCapabilities)$'` passed.
   - `go test -count=1 ./pkg/channels/...` passed.
 
+- Continued channel capability matrix phase 3 (Telegram inline button scope):
+  - wired `pkg/channels/telegram/telegram.go` to evaluate the declared `inline_buttons` capability before attaching inline keyboards to the settings menu and skill-install confirmation flow.
+  - kept the scope mapping intentionally narrow: `private` chats map to `dm`; `group` and `supergroup` map to `group`.
+  - made Telegram's default `inline_buttons=dm` capability real at runtime, so group/supergroup chats no longer receive those inline keyboards while private chats keep them.
+  - added regression tests for capability scope evaluation and keyboard suppression outside the supported scope.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/telegram -run 'Test(SupportsInlineButtonsRespectsDefaultCapabilityScope|ScopedInlineKeyboardDropsButtonsOutsideSupportedScope)$'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/channels/telegram` passed.
+
 - Completed browser session migration phase 3 (relay attach-only mode):
   - added the first narrow `relay` browser connection mode instead of continuing to reject it at the tool boundary.
   - kept the semantics intentionally strict: relay mode only attaches to an existing browser instance and never launches a new one, so the first slice is real but bounded.
