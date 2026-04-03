@@ -3798,3 +3798,76 @@ type CronJobState struct {
 - GREEN:
   - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(CheckClientIP(AllowsRequestsWhenListUnset|AllowsConfiguredIP|RejectsUnconfiguredIP)|StatusEndpoint(RejectsDisallowedIP|AllowsConfiguredIP)|WSChatRejectsDisallowedIP)|ValidatorRejects(BlankGatewayAllowedIPs|InvalidGatewayAllowedIPs))$'`
   - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway per-IP rate limit 收口补记
+
+### 本轮完成
+- `pkg/config/config.go`
+  - 为 `GatewayConfig` 新增 `RateLimitPerMinute int`。
+- `pkg/config/validator.go`
+  - 新增 `gateway.rate_limit_per_minute >= 0` 校验。
+- `pkg/config/path_test.go`
+  - 更新 runtime reload copy 断言，覆盖 `RateLimitPerMinute`。
+  - 新增 `TestValidatorRejectsNegativeGatewayRateLimitPerMinute`。
+- `pkg/gateway/server.go`
+  - 新增 `checkRateLimit()` 与 `getOrCreateRateLimiter()`。
+  - 当前按远端 IP 建立 limiter bucket。
+  - `requireAuthenticatedAPI()` 与 `handleWSChat()` 现在都在入口先做共享 rate limit 检查。
+  - 命中限制时返回 `429 Too Many Requests`。
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestGatewayRateLimitAllowsRequestsWhenUnset`
+    - `TestGatewayRateLimitRejectsSecondRequestFromSameIP`
+    - `TestGatewayRateLimitUsesPerIPBuckets`
+    - `TestGatewayStatusEndpointRejectsRateLimitedRequest`
+    - `TestWSChatRejectsRateLimitedRequest`
+
+### 当前语义
+- 这一步仍然只做最小入口级限流，不混入：
+  - user/session scoped limiter
+  - pairing
+  - scope
+  - 更复杂的 cleanup/eviction 策略
+- 当前规则：
+  - `rate_limit_per_minute = 0` 表示关闭限流
+  - `rate_limit_per_minute > 0` 时，按远端 IP 做共享 bucket
+  - REST 与 websocket 握手共用同一套 limiter 状态
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(RateLimit(AllowsRequestsWhenUnset|RejectsSecondRequestFromSameIP|UsesPerIPBuckets)|StatusEndpointRejectsRateLimitedRequest|WSChatRejectsRateLimitedRequest)|ValidatorRejectsNegativeGatewayRateLimitPerMinute)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(RateLimit(AllowsRequestsWhenUnset|RejectsSecondRequestFromSameIP|UsesPerIPBuckets)|StatusEndpointRejectsRateLimitedRequest|WSChatRejectsRateLimitedRequest)|ValidatorRejectsNegativeGatewayRateLimitPerMinute)$'`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway control-plane auth scope 收口补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - 抽出共享 `authenticateRequest()`，统一解析 gateway JWT 的 `sub` / `uid` / `role`。
+  - websocket chat 入口改为复用这条共享认证路径，但仍保持“任意有效已鉴权 token 可接入聊天 websocket”的现有兼容语义。
+  - `requireAuthenticatedAPI()` 现在在 JWT 鉴权之后继续校验 control-plane role，只允许 `admin` / `owner` 访问 REST 控制面。
+  - 对不带 `role` claim 的旧 token 保持兼容，按 legacy admin token 语义回落到 `admin`。
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestGatewayStatusEndpointRejectsMemberRole`
+    - `TestGatewayConnectionsEndpointRejectsMemberRole`
+    - `TestGatewayAuthenticateRequestAllowsMemberRoleForWebsocketPath`
+
+### 当前语义
+- 这一步只补最小 control-plane auth scope，不混入：
+  - device pairing / enrollment
+  - finer-grained endpoint/action scopes
+  - tenant-aware gateway partitioning
+  - websocket chat 本身的权限模型重做
+- 当前规则：
+  - 任意有效 gateway JWT 仍可用于 websocket chat。
+  - `GET /api/v1/status`、`GET /api/v1/connections`、`GET /api/v1/connections/{id}`、`DELETE /api/v1/connections/{id}` 现在只允许 `admin` / `owner`。
+  - 旧的只含 `sub`、不含 `role` / `uid` 的 token 继续按 admin token 兼容，避免现有控制面 token 立即失效。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'TestGateway(StatusEndpointRejectsMemberRole|ConnectionsEndpointRejectsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'TestGateway(StatusEndpointRejectsMemberRole|ConnectionsEndpointRejectsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`

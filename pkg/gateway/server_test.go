@@ -114,6 +114,17 @@ func newAuthedTestServer(t *testing.T) (*Server, string) {
 	return s, tokenString
 }
 
+func signGatewayTestToken(t *testing.T, claims jwt.MapClaims) string {
+	t.Helper()
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte("gateway-jwt-secret"))
+	if err != nil {
+		t.Fatalf("sign jwt: %v", err)
+	}
+	return tokenString
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	s := newTestServer(t)
 
@@ -240,6 +251,66 @@ func TestGatewayConnectionsEndpointRequiresAuth(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestGatewayStatusEndpointRejectsMemberRole(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"role": "member",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
+func TestGatewayConnectionsEndpointRejectsMemberRole(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"role": "member",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
+func TestGatewayAuthenticateRequestAllowsMemberRoleForWebsocketPath(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"uid":  "viewer-id",
+		"role": "member",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	authCtx, err := s.authenticateRequest(req)
+	if err != nil {
+		t.Fatalf("expected member token to authenticate, got %v", err)
+	}
+	if authCtx.userID != "viewer-id" {
+		t.Fatalf("expected user id viewer-id, got %q", authCtx.userID)
+	}
+	if authCtx.username != "viewer" {
+		t.Fatalf("expected username viewer, got %q", authCtx.username)
+	}
+	if authCtx.role != "member" {
+		t.Fatalf("expected role member, got %q", authCtx.role)
 	}
 }
 
@@ -729,5 +800,97 @@ func TestGatewayAllowsConnectionsWhenLimitUnset(t *testing.T) {
 
 	if err := s.checkConnectionLimit(); err != nil {
 		t.Fatalf("expected unlimited connections, got %v", err)
+	}
+}
+
+func TestGatewayRateLimitAllowsRequestsWhenUnset(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+
+	if err := s.checkRateLimit(req); err != nil {
+		t.Fatalf("expected unset rate limit to allow request, got %v", err)
+	}
+	if err := s.checkRateLimit(req); err != nil {
+		t.Fatalf("expected repeated request to pass when rate limit disabled, got %v", err)
+	}
+}
+
+func TestGatewayRateLimitRejectsSecondRequestFromSameIP(t *testing.T) {
+	s := newTestServer(t)
+	s.config.Gateway.RateLimitPerMinute = 1
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+
+	if err := s.checkRateLimit(req); err != nil {
+		t.Fatalf("expected first request to pass, got %v", err)
+	}
+	if err := s.checkRateLimit(req); err == nil {
+		t.Fatal("expected second request from same ip to be rate limited")
+	}
+}
+
+func TestGatewayRateLimitUsesPerIPBuckets(t *testing.T) {
+	s := newTestServer(t)
+	s.config.Gateway.RateLimitPerMinute = 1
+
+	reqA := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	reqA.RemoteAddr = "203.0.113.10:4321"
+	reqB := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	reqB.RemoteAddr = "198.51.100.7:4321"
+
+	if err := s.checkRateLimit(reqA); err != nil {
+		t.Fatalf("expected first ip request to pass, got %v", err)
+	}
+	if err := s.checkRateLimit(reqB); err != nil {
+		t.Fatalf("expected second ip to have an independent bucket, got %v", err)
+	}
+}
+
+func TestGatewayStatusEndpointRejectsRateLimitedRequest(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.config.Gateway.RateLimitPerMinute = 1
+
+	first := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	first.Header.Set("Authorization", "Bearer "+token)
+	first.RemoteAddr = "203.0.113.10:4321"
+	firstRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(firstRec, first)
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("expected first request 200, got %d", firstRec.Code)
+	}
+
+	second := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	second.Header.Set("Authorization", "Bearer "+token)
+	second.RemoteAddr = "203.0.113.10:4321"
+	secondRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(secondRec, second)
+
+	if secondRec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected second request 429, got %d", secondRec.Code)
+	}
+}
+
+func TestWSChatRejectsRateLimitedRequest(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.config.Gateway.RateLimitPerMinute = 1
+
+	first := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	first.Header.Set("Authorization", "Bearer "+token)
+	first.RemoteAddr = "203.0.113.10:4321"
+	firstRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(firstRec, first)
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("expected first request to seed limiter successfully, got %d", firstRec.Code)
+	}
+
+	wsReq := httptest.NewRequest(http.MethodGet, "/ws/chat", nil)
+	wsReq.Header.Set("Authorization", "Bearer "+token)
+	wsReq.RemoteAddr = "203.0.113.10:4321"
+	wsRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(wsRec, wsReq)
+
+	if wsRec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected websocket request 429, got %d", wsRec.Code)
 	}
 }

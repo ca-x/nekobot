@@ -16,6 +16,21 @@
 - Verification run:
   - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(CheckClientIP(AllowsRequestsWhenListUnset|AllowsConfiguredIP|RejectsUnconfiguredIP)|StatusEndpoint(RejectsDisallowedIP|AllowsConfiguredIP)|WSChatRejectsDisallowedIP)|ValidatorRejects(BlankGatewayAllowedIPs|InvalidGatewayAllowedIPs))$'` passed.
   - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+- Completed gateway control-plane hardening phase 8 (per-IP rate limit):
+  - added `gateway.rate_limit_per_minute` to `pkg/config.GatewayConfig` and kept it runtime-reloadable.
+  - validated negative `rate_limit_per_minute` values as config errors.
+  - added shared per-IP limiter state in `pkg/gateway/server.go` and enforced it at both REST control-plane and websocket handshake entrypoints.
+  - kept the first version intentionally narrow: remote-IP buckets only, no session/user scope, no pairing integration, no advanced eviction policy.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(RateLimit(AllowsRequestsWhenUnset|RejectsSecondRequestFromSameIP|UsesPerIPBuckets)|StatusEndpointRejectsRateLimitedRequest|WSChatRejectsRateLimitedRequest)|ValidatorRejectsNegativeGatewayRateLimitPerMinute)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+- Completed gateway control-plane hardening phase 9 (control-plane auth scope):
+  - added a shared gateway JWT parser in `pkg/gateway/server.go` so gateway can consistently read `sub` / `uid` / `role` from existing WebUI-issued tokens.
+  - tightened REST control-plane authorization so `/api/v1/status` and connection-management endpoints now require `admin` / `owner`, instead of accepting any valid JWT.
+  - preserved websocket chat compatibility by continuing to allow any valid authenticated token there, and preserved legacy control-plane tokens by treating missing `role` claims as admin-compatible.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'TestGateway(StatusEndpointRejectsMemberRole|ConnectionsEndpointRejectsMemberRole|AuthenticateRequestAllowsMemberRoleForWebsocketPath)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
 
 - Completed context economy preflight execution telemetry slice:
   - added `preflight.applied` to the shared preflight decision shape so route metadata can distinguish "recommended" from "actually executed".

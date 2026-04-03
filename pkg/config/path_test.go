@@ -43,6 +43,7 @@ func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
 	source.Gateway.Host = "127.0.0.1"
 	source.Gateway.Port = 19090
 	source.Gateway.MaxConnections = 42
+	source.Gateway.RateLimitPerMinute = 9
 	source.Gateway.AllowedIPs = []string{"127.0.0.1", "::1"}
 	source.Gateway.AllowedOrigins = []string{"https://allowed.example.com"}
 	source.Logger.Level = "debug"
@@ -57,6 +58,7 @@ func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
 	if target.Gateway.Host != source.Gateway.Host ||
 		target.Gateway.Port != source.Gateway.Port ||
 		target.Gateway.MaxConnections != source.Gateway.MaxConnections ||
+		target.Gateway.RateLimitPerMinute != source.Gateway.RateLimitPerMinute ||
 		len(target.Gateway.AllowedIPs) != len(source.Gateway.AllowedIPs) ||
 		target.Gateway.AllowedIPs[0] != source.Gateway.AllowedIPs[0] ||
 		len(target.Gateway.AllowedOrigins) != len(source.Gateway.AllowedOrigins) ||
@@ -81,6 +83,19 @@ func TestValidatorRejectsNegativeGatewayMaxConnections(t *testing.T) {
 	}
 	if got := err.Error(); got == "" || !strings.Contains(got, "gateway.max_connections") {
 		t.Fatalf("expected gateway.max_connections validation error, got %v", err)
+	}
+}
+
+func TestValidatorRejectsNegativeGatewayRateLimitPerMinute(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gateway.RateLimitPerMinute = -1
+
+	err := NewValidator().Validate(cfg)
+	if err == nil {
+		t.Fatal("expected validation error for negative rate_limit_per_minute")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "gateway.rate_limit_per_minute") {
+		t.Fatalf("expected gateway.rate_limit_per_minute validation error, got %v", err)
 	}
 }
 

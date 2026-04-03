@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
@@ -66,17 +67,18 @@ type Client struct {
 
 // Server is the WebSocket/REST gateway server.
 type Server struct {
-	config     *config.Config
-	logger     *logger.Logger
-	agent      *agent.Agent
-	bus        bus.Bus
-	router     websocketRouter
-	sessionMgr *session.Manager
-	entClient  *ent.Client
-	mux        *http.ServeMux
-	server     *http.Server
-	clients    map[string]*Client
-	mu         sync.RWMutex
+	config       *config.Config
+	logger       *logger.Logger
+	agent        *agent.Agent
+	bus          bus.Bus
+	router       websocketRouter
+	sessionMgr   *session.Manager
+	entClient    *ent.Client
+	mux          *http.ServeMux
+	server       *http.Server
+	clients      map[string]*Client
+	rateLimiters map[string]*rate.Limiter
+	mu           sync.RWMutex
 }
 
 type connectionStatus struct {
@@ -86,6 +88,12 @@ type connectionStatus struct {
 	SessionID   *string `json:"session_id"`
 	ConnectedAt string  `json:"connected_at"`
 	RemoteAddr  string  `json:"remote_addr"`
+}
+
+type authContext struct {
+	userID   string
+	username string
+	role     string
 }
 
 // NewServer creates a new gateway server.
@@ -99,14 +107,15 @@ func NewServer(
 	entClient *ent.Client,
 ) *Server {
 	s := &Server{
-		config:     cfg,
-		logger:     log,
-		agent:      ag,
-		bus:        messageBus,
-		router:     router,
-		sessionMgr: sessionMgr,
-		entClient:  entClient,
-		clients:    make(map[string]*Client),
+		config:       cfg,
+		logger:       log,
+		agent:        ag,
+		bus:          messageBus,
+		router:       router,
+		sessionMgr:   sessionMgr,
+		entClient:    entClient,
+		clients:      make(map[string]*Client),
+		rateLimiters: make(map[string]*rate.Limiter),
 	}
 
 	s.setupRoutes()
@@ -185,9 +194,13 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
+	if err := s.checkRateLimit(r); err != nil {
+		http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+		return
+	}
 
 	// Authenticate via token query param or Authorization header
-	userID, username, err := s.authenticateWS(r)
+	authCtx, err := s.authenticateRequest(r)
 	if err != nil {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 		return
@@ -218,8 +231,8 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 		conn:        conn,
 		send:        make(chan []byte, 256),
 		session:     sess,
-		userID:      userID,
-		username:    username,
+		userID:      authCtx.userID,
+		username:    authCtx.username,
 		connectedAt: time.Now().UTC(),
 		remoteAddr:  r.RemoteAddr,
 	}
@@ -230,7 +243,7 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Info("WebSocket client connected",
 		zap.String("client_id", clientID),
-		zap.String("user", username),
+		zap.String("user", authCtx.username),
 	)
 
 	// Send welcome message
@@ -551,9 +564,18 @@ func (s *Server) requireAuthenticatedAPI(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return false
 	}
+	if err := s.checkRateLimit(r); err != nil {
+		http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+		return false
+	}
 
-	if _, _, err := s.authenticateWS(r); err != nil {
+	authCtx, err := s.authenticateRequest(r)
+	if err != nil {
 		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return false
+	}
+	if !isGatewayControlPlaneRoleAllowed(authCtx.role) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return false
 	}
 	return true
@@ -595,6 +617,45 @@ func (s *Server) checkConnectionLimit() error {
 	return nil
 }
 
+func (s *Server) checkRateLimit(r *http.Request) error {
+	if s == nil || s.config == nil || s.config.Gateway.RateLimitPerMinute == 0 {
+		return nil
+	}
+
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil {
+		return fmt.Errorf("parse remote addr for rate limit: %w", err)
+	}
+	if net.ParseIP(host) == nil {
+		return fmt.Errorf("remote addr %q does not contain a valid ip", r.RemoteAddr)
+	}
+
+	limiter := s.getOrCreateRateLimiter(host)
+	if limiter.Allow() {
+		return nil
+	}
+
+	return fmt.Errorf("rate limit exceeded for ip %s", host)
+}
+
+func (s *Server) getOrCreateRateLimiter(host string) *rate.Limiter {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.rateLimiters == nil {
+		s.rateLimiters = make(map[string]*rate.Limiter)
+	}
+
+	if limiter, ok := s.rateLimiters[host]; ok {
+		return limiter
+	}
+
+	limitPerMinute := s.config.Gateway.RateLimitPerMinute
+	limiter := rate.NewLimiter(rate.Every(time.Minute/time.Duration(limitPerMinute)), limitPerMinute)
+	s.rateLimiters[host] = limiter
+	return limiter
+}
+
 func describeConnection(client *Client) connectionStatus {
 	var sessionID *string
 	if identifiable, ok := client.session.(interface{ GetID() string }); ok {
@@ -616,7 +677,7 @@ func describeConnection(client *Client) connectionStatus {
 
 // --- Auth ---
 
-func (s *Server) authenticateWS(r *http.Request) (userID, username string, err error) {
+func (s *Server) authenticateRequest(r *http.Request) (*authContext, error) {
 	// Try token from query parameter
 	token := r.URL.Query().Get("token")
 	if token == "" {
@@ -628,13 +689,13 @@ func (s *Server) authenticateWS(r *http.Request) (userID, username string, err e
 	}
 
 	if token == "" {
-		return "", "", fmt.Errorf("no token provided")
+		return nil, fmt.Errorf("no token provided")
 	}
 
 	// Validate JWT using auth secret from database.
 	secret, secretErr := config.GetJWTSecret(s.entClient)
 	if secretErr != nil {
-		return "", "", fmt.Errorf("server not initialized")
+		return nil, fmt.Errorf("server not initialized")
 	}
 
 	parsed, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
@@ -644,20 +705,46 @@ func (s *Server) authenticateWS(r *http.Request) (userID, username string, err e
 		return []byte(secret), nil
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("invalid token: %w", err)
+		return nil, fmt.Errorf("invalid token: %w", err)
 	}
 
 	claims, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok || !parsed.Valid {
-		return "", "", fmt.Errorf("invalid claims")
+		return nil, fmt.Errorf("invalid claims")
 	}
 
 	sub, _ := claims["sub"].(string)
-	if sub == "" {
-		sub = "anonymous"
+	username := strings.TrimSpace(sub)
+	if username == "" {
+		username = "anonymous"
 	}
 
-	return sub, sub, nil
+	uid, _ := claims["uid"].(string)
+	userID := strings.TrimSpace(uid)
+	if userID == "" {
+		userID = username
+	}
+
+	role, _ := claims["role"].(string)
+	role = strings.TrimSpace(role)
+	if role == "" {
+		role = "admin"
+	}
+
+	return &authContext{
+		userID:   userID,
+		username: username,
+		role:     role,
+	}, nil
+}
+
+func isGatewayControlPlaneRoleAllowed(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "admin", "owner":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) checkOrigin(r *http.Request) bool {

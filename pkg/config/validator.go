@@ -353,6 +353,10 @@ func (v *Validator) validateGateway(cfg *GatewayConfig) {
 		v.addError("gateway.max_connections", "max_connections must be greater than or equal to 0")
 	}
 
+	if cfg.RateLimitPerMinute < 0 {
+		v.addError("gateway.rate_limit_per_minute", "rate_limit_per_minute must be greater than or equal to 0")
+	}
+
 	for idx, allowedIP := range cfg.AllowedIPs {
 		trimmedIP := strings.TrimSpace(allowedIP)
 		if trimmedIP == "" {

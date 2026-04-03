@@ -295,11 +295,12 @@ type LoggerConfig struct {
 
 // GatewayConfig for gateway server.
 type GatewayConfig struct {
-	Host           string   `mapstructure:"host" json:"host"`
-	Port           int      `mapstructure:"port" json:"port"`
-	MaxConnections int      `mapstructure:"max_connections" json:"max_connections"`
-	AllowedIPs     []string `mapstructure:"allowed_ips" json:"allowed_ips"`
-	AllowedOrigins []string `mapstructure:"allowed_origins" json:"allowed_origins"`
+	Host               string   `mapstructure:"host" json:"host"`
+	Port               int      `mapstructure:"port" json:"port"`
+	MaxConnections     int      `mapstructure:"max_connections" json:"max_connections"`
+	RateLimitPerMinute int      `mapstructure:"rate_limit_per_minute" json:"rate_limit_per_minute"`
+	AllowedIPs         []string `mapstructure:"allowed_ips" json:"allowed_ips"`
+	AllowedOrigins     []string `mapstructure:"allowed_origins" json:"allowed_origins"`
 }
 
 // TranscriptionConfig controls speech-to-text behavior.
