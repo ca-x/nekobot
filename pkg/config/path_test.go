@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -41,6 +42,7 @@ func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
 
 	source.Gateway.Host = "127.0.0.1"
 	source.Gateway.Port = 19090
+	source.Gateway.MaxConnections = 42
 	source.Gateway.AllowedOrigins = []string{"https://allowed.example.com"}
 	source.Logger.Level = "debug"
 	source.Logger.OutputPath = filepath.Join(t.TempDir(), "nekobot.log")
@@ -53,6 +55,7 @@ func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
 
 	if target.Gateway.Host != source.Gateway.Host ||
 		target.Gateway.Port != source.Gateway.Port ||
+		target.Gateway.MaxConnections != source.Gateway.MaxConnections ||
 		len(target.Gateway.AllowedOrigins) != len(source.Gateway.AllowedOrigins) ||
 		target.Gateway.AllowedOrigins[0] != source.Gateway.AllowedOrigins[0] {
 		t.Fatalf("expected gateway copied, got %+v want %+v", target.Gateway, source.Gateway)
@@ -62,5 +65,18 @@ func TestApplyFromCopiesRuntimeReloadableSections(t *testing.T) {
 	}
 	if target.WebUI != source.WebUI {
 		t.Fatalf("expected webui copied, got %+v want %+v", target.WebUI, source.WebUI)
+	}
+}
+
+func TestValidatorRejectsNegativeGatewayMaxConnections(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Gateway.MaxConnections = -1
+
+	err := NewValidator().Validate(cfg)
+	if err == nil {
+		t.Fatal("expected validation error for negative max_connections")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "gateway.max_connections") {
+		t.Fatalf("expected gateway.max_connections validation error, got %v", err)
 	}
 }

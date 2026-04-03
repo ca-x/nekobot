@@ -297,6 +297,7 @@ type LoggerConfig struct {
 type GatewayConfig struct {
 	Host           string   `mapstructure:"host" json:"host"`
 	Port           int      `mapstructure:"port" json:"port"`
+	MaxConnections int      `mapstructure:"max_connections" json:"max_connections"`
 	AllowedOrigins []string `mapstructure:"allowed_origins" json:"allowed_origins"`
 }
 
@@ -463,6 +464,7 @@ func DefaultConfig() *Config {
 		Gateway: GatewayConfig{
 			Host:           "0.0.0.0",
 			Port:           18790,
+			MaxConnections: 0,
 			AllowedOrigins: []string{},
 		},
 		Tools: ToolsConfig{

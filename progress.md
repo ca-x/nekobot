@@ -40,6 +40,16 @@
   - `go test -count=1 ./pkg/gateway` passed.
   - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
 
+- Completed gateway control-plane hardening phase 6 (max connection limit):
+  - added `gateway.max_connections` to `pkg/config.GatewayConfig` with `0` meaning unlimited.
+  - validated negative `max_connections` values as config errors.
+  - added a server-side `checkConnectionLimit()` guard so websocket upgrades are rejected once the configured limit is reached.
+  - added regression coverage in `pkg/gateway/server_test.go` and `pkg/config/path_test.go` for limit enforcement and config validation.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(RejectsConnectionsAboveConfiguredLimit|AllowsConnectionsWhenLimitUnset)|ValidatorRejectsNegativeGatewayMaxConnections)$'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/gateway` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/config` passed.
+
 - Completed conversation/thread binding slice 2 (deterministic query order):
   - added `TestServiceBindingQueriesReturnDeterministicConversationOrder` in `pkg/conversationbindings/service_test.go` to lock a real missing contract with TDD.
   - confirmed RED first: `ListBindings()` returned `[chat-b chat-a]` when bindings were created in non-sorted order.

@@ -633,3 +633,24 @@ func TestGatewayCheckOriginAllowsRequestsWithoutOrigin(t *testing.T) {
 		t.Fatal("expected empty origin to be allowed for non-browser clients")
 	}
 }
+
+func TestGatewayRejectsConnectionsAboveConfiguredLimit(t *testing.T) {
+	s := newTestServer(t)
+	s.config.Gateway.MaxConnections = 1
+	s.clients["client-a"] = &Client{id: "client-a", send: make(chan []byte, 1)}
+
+	if err := s.checkConnectionLimit(); err == nil {
+		t.Fatal("expected connection limit error")
+	}
+}
+
+func TestGatewayAllowsConnectionsWhenLimitUnset(t *testing.T) {
+	s := newTestServer(t)
+	s.config.Gateway.MaxConnections = 0
+	s.clients["client-a"] = &Client{id: "client-a", send: make(chan []byte, 1)}
+	s.clients["client-b"] = &Client{id: "client-b", send: make(chan []byte, 1)}
+
+	if err := s.checkConnectionLimit(); err != nil {
+		t.Fatalf("expected unlimited connections, got %v", err)
+	}
+}

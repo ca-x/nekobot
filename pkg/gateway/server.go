@@ -187,6 +187,11 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.checkConnectionLimit(); err != nil {
+		http.Error(w, `{"error":"connection limit exceeded"}`, http.StatusServiceUnavailable)
+		return
+	}
+
 	// Upgrade to WebSocket
 	upgrader.CheckOrigin = s.checkOrigin
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -541,6 +546,20 @@ func (s *Server) requireAuthenticatedAPI(w http.ResponseWriter, r *http.Request)
 		return false
 	}
 	return true
+}
+
+func (s *Server) checkConnectionLimit() error {
+	if s == nil || s.config == nil || s.config.Gateway.MaxConnections == 0 {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.clients) >= s.config.Gateway.MaxConnections {
+		return fmt.Errorf("gateway connection limit exceeded")
+	}
+	return nil
 }
 
 func describeConnection(client *Client) connectionStatus {

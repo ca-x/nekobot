@@ -348,6 +348,10 @@ func (v *Validator) validateGateway(cfg *GatewayConfig) {
 		v.addError("gateway.host", "host is required")
 	}
 
+	if cfg.MaxConnections < 0 {
+		v.addError("gateway.max_connections", "max_connections must be greater than or equal to 0")
+	}
+
 	for idx, origin := range cfg.AllowedOrigins {
 		if strings.TrimSpace(origin) == "" {
 			v.addError(

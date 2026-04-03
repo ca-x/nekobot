@@ -3646,3 +3646,41 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/gateway -run 'TestGetConnectionEndpoint(ReturnsConnectionDetails|ReturnsNotFoundForUnknownClient|RequiresAuth)$'`
   - `go test -count=1 ./pkg/gateway`
   - `go test -count=1 ./pkg/gateway ./pkg/config`
+
+## 2026-04-03 gateway max_connections 首批连接治理补记
+
+### 本轮完成
+- `pkg/config/config.go`
+  - 为 `GatewayConfig` 新增 `MaxConnections int`。
+  - 默认值设为 `0`，表示不限制。
+- `pkg/config/validator.go`
+  - 新增 `gateway.max_connections >= 0` 校验。
+- `pkg/config/path_test.go`
+  - 更新 runtime reload copy 断言，兼容 `MaxConnections` 新字段。
+  - 新增 `TestValidatorRejectsNegativeGatewayMaxConnections`。
+- `pkg/gateway/server.go`
+  - 新增 `checkConnectionLimit()`。
+  - `handleWSChat()` 在升级 websocket 前先检查连接上限。
+  - 命中上限时直接返回 `503`，不接受新连接。
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestGatewayRejectsConnectionsAboveConfiguredLimit`
+    - `TestGatewayAllowsConnectionsWhenLimitUnset`
+
+### 当前语义
+- 这一步只补最小连接数量治理，不混入：
+  - per-user / per-IP limits
+  - rate limit
+  - pairing / scope
+  - richer backpressure policy
+- 当前规则：
+  - `max_connections = 0` 表示无限制
+  - `max_connections > 0` 时，达到上限就拒绝新的 websocket 连接
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(RejectsConnectionsAboveConfiguredLimit|AllowsConnectionsWhenLimitUnset)|ValidatorRejectsNegativeGatewayMaxConnections)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway ./pkg/config -run 'Test(Gateway(RejectsConnectionsAboveConfiguredLimit|AllowsConnectionsWhenLimitUnset)|ValidatorRejectsNegativeGatewayMaxConnections)$'`
+  - `go test -count=1 ./pkg/gateway`
+  - `go test -count=1 ./pkg/gateway ./pkg/config`
