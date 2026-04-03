@@ -626,6 +626,51 @@ func TestGetOrCreateSessionUsesGatewaySource(t *testing.T) {
 	}
 }
 
+func TestResolveGatewaySessionIDUsesRequestedExistingGatewaySession(t *testing.T) {
+	s := newTestServer(t)
+
+	if _, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway); err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat?session_id=paired-session", nil)
+
+	sessionID, err := s.resolveGatewaySessionID(req, "generated-client")
+	if err != nil {
+		t.Fatalf("resolveGatewaySessionID returned error: %v", err)
+	}
+	if sessionID != "paired-session" {
+		t.Fatalf("expected paired-session, got %q", sessionID)
+	}
+}
+
+func TestResolveGatewaySessionIDRejectsUnknownRequestedSession(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat?session_id=missing-session", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestResolveGatewaySessionIDRejectsNonGatewaySession(t *testing.T) {
+	s := newTestServer(t)
+
+	if _, err := s.sessionMgr.GetWithSource("webui-session", session.SourceWebUI); err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat?session_id=webui-session", nil)
+
+	if _, err := s.resolveGatewaySessionID(req, "generated-client"); err == nil {
+		t.Fatal("expected non-gateway session to be rejected")
+	}
+}
+
 func TestProcessMessagePassesExplicitRuntimeIDToRouter(t *testing.T) {
 	s := newTestServer(t)
 	router := &stubGatewayRouter{reply: "router reply"}
@@ -652,6 +697,43 @@ func TestProcessMessagePassesExplicitRuntimeIDToRouter(t *testing.T) {
 
 	if got := router.lastRuntimeID; got != "runtime-explicit" {
 		t.Fatalf("expected runtime id %q, got %q", "runtime-explicit", got)
+	}
+}
+
+func TestProcessMessageUsesPairedSessionIDForRouterAndResponse(t *testing.T) {
+	s := newTestServer(t)
+	router := &stubGatewayRouter{reply: "router reply"}
+	s.router = router
+
+	sess, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	client := &Client{
+		id:       "connection-1",
+		send:     make(chan []byte, 1),
+		userID:   "user-1",
+		username: "alice",
+		session:  sess,
+	}
+
+	s.processMessage(client, WSMessage{
+		Type:    "message",
+		Content: "hello",
+	})
+
+	select {
+	case payload := <-client.send:
+		var msg WSMessage
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			t.Fatalf("unmarshal ws message: %v", err)
+		}
+		if msg.SessionID != "paired-session" {
+			t.Fatalf("expected response session_id paired-session, got %q", msg.SessionID)
+		}
+	default:
+		t.Fatal("expected websocket reply")
 	}
 }
 

@@ -227,7 +227,12 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientID := uuid.New().String()
-	sess, err := s.getOrCreateSession(clientID)
+	sessionID, err := s.resolveGatewaySessionID(r, clientID)
+	if err != nil {
+		http.Error(w, `{"error":"invalid session_id"}`, http.StatusBadRequest)
+		return
+	}
+	sess, err := s.getOrCreateSession(sessionID)
 	if err != nil {
 		s.logger.Error("Create gateway session failed", zap.Error(err))
 		http.Error(w, `{"error":"session unavailable"}`, http.StatusInternalServerError)
@@ -250,6 +255,7 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Info("WebSocket client connected",
 		zap.String("client_id", clientID),
+		zap.String("session_id", sessionID),
 		zap.String("user", authCtx.username),
 	)
 
@@ -257,7 +263,7 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 	welcome := WSMessage{
 		Type:      "system",
 		Content:   "Connected to nekobot gateway",
-		SessionID: clientID,
+		SessionID: sessionID,
 		Timestamp: time.Now().Unix(),
 	}
 	if data, err := json.Marshal(welcome); err == nil {
@@ -274,6 +280,27 @@ func (s *Server) getOrCreateSession(sessionID string) (agent.SessionInterface, e
 		return nil, fmt.Errorf("session manager not available")
 	}
 	return s.sessionMgr.GetWithSource(sessionID, session.SourceGateway)
+}
+
+func (s *Server) resolveGatewaySessionID(r *http.Request, fallbackSessionID string) (string, error) {
+	requestedSessionID := strings.TrimSpace(r.URL.Query().Get("session_id"))
+	if requestedSessionID == "" {
+		return fallbackSessionID, nil
+	}
+	if s.sessionMgr == nil {
+		return "", fmt.Errorf("session manager not available")
+	}
+	existing, err := s.sessionMgr.GetExisting(requestedSessionID)
+	if err != nil {
+		return "", fmt.Errorf("lookup session %q: %w", requestedSessionID, err)
+	}
+	if existing == nil {
+		return "", fmt.Errorf("session %q unavailable", requestedSessionID)
+	}
+	if strings.TrimSpace(existing.Source) != session.SourceGateway {
+		return "", fmt.Errorf("session %q is not a gateway session", requestedSessionID)
+	}
+	return requestedSessionID, nil
 }
 
 func (s *Server) readPump(client *Client) {
@@ -372,7 +399,7 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 	busMsg := &bus.Message{
 		ID:        uuid.New().String(),
 		ChannelID: "websocket",
-		SessionID: client.id,
+		SessionID: gatewaySessionID(client),
 		UserID:    client.userID,
 		Username:  client.username,
 		Type:      bus.MessageTypeText,
@@ -390,7 +417,7 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 			context.Background(),
 			client.userID,
 			client.username,
-			client.id,
+			gatewaySessionID(client),
 			wsMsg.Content,
 			wsMsg.RuntimeID,
 		)
@@ -426,7 +453,7 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 	respMsg := WSMessage{
 		Type:      "message",
 		Content:   response,
-		SessionID: client.id,
+		SessionID: gatewaySessionID(client),
 		MessageID: uuid.New().String(),
 		Timestamp: time.Now().Unix(),
 	}
@@ -693,6 +720,19 @@ func describeConnection(client *Client) connectionStatus {
 		ConnectedAt: client.connectedAt.UTC().Format(time.RFC3339),
 		RemoteAddr:  client.remoteAddr,
 	}
+}
+
+func gatewaySessionID(client *Client) string {
+	if client == nil {
+		return ""
+	}
+	if identifiable, ok := client.session.(interface{ GetID() string }); ok {
+		id := strings.TrimSpace(identifiable.GetID())
+		if id != "" {
+			return id
+		}
+	}
+	return client.id
 }
 
 // --- Auth ---
