@@ -67,18 +67,20 @@ type Client struct {
 
 // Server is the WebSocket/REST gateway server.
 type Server struct {
-	config       *config.Config
-	logger       *logger.Logger
-	agent        *agent.Agent
-	bus          bus.Bus
-	router       websocketRouter
-	sessionMgr   *session.Manager
-	entClient    *ent.Client
-	mux          *http.ServeMux
-	server       *http.Server
-	clients      map[string]*Client
-	rateLimiters map[string]*rate.Limiter
-	mu           sync.RWMutex
+	config                    *config.Config
+	logger                    *logger.Logger
+	agent                     *agent.Agent
+	bus                       bus.Bus
+	router                    websocketRouter
+	sessionMgr                *session.Manager
+	entClient                 *ent.Client
+	mux                       *http.ServeMux
+	server                    *http.Server
+	clients                   map[string]*Client
+	reservedPairingSessionIDs map[string]struct{}
+	rateLimiters              map[string]*rate.Limiter
+	beforeWSUpgrade           func(sessionID string)
+	mu                        sync.RWMutex
 }
 
 type connectionStatus struct {
@@ -114,15 +116,16 @@ func NewServer(
 	entClient *ent.Client,
 ) *Server {
 	s := &Server{
-		config:       cfg,
-		logger:       log,
-		agent:        ag,
-		bus:          messageBus,
-		router:       router,
-		sessionMgr:   sessionMgr,
-		entClient:    entClient,
-		clients:      make(map[string]*Client),
-		rateLimiters: make(map[string]*rate.Limiter),
+		config:                    cfg,
+		logger:                    log,
+		agent:                     ag,
+		bus:                       messageBus,
+		router:                    router,
+		sessionMgr:                sessionMgr,
+		entClient:                 entClient,
+		clients:                   make(map[string]*Client),
+		reservedPairingSessionIDs: make(map[string]struct{}),
+		rateLimiters:              make(map[string]*rate.Limiter),
 	}
 
 	s.setupRoutes()
@@ -219,14 +222,20 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientID := uuid.New().String()
+	requestedSessionID := strings.TrimSpace(r.URL.Query().Get("session_id"))
 	sessionID, err := s.resolveGatewaySessionID(r, clientID)
 	if err != nil {
 		http.Error(w, `{"error":"invalid session_id"}`, http.StatusBadRequest)
 		return
 	}
-	if err := s.ensureSessionNotAlreadyAttached(sessionID); err != nil {
+	releasePairingReservation, err := s.reservePairingSessionID(sessionID, requestedSessionID != "")
+	if err != nil {
 		http.Error(w, `{"error":"session already attached"}`, http.StatusConflict)
 		return
+	}
+	defer releasePairingReservation()
+	if s.beforeWSUpgrade != nil {
+		s.beforeWSUpgrade(sessionID)
 	}
 
 	// Upgrade to WebSocket
@@ -308,20 +317,32 @@ func (s *Server) resolveGatewaySessionID(r *http.Request, fallbackSessionID stri
 	return requestedSessionID, nil
 }
 
-func (s *Server) ensureSessionNotAlreadyAttached(sessionID string) error {
-	if strings.TrimSpace(sessionID) == "" {
-		return nil
+func (s *Server) reservePairingSessionID(sessionID string, requested bool) (func(), error) {
+	if !requested || strings.TrimSpace(sessionID) == "" {
+		return func() {}, nil
 	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
+	if s.reservedPairingSessionIDs == nil {
+		s.reservedPairingSessionIDs = make(map[string]struct{})
+	}
+	if _, exists := s.reservedPairingSessionIDs[sessionID]; exists {
+		return nil, fmt.Errorf("session %q already reserved for attach", sessionID)
+	}
 	for _, client := range s.clients {
 		if gatewaySessionID(client) == sessionID {
-			return fmt.Errorf("session %q already attached to an active websocket client", sessionID)
+			return nil, fmt.Errorf("session %q already attached to an active websocket client", sessionID)
 		}
 	}
-	return nil
+
+	s.reservedPairingSessionIDs[sessionID] = struct{}{}
+	return func() {
+		s.mu.Lock()
+		delete(s.reservedPairingSessionIDs, sessionID)
+		s.mu.Unlock()
+	}, nil
 }
 
 func (s *Server) readPump(client *Client) {

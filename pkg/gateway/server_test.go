@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -775,11 +777,26 @@ func TestWSChatAllowsRequestedLegacyGatewaySessionWithEmptySource(t *testing.T) 
 	}
 }
 
-func TestWSChatRejectsSecondLiveConnectionForRequestedSession(t *testing.T) {
+func TestWSChatAllowsOnlyOneConcurrentAttachForRequestedSession(t *testing.T) {
 	s, token := newAuthedTestServer(t)
 
 	if _, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway); err != nil {
 		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	var ready sync.WaitGroup
+	ready.Add(1)
+	release := make(chan struct{})
+	var firstHookHit atomic.Bool
+	s.beforeWSUpgrade = func(sessionID string) {
+		if sessionID != "paired-session" {
+			return
+		}
+		if !firstHookHit.CompareAndSwap(false, true) {
+			return
+		}
+		ready.Done()
+		<-release
 	}
 
 	server := httptest.NewServer(s.mux)
@@ -789,34 +806,56 @@ func TestWSChatRejectsSecondLiveConnectionForRequestedSession(t *testing.T) {
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+token)
 
-	firstConn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
-	if err != nil {
-		status := "<nil>"
-		if resp != nil {
-			status = fmt.Sprintf("%d", resp.StatusCode)
+	type dialResult struct {
+		conn *websocket.Conn
+		resp *http.Response
+		err  error
+	}
+
+	results := make(chan dialResult, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+			results <- dialResult{conn: conn, resp: resp, err: err}
+		}()
+	}
+
+	ready.Wait()
+	close(release)
+
+	firstResult := <-results
+	secondResult := <-results
+
+	successes := 0
+	conflicts := 0
+	for _, result := range []dialResult{firstResult, secondResult} {
+		if result.err == nil {
+			successes++
+			defer result.conn.Close()
+			var msg WSMessage
+			if err := result.conn.ReadJSON(&msg); err != nil {
+				t.Fatalf("read welcome message: %v", err)
+			}
+			if msg.SessionID != "paired-session" {
+				t.Fatalf("expected paired session id, got %q", msg.SessionID)
+			}
+			continue
 		}
-		t.Fatalf("first websocket dial failed: %v (status=%s)", err, status)
-	}
-	defer firstConn.Close()
-
-	var firstMsg WSMessage
-	if err := firstConn.ReadJSON(&firstMsg); err != nil {
-		t.Fatalf("read first welcome message: %v", err)
-	}
-	if firstMsg.SessionID != "paired-session" {
-		t.Fatalf("expected first session id paired-session, got %q", firstMsg.SessionID)
+		if result.resp == nil {
+			t.Fatalf("expected handshake response for failed dial, got nil error=%v", result.err)
+		}
+		if result.resp.StatusCode == http.StatusConflict {
+			conflicts++
+			continue
+		}
+		t.Fatalf("expected failed dial to return 409, got %d", result.resp.StatusCode)
 	}
 
-	secondConn, secondResp, secondErr := websocket.DefaultDialer.Dial(wsURL, header)
-	if secondErr == nil {
-		secondConn.Close()
-		t.Fatal("expected second websocket dial to fail for already-active paired session")
+	if successes != 1 {
+		t.Fatalf("expected exactly one successful attach, got %d", successes)
 	}
-	if secondResp == nil {
-		t.Fatalf("expected second handshake response, got nil error=%v", secondErr)
-	}
-	if secondResp.StatusCode != http.StatusConflict {
-		t.Fatalf("expected second dial to return 409, got %d", secondResp.StatusCode)
+	if conflicts != 1 {
+		t.Fatalf("expected exactly one conflicting attach, got %d", conflicts)
 	}
 }
 func TestProcessMessagePassesExplicitRuntimeIDToRouter(t *testing.T) {
