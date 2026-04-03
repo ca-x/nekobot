@@ -30,6 +30,7 @@ export interface ChatRouteResult {
   actual_model: string;
   preflight?: {
     action?: 'proceed' | 'consider_compaction' | 'compact_before_run';
+    applied?: boolean;
     budget_status?: 'ok' | 'warning' | 'critical';
     budget_reasons?: string[];
     compaction?: {

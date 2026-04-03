@@ -82,6 +82,11 @@
       - 不改写 session/history
       - 不阻断请求
       - 不做自动 summary / pruning
+    - 已补齐 `preflight.applied` 执行态透传：
+      - 仅当运行时真的执行了 `compact_before_run`
+      - 才把 `route_result.preflight.applied = true`
+      - `warning/consider_compaction` 仍保持 `applied = false`
+      - 覆盖 `legacy / blades` parity 与 websocket / ChatPage 展示
     - 已补齐 `route_result.preflight.action` 的 websocket 透传契约：
       - ChatPage 现在能真正收到并显示后端 preflight action
       - 不新增动作语义，仅补齐已存在字段的对外输出

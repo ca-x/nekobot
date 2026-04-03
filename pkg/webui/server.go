@@ -5581,6 +5581,7 @@ type chatRouteState struct {
 
 type chatRoutePreflightState struct {
 	Action        string                   `json:"action,omitempty"`
+	Applied       bool                     `json:"applied"`
 	BudgetStatus  string                   `json:"budget_status,omitempty"`
 	BudgetReasons []string                 `json:"budget_reasons,omitempty"`
 	Compaction    chatRouteCompactionState `json:"compaction"`
@@ -5989,6 +5990,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 					ActualModel:       routeResult.ActualModel,
 					Preflight: &chatRoutePreflightState{
 						Action:        routeResult.Preflight.Action,
+						Applied:       routeResult.Preflight.Applied,
 						BudgetStatus:  routeResult.Preflight.BudgetStatus,
 						BudgetReasons: append([]string(nil), routeResult.Preflight.BudgetReasons...),
 						Compaction: chatRouteCompactionState{

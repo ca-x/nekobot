@@ -401,6 +401,7 @@ export default function ChatPage() {
     routeResult?.context_budget_status ??
     'ok';
   const preflightAction = routeResult?.preflight?.action?.trim() || '';
+  const preflightApplied = routeResult?.preflight?.applied ?? false;
   const contextBudgetReasons =
     routeResult?.preflight?.budget_reasons ??
     routeResult?.context_budget_reasons ??
@@ -763,7 +764,7 @@ export default function ChatPage() {
                     </span>
                     {preflightAction ? (
                       <span className="max-w-full break-all rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
-                        {preflightAction}
+                        {preflightApplied ? `${preflightAction} · applied` : preflightAction}
                       </span>
                     ) : null}
                   </>

@@ -4,6 +4,15 @@
 
 ## 2026-04-03
 
+- Completed context economy preflight execution telemetry slice:
+  - added `preflight.applied` to the shared preflight decision shape so route metadata can distinguish "recommended" from "actually executed".
+  - updated both legacy and blades orchestrators to mark `applied=true` only when `compact_before_run` really executes, while warning-only paths stay `false`.
+  - extended websocket route payloads and Chat UI rendering so the frontend can show when preflight compaction was actually applied.
+- Verification run:
+  - `go test -count=1 ./pkg/agent -run 'TestChatWithPromptContextDetailed_(IncludesContextPressurePreview|DoesNotAutoCompressWarningPreflightBeforeModelCall|AutoCompressesCriticalPreflightBeforeBlades)$'` passed.
+  - `go test -count=1 ./pkg/webui -run '^TestChatRouteStateJSONIncludesContextPressureFields$'` passed.
+  - `go test -count=1 ./pkg/agent ./pkg/webui` passed.
+
 - Completed gateway control-plane hardening phase 2 (REST auth gate):
   - added a shared `requireAuthenticatedAPI()` gate in `pkg/gateway/server.go`.
   - changed `GET /api/v1/status` and `GET /api/v1/connections` to require the same JWT authentication path already used by websocket clients instead of exposing control-plane data anonymously.

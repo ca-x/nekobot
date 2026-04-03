@@ -337,6 +337,42 @@
 - 没有改变 blades 的 message compaction 行为。
 - 没有让 budget/compaction 决策变成自动执行逻辑。
 
+## 2026-04-03 Context Economy preflight applied 执行态补记
+
+### 本轮完成
+- `pkg/agent/context_sources.go`
+  - `ContextPreflightDecision` 新增 `Applied bool`。
+- `pkg/agent/agent.go`
+  - 新增 `markPreflightApplied()`。
+  - legacy 路径只有在真实执行 `compact_before_run` 压缩后，才把 `routeResult.Preflight.Applied` 标成 `true`。
+- `pkg/agent/blades_runtime.go`
+  - `bladesModelProvider` 新增 `onPreflightApplied` 回调。
+  - blades 路径与 legacy 保持同一语义：只有真实执行 preflight 压缩时才上报 `applied = true`。
+- `pkg/agent/agent_test.go`
+  - 已补 legacy / blades 的 applied 行为断言。
+- `pkg/webui/server.go`
+  - websocket `route_result.preflight` 现在会透传 `applied`。
+- `pkg/webui/frontend/src/hooks/useChat.ts`
+  - `ChatRouteResult.preflight` 类型已补 `applied`。
+- `pkg/webui/frontend/src/pages/ChatPage.tsx`
+  - Chat 页现在能区分“只是建议动作”与“动作已实际执行”，最小展示为 `compact_before_run · applied`。
+- `pkg/webui/server_chat_test.go`
+  - 已补 websocket JSON 契约断言。
+
+### 当前语义
+- `preflight.action` 和 `preflight.applied` 现在明确区分：
+  - `action` 表示建议或计划动作
+  - `applied` 表示这次请求里是否真的执行了该动作
+- 当前只会在以下场景把 `applied = true`：
+  - `preflight.action == compact_before_run`
+  - 且 runtime 真实执行了首次 outbound compression
+- `warning/consider_compaction` 仍然只做提示，不会被错误标记成已执行。
+
+### 本轮测试
+- `go test -count=1 ./pkg/agent -run 'TestChatWithPromptContextDetailed_(IncludesContextPressurePreview|DoesNotAutoCompressWarningPreflightBeforeModelCall|AutoCompressesCriticalPreflightBeforeBlades)$'`
+- `go test -count=1 ./pkg/webui -run '^TestChatRouteStateJSONIncludesContextPressureFields$'`
+- `go test -count=1 ./pkg/agent ./pkg/webui`
+
 ## 2026-04-03 Context Economy preflight decision 收口补记
 
 ### 本轮完成

@@ -27,6 +27,7 @@ func TestChatRouteStateJSONIncludesContextPressureFields(t *testing.T) {
 		ActualModel:       "gpt-5.4",
 		Preflight: &chatRoutePreflightState{
 			Action:        "consider_compaction",
+			Applied:       false,
 			BudgetStatus:  "warning",
 			BudgetReasons: []string{"Approximate prompt chars are near the configured max tokens budget."},
 			Compaction: chatRouteCompactionState{
@@ -69,6 +70,9 @@ func TestChatRouteStateJSONIncludesContextPressureFields(t *testing.T) {
 	}
 	if preflight["action"] != "consider_compaction" {
 		t.Fatalf("unexpected preflight action: %+v", preflight["action"])
+	}
+	if preflight["applied"] != false {
+		t.Fatalf("unexpected preflight applied flag: %+v", preflight["applied"])
 	}
 	compaction, ok := preflight["compaction"].(map[string]any)
 	if !ok {

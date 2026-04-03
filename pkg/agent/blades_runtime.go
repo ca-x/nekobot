@@ -25,13 +25,14 @@ import (
 type bladesModelProvider struct {
 	agent *Agent
 
-	primaryProvider string
-	providerOrder   []string
-	requestedModel  string
-	preflightAction string
-	clientCache     map[string]*providers.Client
-	mu              sync.RWMutex
-	lastRoute       ChatRouteSnapshot
+	primaryProvider    string
+	providerOrder      []string
+	requestedModel     string
+	preflightAction    string
+	onPreflightApplied func()
+	clientCache        map[string]*providers.Client
+	mu                 sync.RWMutex
+	lastRoute          ChatRouteSnapshot
 }
 
 // ChatRouteSnapshot stores the latest actual provider/model used by an LLM call.
@@ -45,14 +46,16 @@ func newBladesModelProvider(
 	primaryProvider string,
 	providerOrder []string,
 	requestedModel, preflightAction string,
+	onPreflightApplied func(),
 ) *bladesModelProvider {
 	return &bladesModelProvider{
-		agent:           a,
-		primaryProvider: primaryProvider,
-		providerOrder:   providerOrder,
-		requestedModel:  requestedModel,
-		preflightAction: strings.TrimSpace(preflightAction),
-		clientCache:     make(map[string]*providers.Client),
+		agent:              a,
+		primaryProvider:    primaryProvider,
+		providerOrder:      providerOrder,
+		requestedModel:     requestedModel,
+		preflightAction:    strings.TrimSpace(preflightAction),
+		onPreflightApplied: onPreflightApplied,
+		clientCache:        make(map[string]*providers.Client),
 	}
 }
 
@@ -79,6 +82,9 @@ func (p *bladesModelProvider) Generate(ctx context.Context, req *blades.ModelReq
 		}
 		unifiedReq.Messages = compressedMessages
 		p.preflightAction = ""
+		if p.onPreflightApplied != nil {
+			p.onPreflightApplied()
+		}
 	}
 
 	const maxContextRetries = 2
@@ -601,7 +607,16 @@ func (a *Agent) chatWithBladesOrchestrator(
 		return "", routeResult, err
 	}
 	routeResult = a.enrichChatRouteResultWithContextPreview(routeResult, resolvedPrompts, promptCtx, userMessage)
-	modelProvider := newBladesModelProvider(a, primaryProvider, providerOrder, model, routeResult.Preflight.Action)
+	modelProvider := newBladesModelProvider(
+		a,
+		primaryProvider,
+		providerOrder,
+		model,
+		routeResult.Preflight.Action,
+		func() {
+			routeResult = markPreflightApplied(routeResult)
+		},
+	)
 	instruction := a.context.BuildSystemPromptWithInjected(resolvedPrompts)
 	agentOpts := []blades.AgentOption{
 		blades.WithModel(modelProvider),

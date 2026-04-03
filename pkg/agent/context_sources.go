@@ -57,6 +57,7 @@ type ContextCompactionPreview struct {
 
 type ContextPreflightDecision struct {
 	Action        string                   `json:"action,omitempty"`
+	Applied       bool                     `json:"applied"`
 	BudgetStatus  string                   `json:"budget_status,omitempty"`
 	BudgetReasons []string                 `json:"budget_reasons,omitempty"`
 	Compaction    ContextCompactionPreview `json:"compaction"`
@@ -301,10 +302,10 @@ func (a *Agent) buildContextSourcesPreviewFromResolved(
 			BudgetReasons: budgetReasons,
 			Compaction:    compaction,
 		},
-		BudgetStatus:      budgetStatus,
-		BudgetReasons:     budgetReasons,
-		Compaction:        compaction,
-		Warnings:          warnings,
+		BudgetStatus:  budgetStatus,
+		BudgetReasons: budgetReasons,
+		Compaction:    compaction,
+		Warnings:      warnings,
 	}
 }
 

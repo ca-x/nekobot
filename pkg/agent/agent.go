@@ -96,6 +96,14 @@ type ChatRouteResult struct {
 	CompactionStrategy    string
 }
 
+func markPreflightApplied(routeResult ChatRouteResult) ChatRouteResult {
+	if strings.TrimSpace(routeResult.Preflight.Action) == "" {
+		return routeResult
+	}
+	routeResult.Preflight.Applied = true
+	return routeResult
+}
+
 // acpSessionState stores ACP session-scoped routing and cancellation state.
 type acpSessionState struct {
 	session    SessionInterface
@@ -729,6 +737,7 @@ func (a *Agent) chatWithLegacyOrchestrator(
 			)
 		}
 		providerMessages = compressedMessages
+		routeResult = markPreflightApplied(routeResult)
 	}
 
 	// Tool definitions

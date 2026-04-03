@@ -993,6 +993,9 @@ func TestChatWithPromptContextDetailed_IncludesContextPressurePreview(t *testing
 	if routeResult.Preflight.Action != "compact_before_run" {
 		t.Fatalf("expected compact_before_run preflight action, got %+v", routeResult.Preflight)
 	}
+	if !routeResult.Preflight.Applied {
+		t.Fatalf("expected preflight applied flag to be true, got %+v", routeResult.Preflight)
+	}
 	if !routeResult.Preflight.Compaction.Recommended {
 		t.Fatalf("expected preflight compaction recommendation, got %+v", routeResult.Preflight)
 	}
@@ -1245,6 +1248,9 @@ func TestChatWithPromptContextDetailed_DoesNotAutoCompressWarningPreflightBefore
 	if routeResult.Preflight.Action != "consider_compaction" {
 		t.Fatalf("expected consider_compaction preflight action, got %+v", routeResult.Preflight)
 	}
+	if routeResult.Preflight.Applied {
+		t.Fatalf("expected preflight applied flag to stay false for warning path, got %+v", routeResult.Preflight)
+	}
 
 	expectedMessages := ag.convertToProviderMessages(
 		ag.context.BuildMessagesWithPromptSet(
@@ -1329,6 +1335,9 @@ func TestChatWithPromptContextDetailed_AutoCompressesCriticalPreflightBeforeBlad
 	}
 	if routeResult.Preflight.Action != "compact_before_run" {
 		t.Fatalf("expected compact_before_run preflight action, got %+v", routeResult.Preflight)
+	}
+	if !routeResult.Preflight.Applied {
+		t.Fatalf("expected preflight applied flag to be true, got %+v", routeResult.Preflight)
 	}
 
 	expectedBefore := &providers.UnifiedRequest{
