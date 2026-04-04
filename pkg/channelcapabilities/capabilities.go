@@ -178,6 +178,16 @@ func GetDefaultCapabilitiesForChannel(channelType string) ChannelCapabilities {
 			Media:          CapabilityScopeAll,
 			NativeCommands: CapabilityScopeAll,
 		}
+	case "wework":
+		return ChannelCapabilities{
+			Reactions:      CapabilityScopeOff,
+			InlineButtons:  CapabilityScopeOff,
+			Threads:        CapabilityScopeOff,
+			Polls:          CapabilityScopeOff,
+			Streaming:      CapabilityScopeOff,
+			Media:          CapabilityScopeAll,
+			NativeCommands: CapabilityScopeOff,
+		}
 	case "whatsapp":
 		return ChannelCapabilities{
 			Reactions:      CapabilityScopeAll,

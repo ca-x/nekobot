@@ -26,6 +26,14 @@
   - `go test -count=1 ./pkg/channels/telegram -run 'Test(SupportsInlineButtonsRespectsDefaultCapabilityScope|ScopedInlineKeyboardDropsButtonsOutsideSupportedScope|SkillInstallPromptFallsBackToTextConfirmationWithoutInlineButtons)$'` failed first, then passed after the fix.
   - `go test -count=1 ./pkg/channels/telegram` passed.
 
+- Continued channel capability matrix phase 4 (WeWork native command scope):
+  - added an explicit default capability profile for `wework`, with `native_commands=off` instead of falling back to the generic `all` baseline.
+  - wired `pkg/channels/wework/wework.go` to respect the declared native-command capability before routing slash commands.
+  - added runtime and matrix regression coverage so WeWork slash text now stays on the normal inbound bus path when native commands are disabled.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/wework ./pkg/channels -run 'Test(ProcessMessageTreatsSlashCommandAsPlainTextWhenNativeCommandsDisabled|GetDefaultCapabilitiesForChannel)$'` failed first, then passed after the fix.
+  - `go test -count=1 ./pkg/channels/wework ./pkg/channels` passed.
+
 - Completed browser session migration phase 3 (relay attach-only mode):
   - added the first narrow `relay` browser connection mode instead of continuing to reject it at the tool boundary.
   - kept the semantics intentionally strict: relay mode only attaches to an existing browser instance and never launches a new one, so the first slice is real but bounded.

@@ -19,6 +19,11 @@ func TestGetDefaultCapabilitiesForChannel(t *testing.T) {
 		t.Fatalf("expected telegram threads in groups, got %q", telegram.Threads)
 	}
 
+	wework := GetDefaultCapabilitiesForChannel("wework")
+	if wework.NativeCommands != CapabilityScopeOff {
+		t.Fatalf("expected wework native commands off, got %q", wework.NativeCommands)
+	}
+
 	unknown := GetDefaultCapabilitiesForChannel("unknown")
 	if unknown.Media != CapabilityScopeAll {
 		t.Fatalf("expected unknown channel to use default media scope, got %q", unknown.Media)

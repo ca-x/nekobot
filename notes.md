@@ -4173,3 +4173,32 @@ type CronJobState struct {
 - GREEN:
   - `go test -count=1 ./pkg/channels/telegram -run 'Test(SupportsInlineButtonsRespectsDefaultCapabilityScope|ScopedInlineKeyboardDropsButtonsOutsideSupportedScope|SkillInstallPromptFallsBackToTextConfirmationWithoutInlineButtons)$'`
   - `go test -count=1 ./pkg/channels/telegram`
+
+## 2026-04-04 wework native commands capability 消费补记
+
+### 本轮完成
+- `pkg/channelcapabilities/capabilities.go`
+  - 为 `wework` 增补显式默认矩阵：
+    - `native_commands=off`
+    - 其余交互型能力当前先收口为 `off`
+    - `media=all` 维持可用。
+- `pkg/channels/wework/wework.go`
+  - `processMessage()` 现在会在识别 slash/native command 前，先经过 capability 判定。
+  - 因为 `wework` 默认 `native_commands=off`，`/help` 这类文本现在按普通消息入 bus，而不是直接执行命令。
+- `pkg/channels/wework/wework_test.go`
+  - 新增运行时回归，锁定 WeWork 默认禁用 native commands 时，slash command 不再走命令处理器。
+- `pkg/channels/capabilities_test.go`
+  - 新增 `wework` 默认矩阵断言，避免 capability 声明再次漂移回 `all`。
+
+### 当前语义
+- 这一步只收口 WeWork 上的 `native_commands` capability，不扩到更细的群聊/部门会话判定，也不接更多能力位。
+- 当前规则：
+  - `wework` 默认 `native_commands=off`。
+  - slash 文本在 WeWork 中继续作为普通文本消息进入 agent 总线。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/channels/wework ./pkg/channels -run 'Test(ProcessMessageTreatsSlashCommandAsPlainTextWhenNativeCommandsDisabled|GetDefaultCapabilitiesForChannel)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/channels/wework ./pkg/channels -run 'Test(ProcessMessageTreatsSlashCommandAsPlainTextWhenNativeCommandsDisabled|GetDefaultCapabilitiesForChannel)$'`
+  - `go test -count=1 ./pkg/channels/wework ./pkg/channels`
