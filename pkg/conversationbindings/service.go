@@ -142,7 +142,12 @@ func (s *Service) BindWithOptions(ctx context.Context, conversationID, sessionID
 		states = append(states, state)
 	}
 
-	return s.persistBindingStates(ctx, session, states, conversationID)
+	primaryConversationID := s.currentPrimaryConversationID(session, states)
+	if primaryConversationID == "" {
+		primaryConversationID = conversationID
+	}
+
+	return s.persistBindingStates(ctx, session, states, primaryConversationID)
 }
 
 // Resolve resolves the tool session currently bound to a conversation identifier.
@@ -510,6 +515,19 @@ func (s *Service) bindingStates(session *toolsessions.Session) []bindingState {
 		Details:        cloneMetadata(mapValue(metadata["details"])),
 		ExpiresAt:      parseExpiry(metadata["expires_at"]),
 	}}
+}
+
+func (s *Service) currentPrimaryConversationID(session *toolsessions.Session, states []bindingState) string {
+	currentPrimary := s.ConversationID(session.ConversationKey)
+	if currentPrimary == "" {
+		return ""
+	}
+	for _, state := range states {
+		if state.ConversationID == currentPrimary {
+			return currentPrimary
+		}
+	}
+	return ""
 }
 
 func cloneMetadata(src map[string]interface{}) map[string]interface{} {

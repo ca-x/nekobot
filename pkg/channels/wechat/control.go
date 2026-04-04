@@ -266,6 +266,10 @@ func (s *ControlService) CreateRuntime(
 	if s == nil || s.sessions == nil || s.process == nil || s.bindings == nil {
 		return nil, fmt.Errorf("wechat runtime control is not available")
 	}
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return nil, fmt.Errorf("chat id is required")
+	}
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {

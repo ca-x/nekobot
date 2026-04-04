@@ -583,14 +583,14 @@ func TestServiceRebindingPromotesDeterministicPrimaryConversation(t *testing.T) 
 		t.Fatalf("create secondary session: %v", err)
 	}
 
+	if err := svc.Bind(ctx, "chat-c", primarySess.ID); err != nil {
+		t.Fatalf("bind chat-c: %v", err)
+	}
 	if err := svc.Bind(ctx, "chat-b", primarySess.ID); err != nil {
 		t.Fatalf("bind chat-b: %v", err)
 	}
 	if err := svc.Bind(ctx, "chat-a", primarySess.ID); err != nil {
 		t.Fatalf("bind chat-a: %v", err)
-	}
-	if err := svc.Bind(ctx, "chat-c", primarySess.ID); err != nil {
-		t.Fatalf("bind chat-c: %v", err)
 	}
 
 	if err := svc.Bind(ctx, "chat-c", secondarySess.ID); err != nil {
@@ -611,6 +611,100 @@ func TestServiceRebindingPromotesDeterministicPrimaryConversation(t *testing.T) 
 	}
 	if got := updatedSecondary.ConversationKey; got != "wx:chat-c" {
 		t.Fatalf("expected rebound session conversation key wx:chat-c, got %q", got)
+	}
+}
+
+func TestServiceRebindPreservesExistingPrimaryConversationOnTargetSession(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	mgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	svc := New(mgr, toolsessions.SourceChannel, "wechat", "wx:")
+	ctx := context.Background()
+
+	sourceSession, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "user-1",
+		Source:  toolsessions.SourceChannel,
+		Channel: "wechat",
+		Tool:    "codex",
+		Command: "codex",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create source session: %v", err)
+	}
+
+	targetSession, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "user-1",
+		Source:  toolsessions.SourceChannel,
+		Channel: "wechat",
+		Tool:    "claude",
+		Command: "claude",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create target session: %v", err)
+	}
+
+	if err := svc.Bind(ctx, "chat-source", sourceSession.ID); err != nil {
+		t.Fatalf("bind source conversation: %v", err)
+	}
+	if err := svc.Bind(ctx, "chat-primary", targetSession.ID); err != nil {
+		t.Fatalf("bind target primary conversation: %v", err)
+	}
+
+	if err := svc.Bind(ctx, "chat-source", targetSession.ID); err != nil {
+		t.Fatalf("rebind source conversation to target session: %v", err)
+	}
+
+	resolvedSource, err := svc.Resolve(ctx, "chat-source")
+	if err != nil {
+		t.Fatalf("resolve rebound conversation: %v", err)
+	}
+	if resolvedSource == nil || resolvedSource.ID != targetSession.ID {
+		t.Fatalf("expected chat-source bound to target session %q, got %+v", targetSession.ID, resolvedSource)
+	}
+
+	clearedSource, err := mgr.GetSession(ctx, sourceSession.ID)
+	if err != nil {
+		t.Fatalf("get cleared source session: %v", err)
+	}
+	if got := clearedSource.ConversationKey; got != "" {
+		t.Fatalf("expected source session conversation key cleared, got %q", got)
+	}
+
+	updatedTarget, err := mgr.GetSession(ctx, targetSession.ID)
+	if err != nil {
+		t.Fatalf("get updated target session: %v", err)
+	}
+	if got := updatedTarget.ConversationKey; got != "wx:chat-primary" {
+		t.Fatalf("expected target primary conversation key to remain wx:chat-primary, got %q", got)
+	}
+
+	records, err := svc.GetBindingsBySession(ctx, targetSession.ID)
+	if err != nil {
+		t.Fatalf("get target session bindings: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 bindings on target session, got %d", len(records))
+	}
+	if records[0].Conversation.ConversationID != "chat-primary" || records[1].Conversation.ConversationID != "chat-source" {
+		t.Fatalf("unexpected target binding order after rebind: %+v", records)
 	}
 }
 

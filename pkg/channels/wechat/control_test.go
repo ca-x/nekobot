@@ -197,6 +197,50 @@ func TestControlServiceDescribeBindingsListsEachChatBinding(t *testing.T) {
 	}
 }
 
+func TestControlServiceCreateRuntimeRejectsEmptyChatIDBeforeCreatingSession(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "   ", RuntimeCreateRequest{
+		Name:   "code1",
+		Driver: "process",
+		Tool:   "cat",
+	})
+	if err == nil {
+		t.Fatalf("expected create runtime to reject empty chat id, got session %+v", created)
+	}
+	if !strings.Contains(err.Error(), "chat id is required") {
+		t.Fatalf("expected chat id validation error, got %v", err)
+	}
+
+	runtimes, err := controlSvc.ListRuntimes(ctx)
+	if err != nil {
+		t.Fatalf("ListRuntimes failed: %v", err)
+	}
+	if len(runtimes) != 0 {
+		t.Fatalf("expected no runtimes after rejected create, got %d", len(runtimes))
+	}
+}
+
 func TestControlServiceCreateACPRuntimeDoesNotStartPTYAndCanStop(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
