@@ -168,6 +168,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.click(ctx, params)
 	case "type":
 		return b.typeText(ctx, params)
+	case "select":
+		return b.selectOption(ctx, params)
 	case "get_html":
 		return b.getHTML(ctx, params)
 	case "get_text":
@@ -200,8 +202,12 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 		return "", fmt.Errorf("url parameter is required")
 	}
 
-	if _, err := url.Parse(urlStr); err != nil {
+	parsedURL, err := url.Parse(urlStr)
+	if err != nil {
 		return "", fmt.Errorf("invalid URL: %w", err)
+	}
+	if !parsedURL.IsAbs() || strings.TrimSpace(parsedURL.Scheme) == "" || strings.TrimSpace(parsedURL.Host) == "" {
+		return "", fmt.Errorf("absolute URL is required")
 	}
 
 	b.log.Info("Browser navigating",
@@ -253,6 +259,16 @@ func (b *BrowserTool) startMode(params map[string]interface{}) (BrowserConnectio
 		return "", fmt.Errorf("invalid browser mode: %s", rawMode)
 	}
 	return mode, nil
+}
+
+func (b *BrowserTool) navigationParams(params map[string]interface{}, urlStr string) map[string]interface{} {
+	navigateParams := map[string]interface{}{
+		"url": urlStr,
+	}
+	if rawMode, ok := params["mode"].(string); ok && strings.TrimSpace(rawMode) != "" {
+		navigateParams["mode"] = rawMode
+	}
+	return navigateParams
 }
 
 func (b *BrowserTool) buildPrintToPDFArgs(params map[string]interface{}) *page.PrintToPDFArgs {
@@ -412,7 +428,7 @@ func (b *BrowserTool) screenshot(ctx context.Context, params map[string]interfac
 
 	// Navigate if URL provided
 	if urlStr, ok := params["url"].(string); ok && urlStr != "" {
-		if _, err := b.navigate(ctx, map[string]interface{}{"url": urlStr}); err != nil {
+		if _, err := b.navigate(ctx, b.navigationParams(params, urlStr)); err != nil {
 			return "", err
 		}
 		time.Sleep(1 * time.Second) // Wait for page to stabilize
@@ -550,7 +566,7 @@ func (b *BrowserTool) executeScript(ctx context.Context, params map[string]inter
 
 	// Navigate if URL provided
 	if urlStr, ok := params["url"].(string); ok && urlStr != "" {
-		if _, err := b.navigate(ctx, map[string]interface{}{"url": urlStr}); err != nil {
+		if _, err := b.navigate(ctx, b.navigationParams(params, urlStr)); err != nil {
 			return "", err
 		}
 	}
@@ -680,6 +696,47 @@ func (b *BrowserTool) typeText(ctx context.Context, params map[string]interface{
 	}
 
 	return fmt.Sprintf("Typed text into %s: %s", selector, text), nil
+}
+
+func (b *BrowserTool) selectOption(ctx context.Context, params map[string]interface{}) (string, error) {
+	selector, ok := params["selector"].(string)
+	if !ok {
+		return "", fmt.Errorf("selector parameter is required")
+	}
+
+	value, ok := params["value"].(string)
+	if !ok {
+		return "", fmt.Errorf("value parameter is required")
+	}
+
+	result, err := b.executeScript(ctx, map[string]interface{}{
+		"script": b.buildSelectScript(selector, value),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Selected option %q in %s\n%s", value, selector, result), nil
+}
+
+func (b *BrowserTool) buildSelectScript(selector, value string) string {
+	return fmt.Sprintf(`(() => {
+		const element = document.querySelector(%q);
+		if (!element) {
+			throw new Error("element not found");
+		}
+		if (element.tagName !== "SELECT") {
+			throw new Error("element is not a select");
+		}
+		const optionExists = Array.from(element.options).some(option => option.value === %q);
+		if (!optionExists) {
+			throw new Error("option not found");
+		}
+		element.value = %q;
+		element.dispatchEvent(new Event("input", { bubbles: true }));
+		element.dispatchEvent(new Event("change", { bubbles: true }));
+		return element.value;
+	})()`, selector, value, value)
 }
 
 // getHTML gets the HTML content of the page.

@@ -199,6 +199,75 @@ func TestBrowserToolParametersIncludeGetText(t *testing.T) {
 	}
 }
 
+func TestBrowserToolExecuteRejectsMissingSelectValue(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action":   "select",
+		"selector": "select[name=country]",
+	})
+	if err == nil {
+		t.Fatal("expected select value error")
+	}
+	if !strings.Contains(err.Error(), "value parameter is required") {
+		t.Fatalf("expected missing value error, got %v", err)
+	}
+}
+
+func TestBrowserToolBuildSelectScriptRejectsMissingOption(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	script := tool.buildSelectScript("select[name=country]", "missing")
+	if !strings.Contains(script, "option not found") {
+		t.Fatalf("expected missing-option guard in script, got %q", script)
+	}
+}
+
+func TestBrowserToolNavigationParamsPreserveMode(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	params := tool.navigationParams(map[string]interface{}{
+		"url":  "https://example.com",
+		"mode": "relay",
+	}, "https://override.example.com")
+
+	if got, _ := params["url"].(string); got != "https://override.example.com" {
+		t.Fatalf("expected overridden url, got %#v", params["url"])
+	}
+	if got, _ := params["mode"].(string); got != "relay" {
+		t.Fatalf("expected relay mode preserved, got %#v", params["mode"])
+	}
+}
+
+func TestBrowserToolExecuteRejectsRelativeNavigateURL(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "navigate",
+		"url":    "example.com/path",
+	})
+	if err == nil {
+		t.Fatal("expected invalid URL error")
+	}
+	if !strings.Contains(err.Error(), "absolute URL is required") {
+		t.Fatalf("expected absolute URL error, got %v", err)
+	}
+}
+
+func TestBrowserToolGetTextRejectsRelativeURLBeforeNavigation(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "get_text",
+		"url":    "example.com/path",
+	})
+	if err == nil {
+		t.Fatal("expected invalid URL error")
+	}
+	if !strings.Contains(err.Error(), "absolute URL is required") {
+		t.Fatalf("expected absolute URL error, got %v", err)
+	}
+}
 func TestHTMLToTextStripsTags(t *testing.T) {
 	got := htmlToText("<html><body><h1>Hello</h1><p>World</p></body></html>")
 	if got != "HelloWorld" {
