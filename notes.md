@@ -4075,6 +4075,358 @@ type CronJobState struct {
   - `go test -count=1 ./pkg/gateway -run 'Test(WSChat(RejectsUnknownRequestedSessionBeforeUpgrade|UsesRequestedExistingGatewaySession|AllowsRequestedLegacyGatewaySessionWithEmptySource|RejectsSecondLiveConnectionForRequestedSession)|ProcessMessage(RejectsMismatchedInboundSessionID|AllowsMatchingInboundSessionID)|ProcessMessageUsesPairedSessionIDForRouterAndResponse)$'`
   - `go test -count=1 ./pkg/gateway ./pkg/config`
 
+## 2026-04-04 gateway member 自删自有连接切片预备
+
+### 当前判断
+- `gateway control-plane hardening` 继续推进时，直接做 pairing enrollment / session ownership 持久化会把 `pkg/session` 数据模型一起抬起来，已经超出当前“最小连接治理”边界。
+- 现有代码里更薄、且仍符合既有 control-plane scope 路线的下一刀是：
+  - 允许 `member` 删除自己拥有的 live gateway connection。
+  - 继续禁止 `member` 读取全局 status 或管理其他用户连接。
+
+### 锁定边界
+- 只改 `DELETE /api/v1/connections/{id}` 的授权语义。
+- `admin` / `owner` 继续可删除任意连接。
+- `member` 仅当目标连接 `client.userID == authCtx.userID` 时允许删除。
+- 不引入：
+  - pairing enrollment / claim token
+  - session ownership 持久化字段
+  - 更复杂的 control-plane protocol
+
+### 计划中的验证
+- RED:
+  - `member` 删除自有连接应从 `403` 变为 `204`。
+  - `member` 删除其他用户连接仍保持拒绝，且不泄露额外存在性信息。
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'TestDeleteConnectionEndpoint(AllowsMemberRoleForOwnedConnection|RejectsMemberRoleForOtherUsersConnection|RejectsMemberRole)$'`
+  - `go test -count=1 ./pkg/gateway`
+
+## 2026-04-04 gateway member 自删自有连接收口补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - `handleDeleteConnection()` 不再用全局 `manage` scope 直接挡掉所有 `member`。
+  - 删除路径现在改为：
+    - 先走已存在的 read-scope 鉴权。
+    - 再按目标连接做细粒度授权判断。
+  - 新增 `gatewayControlPlaneCanManageConnection()`：
+    - `admin` / `owner` 仍可管理任意 live connection。
+    - `member` 仅当 `authCtx.userID == client.userID` 时允许删除。
+    - 对非自有或不存在的目标统一返回 `404`，避免额外泄露连接存在性。
+- `pkg/gateway/server_test.go`
+  - 新增：
+    - `TestDeleteConnectionEndpointAllowsMemberRoleForOwnedConnection`
+    - `TestDeleteConnectionEndpointRejectsMemberRoleForOtherUsersConnection`
+  - 既有 member 删除测试已对齐为：
+    - `TestDeleteConnectionEndpointReturnsNotFoundForMemberWithoutOwnedTarget`
+
+### 当前语义
+- 这一步继续只做最小控制面授权细化，不引入：
+  - pairing enrollment / claim token
+  - session ownership 持久化字段
+  - 更复杂的 control-plane protocol
+- 当前规则：
+  - `admin` / `owner` 可删除任意 live gateway connection。
+  - `member` 仅可删除自己拥有的 live gateway connection。
+  - `member` 面对他人连接或不存在目标时统一拿到 `404`。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'TestDeleteConnectionEndpoint(AllowsMemberRoleForOwnedConnection|RejectsMemberRoleForOtherUsersConnection|RejectsMemberRole)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'TestDeleteConnectionEndpoint(AllowsMemberRoleForOwnedConnection|RejectsMemberRoleForOtherUsersConnection|ReturnsNotFoundForMemberWithoutOwnedTarget|RemovesClient|ReturnsNotFoundForUnknownClient|RequiresAuth)$'`
+  - `go test -count=1 ./pkg/gateway`
+
+## 2026-04-04 并行执行与 gateway pairing 可观测性切片预备
+
+### 当前判断
+- 现在适合并行推进，但前提是写集分离。
+- 当前拆分为三条互不冲突的线：
+  - 本地：`pkg/gateway/*`
+  - GoalX browser worker：`pkg/tools/browser*`
+  - GoalX Slack worker：`pkg/channels/slack*`
+- `gateway` 线上，下一刀不继续抬 ownership / enrollment 模型，而是补一个更薄的控制面可观测性切片。
+
+### 锁定边界
+- 仅扩展 gateway 连接视图返回字段。
+- 目标：
+  - 显式暴露某个 live websocket 是否处于 paired 状态。
+  - paired 时暴露其 paired session id。
+- 不引入：
+  - 新的 pairing 协议
+  - ownership 持久化模型
+  - Slack/browser 相关改动
+
+### 计划中的验证
+- RED:
+  - 为 list/detail 连接视图补 paired state 字段回归测试。
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'Test(ConnectionsEndpoint|GetConnectionEndpoint).*Paired'`
+  - `go test -count=1 ./pkg/gateway`
+
+## 2026-04-04 gateway pairing 可观测性收口补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - `connectionStatus` 新增：
+    - `paired`
+    - `paired_session_id`
+  - `describeConnection()` 现在会在连接持有可识别 session 时，把该连接标记为 paired，并显式带出 paired session id。
+  - 这一步只扩控制面返回字段，不改变现有 pairing / auth / delete 语义。
+- `pkg/gateway/server_test.go`
+  - 强化 `TestConnectionsEndpoint`：
+    - 未配对连接现在显式断言 `paired=false`
+    - 配对连接显式断言 `paired=true` 和 `paired_session_id`
+  - 强化 `TestGetConnectionEndpointReturnsConnectionDetails`：
+    - 单连接详情现在显式断言 `paired=true`
+    - 并断言 `paired_session_id`
+
+### 当前语义
+- 这一步继续只做控制面可观测性，不引入：
+  - enrollment / claim token
+  - session ownership 持久化字段
+  - browser / Slack 相关改动
+- 当前规则：
+  - live websocket 若已绑定 gateway session，则连接详情和列表都显式显示 paired 状态。
+  - 未绑定 session 的连接显式显示 `paired=false`。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'Test(ConnectionsEndpoint|GetConnectionEndpointReturnsConnectionDetails)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'Test(ConnectionsEndpoint|GetConnectionEndpointReturnsConnectionDetails)$'`
+  - `go test -count=1 ./pkg/gateway`
+
+## 2026-04-04 gateway paired connection status 计数收口补记
+
+### 本轮完成
+- `pkg/gateway/server.go`
+  - `/api/v1/status` 新增 `paired_connections` 字段。
+  - 该字段当前按 live client 中显式 paired 的连接数统计，避免控制面必须再扫一次全量连接列表才能知道 pairing 规模。
+- `pkg/gateway/server_test.go`
+  - `TestStatusEndpoint` 现在显式断言默认 `paired_connections = 0`。
+  - 新增 `TestStatusEndpointReportsPairedConnections`，锁定 mixed paired/unpaired 连接下的状态统计。
+
+### 当前语义
+- 这一步继续只做状态面可观测性，不引入：
+  - 新的 pairing 协议
+  - ownership 持久化模型
+  - browser / Slack / capability 改动
+- 当前规则：
+  - `/api/v1/status.connections` 表示全部 live websocket 连接数。
+  - `/api/v1/status.paired_connections` 表示当前其中处于 paired 状态的连接数。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/gateway -run 'Test(StatusEndpoint|StatusEndpointReportsPairedConnections|StatusEndpointCountsConnectionsDeterministically)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/gateway -run 'Test(StatusEndpoint|StatusEndpointReportsPairedConnections|StatusEndpointCountsConnectionsDeterministically)$'`
+  - `go test -count=1 ./pkg/gateway`
+
+## 2026-04-04 Slack help shortcut/modal 闭环补记
+
+### 本轮完成
+- `pkg/channels/slack/slack.go`
+  - 新增 `help` shortcut / modal 常量与 `buildHelpModal()`。
+  - `handleShortcut()` 现在支持 `help` shortcut 打开 modal。
+  - `handleViewSubmission()` 现在支持 `help_modal`。
+  - 新增 `handleHelpViewSubmission()`，直接复用现有 `/help` command 语义，把 modal 输入作为参数执行并回发 ephemeral 结果。
+- `pkg/channels/slack/slack_test.go`
+  - 新增：
+    - `TestHandleShortcutOpensHelpModal`
+    - `TestHandleViewSubmissionExecutesHelpCommand`
+  - 扩大后的 modal 回归现在覆盖：
+    - `find_skills`
+    - `settings`
+    - `model`
+    - `help`
+
+### 当前语义
+- 这一步继续只补最小真实业务闭环，不引入：
+  - Slack 专有帮助协议
+  - 新的 pending interaction 机制
+  - gateway / browser / capability 改动
+- 当前规则：
+  - `help` shortcut 会打开一个简单 modal，输入命令名或主题。
+  - 提交后复用现有 `/help` command 语义并返回 ephemeral 响应。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensHelpModal|ViewSubmissionExecutesHelpCommand)$'`
+- GREEN:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensHelpModal|ViewSubmissionExecutesHelpCommand)$'`
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(FindSkills|Settings|Model|Help)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model|Help)Command)$'`
+
+## 2026-04-04 Telegram streaming capability 首个运行时消费补记
+
+### 本轮完成
+- `pkg/channels/telegram/telegram.go`
+  - 新增 `supportsStreaming(chatType string)`。
+  - `sendThinkingMessage()` 现在会尊重 Telegram 默认 capability `streaming=dm`：
+    - 私聊继续发送 thinking message。
+    - 群组 / 超级群现在跳过 thinking message。
+- `pkg/channels/telegram/telegram_test.go`
+  - 新增 `TestSendThinkingMessageSkipsGroupsWhenStreamingUnsupported`。
+  - 同时与已有 inline button scope 回归一起验证 Telegram capability 路径。
+
+### 当前语义
+- 这一步继续只补 capability matrix 的最小真实消费，不引入：
+  - 新的 Telegram 交互协议
+  - streaming 消息格式重做
+  - gateway / Slack / browser 改动
+- 当前规则：
+  - Telegram `streaming` 默认只在 DM 生效。
+  - 群聊里不再发送 “thinking” 这类流式占位消息。
+
+### 本轮测试
+- RED:
+  - `go test -count=1 ./pkg/channels/telegram -run TestSendThinkingMessageSkipsGroupsWhenStreamingUnsupported`
+- GREEN:
+  - `go test -count=1 ./pkg/channels/telegram -run 'TestSendThinkingMessageSkipsGroupsWhenStreamingUnsupported|TestSupportsInlineButtonsRespectsDefaultCapabilityScope|TestScopedInlineKeyboardDropsButtonsOutsideSupportedScope|TestSkillInstallPromptFallsBackToTextConfirmationWithoutInlineButtons'`
+  - `go test -count=1 ./pkg/channels/telegram`
+
+## 2026-04-04 browser URL 可靠性与 binding rebinding 契约吸收补记
+
+### 本轮完成
+- `pkg/tools/browser.go`
+  - `navigate()` 现在要求绝对 URL，缺少 scheme/host 的相对路径会在启动浏览器前直接失败。
+  - 当前工作树已同时吸收并保持：
+    - `selectOption` / `buildSelectScript`
+    - `navigationParams` mode 保留
+    - 相对 URL 预检
+- `pkg/tools/browser_test.go`
+  - 当前工作树已同时覆盖：
+    - missing select value
+    - missing select option
+    - mode preservation
+    - relative navigate/get_text URL rejection
+- `pkg/conversationbindings/service.go`
+  - 当前工作树已吸收 `currentPrimaryConversationID()` 语义：当 conversation rebind 到已有 target session 时，若 target 已有 primary 且仍存在，则保留它作为 primary。
+- `pkg/conversationbindings/service_test.go`
+  - 当前工作树同时保留两条契约回归：
+    - 源 session 在失去当前 primary 后按稳定顺序提升新的 primary
+    - target session 在已有 primary 时，rebind 不应被新移入 conversation 抢走 primary
+
+### 当前语义
+- `browser`：
+  - 相对 URL 不再触发任何浏览器启动/导航尝试。
+  - `screenshot` / `execute_script` 经由内部导航复用时继续保留 `mode`。
+- `conversation binding`：
+  - rebind 现在区分源 session 和目标 session 的 primary 语义：
+    - 源侧 deterministic promote
+    - 目标侧 preserve existing primary
+
+### 本轮测试
+- `go test -count=1 ./pkg/tools -run 'TestBrowserToolExecuteRejectsRelativeNavigateURL|TestBrowserToolGetTextRejectsRelativeURLBeforeNavigation|TestBrowserToolNavigationParamsPreserveMode|TestBrowserToolStartModeFromParams|TestBrowserToolExecuteRejectsInvalidMode|TestBrowserToolParametersIncludeRelayMode'`
+- `go test -count=1 ./pkg/conversationbindings -run 'TestService(RebindingPromotesDeterministicPrimaryConversation|RebindPreservesExistingPrimaryConversationOnTargetSession)$'`
+- `go test -count=1 ./pkg/conversationbindings ./pkg/channels/wechat`
+
+## 2026-04-04 Slack status shortcut/modal 闭环补记
+
+### 本轮完成
+- `pkg/channels/slack/slack.go`
+  - 新增 `status` shortcut / modal 常量与 `buildStatusModal()`。
+  - `handleShortcut()` 现在支持 `status` shortcut。
+  - `handleViewSubmission()` 现在支持 `status_modal`。
+  - 新增 `handleStatusViewSubmission()`，直接复用现有 `/status` command 语义并回发 ephemeral 响应。
+- `pkg/channels/slack/slack_test.go`
+  - 新增：
+    - `TestHandleShortcutOpensStatusModal`
+    - `TestHandleViewSubmissionExecutesStatusCommand`
+  - 当前 modal 回归已扩大覆盖：
+    - `find_skills`
+    - `settings`
+    - `model`
+    - `help`
+    - `status`
+
+### 当前语义
+- 这一步继续只补最小真实业务闭环，不引入 Slack 专有状态协议。
+- 当前规则：
+  - `status` shortcut 打开只读确认型 modal。
+  - 提交后直接复用现有 `/status` command 并回发 ephemeral 结果。
+
+### 本轮测试
+- `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensStatusModal|ViewSubmissionExecutesStatusCommand|ShortcutOpens(FindSkills|Settings|Model|Help|Status)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model|Help|Status)Command)$'`
+
+## 2026-04-04 WeChat runtime create 前置 chat-id 校验补记
+
+### 本轮完成
+- `pkg/channels/wechat/control.go`
+  - `CreateRuntime()` 现在在创建 session / process 之前先校验 `chatID` 非空。
+  - 这样空 chat 输入不会再产生半创建成功的 runtime/session 副作用。
+- `pkg/channels/wechat/control_test.go`
+  - 新增 `TestControlServiceCreateRuntimeRejectsEmptyChatIDBeforeCreatingSession`。
+
+### 当前语义
+- 这一步只收口 WeChat consumer-level 输入边界，不改 binding 协议本身。
+- 当前规则：
+  - `chatID` 为空时直接失败。
+  - 失败前不会创建 runtime/session 记录。
+
+### 本轮测试
+- `go test -count=1 ./pkg/channels/wechat -run 'TestControlServiceCreateRuntimeRejectsEmptyChatIDBeforeCreatingSession|TestRuntimeBindingService|TestControlService(DescribeBindings|CreateRuntime|DeleteRuntime|StopRuntime|RouteMessageToBoundRuntime)'`
+
+## 2026-04-04 Slack agent shortcut/modal 闭环补记
+
+### 本轮完成
+- `pkg/channels/slack/slack.go`
+  - 新增 `agent` shortcut / modal 常量与 `buildAgentModal()`。
+  - `handleShortcut()` 现在支持 `agent` shortcut。
+  - `handleViewSubmission()` 现在支持 `agent_modal`。
+  - 新增 `handleAgentViewSubmission()`，直接复用现有 `/agent` command 语义并回发 ephemeral 结果。
+- `pkg/channels/slack/slack_test.go`
+  - 新增：
+    - `TestHandleShortcutOpensAgentModal`
+    - `TestHandleViewSubmissionExecutesAgentCommand`
+  - 当前 modal 回归已扩大覆盖：
+    - `find_skills`
+    - `settings`
+    - `model`
+    - `help`
+    - `status`
+    - `agent`
+
+### 当前语义
+- 这一步继续只补最小真实业务闭环，不引入 Slack 专有 agent 协议。
+- 当前规则：
+  - `agent` shortcut 打开一个简单 modal，输入 `info` / `list` 等已有 agent 子命令参数。
+  - 提交后复用现有 `/agent` command 并回发 ephemeral 结果。
+
+### 本轮测试
+- `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensAgentModal|ViewSubmissionExecutesAgentCommand)$'`
+- `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(FindSkills|Settings|Model|Help|Status|Agent)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model|Help|Status|Agent)Command)$'`
+
+## 2026-04-04 Slack start shortcut/modal 闭环补记
+
+### 本轮完成
+- `pkg/channels/slack/slack.go`
+  - 新增 `start` shortcut / modal 常量与 `buildStartModal()`。
+  - `handleShortcut()` 现在支持 `start` shortcut。
+  - `handleViewSubmission()` 现在支持 `start_modal`。
+  - 新增 `handleStartViewSubmission()`，直接复用现有 `/start` command 语义并回发 ephemeral 结果。
+- `pkg/channels/slack/slack_test.go`
+  - 新增：
+    - `TestHandleShortcutOpensStartModal`
+    - `TestHandleViewSubmissionExecutesStartCommand`
+  - 当前 modal 回归已扩大覆盖：
+    - `find_skills`
+    - `settings`
+    - `model`
+    - `help`
+    - `status`
+    - `agent`
+    - `start`
+
+### 当前语义
+- 这一步继续只补最小真实业务闭环，不引入 Slack 专有 start 协议。
+- 当前规则：
+  - `start` shortcut 打开一个简单确认型 modal。
+  - 提交后复用现有 `/start` command 并回发 ephemeral 结果。
+
+### 本轮测试
+- `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensStartModal|ViewSubmissionExecutesStartCommand)$'`
+- `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(FindSkills|Settings|Model|Help|Status|Agent|Start)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model|Help|Status|Agent|Start)Command)$'`
+
 ## 2026-04-03 browser relay mode 首批收口补记
 
 ### 本轮完成

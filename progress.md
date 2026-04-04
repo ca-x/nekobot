@@ -6,6 +6,85 @@
 
 ## 2026-04-04
 
+- Completed Slack interactive flow phase 8:
+  - added a seventh real shortcut/modal business closure: `start` shortcut now opens a modal and submission reuses the existing `/start` command semantics.
+  - kept the slice intentionally narrow by treating the modal as a thin shell over the existing command path instead of inventing Slack-only onboarding behavior.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensStartModal|ViewSubmissionExecutesStartCommand)$'` passed.
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(FindSkills|Settings|Model|Help|Status|Agent|Start)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model|Help|Status|Agent|Start)Command)$'` passed.
+
+- Completed Slack interactive flow phase 7:
+  - added a sixth real shortcut/modal business closure: `agent` shortcut now opens a modal and submission reuses the existing `/agent` command semantics.
+  - kept the slice intentionally narrow by treating the modal as a thin shell over the existing command path instead of inventing Slack-only agent behavior.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensAgentModal|ViewSubmissionExecutesAgentCommand)$'` passed.
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(FindSkills|Settings|Model|Help|Status|Agent)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model|Help|Status|Agent)Command)$'` passed.
+
+- Completed Slack interactive flow phase 6:
+  - added a fifth real shortcut/modal business closure: `status` shortcut now opens a modal and submission reuses the existing `/status` command semantics.
+  - kept the slice intentionally narrow by treating the modal as a thin shell over the existing command path instead of inventing Slack-only status behavior.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensStatusModal|ViewSubmissionExecutesStatusCommand|ShortcutOpens(FindSkills|Settings|Model|Help|Status)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model|Help|Status)Command)$'` passed.
+
+- Continued WeChat consumer-validation slice:
+  - absorbed the runtime-create input-boundary fix so empty chat ids are rejected before any session/process side effects occur.
+  - kept the slice consumer-local inside `pkg/channels/wechat/control.go` instead of reopening shared binding contracts.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/wechat -run 'TestControlServiceCreateRuntimeRejectsEmptyChatIDBeforeCreatingSession|TestRuntimeBindingService|TestControlService(DescribeBindings|CreateRuntime|DeleteRuntime|StopRuntime|RouteMessageToBoundRuntime)'` passed.
+
+- Continued browser session dual-mode / reliability follow-up:
+  - absorbed the browser mode-preservation slice so internal navigate reuse in screenshot/execute_script now keeps the requested `mode`.
+  - absorbed the browser reliability slice so relative URLs are rejected before any browser startup/navigation attempt.
+  - kept the existing select-action correctness helper path (`buildSelectScript`) in the same working state so the browser package remains self-consistent.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'TestBrowserToolExecuteRejectsRelativeNavigateURL|TestBrowserToolGetTextRejectsRelativeURLBeforeNavigation|TestBrowserToolNavigationParamsPreserveMode|TestBrowserToolStartModeFromParams|TestBrowserToolExecuteRejectsInvalidMode|TestBrowserToolParametersIncludeRelayMode'` passed.
+  - `go test -count=1 ./pkg/tools` passed earlier in the same worktree state.
+
+- Continued conversation/thread binding slice 4 (target primary preservation on rebind):
+  - absorbed the contract-first shared-layer slice so rebinding a conversation onto a target session no longer steals that target session's existing primary conversation key.
+  - preserved the earlier deterministic source-session promotion behavior by updating the test ordering to reflect the new two-sided contract instead of the old single-sided assumption.
+- Verification run:
+  - `go test -count=1 ./pkg/conversationbindings -run 'TestService(RebindingPromotesDeterministicPrimaryConversation|RebindPreservesExistingPrimaryConversationOnTargetSession)$'` passed.
+  - `go test -count=1 ./pkg/conversationbindings ./pkg/channels/wechat` passed.
+
+- Continued channel capability matrix phase 5 (Telegram streaming scope):
+  - wired `pkg/channels/telegram/telegram.go` to respect the declared `streaming` capability before sending the thinking/streaming placeholder message.
+  - kept the scope intentionally narrow: Telegram now preserves thinking messages in private chats and skips them in group/supergroup chats, matching the default `streaming=dm` matrix.
+  - added regression coverage so group chats no longer get the streaming placeholder while private chats still do.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/telegram -run 'TestSendThinkingMessageSkipsGroupsWhenStreamingUnsupported|TestSupportsInlineButtonsRespectsDefaultCapabilityScope|TestScopedInlineKeyboardDropsButtonsOutsideSupportedScope|TestSkillInstallPromptFallsBackToTextConfirmationWithoutInlineButtons'` passed.
+  - `go test -count=1 ./pkg/channels/telegram` passed.
+
+- Completed Slack interactive flow phase 5:
+  - added a fourth real shortcut/modal business closure: `help` shortcut now opens a modal and submission reuses the existing `/help` command semantics.
+  - kept the slice intentionally narrow by treating the modal as a thin UI shell over the existing command path instead of inventing Slack-only help behavior.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpensHelpModal|ViewSubmissionExecutesHelpCommand)$'` passed.
+  - `go test -count=1 ./pkg/channels/slack -run 'TestHandle(ShortcutOpens(FindSkills|Settings|Model|Help)Modal|ViewSubmissionExecutes(FindSkills|Settings|Model|Help)Command)$'` passed.
+
+- Completed gateway control-plane hardening phase 17 (paired connection status count):
+  - extended `/api/v1/status` with `paired_connections` so the control plane can observe pairing volume without fetching the full connection list.
+  - kept the slice read-only and derived from existing live connection state only.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(StatusEndpoint|StatusEndpointReportsPairedConnections|StatusEndpointCountsConnectionsDeterministically)$'` passed.
+  - `go test -count=1 ./pkg/gateway` passed.
+
+- Completed gateway control-plane hardening phase 16 (pairing observability):
+  - extended gateway connection list/detail payloads with explicit `paired` and `paired_session_id` fields.
+  - kept the slice intentionally read-only: no changes to pairing protocol, ownership, or auth behavior.
+  - made unpaired live connections report `paired=false` instead of relying on callers to infer it from missing session metadata.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(ConnectionsEndpoint|GetConnectionEndpointReturnsConnectionDetails)$'` passed.
+  - `go test -count=1 ./pkg/gateway` passed.
+
+- Completed gateway control-plane hardening phase 15 (member self-managed delete):
+  - refined `DELETE /api/v1/connections/{id}` so it no longer treats every `member` as globally forbidden.
+  - kept `admin` / `owner` semantics unchanged while allowing `member` to delete only their own live gateway connection.
+  - returned `404` for `member` attempts against other users' connections or nonexistent targets, so the endpoint does not leak connection existence.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'TestDeleteConnectionEndpoint(AllowsMemberRoleForOwnedConnection|RejectsMemberRoleForOtherUsersConnection|ReturnsNotFoundForMemberWithoutOwnedTarget|RemovesClient|ReturnsNotFoundForUnknownClient|RequiresAuth)$'` passed.
+  - `go test -count=1 ./pkg/gateway` passed.
+
 - Completed channel capability matrix phase 2 (first runtime consumer):
   - extracted the shared capability evaluation/model code into `pkg/channelcapabilities` so channel runtime packages can consume the matrix without importing `pkg/channels` and creating a cycle.
   - kept `pkg/channels/capabilities.go` as a thin compatibility wrapper so existing callers and tests continue to use the same API surface.
