@@ -69,6 +69,18 @@ const (
 	findSkillsModalCallbackID    = "find_skills_modal"
 	findSkillsModalBlockID       = "skill_query"
 	findSkillsModalActionID      = "query_input"
+	startShortcutCallbackID      = "start"
+	startModalCallbackID         = "start_modal"
+	helpShortcutCallbackID       = "help"
+	helpModalCallbackID          = "help_modal"
+	helpModalBlockID             = "help_query"
+	helpModalActionID            = "help_query_input"
+	statusShortcutCallbackID     = "status"
+	statusModalCallbackID        = "status_modal"
+	agentShortcutCallbackID      = "agent"
+	agentModalCallbackID         = "agent_modal"
+	agentModalBlockID            = "agent_query"
+	agentModalActionID           = "agent_query_input"
 	modelShortcutCallbackID      = "model"
 	modelModalCallbackID         = "model_modal"
 	modelModalBlockID            = "model_query"
@@ -555,6 +567,14 @@ func (c *Channel) handleShortcut(callback slack.InteractionCallback) {
 	switch callback.CallbackID {
 	case findSkillsShortcutCallbackID:
 		view = buildFindSkillsModal()
+	case startShortcutCallbackID:
+		view = buildStartModal()
+	case helpShortcutCallbackID:
+		view = buildHelpModal()
+	case statusShortcutCallbackID:
+		view = buildStatusModal()
+	case agentShortcutCallbackID:
+		view = buildAgentModal()
 	case modelShortcutCallbackID:
 		view = buildModelModal()
 	case settingsShortcutCallbackID:
@@ -579,6 +599,14 @@ func (c *Channel) handleViewSubmission(callback slack.InteractionCallback) {
 	switch callback.View.CallbackID {
 	case findSkillsModalCallbackID:
 		c.handleFindSkillsViewSubmission(callback)
+	case startModalCallbackID:
+		c.handleStartViewSubmission(callback)
+	case helpModalCallbackID:
+		c.handleHelpViewSubmission(callback)
+	case statusModalCallbackID:
+		c.handleStatusViewSubmission(callback)
+	case agentModalCallbackID:
+		c.handleAgentViewSubmission(callback)
 	case modelModalCallbackID:
 		c.handleModelViewSubmission(callback)
 	case settingsModalCallbackID:
@@ -679,6 +707,276 @@ func (c *Channel) handleFindSkillsViewSubmission(callback slack.InteractionCallb
 		slack.MsgOptionText(resp.Content, false),
 	); err != nil {
 		c.log.Error("Failed to send Slack modal response", zap.Error(err))
+	}
+}
+
+func (c *Channel) handleStartViewSubmission(callback slack.InteractionCallback) {
+	commandName := strings.TrimSpace(callback.View.PrivateMetadata)
+	if commandName == "" {
+		commandName = "start"
+	}
+
+	cmd, exists := c.commands.Get(commandName)
+	if !exists {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command not found: "+commandName, false),
+		); err != nil {
+			c.log.Error("Failed to send Slack start modal command-not-found message", zap.Error(err))
+		}
+		return
+	}
+
+	req := commands.CommandRequest{
+		Channel:  c.ID(),
+		ChatID:   callback.Channel.ID,
+		UserID:   callback.User.ID,
+		Username: callback.User.Name,
+		Command:  commandName,
+		Metadata: map[string]string{
+			"team_id":    callback.Team.ID,
+			"trigger_id": callback.TriggerID,
+			"runtime_id": c.ID(),
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		if _, sendErr := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command failed: "+err.Error(), false),
+		); sendErr != nil {
+			c.log.Error("Failed to send Slack start modal command error", zap.Error(sendErr))
+		}
+		return
+	}
+
+	if strings.TrimSpace(resp.Content) == "" {
+		return
+	}
+
+	if _, err := c.api.PostEphemeral(
+		callback.Channel.ID,
+		callback.User.ID,
+		slack.MsgOptionText(resp.Content, false),
+	); err != nil {
+		c.log.Error("Failed to send Slack start modal response", zap.Error(err))
+	}
+}
+
+func (c *Channel) handleHelpViewSubmission(callback slack.InteractionCallback) {
+	commandName := strings.TrimSpace(callback.View.PrivateMetadata)
+	if commandName == "" {
+		commandName = "help"
+	}
+
+	query := strings.TrimSpace(readViewInputValue(
+		callback.View.State,
+		helpModalBlockID,
+		helpModalActionID,
+	))
+	if query == "" {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("Please provide a command name or topic.", false),
+		); err != nil {
+			c.log.Error("Failed to send Slack help modal validation message", zap.Error(err))
+		}
+		return
+	}
+
+	cmd, exists := c.commands.Get(commandName)
+	if !exists {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command not found: "+commandName, false),
+		); err != nil {
+			c.log.Error("Failed to send Slack help modal command-not-found message", zap.Error(err))
+		}
+		return
+	}
+
+	req := commands.CommandRequest{
+		Channel:  c.ID(),
+		ChatID:   callback.Channel.ID,
+		UserID:   callback.User.ID,
+		Username: callback.User.Name,
+		Command:  commandName,
+		Args:     query,
+		Metadata: map[string]string{
+			"team_id":    callback.Team.ID,
+			"trigger_id": callback.TriggerID,
+			"runtime_id": c.ID(),
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		if _, sendErr := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command failed: "+err.Error(), false),
+		); sendErr != nil {
+			c.log.Error("Failed to send Slack help modal command error", zap.Error(sendErr))
+		}
+		return
+	}
+
+	if strings.TrimSpace(resp.Content) == "" {
+		return
+	}
+
+	if _, err := c.api.PostEphemeral(
+		callback.Channel.ID,
+		callback.User.ID,
+		slack.MsgOptionText(resp.Content, false),
+	); err != nil {
+		c.log.Error("Failed to send Slack help modal response", zap.Error(err))
+	}
+}
+
+func (c *Channel) handleStatusViewSubmission(callback slack.InteractionCallback) {
+	commandName := strings.TrimSpace(callback.View.PrivateMetadata)
+	if commandName == "" {
+		commandName = "status"
+	}
+
+	cmd, exists := c.commands.Get(commandName)
+	if !exists {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command not found: "+commandName, false),
+		); err != nil {
+			c.log.Error("Failed to send Slack status modal command-not-found message", zap.Error(err))
+		}
+		return
+	}
+
+	req := commands.CommandRequest{
+		Channel:  c.ID(),
+		ChatID:   callback.Channel.ID,
+		UserID:   callback.User.ID,
+		Username: callback.User.Name,
+		Command:  commandName,
+		Metadata: map[string]string{
+			"team_id":    callback.Team.ID,
+			"trigger_id": callback.TriggerID,
+			"runtime_id": c.ID(),
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		if _, sendErr := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command failed: "+err.Error(), false),
+		); sendErr != nil {
+			c.log.Error("Failed to send Slack status modal command error", zap.Error(sendErr))
+		}
+		return
+	}
+
+	if strings.TrimSpace(resp.Content) == "" {
+		return
+	}
+
+	if _, err := c.api.PostEphemeral(
+		callback.Channel.ID,
+		callback.User.ID,
+		slack.MsgOptionText(resp.Content, false),
+	); err != nil {
+		c.log.Error("Failed to send Slack status modal response", zap.Error(err))
+	}
+}
+
+func (c *Channel) handleAgentViewSubmission(callback slack.InteractionCallback) {
+	commandName := strings.TrimSpace(callback.View.PrivateMetadata)
+	if commandName == "" {
+		commandName = "agent"
+	}
+
+	query := strings.TrimSpace(readViewInputValue(
+		callback.View.State,
+		agentModalBlockID,
+		agentModalActionID,
+	))
+	if query == "" {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("Please provide an agent action, for example `info` or `list`.", false),
+		); err != nil {
+			c.log.Error("Failed to send Slack agent modal validation message", zap.Error(err))
+		}
+		return
+	}
+
+	cmd, exists := c.commands.Get(commandName)
+	if !exists {
+		if _, err := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command not found: "+commandName, false),
+		); err != nil {
+			c.log.Error("Failed to send Slack agent modal command-not-found message", zap.Error(err))
+		}
+		return
+	}
+
+	req := commands.CommandRequest{
+		Channel:  c.ID(),
+		ChatID:   callback.Channel.ID,
+		UserID:   callback.User.ID,
+		Username: callback.User.Name,
+		Command:  commandName,
+		Args:     query,
+		Metadata: map[string]string{
+			"team_id":    callback.Team.ID,
+			"trigger_id": callback.TriggerID,
+			"runtime_id": c.ID(),
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := cmd.Handler(ctx, req)
+	if err != nil {
+		if _, sendErr := c.api.PostEphemeral(
+			callback.Channel.ID,
+			callback.User.ID,
+			slack.MsgOptionText("❌ Command failed: "+err.Error(), false),
+		); sendErr != nil {
+			c.log.Error("Failed to send Slack agent modal command error", zap.Error(sendErr))
+		}
+		return
+	}
+
+	if strings.TrimSpace(resp.Content) == "" {
+		return
+	}
+
+	if _, err := c.api.PostEphemeral(
+		callback.Channel.ID,
+		callback.User.ID,
+		slack.MsgOptionText(resp.Content, false),
+	); err != nil {
+		c.log.Error("Failed to send Slack agent modal response", zap.Error(err))
 	}
 }
 
@@ -862,6 +1160,94 @@ func buildFindSkillsModal() slack.ModalViewRequest {
 		PrivateMetadata: "find-skills",
 		Title:           slack.NewTextBlockObject(slack.PlainTextType, "Find Skills", false, false),
 		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Search", false, false),
+		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+		Blocks:          slack.Blocks{BlockSet: []slack.Block{queryBlock}},
+	}
+}
+
+func buildStartModal() slack.ModalViewRequest {
+	startText := slack.NewTextBlockObject(
+		slack.PlainTextType,
+		"Run the current /start command and show the welcome message as an ephemeral reply.",
+		false,
+		false,
+	)
+	startSection := slack.NewSectionBlock(startText, nil, nil)
+
+	return slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      startModalCallbackID,
+		PrivateMetadata: "start",
+		Title:           slack.NewTextBlockObject(slack.PlainTextType, "Start", false, false),
+		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Run", false, false),
+		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+		Blocks:          slack.Blocks{BlockSet: []slack.Block{startSection}},
+	}
+}
+
+func buildHelpModal() slack.ModalViewRequest {
+	queryPlaceholder := slack.NewTextBlockObject(slack.PlainTextType, "status | help find-skills", false, false)
+	queryLabel := slack.NewTextBlockObject(slack.PlainTextType, "Command or topic", false, false)
+	queryHint := slack.NewTextBlockObject(
+		slack.PlainTextType,
+		"Examples: status, find-skills, settings",
+		false,
+		false,
+	)
+
+	queryInput := slack.NewPlainTextInputBlockElement(queryPlaceholder, helpModalActionID)
+	queryBlock := slack.NewInputBlock(helpModalBlockID, queryLabel, queryHint, queryInput)
+
+	return slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      helpModalCallbackID,
+		PrivateMetadata: "help",
+		Title:           slack.NewTextBlockObject(slack.PlainTextType, "Help", false, false),
+		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Run", false, false),
+		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+		Blocks:          slack.Blocks{BlockSet: []slack.Block{queryBlock}},
+	}
+}
+
+func buildStatusModal() slack.ModalViewRequest {
+	statusText := slack.NewTextBlockObject(
+		slack.PlainTextType,
+		"Run the current /status command and show the result as an ephemeral reply.",
+		false,
+		false,
+	)
+	statusSection := slack.NewSectionBlock(statusText, nil, nil)
+
+	return slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      statusModalCallbackID,
+		PrivateMetadata: "status",
+		Title:           slack.NewTextBlockObject(slack.PlainTextType, "Status", false, false),
+		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Run", false, false),
+		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
+		Blocks:          slack.Blocks{BlockSet: []slack.Block{statusSection}},
+	}
+}
+
+func buildAgentModal() slack.ModalViewRequest {
+	queryPlaceholder := slack.NewTextBlockObject(slack.PlainTextType, "info | list", false, false)
+	queryLabel := slack.NewTextBlockObject(slack.PlainTextType, "Agent action", false, false)
+	queryHint := slack.NewTextBlockObject(
+		slack.PlainTextType,
+		"Examples: info, list",
+		false,
+		false,
+	)
+
+	queryInput := slack.NewPlainTextInputBlockElement(queryPlaceholder, agentModalActionID)
+	queryBlock := slack.NewInputBlock(agentModalBlockID, queryLabel, queryHint, queryInput)
+
+	return slack.ModalViewRequest{
+		Type:            slack.VTModal,
+		CallbackID:      agentModalCallbackID,
+		PrivateMetadata: "agent",
+		Title:           slack.NewTextBlockObject(slack.PlainTextType, "Agent", false, false),
+		Submit:          slack.NewTextBlockObject(slack.PlainTextType, "Run", false, false),
 		Close:           slack.NewTextBlockObject(slack.PlainTextType, "Cancel", false, false),
 		Blocks:          slack.Blocks{BlockSet: []slack.Block{queryBlock}},
 	}

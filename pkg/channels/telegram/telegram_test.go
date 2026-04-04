@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -55,6 +57,46 @@ func TestSkillInstallPromptFallsBackToTextConfirmationWithoutInlineButtons(t *te
 	}
 }
 
+func TestSendThinkingMessageSkipsGroupsWhenStreamingUnsupported(t *testing.T) {
+	channel := newTestChannel(t)
+
+	var sendMessageCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottest-token/getMe":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"Test","username":"testbot"}}`))
+		case "/bottest-token/sendMessage":
+			sendMessageCalls++
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":41}}`))
+		default:
+			t.Fatalf("unexpected telegram API path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot, err := tgbotapi.NewBotAPIWithAPIEndpoint("test-token", server.URL+"/bot%s/%s")
+	if err != nil {
+		t.Fatalf("create bot api: %v", err)
+	}
+	channel.bot = bot
+
+	groupThinkingID := channel.sendThinkingMessage(-10001, 9, "thinking")
+	if groupThinkingID != 0 {
+		t.Fatalf("expected group thinking message to be skipped, got id %d", groupThinkingID)
+	}
+	if sendMessageCalls != 0 {
+		t.Fatalf("expected no telegram send for unsupported group streaming, got %d calls", sendMessageCalls)
+	}
+
+	privateThinkingID := channel.sendThinkingMessage(10001, 9, "thinking")
+	if privateThinkingID != 41 {
+		t.Fatalf("expected private thinking message id 41, got %d", privateThinkingID)
+	}
+	if sendMessageCalls != 1 {
+		t.Fatalf("expected one telegram send for supported private streaming, got %d calls", sendMessageCalls)
+	}
+}
+
 func newTestChannel(t *testing.T) *Channel {
 	t.Helper()
 
@@ -68,6 +110,7 @@ func newTestChannel(t *testing.T) *Channel {
 
 	return &Channel{
 		log:         log,
+		id:          "telegram",
 		channelType: "telegram",
 	}
 }

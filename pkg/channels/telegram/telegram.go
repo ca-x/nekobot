@@ -1253,6 +1253,9 @@ func (c *Channel) sendThinkingMessage(chatID int64, replyTo int, text string) in
 	if c.bot == nil {
 		return 0
 	}
+	if !c.supportsStreaming(chatTypeForChatID(chatID)) {
+		return 0
+	}
 
 	msg := tgbotapi.NewMessage(chatID, text)
 	if replyTo > 0 {
@@ -1306,6 +1309,21 @@ func (c *Channel) finishThinkingMessage(chatID int64, replyTo int, thinkingMsgID
 			return
 		}
 	}
+}
+
+func (c *Channel) supportsStreaming(chatType string) bool {
+	scope := channelcapabilities.CapabilityScopeDM
+	switch strings.TrimSpace(strings.ToLower(chatType)) {
+	case "group", "supergroup":
+		scope = channelcapabilities.CapabilityScopeGroup
+	}
+
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityStreaming,
+		scope,
+		false,
+	)
 }
 
 func splitTelegramText(text string, limit int) []string {
