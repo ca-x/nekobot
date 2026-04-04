@@ -268,6 +268,21 @@ func TestBrowserToolGetTextRejectsRelativeURLBeforeNavigation(t *testing.T) {
 		t.Fatalf("expected absolute URL error, got %v", err)
 	}
 }
+
+func TestBrowserToolGetHTMLRejectsRelativeURLBeforeNavigation(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "get_html",
+		"url":    "example.com/path",
+	})
+	if err == nil {
+		t.Fatal("expected invalid URL error")
+	}
+	if !strings.Contains(err.Error(), "absolute URL is required") {
+		t.Fatalf("expected absolute URL error, got %v", err)
+	}
+}
 func TestHTMLToTextStripsTags(t *testing.T) {
 	got := htmlToText("<html><body><h1>Hello</h1><p>World</p></body></html>")
 	if got != "HelloWorld" {

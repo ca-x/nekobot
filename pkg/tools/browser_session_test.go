@@ -90,6 +90,43 @@ func TestBrowserSessionStartWithModeDirectUsesExistingInstance(t *testing.T) {
 	}
 }
 
+func TestBrowserSessionStartWithModeDirectUsesExistingInstanceOnFallbackPort(t *testing.T) {
+	session := &BrowserSession{
+		timeout: 5 * time.Second,
+	}
+
+	var connectCalls []int
+	session.connectFn = func(port int, timeout time.Duration) error {
+		connectCalls = append(connectCalls, port)
+		if port == 9223 {
+			session.ready = true
+			session.mode = BrowserModeDirect
+			return nil
+		}
+		return errors.New("not running")
+	}
+	session.launchFn = func(timeout time.Duration) error {
+		t.Fatal("launch should not be called when fallback debug port connects")
+		return nil
+	}
+
+	if err := session.StartWithMode(2*time.Second, BrowserModeDirect); err != nil {
+		t.Fatalf("StartWithMode failed: %v", err)
+	}
+	if len(connectCalls) != 2 {
+		t.Fatalf("expected 2 direct attach attempts, got %d", len(connectCalls))
+	}
+	if got := connectCalls[0]; got != 9222 {
+		t.Fatalf("expected first direct attempt on 9222, got %d", got)
+	}
+	if got := connectCalls[1]; got != 9223 {
+		t.Fatalf("expected second direct attempt on 9223, got %d", got)
+	}
+	if got := session.ConnectionMode(); got != BrowserModeDirect {
+		t.Fatalf("expected direct mode, got %q", got)
+	}
+}
+
 func TestBrowserSessionStartWithModeRelayUsesExistingInstanceWithoutLaunch(t *testing.T) {
 	session := &BrowserSession{
 		timeout: 5 * time.Second,

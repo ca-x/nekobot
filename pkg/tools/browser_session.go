@@ -85,9 +85,11 @@ func (s *BrowserSession) StartWithMode(timeout time.Duration, mode BrowserConnec
 
 	switch mode {
 	case BrowserModeDirect:
-		if err := s.connectFn(9222, s.timeout); err == nil {
-			s.mode = BrowserModeDirect
-			return nil
+		for _, port := range []int{9222, 9223, 9224} {
+			if err := s.connectFn(port, s.timeout); err == nil {
+				s.mode = BrowserModeDirect
+				return nil
+			}
 		}
 		return s.launchFn(s.timeout)
 	case BrowserModeRelay:

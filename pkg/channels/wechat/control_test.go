@@ -241,6 +241,103 @@ func TestControlServiceCreateRuntimeRejectsEmptyChatIDBeforeCreatingSession(t *t
 	}
 }
 
+func TestControlServiceBindRuntimeRejectsEmptyChatIDBeforeBinding(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "code1",
+		Driver: "process",
+		Tool:   "cat",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+
+	err = controlSvc.BindRuntime(ctx, "   ", "code1")
+	if err == nil {
+		t.Fatal("expected bind runtime to reject empty chat id")
+	}
+	if !strings.Contains(err.Error(), "chat id is required") {
+		t.Fatalf("expected chat id validation error, got %v", err)
+	}
+
+	resolved, err := bindingSvc.ResolveConversation(ctx, "chat-1")
+	if err != nil {
+		t.Fatalf("ResolveConversation(chat-1) failed: %v", err)
+	}
+	if resolved == nil || resolved.ID != created.ID {
+		t.Fatalf("expected original binding to remain unchanged, got %+v", resolved)
+	}
+}
+
+func TestControlServiceSendToRuntimeRejectsEmptyChatIDBeforeExplicitRouting(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "code1",
+		Driver: "process",
+		Tool:   "cat",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+
+	reply, err := controlSvc.SendToRuntime(ctx, "   ", "code1", "hello runtime")
+	if err == nil {
+		t.Fatalf("expected send to runtime to reject empty chat id, got reply %q", reply)
+	}
+	if !strings.Contains(err.Error(), "chat id is required") {
+		t.Fatalf("expected chat id validation error, got %v", err)
+	}
+
+	output, _, err := processMgr.GetOutput(created.ID, 0, 100)
+	if err != nil {
+		t.Fatalf("GetOutput failed: %v", err)
+	}
+	if len(output) != 0 {
+		t.Fatalf("expected no runtime output after rejected send, got %q", strings.Join(output, ""))
+	}
+}
 func TestControlServiceCreateACPRuntimeDoesNotStartPTYAndCanStop(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()

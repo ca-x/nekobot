@@ -496,6 +496,10 @@ func (s *ControlService) GetRuntimeLogs(ctx context.Context, runtimeName string,
 
 // BindRuntime binds a named runtime to a WeChat chat.
 func (s *ControlService) BindRuntime(ctx context.Context, chatID, runtimeName string) error {
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return fmt.Errorf("chat id is required")
+	}
 	session, err := s.findRuntimeByName(ctx, runtimeName)
 	if err != nil {
 		return err
@@ -563,6 +567,10 @@ func (s *ControlService) SendToRuntime(
 ) (string, error) {
 	if s == nil || s.process == nil || s.bindings == nil {
 		return "", fmt.Errorf("wechat runtime control is not available")
+	}
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return "", fmt.Errorf("chat id is required")
 	}
 
 	message := strings.TrimSpace(text)

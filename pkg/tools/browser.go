@@ -741,6 +741,12 @@ func (b *BrowserTool) buildSelectScript(selector, value string) string {
 
 // getHTML gets the HTML content of the page.
 func (b *BrowserTool) getHTML(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
 	sessionMgr := GetBrowserSession(b.log)
 	if !sessionMgr.IsReady() {
 		return "", fmt.Errorf("browser session not ready")
