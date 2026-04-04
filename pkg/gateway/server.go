@@ -88,6 +88,8 @@ type connectionStatus struct {
 	UserID      string  `json:"user_id"`
 	Username    string  `json:"username"`
 	SessionID   *string `json:"session_id"`
+	Paired      bool    `json:"paired"`
+	PairedID    *string `json:"paired_session_id"`
 	ConnectedAt string  `json:"connected_at"`
 	RemoteAddr  string  `json:"remote_addr"`
 }
@@ -552,12 +554,19 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.RLock()
 	connCount := len(s.clients)
+	pairedCount := 0
+	for _, client := range s.clients {
+		if describeConnection(client).Paired {
+			pairedCount++
+		}
+	}
 	s.mu.RUnlock()
 
 	status := map[string]interface{}{
-		"version":     version.GetVersion(),
-		"connections": connCount,
-		"bus_metrics": s.bus.GetMetrics(),
+		"version":            version.GetVersion(),
+		"connections":        connCount,
+		"paired_connections": pairedCount,
+		"bus_metrics":        s.bus.GetMetrics(),
 		"gateway": map[string]interface{}{
 			"host": s.config.Gateway.Host,
 			"port": s.config.Gateway.Port,
@@ -627,7 +636,8 @@ func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage); !ok {
+	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead)
+	if !ok {
 		return
 	}
 
@@ -641,6 +651,10 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 	client, ok := s.clients[clientID]
 	s.mu.RUnlock()
 	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if !gatewayControlPlaneCanManageConnection(authCtx, client) {
 		http.NotFound(w, r)
 		return
 	}
@@ -753,10 +767,14 @@ func (s *Server) getOrCreateRateLimiter(host string) *rate.Limiter {
 
 func describeConnection(client *Client) connectionStatus {
 	var sessionID *string
+	paired := false
+	var pairedID *string
 	if identifiable, ok := client.session.(interface{ GetID() string }); ok {
 		id := strings.TrimSpace(identifiable.GetID())
 		if id != "" {
 			sessionID = &id
+			paired = true
+			pairedID = &id
 		}
 	}
 
@@ -765,6 +783,8 @@ func describeConnection(client *Client) connectionStatus {
 		UserID:      client.userID,
 		Username:    client.username,
 		SessionID:   sessionID,
+		Paired:      paired,
+		PairedID:    pairedID,
 		ConnectedAt: client.connectedAt.UTC().Format(time.RFC3339),
 		RemoteAddr:  client.remoteAddr,
 	}
@@ -858,6 +878,20 @@ func isGatewayControlPlaneRoleAllowed(role string, scope gatewayControlPlaneScop
 }
 
 func gatewayControlPlaneCanReadConnection(authCtx *authContext, client *Client) bool {
+	if authCtx == nil || client == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(authCtx.role)) {
+	case "admin", "owner":
+		return true
+	case "member":
+		return strings.TrimSpace(authCtx.userID) != "" && strings.TrimSpace(authCtx.userID) == strings.TrimSpace(client.userID)
+	default:
+		return false
+	}
+}
+
+func gatewayControlPlaneCanManageConnection(authCtx *authContext, client *Client) bool {
 	if authCtx == nil || client == nil {
 		return false
 	}

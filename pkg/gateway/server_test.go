@@ -16,6 +16,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 
+	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -28,6 +29,20 @@ type stubGatewayRouter struct {
 	lastRuntimeID string
 	reply         string
 	err           error
+}
+
+type stubGatewaySession struct {
+	messages []agent.Message
+}
+
+func (s *stubGatewaySession) GetMessages() []agent.Message {
+	msgs := make([]agent.Message, len(s.messages))
+	copy(msgs, s.messages)
+	return msgs
+}
+
+func (s *stubGatewaySession) AddMessage(msg agent.Message) {
+	s.messages = append(s.messages, msg)
 }
 
 func (s *stubGatewayRouter) RegisterChannel(string) {}
@@ -173,12 +188,19 @@ func TestStatusEndpoint(t *testing.T) {
 	if body["connections"] != float64(0) {
 		t.Fatalf("expected 0 connections, got %v", body["connections"])
 	}
+	if body["paired_connections"] != float64(0) {
+		t.Fatalf("expected 0 paired connections, got %v", body["paired_connections"])
+	}
 }
 
 func TestConnectionsEndpoint(t *testing.T) {
 	s, token := newAuthedTestServer(t)
 
 	now := time.Unix(1_700_000_000, 0).UTC()
+	pairedSession, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
 	s.clients["client-b"] = &Client{
 		id:          "client-b",
 		send:        make(chan []byte, 1),
@@ -186,6 +208,7 @@ func TestConnectionsEndpoint(t *testing.T) {
 		username:    "bob",
 		connectedAt: now.Add(2 * time.Minute),
 		remoteAddr:  "10.0.0.2:1234",
+		session:     pairedSession,
 	}
 	s.clients["client-a"] = &Client{
 		id:          "client-a",
@@ -232,6 +255,18 @@ func TestConnectionsEndpoint(t *testing.T) {
 	}
 	if got := body[0]["session_id"]; got != nil {
 		t.Fatalf("expected nil session_id without session, got %v", got)
+	}
+	if got := body[0]["paired"]; got != false {
+		t.Fatalf("expected first paired false, got %v", got)
+	}
+	if got := body[0]["paired_session_id"]; got != nil {
+		t.Fatalf("expected first paired_session_id nil, got %v", got)
+	}
+	if got := body[1]["paired"]; got != true {
+		t.Fatalf("expected second paired true, got %v", got)
+	}
+	if got := body[1]["paired_session_id"]; got != "paired-session" {
+		t.Fatalf("expected second paired_session_id paired-session, got %v", got)
 	}
 }
 
@@ -408,7 +443,7 @@ func TestDeleteConnectionEndpointRequiresAuth(t *testing.T) {
 	}
 }
 
-func TestDeleteConnectionEndpointRejectsMemberRole(t *testing.T) {
+func TestDeleteConnectionEndpointReturnsNotFoundForMemberWithoutOwnedTarget(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
@@ -420,8 +455,74 @@ func TestDeleteConnectionEndpointRejectsMemberRole(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestDeleteConnectionEndpointAllowsMemberRoleForOwnedConnection(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"uid":  "viewer-id",
+		"role": "member",
+	})
+
+	client := &Client{
+		id:       "client-a",
+		send:     make(chan []byte, 1),
+		userID:   "viewer-id",
+		username: "viewer",
+	}
+	s.clients[client.id] = client
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections/"+client.id, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+	if len(s.clients) != 0 {
+		t.Fatalf("expected client to be removed, got %d active clients", len(s.clients))
+	}
+	select {
+	case _, ok := <-client.send:
+		if ok {
+			t.Fatal("expected client send channel to be closed")
+		}
+	default:
+		t.Fatal("expected client send channel to be closed")
+	}
+}
+
+func TestDeleteConnectionEndpointRejectsMemberRoleForOtherUsersConnection(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"uid":  "viewer-id",
+		"role": "member",
+	})
+
+	client := &Client{
+		id:       "client-a",
+		send:     make(chan []byte, 1),
+		userID:   "other-id",
+		username: "other",
+	}
+	s.clients[client.id] = client
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections/"+client.id, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+	if len(s.clients) != 1 {
+		t.Fatalf("expected client to remain, got %d active clients", len(s.clients))
 	}
 }
 
@@ -468,6 +569,12 @@ func TestGetConnectionEndpointReturnsConnectionDetails(t *testing.T) {
 	}
 	if got := body["connected_at"]; got != now.Format(time.RFC3339) {
 		t.Fatalf("expected connected_at %q, got %v", now.Format(time.RFC3339), got)
+	}
+	if got := body["paired"]; got != true {
+		t.Fatalf("expected paired true, got %v", got)
+	}
+	if got := body["paired_session_id"]; got != "gateway-session" {
+		t.Fatalf("expected paired_session_id gateway-session, got %v", got)
 	}
 }
 
@@ -559,6 +666,45 @@ func TestStatusEndpointCountsConnectionsDeterministically(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "\"connections\":2") {
 		t.Fatalf("expected response to report 2 connections, got %s", rec.Body.String())
+	}
+}
+
+func TestStatusEndpointReportsPairedConnections(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	pairedSession, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	s.clients["client-a"] = &Client{
+		id:      "client-a",
+		send:    make(chan []byte, 1),
+		session: pairedSession,
+	}
+	s.clients["client-b"] = &Client{
+		id:   "client-b",
+		send: make(chan []byte, 1),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode status response: %v", err)
+	}
+	if body["connections"] != float64(2) {
+		t.Fatalf("expected 2 connections, got %v", body["connections"])
+	}
+	if body["paired_connections"] != float64(1) {
+		t.Fatalf("expected 1 paired connection, got %v", body["paired_connections"])
 	}
 }
 
@@ -1004,6 +1150,46 @@ func TestProcessMessageAllowsMatchingInboundSessionID(t *testing.T) {
 		}
 		if msg.SessionID != "paired-session" {
 			t.Fatalf("expected paired session_id, got %q", msg.SessionID)
+		}
+	default:
+		t.Fatal("expected websocket reply")
+	}
+	if got := router.lastRuntimeID; got != "runtime-explicit" {
+		t.Fatalf("expected runtime id %q, got %q", "runtime-explicit", got)
+	}
+}
+
+func TestProcessMessageAllowsMatchingInboundSessionIDForUnpairedConnection(t *testing.T) {
+	s := newTestServer(t)
+	router := &stubGatewayRouter{reply: "router reply"}
+	s.router = router
+
+	client := &Client{
+		id:       "connection-1",
+		send:     make(chan []byte, 1),
+		userID:   "user-1",
+		username: "alice",
+		session:  &stubGatewaySession{},
+	}
+
+	s.processMessage(client, WSMessage{
+		Type:      "message",
+		Content:   "hello",
+		SessionID: "connection-1",
+		RuntimeID: "runtime-explicit",
+	})
+
+	select {
+	case payload := <-client.send:
+		var msg WSMessage
+		if err := json.Unmarshal(payload, &msg); err != nil {
+			t.Fatalf("unmarshal ws message: %v", err)
+		}
+		if msg.Type != "message" {
+			t.Fatalf("expected message reply, got %#v", msg)
+		}
+		if msg.SessionID != "connection-1" {
+			t.Fatalf("expected connection session_id, got %q", msg.SessionID)
 		}
 	default:
 		t.Fatal("expected websocket reply")
