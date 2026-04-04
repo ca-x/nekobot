@@ -43,7 +43,7 @@ FROM alpine:3.21
 ARG INSTALL_QMD=true
 ARG QMD_NPM_PACKAGE=@tobilu/qmd
 
-RUN apk add --no-cache ca-certificates tzdata tmux \
+RUN apk add --no-cache ca-certificates tzdata tmux wget chromium \
     && if [ "$INSTALL_QMD" = "true" ]; then \
       apk add --no-cache nodejs npm python3 make g++; \
       npm install -g "$QMD_NPM_PACKAGE"; \

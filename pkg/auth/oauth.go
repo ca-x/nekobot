@@ -273,10 +273,14 @@ func RefreshToken(cfg OAuthProviderConfig, refreshToken string) (*AuthCredential
 
 	cred := &AuthCredential{
 		AccessToken:  tokenResp.AccessToken,
-		RefreshToken: tokenResp.RefreshToken,
+		RefreshToken: refreshToken,
 		AccountID:    tokenResp.AccountID,
 		Provider:     cfg.Provider,
 		AuthMethod:   "oauth",
+	}
+
+	if tokenResp.RefreshToken != "" {
+		cred.RefreshToken = tokenResp.RefreshToken
 	}
 
 	if tokenResp.ExpiresIn > 0 {
