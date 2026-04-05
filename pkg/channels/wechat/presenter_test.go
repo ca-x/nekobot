@@ -24,7 +24,10 @@ func TestBuildWeChatAgentInput(t *testing.T) {
 
 func TestBuildWeChatAgentInput_EmptyContent(t *testing.T) {
 	input := buildWeChatAgentInput("   ", "/tmp/work")
-	if strings.TrimSpace(input) != wechatPresenterInstructions {
-		t.Fatalf("expected presenter instructions only, got %q", input)
+	if !strings.Contains(input, "WeChat does not render Markdown") {
+		t.Fatalf("expected presenter instructions, got %q", input)
+	}
+	if !strings.Contains(input, "Preferred workspace root: /tmp/work") {
+		t.Fatalf("expected workspace hint for empty content, got %q", input)
 	}
 }

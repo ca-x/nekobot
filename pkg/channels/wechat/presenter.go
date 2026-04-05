@@ -13,12 +13,7 @@ Short plain text can be returned directly.`
 
 func buildWeChatAgentInput(content, workspace string) string {
 	trimmedContent := strings.TrimSpace(content)
-	if trimmedContent == "" {
-		return strings.TrimSpace(wechatPresenterInstructions)
-	}
-
 	var builder strings.Builder
-	builder.WriteString("[WeChat Channel Instructions]\n")
 	builder.WriteString(wechatPresenterInstructions)
 
 	if trimmedWorkspace := strings.TrimSpace(workspace); trimmedWorkspace != "" {
@@ -26,8 +21,16 @@ func buildWeChatAgentInput(content, workspace string) string {
 		_, _ = fmt.Fprintf(&builder, "Preferred workspace root: %s", filepath.Clean(trimmedWorkspace))
 	}
 
-	builder.WriteString("\n\n[User Message]\n")
-	builder.WriteString(trimmedContent)
+	if trimmedContent == "" {
+		return strings.TrimSpace(builder.String())
+	}
 
-	return builder.String()
+	builderWithMessage := strings.Builder{}
+	builderWithMessage.WriteString("[WeChat Channel Instructions]\n")
+	builderWithMessage.WriteString(builder.String())
+
+	builderWithMessage.WriteString("\n\n[User Message]\n")
+	builderWithMessage.WriteString(trimmedContent)
+
+	return builderWithMessage.String()
 }
