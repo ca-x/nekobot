@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -29,6 +30,7 @@ type Channel struct {
 
 	client   *lark.Client
 	wsClient *larkws.Client
+	capabilities channelcapabilities.ChannelCapabilities
 	mu       sync.Mutex
 	running  bool
 	ctx      context.Context
@@ -52,6 +54,7 @@ func NewChannel(
 		bus:      b,
 		commands: cmdRegistry,
 		client:   lark.NewClient(cfg.AppID, cfg.AppSecret),
+		capabilities: channelcapabilities.GetDefaultCapabilitiesForChannel("feishu"),
 		running:  false,
 	}, nil
 }
@@ -161,7 +164,7 @@ func (c *Channel) handleMessageReceive(_ context.Context, event *larkim.P2Messag
 		zap.String("chat_id", chatID))
 
 	// Check for slash commands
-	if c.commands.IsCommand(content) {
+	if c.commands != nil && c.nativeCommandsEnabled(message) && c.commands.IsCommand(content) {
 		c.handleCommand(message, sender, senderID, chatID, content)
 		return nil
 	}
@@ -334,6 +337,26 @@ func extractMessageContent(message *larkim.EventMessage) string {
 	}
 
 	return *message.Content
+}
+
+func (c *Channel) nativeCommandsEnabled(message *larkim.EventMessage) bool {
+	scope := channelcapabilities.CapabilityScopeGroup
+	if message != nil && stringValue(message.ChatType) == "p2p" {
+		scope = channelcapabilities.CapabilityScopeDM
+	}
+	return channelcapabilities.IsCapabilityEnabled(
+		c.effectiveCapabilities(),
+		channelcapabilities.CapabilityNativeCommands,
+		scope,
+		false,
+	)
+}
+
+func (c *Channel) effectiveCapabilities() channelcapabilities.ChannelCapabilities {
+	if c.capabilities == (channelcapabilities.ChannelCapabilities{}) {
+		return channelcapabilities.GetDefaultCapabilitiesForChannel("feishu")
+	}
+	return c.capabilities
 }
 
 // stringValue safely extracts string from pointer.
