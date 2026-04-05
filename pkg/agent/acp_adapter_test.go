@@ -87,6 +87,16 @@ func TestACPAdapterInitialize_AdvertisesLoadSessionCapability(t *testing.T) {
 	}
 }
 
+func TestACPAdapterConstructor_WiresSessionRuntimeMappingStoreFromAgentKV(t *testing.T) {
+	ag := newACPSessionTestAgent(t)
+
+	adapter := NewACPAdapter(ag)
+
+	if adapter.sessionMapStore == nil {
+		t.Fatal("expected ACP adapter constructor to wire session runtime mapping store")
+	}
+}
+
 func TestACPAdapterLoadSession_StoresMCPServerOverrides(t *testing.T) {
 	ag := newACPSessionTestAgent(t)
 	adapter := NewACPAdapter(ag)
@@ -240,6 +250,81 @@ func TestACPAdapterNewSession_StoresMCPServerOverrides(t *testing.T) {
 	}
 	if state.mcpServers[0].Transport != "sse" {
 		t.Fatalf("expected sse transport, got %q", state.mcpServers[0].Transport)
+	}
+}
+
+func TestACPSessionMappingPersistsRuntimeIdentity(t *testing.T) {
+	ag := newACPSessionTestAgent(t)
+	adapter := NewACPAdapter(ag)
+	store := newTestACPSessionRuntimeMappingStore(t)
+	adapter.sessionMapStore = store
+
+	ctx := WithACPAuthenticatedUserID(context.Background(), "user-123")
+	resp, err := adapter.NewSession(ctx, acp.NewSessionRequest{
+		Cwd:        t.TempDir(),
+		McpServers: []acp.McpServer{},
+	})
+	if err != nil {
+		t.Fatalf("NewSession failed: %v", err)
+	}
+
+	mapping, err := store.GetSessionRuntimeMapping(ctx, "user-123", string(resp.SessionId))
+	if err != nil {
+		t.Fatalf("GetSessionRuntimeMapping failed: %v", err)
+	}
+	if mapping.UserID != "user-123" {
+		t.Fatalf("expected user_id %q, got %q", "user-123", mapping.UserID)
+	}
+	if mapping.SessionID != string(resp.SessionId) {
+		t.Fatalf("expected session_id %q, got %q", resp.SessionId, mapping.SessionID)
+	}
+	if mapping.RuntimeID == "" {
+		t.Fatal("expected non-empty runtime_id")
+	}
+	if mapping.SourceKind != "new_session" {
+		t.Fatalf("expected source_kind %q, got %q", "new_session", mapping.SourceKind)
+	}
+
+	runtimeID, ok := adapter.runtimeIDForSession(string(resp.SessionId))
+	if !ok {
+		t.Fatalf("expected adapter runtime mapping for session %q", resp.SessionId)
+	}
+	if runtimeID != mapping.RuntimeID {
+		t.Fatalf("expected runtime_id %q, got %q", mapping.RuntimeID, runtimeID)
+	}
+}
+
+func TestACPLoadSessionResolvesPersistedRuntime(t *testing.T) {
+	ag := newACPSessionTestAgent(t)
+	adapter := NewACPAdapter(ag)
+	store := newTestACPSessionRuntimeMappingStore(t)
+	adapter.sessionMapStore = store
+
+	ctx := WithACPAuthenticatedUserID(context.Background(), "user-123")
+	if err := store.PutSessionRuntimeMapping(ctx, ACPSessionRuntimeMapping{
+		UserID:     "user-123",
+		SessionID:  "acp:loaded",
+		RuntimeID:  "runtime-existing",
+		SourceKind: "new_session",
+	}); err != nil {
+		t.Fatalf("PutSessionRuntimeMapping failed: %v", err)
+	}
+
+	_, err := adapter.LoadSession(ctx, acp.LoadSessionRequest{
+		SessionId:  acp.SessionId("acp:loaded"),
+		Cwd:        t.TempDir(),
+		McpServers: []acp.McpServer{},
+	})
+	if err != nil {
+		t.Fatalf("LoadSession failed: %v", err)
+	}
+
+	runtimeID, ok := adapter.runtimeIDForSession("acp:loaded")
+	if !ok {
+		t.Fatal("expected adapter runtime mapping for loaded session")
+	}
+	if runtimeID != "runtime-existing" {
+		t.Fatalf("expected runtime_id %q, got %q", "runtime-existing", runtimeID)
 	}
 }
 
@@ -710,6 +795,11 @@ func newACPSessionTestAgent(t *testing.T) *Agent {
 	ag := newRoutingTestAgent(t, orchestratorBlades)
 	ag.acpSessions = make(map[string]*acpSessionState)
 	return ag
+}
+
+func newTestACPSessionRuntimeMappingStore(t *testing.T) *kvACPSessionRuntimeMappingStore {
+	t.Helper()
+	return newKVACPSessionRuntimeMappingStore(newTestKVStore(t))
 }
 
 func configureOpenAIProvider(t *testing.T, ag *Agent) {

@@ -65,6 +65,8 @@ type Agent struct {
 
 	acpMu       sync.RWMutex
 	acpSessions map[string]*acpSessionState
+	acpRuntime  map[string]string
+	kvStore     state.KV
 
 	failoverMu       sync.Mutex
 	failoverCooldown *providers.CooldownTracker
@@ -270,6 +272,8 @@ func New(
 		promptManager:    promptMgr,
 		snapshotMgr:      snapshotMgr,
 		acpSessions:      make(map[string]*acpSessionState),
+		acpRuntime:       make(map[string]string),
+		kvStore:          kvStore,
 		failoverCooldown: providers.NewCooldownTracker(),
 		providerGroups:   newProviderGroupPlanner(),
 		maxIterations:    cfg.Agents.Defaults.MaxToolIterations,

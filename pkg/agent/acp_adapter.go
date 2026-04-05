@@ -21,7 +21,8 @@ const (
 
 // ACPAdapter bridges nekobot Agent to ACP Agent interface.
 type ACPAdapter struct {
-	agent *Agent
+	agent           *Agent
+	sessionMapStore acpSessionRuntimeMappingStore
 
 	sessionUpdateMu sync.RWMutex
 	sessionUpdateFn func(context.Context, acp.SessionNotification) error
@@ -35,7 +36,11 @@ var (
 
 // NewACPAdapter creates a new ACP adapter for the given agent.
 func NewACPAdapter(agentInstance *Agent) *ACPAdapter {
-	return &ACPAdapter{agent: agentInstance}
+	adapter := &ACPAdapter{agent: agentInstance}
+	if agentInstance != nil {
+		adapter.sessionMapStore = newKVACPSessionRuntimeMappingStore(agentInstance.kvStore)
+	}
+	return adapter
 }
 
 // SetAgentConnection wires the ACP connection so Prompt can emit session updates.
@@ -138,6 +143,19 @@ func (a *ACPAdapter) LoadSession(ctx context.Context, params acp.LoadSessionRequ
 		})
 	}
 
+	runtimeID := ""
+	if a.sessionMapStore != nil {
+		userID := acpAuthenticatedUserID(ctx)
+		if userID != "" {
+			mapping, err := a.sessionMapStore.GetSessionRuntimeMapping(ctx, userID, sessID)
+			if err != nil {
+				return acp.LoadSessionResponse{}, acp.NewInvalidParams(map[string]interface{}{
+					"error": err.Error(),
+				})
+			}
+			runtimeID = mapping.RuntimeID
+		}
+	}
 	sessionState := &acpEphemeralSession{messages: make([]Message, 0, 16)}
 	provider := strings.TrimSpace(a.agent.config.Agents.Defaults.Provider)
 	model := strings.TrimSpace(a.agent.config.Agents.Defaults.Model)
@@ -155,6 +173,9 @@ func (a *ACPAdapter) LoadSession(ctx context.Context, params acp.LoadSessionRequ
 
 	a.agent.acpMu.Lock()
 	a.agent.acpSessions[sessID] = state
+	if runtimeID != "" {
+		a.agent.acpRuntime[sessID] = runtimeID
+	}
 	a.agent.acpMu.Unlock()
 
 	return acp.LoadSessionResponse{
@@ -176,6 +197,23 @@ func (a *ACPAdapter) NewSession(ctx context.Context, params acp.NewSessionReques
 	}
 
 	sessionID := "acp:" + uuid.NewString()
+	runtimeID := ""
+	if a.sessionMapStore != nil {
+		userID := acpAuthenticatedUserID(ctx)
+		if userID != "" {
+			runtimeID = newACPRuntimeID()
+			if err := a.sessionMapStore.PutSessionRuntimeMapping(ctx, ACPSessionRuntimeMapping{
+				UserID:     userID,
+				SessionID:  sessionID,
+				RuntimeID:  runtimeID,
+				SourceKind: "new_session",
+			}); err != nil {
+				return acp.NewSessionResponse{}, acp.NewInternalError(map[string]interface{}{
+					"error": err.Error(),
+				})
+			}
+		}
+	}
 	sessionState := &acpEphemeralSession{messages: make([]Message, 0, 16)}
 
 	provider := strings.TrimSpace(a.agent.config.Agents.Defaults.Provider)
@@ -194,6 +232,9 @@ func (a *ACPAdapter) NewSession(ctx context.Context, params acp.NewSessionReques
 
 	a.agent.acpMu.Lock()
 	a.agent.acpSessions[sessionID] = state
+	if runtimeID != "" {
+		a.agent.acpRuntime[sessionID] = runtimeID
+	}
 	a.agent.acpMu.Unlock()
 
 	return acp.NewSessionResponse{
@@ -381,6 +422,21 @@ func (a *ACPAdapter) clearSessionCancel(sessionID string) {
 		return
 	}
 	state.cancel = nil
+}
+
+func (a *ACPAdapter) runtimeIDForSession(sessionID string) (string, bool) {
+	if a == nil || a.agent == nil {
+		return "", false
+	}
+
+	a.agent.acpMu.RLock()
+	defer a.agent.acpMu.RUnlock()
+
+	runtimeID, ok := a.agent.acpRuntime[sessionID]
+	if !ok || strings.TrimSpace(runtimeID) == "" {
+		return "", false
+	}
+	return runtimeID, true
 }
 
 func acpMCPServersToConfig(servers []acp.McpServer) []config.MCPServerConfig {

@@ -2419,11 +2419,15 @@ func newRoutingTestAgent(t *testing.T, orchestrator string) *Agent {
 
 	workspace := t.TempDir()
 	memoryStore := newMemoryStoreFromConfig(cfg, workspace, nil, nil)
+	kvStore := newTestKVStore(t)
 	ag := &Agent{
 		config:           cfg,
 		logger:           log,
 		context:          NewContextBuilderWithMemory(workspace, memoryStore),
 		tools:            tools.NewRegistry(),
+		acpSessions:      make(map[string]*acpSessionState),
+		acpRuntime:       make(map[string]string),
+		kvStore:          kvStore,
 		failoverCooldown: providers.NewCooldownTracker(),
 		providerGroups:   newProviderGroupPlanner(),
 		maxIterations:    1,
