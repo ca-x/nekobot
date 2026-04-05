@@ -708,6 +708,68 @@ func TestServiceRebindPreservesExistingPrimaryConversationOnTargetSession(t *tes
 	}
 }
 
+func TestServiceResolveFindsOlderBindingBeyondSessionListCap(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	mgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	svc := New(mgr, toolsessions.SourceChannel, "wechat", "wx:")
+	ctx := context.Background()
+
+	oldestSession, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "user-1",
+		Source:  toolsessions.SourceChannel,
+		Channel: "wechat",
+		Tool:    "codex",
+		Command: "codex",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create oldest bound session: %v", err)
+	}
+
+	if err := svc.Bind(ctx, "chat-older", oldestSession.ID); err != nil {
+		t.Fatalf("bind oldest conversation: %v", err)
+	}
+
+	for i := 0; i < 200; i++ {
+		_, err := mgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+			Owner:   "user-1",
+			Source:  toolsessions.SourceChannel,
+			Channel: "wechat",
+			Tool:    "codex",
+			Command: "codex",
+			Workdir: cfg.WorkspacePath(),
+			State:   toolsessions.StateRunning,
+		})
+		if err != nil {
+			t.Fatalf("create filler session %d: %v", i, err)
+		}
+	}
+
+	resolved, err := svc.Resolve(ctx, "chat-older")
+	if err != nil {
+		t.Fatalf("resolve older conversation: %v", err)
+	}
+	if resolved == nil || resolved.ID != oldestSession.ID {
+		t.Fatalf("expected oldest session %q, got %+v", oldestSession.ID, resolved)
+	}
+}
+
 func newTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()

@@ -11,6 +11,7 @@ import (
 )
 
 const bindingMetadataKey = "conversation_binding"
+const bindingLookupSessionLimit = 10000
 
 type bindingState struct {
 	ConversationID string
@@ -199,10 +200,7 @@ func (s *Service) List(ctx context.Context) ([]*toolsessions.Session, error) {
 	if s == nil || s.mgr == nil {
 		return nil, fmt.Errorf("tool session manager is required")
 	}
-	items, err := s.mgr.ListSessions(ctx, toolsessions.ListSessionsInput{
-		Source: s.source,
-		Limit:  200,
-	})
+	items, err := s.listScopedSessions(ctx, 200)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +384,7 @@ func (s *Service) findBinding(
 	if conversationID == "" {
 		return nil, nil, nil
 	}
-	items, err := s.List(ctx)
+	items, err := s.listScopedSessions(ctx, bindingLookupSessionLimit)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -400,6 +398,20 @@ func (s *Service) findBinding(
 		}
 	}
 	return nil, nil, nil
+}
+
+func (s *Service) listScopedSessions(ctx context.Context, limit int) ([]*toolsessions.Session, error) {
+	if s == nil || s.mgr == nil {
+		return nil, fmt.Errorf("tool session manager is required")
+	}
+	items, err := s.mgr.ListSessions(ctx, toolsessions.ListSessionsInput{
+		Source: s.source,
+		Limit:  limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (s *Service) removeConversationBindingFromOtherSessions(
