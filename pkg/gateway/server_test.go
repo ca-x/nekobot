@@ -838,6 +838,146 @@ func TestWSChatRejectsUnknownRequestedSessionBeforeUpgrade(t *testing.T) {
 	}
 }
 
+func TestWSChatReturnsSessionUnavailableBeforeUpgrade(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.sessionMgr = nil
+
+	server := httptest.NewServer(s.mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/chat"
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err == nil {
+		conn.Close()
+		t.Fatal("expected websocket dial to fail when session creation is unavailable")
+	}
+	if resp == nil {
+		t.Fatalf("expected handshake response, got nil error=%v", err)
+	}
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestWSChatSessionUnavailableReleasesConnectionSlot(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.config.Gateway.MaxConnections = 1
+	s.sessionMgr = nil
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+
+	s.sessionMgr = session.NewManager(t.TempDir(), s.config.Sessions)
+
+	server := httptest.NewServer(s.mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/chat"
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		status := "<nil>"
+		if resp != nil {
+			status = fmt.Sprintf("%d", resp.StatusCode)
+		}
+		t.Fatalf("second websocket dial failed: %v (status=%s)", err, status)
+	}
+	defer conn.Close()
+}
+
+func TestWSChatDoesNotLeaveSessionBehindWhenUpgradeFails(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	var generatedSessionID string
+	block := make(chan struct{})
+	s.beforeWSUpgrade = func(sessionID string) {
+		generatedSessionID = sessionID
+		close(block)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	<-block
+
+	if generatedSessionID == "" {
+		t.Fatal("expected generated session id before upgrade failure")
+	}
+	if _, err := s.sessionMgr.GetExisting(generatedSessionID); err == nil {
+		t.Fatalf("expected generated session %q to be absent after upgrade failure", generatedSessionID)
+	}
+}
+
+func TestWSChatUpgradeFailureKeepsRequestedExistingSession(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	if _, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway); err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	s.beforeWSUpgrade = func(string) {}
+
+	req := httptest.NewRequest(http.MethodGet, "/ws/chat?session_id=paired-session", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if _, err := s.sessionMgr.GetExisting("paired-session"); err != nil {
+		t.Fatalf("expected requested existing session to survive upgrade failure, got %v", err)
+	}
+}
+
+func TestWSChatWelcomeDeliveryFailureKeepsRequestedExistingSession(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	if _, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway); err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	s.beforeWelcomeSend = func(client *Client) {
+		for i := 0; i < cap(client.send); i++ {
+			client.send <- []byte("buffer-full")
+		}
+	}
+
+	server := httptest.NewServer(s.mux)
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/chat?session_id=" + url.QueryEscape("paired-session")
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+token)
+
+	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	if err != nil {
+		status := "<nil>"
+		if resp != nil {
+			status = fmt.Sprintf("%d", resp.StatusCode)
+		}
+		t.Fatalf("websocket dial failed: %v (status=%s)", err, status)
+	}
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close websocket: %v", err)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	if _, err := s.sessionMgr.GetExisting("paired-session"); err != nil {
+		t.Fatalf("expected requested existing session to survive welcome delivery failure, got %v", err)
+	}
+}
 func TestResolveGatewaySessionIDRejectsNonGatewaySession(t *testing.T) {
 	s := newTestServer(t)
 

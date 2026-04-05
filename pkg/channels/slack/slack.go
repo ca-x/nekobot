@@ -363,12 +363,16 @@ func (c *Channel) handleAppMentionEvent(ev *slackevents.AppMentionEvent) {
 func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 	cmd, ok := evt.Data.(slack.SlashCommand)
 	if !ok {
-		c.socketClient.Ack(*evt.Request)
+		if c.socketClient != nil && evt.Request != nil {
+			c.socketClient.Ack(*evt.Request)
+		}
 		return
 	}
 
 	// Acknowledge the event
-	c.socketClient.Ack(*evt.Request)
+	if c.socketClient != nil && evt.Request != nil {
+		c.socketClient.Ack(*evt.Request)
+	}
 
 	c.log.Debug("Received slash command",
 		zap.String("command", cmd.Command),
@@ -388,6 +392,16 @@ func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 		command = helpCmd
 		cmdName = "help"
 		cmd.Text = ""
+	}
+	if command.AdminOnly {
+		if _, err := c.api.PostEphemeral(
+			cmd.ChannelID,
+			cmd.UserID,
+			slack.MsgOptionText("❌ This command is only available to admins.", false),
+		); err != nil {
+			c.log.Error("Failed to send Slack admin-only rejection", zap.Error(err))
+		}
+		return
 	}
 
 	// Create command request

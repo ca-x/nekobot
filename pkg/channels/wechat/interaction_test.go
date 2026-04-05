@@ -24,6 +24,8 @@ func TestParseWeChatInteractionAction(t *testing.T) {
 		{name: "confirm", input: "/yes", wantType: interactionActionConfirm, wantOK: true},
 		{name: "deny", input: "/cancel", wantType: interactionActionDeny, wantOK: true},
 		{name: "select", input: "/select 2", wantType: interactionActionSelect, wantValue: "2", wantOK: true},
+		{name: "numeric confirm", input: "1", wantType: interactionActionSelect, wantValue: "1", wantOK: true},
+		{name: "numeric deny", input: "2", wantType: interactionActionSelect, wantValue: "2", wantOK: true},
 		{name: "passthrough", input: "/settings", wantType: interactionActionPassthrough, wantValue: "/settings", wantOK: true},
 		{name: "plain text", input: "hello", wantOK: false},
 	}
@@ -201,6 +203,66 @@ func TestResolvePendingInteractionSelectDenyAlias(t *testing.T) {
 	}
 	if _, ok := ch.getPendingSkillInstall("user-1"); ok {
 		t.Fatal("expected pending interaction to be cleared after select deny")
+	}
+}
+
+func TestResolvePendingInteractionNumericConfirmAlias(t *testing.T) {
+	registry := commands.NewRegistry()
+	if err := registry.Register(&commands.Command{
+		Name: "find-skills",
+		Handler: func(ctx context.Context, req commands.CommandRequest) (commands.CommandResponse, error) {
+			if got := strings.TrimSpace(req.Args); got != "__confirm_install__ owner/repo" {
+				t.Fatalf("unexpected args: %q", got)
+			}
+			return commands.CommandResponse{Content: "installed"}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register command: %v", err)
+	}
+
+	ch := &Channel{
+		commands:             registry,
+		pendingSkillInstalls: map[string]pendingSkillInstall{},
+	}
+	ch.setPendingSkillInstall("user-1", pendingSkillInstall{
+		UserID:    "user-1",
+		Command:   "find-skills",
+		Repo:      "owner/repo",
+		CreatedAt: time.Now(),
+	})
+
+	reply, handled, err := ch.resolvePendingInteraction(wxtypes.WeixinMessage{FromUserID: "user-1"}, "1")
+	if err != nil {
+		t.Fatalf("resolve pending interaction: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected interaction to be handled")
+	}
+	if reply != "installed" {
+		t.Fatalf("expected reply %q, got %q", "installed", reply)
+	}
+}
+
+func TestResolvePendingInteractionNumericDenyAlias(t *testing.T) {
+	ch := &Channel{
+		pendingSkillInstalls: map[string]pendingSkillInstall{},
+	}
+	ch.setPendingSkillInstall("user-1", pendingSkillInstall{
+		UserID:    "user-1",
+		Command:   "find-skills",
+		Repo:      "owner/repo",
+		CreatedAt: time.Now(),
+	})
+
+	reply, handled, err := ch.resolvePendingInteraction(wxtypes.WeixinMessage{FromUserID: "user-1"}, "2")
+	if err != nil {
+		t.Fatalf("resolve pending interaction: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected interaction to be handled")
+	}
+	if reply != "已取消安装。" {
+		t.Fatalf("unexpected deny reply: %q", reply)
 	}
 }
 

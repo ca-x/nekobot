@@ -8,6 +8,7 @@ import (
 
 	slackapi "github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
+	"github.com/slack-go/slack/socketmode"
 
 	"nekobot/pkg/bus"
 	"nekobot/pkg/commands"
@@ -1052,6 +1053,50 @@ func TestHandleViewSubmissionExecutesStartCommand(t *testing.T) {
 	}
 	if len(api.ephemeralOpts) == 0 {
 		t.Fatal("expected ephemeral response options to be sent")
+	}
+}
+
+func TestHandleSlashCommandRejectsAdminOnlyCommandForNonAdmin(t *testing.T) {
+	ch := newTestChannel(t)
+	api := &stubSlackAPI{}
+	ch.api = api
+	ch.config.AllowFrom = []string{"U123"}
+	ch.ctx = context.Background()
+
+	if err := ch.commands.Register(&commands.Command{
+		Name:      "gateway",
+		AdminOnly: true,
+		Handler: func(ctx context.Context, req commands.CommandRequest) (commands.CommandResponse, error) {
+			t.Fatal("admin-only command handler should not be executed")
+			return commands.CommandResponse{}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register command: %v", err)
+	}
+
+	ch.handleSlashCommand(socketmode.Event{
+		Request: &socketmode.Request{},
+		Data: slackapi.SlashCommand{
+			Command:     "/gateway",
+			Text:        "status",
+			ChannelID:   "C123",
+			UserID:      "U123",
+			UserName:    "alice",
+			ChannelName: "general",
+			TeamID:      "T123",
+			TeamDomain:  "test-team",
+			TriggerID:   "trigger-1",
+		},
+	})
+
+	if api.ephemeralChannel != "C123" {
+		t.Fatalf("unexpected ephemeral target channel: %q", api.ephemeralChannel)
+	}
+	if api.ephemeralUser != "U123" {
+		t.Fatalf("unexpected ephemeral target user: %q", api.ephemeralUser)
+	}
+	if len(api.ephemeralOpts) == 0 {
+		t.Fatal("expected ephemeral rejection options to be sent")
 	}
 }
 

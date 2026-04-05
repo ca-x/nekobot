@@ -6,6 +6,19 @@
 
 ## 2026-04-04
 
+- Continued WeChat presenter/interaction protocol follow-up:
+  - aligned the skill-install confirmation prompt copy with the newly supported `/select 1` and `/select 2` aliases.
+  - kept the slice intentionally narrow: copy-only alignment on top of the already-landed `/select` alias behavior.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/wechat -run 'Test(ParseWeChatInteractionAction|ResolvePendingInteraction(Confirm|Deny|SelectConfirmAlias|SelectDenyAlias)|FormatWeChatPrompt(IncludesSelectAliasesForSkillInstall)?)'` passed.
+
+- Continued WeChat presenter/interaction protocol follow-up:
+  - extended the existing skill-install confirmation flow so `/select 1` now aliases confirm and `/select 2` aliases deny, instead of rejecting all select actions as unsupported.
+  - kept the slice intentionally narrow: only the existing skill-install confirmation path changed, without broadening into generic multi-option interaction state.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/wechat -run 'TestResolvePendingInteractionSelect(ConfirmAlias|DenyAlias)$'` passed.
+  - `go test -count=1 ./pkg/channels/wechat -run 'Test(ParseWeChatInteractionAction|ResolvePendingInteraction(Confirm|Deny|SelectConfirmAlias|SelectDenyAlias|DelegatesToRuntimeApprovals)|FormatWeChatPrompt|ControlService(BindRuntimeRejectsEmptyChatIDBeforeBinding|SendToRuntimeRejectsEmptyChatIDBeforeExplicitRouting|CreateRuntimeRejectsEmptyChatIDBeforeCreatingSession))'` passed.
+
 - Completed Slack interactive flow phase 8:
   - added a seventh real shortcut/modal business closure: `start` shortcut now opens a modal and submission reuses the existing `/start` command semantics.
   - kept the slice intentionally narrow by treating the modal as a thin shell over the existing command path instead of inventing Slack-only onboarding behavior.

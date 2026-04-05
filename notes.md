@@ -4366,6 +4366,51 @@ type CronJobState struct {
 ### 本轮测试
 - `go test -count=1 ./pkg/channels/wechat -run 'TestControlServiceCreateRuntimeRejectsEmptyChatIDBeforeCreatingSession|TestRuntimeBindingService|TestControlService(DescribeBindings|CreateRuntime|DeleteRuntime|StopRuntime|RouteMessageToBoundRuntime)'`
 
+## 2026-04-04 WeChat skill install `/select` 别名补记
+
+### 本轮完成
+- `pkg/channels/wechat/interaction.go`
+  - 现有技能安装确认流现在接受：
+    - `/select 1` 作为确认安装的别名
+    - `/select 2` 作为拒绝安装的别名
+  - 非支持的 `/select N` 继续返回明确提示，而不是静默吞掉。
+- `pkg/channels/wechat/interaction_test.go`
+  - 新增：
+    - `TestResolvePendingInteractionSelectConfirmAlias`
+    - `TestResolvePendingInteractionSelectDenyAlias`
+
+### 当前语义
+- 这一步只补现有 skill install confirm 流的 `/select` 别名，不扩到更复杂的多选交互协议。
+- 当前规则：
+  - `/yes` 和 `/select 1` 等价
+  - `/no`、`/cancel` 和 `/select 2` 等价
+
+### 本轮测试
+- `go test -count=1 ./pkg/channels/wechat -run 'TestResolvePendingInteractionSelect(ConfirmAlias|DenyAlias)$'`
+- `go test -count=1 ./pkg/channels/wechat -run 'Test(ParseWeChatInteractionAction|ResolvePendingInteraction(Confirm|Deny|SelectConfirmAlias|SelectDenyAlias|DelegatesToRuntimeApprovals)|FormatWeChatPrompt|ControlService(BindRuntimeRejectsEmptyChatIDBeforeBinding|SendToRuntimeRejectsEmptyChatIDBeforeExplicitRouting|CreateRuntimeRejectsEmptyChatIDBeforeCreatingSession))'`
+
+## 2026-04-05 WeChat skill install `/select` 提示文案补记
+
+### 本轮完成
+- `pkg/channels/wechat/interaction.go`
+  - `formatWeChatPrompt()` 现在把 `/select 1` / `/select 2` 也显式写进技能安装确认提示文案。
+  - 这样提示文案与当前已支持的交互语义保持一致，不再只展示 `/yes` / `/no` / `/cancel`。
+- `pkg/channels/wechat/interaction_test.go`
+  - 新增 `TestFormatWeChatPromptIncludesSelectAliasesForSkillInstall`。
+
+### 当前语义
+- 这一步只补文案与真实交互语义的一致性，不扩展新的交互状态。
+- 当前规则：
+  - 技能安装确认提示会同时展示：
+    - `/yes`
+    - `/select 1`
+    - `/no`
+    - `/cancel`
+    - `/select 2`
+
+### 本轮测试
+- `go test -count=1 ./pkg/channels/wechat -run 'Test(ParseWeChatInteractionAction|ResolvePendingInteraction(Confirm|Deny|SelectConfirmAlias|SelectDenyAlias)|FormatWeChatPrompt(IncludesSelectAliasesForSkillInstall)?)'`
+
 ## 2026-04-04 Slack agent shortcut/modal 闭环补记
 
 ### 本轮完成
