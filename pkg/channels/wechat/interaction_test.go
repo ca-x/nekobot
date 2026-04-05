@@ -135,6 +135,75 @@ func TestResolvePendingInteractionDeny(t *testing.T) {
 	}
 }
 
+func TestResolvePendingInteractionSelectConfirmAlias(t *testing.T) {
+	registry := commands.NewRegistry()
+	if err := registry.Register(&commands.Command{
+		Name: "find-skills",
+		Handler: func(ctx context.Context, req commands.CommandRequest) (commands.CommandResponse, error) {
+			if got := strings.TrimSpace(req.Args); got != "__confirm_install__ owner/repo" {
+				t.Fatalf("unexpected args: %q", got)
+			}
+			if got := req.Metadata["skill_install_confirmed_repo"]; got != "owner/repo" {
+				t.Fatalf("unexpected confirmed repo metadata: %q", got)
+			}
+			return commands.CommandResponse{Content: "installed"}, nil
+		},
+	}); err != nil {
+		t.Fatalf("register command: %v", err)
+	}
+
+	ch := &Channel{
+		commands:             registry,
+		pendingSkillInstalls: map[string]pendingSkillInstall{},
+	}
+	ch.setPendingSkillInstall("user-1", pendingSkillInstall{
+		UserID:    "user-1",
+		Command:   "find-skills",
+		Repo:      "owner/repo",
+		CreatedAt: time.Now(),
+	})
+
+	reply, handled, err := ch.resolvePendingInteraction(wxtypes.WeixinMessage{FromUserID: "user-1"}, "/select 1")
+	if err != nil {
+		t.Fatalf("resolve pending interaction: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected interaction to be handled")
+	}
+	if reply != "installed" {
+		t.Fatalf("expected reply %q, got %q", "installed", reply)
+	}
+	if _, ok := ch.getPendingSkillInstall("user-1"); ok {
+		t.Fatal("expected pending interaction to be cleared after select confirm")
+	}
+}
+
+func TestResolvePendingInteractionSelectDenyAlias(t *testing.T) {
+	ch := &Channel{
+		pendingSkillInstalls: map[string]pendingSkillInstall{},
+	}
+	ch.setPendingSkillInstall("user-1", pendingSkillInstall{
+		UserID:    "user-1",
+		Command:   "find-skills",
+		Repo:      "owner/repo",
+		CreatedAt: time.Now(),
+	})
+
+	reply, handled, err := ch.resolvePendingInteraction(wxtypes.WeixinMessage{FromUserID: "user-1"}, "/select 2")
+	if err != nil {
+		t.Fatalf("resolve pending interaction: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected interaction to be handled")
+	}
+	if reply != "已取消安装。" {
+		t.Fatalf("unexpected deny reply: %q", reply)
+	}
+	if _, ok := ch.getPendingSkillInstall("user-1"); ok {
+		t.Fatal("expected pending interaction to be cleared after select deny")
+	}
+}
+
 func TestResolvePendingInteractionDelegatesToRuntimeApprovals(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
