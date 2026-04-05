@@ -270,6 +270,9 @@ func RefreshToken(cfg OAuthProviderConfig, refreshToken string) (*AuthCredential
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("decoding token response: %w", err)
 	}
+	if strings.TrimSpace(tokenResp.AccessToken) == "" {
+		return nil, fmt.Errorf("token refresh response missing access_token")
+	}
 
 	cred := &AuthCredential{
 		AccessToken:  tokenResp.AccessToken,

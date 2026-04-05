@@ -66,6 +66,35 @@ func TestRefreshTokenPreservesExistingRefreshTokenWhenResponseOmitsIt(t *testing
 	}
 }
 
+func TestRefreshTokenRejectsResponseWithoutAccessToken(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Helper()
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(OAuthTokenResponse{
+			RefreshToken: "rotated-refresh-token",
+			ExpiresIn:    3600,
+		}); err != nil {
+			t.Fatalf("Encode() error = %v", err)
+		}
+	}))
+	defer server.Close()
+
+	_, err := RefreshToken(OAuthProviderConfig{
+		Provider: "openai",
+		TokenURL: server.URL,
+		ClientID: "client-id",
+	}, "existing-refresh-token")
+	if err == nil {
+		t.Fatal("expected missing access token error")
+	}
+	if err.Error() != "token refresh response missing access_token" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func valuesEqual(got, want url.Values) bool {
 	if len(got) != len(want) {
 		return false
