@@ -98,6 +98,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) {
 		log.Error("Failed to initialize auth store", zap.Error(err))
 		os.Exit(1)
 	}
+	center := auth.NewCredentialCenter(store)
 
 	fmt.Printf("\n🔐 Authenticating with %s...\n\n", auth.ProviderDisplayName(authProvider))
 
@@ -146,7 +147,12 @@ func runAuthLogin(cmd *cobra.Command, args []string) {
 	}
 
 	// Store credential
-	if err := store.Set(authProvider, cred); err != nil {
+	if err := center.Put(cmd.Context(), auth.CredentialRecord{
+		UserScope: authScopeGlobal(),
+		Provider:  authProvider,
+		AccountID: cred.AccountID,
+		Credential: *cred,
+	}); err != nil {
 		log.Error("Failed to store credential", zap.Error(err))
 		os.Exit(1)
 	}
@@ -175,11 +181,32 @@ func runAuthLogout(cmd *cobra.Command, args []string) {
 		log.Error("Failed to initialize auth store", zap.Error(err))
 		os.Exit(1)
 	}
+	center := auth.NewCredentialCenter(store)
 
 	if authLogoutAll {
-		if err := store.Clear(); err != nil {
-			log.Error("Failed to clear credentials", zap.Error(err))
+		records, err := center.List(cmd.Context(), auth.CredentialFilter{
+			UserScope: authScopeGlobal(),
+		})
+		if err != nil {
+			log.Error("Failed to list credentials", zap.Error(err))
 			os.Exit(1)
+		}
+		if len(records) == 0 {
+			if err := store.Clear(); err != nil {
+				log.Error("Failed to clear credentials", zap.Error(err))
+				os.Exit(1)
+			}
+		} else {
+			for _, record := range records {
+				if err := center.Revoke(cmd.Context(), auth.CredentialQuery{
+					UserScope: authScopeGlobal(),
+					Provider:  record.Provider,
+					AccountID: record.AccountID,
+				}); err != nil {
+					log.Error("Failed to clear credentials", zap.Error(err))
+					os.Exit(1)
+				}
+			}
 		}
 		fmt.Println("✅ Logged out from all providers")
 		return
@@ -190,7 +217,10 @@ func runAuthLogout(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	if err := store.Delete(authProvider); err != nil {
+	if err := center.Revoke(cmd.Context(), auth.CredentialQuery{
+		UserScope: authScopeGlobal(),
+		Provider:  authProvider,
+	}); err != nil {
 		log.Error("Failed to delete credential", zap.Error(err))
 		os.Exit(1)
 	}
@@ -212,9 +242,16 @@ func runAuthStatus(cmd *cobra.Command, args []string) {
 		log.Error("Failed to initialize auth store", zap.Error(err))
 		os.Exit(1)
 	}
+	center := auth.NewCredentialCenter(store)
 
-	creds := store.List()
-	if len(creds) == 0 {
+	records, err := center.List(cmd.Context(), auth.CredentialFilter{
+		UserScope: authScopeGlobal(),
+	})
+	if err != nil {
+		log.Error("Failed to list credentials", zap.Error(err))
+		os.Exit(1)
+	}
+	if len(records) == 0 {
 		fmt.Println("No authentication credentials stored.")
 		fmt.Println()
 		fmt.Println("Use 'nekobot auth login --provider <name>' to authenticate.")
@@ -227,11 +264,22 @@ func runAuthStatus(cmd *cobra.Command, args []string) {
 	fmt.Println("Provider      | Status    | Method      | Expires")
 	fmt.Println("------------- | --------- | ----------- | --------------------")
 
-	for _, cred := range creds {
+	for _, record := range records {
+		cred := record.Credential
 		status := "✅ Active"
-		if cred.IsExpired() {
+		result, err := center.Validate(cmd.Context(), auth.CredentialQuery{
+			UserScope: authScopeGlobal(),
+			Provider:  record.Provider,
+			AccountID: record.AccountID,
+		})
+		if err != nil {
+			log.Error("Failed to validate credential", zap.Error(err))
+			os.Exit(1)
+		}
+		switch result.Status {
+		case auth.CredentialStatusExpired:
 			status = "❌ Expired"
-		} else if cred.NeedsRefresh() {
+		case auth.CredentialStatusExpiring:
 			status = "⚠️  Expiring"
 		}
 
@@ -249,4 +297,8 @@ func runAuthStatus(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Println()
+}
+
+func authScopeGlobal() string {
+	return "global"
 }
