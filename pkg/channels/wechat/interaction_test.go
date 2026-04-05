@@ -274,3 +274,18 @@ func TestFormatWeChatPrompt(t *testing.T) {
 		t.Fatalf("expected action hints, got %q", got)
 	}
 }
+
+func TestFormatWeChatPromptIncludesSelectAliasesForSkillInstall(t *testing.T) {
+	got := formatWeChatPrompt("", &commands.CommandInteraction{
+		Type:    commands.InteractionTypeSkillInstallConfirm,
+		Repo:    "owner/repo",
+		Message: "请确认安装。",
+	})
+
+	if !strings.Contains(got, "/select 1") {
+		t.Fatalf("expected /select 1 hint, got %q", got)
+	}
+	if !strings.Contains(got, "/select 2") {
+		t.Fatalf("expected /select 2 hint, got %q", got)
+	}
+}
