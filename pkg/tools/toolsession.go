@@ -152,6 +152,13 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 	if wrapped, sessionName := buildRuntimeCommand(launchCommand, sess.ID); sessionName != "" {
 		launchCommand = wrapped
 		tmuxSession = sessionName
+		metadata["runtime_transport"] = "tmux"
+		metadata["tmux_session"] = tmuxSession
+		metadata["launch_cmd"] = launchCommand
+		if err := t.toolSessionMgr.UpdateSessionMetadata(ctx, sess.ID, metadata); err != nil {
+			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist tmux metadata: "+err.Error())
+			return "", fmt.Errorf("failed to persist tmux metadata: %w", err)
+		}
 	}
 
 	spec := execenv.StartSpecFromContext(ctx, sess.ID, launchCommand, workdir, metadata)

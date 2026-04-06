@@ -1748,7 +1748,15 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	if wrapped, sessionName := buildToolRuntimeCommand(launchCommand, sess.ID); sessionName != "" {
 		launchCommand = wrapped
 		tmuxSession = sessionName
+		metadata["runtime_transport"] = "tmux"
+		metadata["tmux_session"] = tmuxSession
 	}
+	metadata["launch_cmd"] = launchCommand
+	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), sess.ID, metadata); err != nil {
+		_ = s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to persist launch metadata: "+err.Error())
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to persist tool session metadata: " + err.Error()})
+	}
+	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
 
 	spec := execenv.StartSpecFromContext(c.Request().Context(), sess.ID, launchCommand, workdir, metadata)
 	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
@@ -1768,6 +1776,7 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	if strings.TrimSpace(sess.AccessMode) != "" && sess.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, sess.ID, strings.TrimSpace(body.PublicBaseURL))
 	}
+	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
 
 	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", map[string]interface{}{
 		"command":      command,
@@ -1961,16 +1970,22 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
+	nextMetadata := withToolProxyMetadata(cloneMap(current.Metadata), proxyMode, proxyURL)
+	nextMetadata["user_command"] = command
+	nextMetadata["user_args"] = strings.TrimSpace(body.CommandArgs)
+
 	launchCommand := applyToolProxyToCommand(command, proxyMode, proxyURL)
 	tmuxSession := ""
 	if wrapped, sessionName := buildToolRuntimeCommand(launchCommand, id); sessionName != "" {
 		launchCommand = wrapped
 		tmuxSession = sessionName
+		nextMetadata["runtime_transport"] = "tmux"
+		nextMetadata["tmux_session"] = tmuxSession
+	} else {
+		delete(nextMetadata, "runtime_transport")
+		delete(nextMetadata, "tmux_session")
 	}
-
-	nextMetadata := withToolProxyMetadata(cloneMap(current.Metadata), proxyMode, proxyURL)
-	nextMetadata["user_command"] = command
-	nextMetadata["user_args"] = strings.TrimSpace(body.CommandArgs)
+	nextMetadata["launch_cmd"] = launchCommand
 
 	_ = s.processMgr.Reset(id)
 	s.tryKillTmuxSession(id)
@@ -2007,6 +2022,7 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	if strings.TrimSpace(updatedSession.AccessMode) != "" && updatedSession.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, id, strings.TrimSpace(body.PublicBaseURL))
 	}
+	updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
 
 	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", map[string]interface{}{
 		"command":      command,
@@ -2036,19 +2052,36 @@ func (s *Server) handleToolSessionProcessStatus(c *echo.Context) error {
 		return err
 	}
 	s.tryRestoreToolSessionRuntime(c.Request().Context(), id)
+	sess, sessErr := s.toolSess.GetSession(c.Request().Context(), id)
+	if sessErr != nil {
+		if errors.Is(sessErr, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": sessErr.Error()})
+	}
 
 	status, err := s.processMgr.GetStatus(id)
 	if err != nil {
 		if isProcessSessionNotFound(err) {
 			return c.JSON(http.StatusOK, map[string]interface{}{
-				"id":      id,
-				"running": false,
-				"missing": true,
+				"id":                id,
+				"running":           false,
+				"missing":           true,
+				"runtime_transport": metadataString(sess.Metadata, "runtime_transport"),
+				"tmux_session":      metadataString(sess.Metadata, "tmux_session"),
+				"launch_cmd":        metadataString(sess.Metadata, "launch_cmd"),
 			})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	return c.JSON(http.StatusOK, status)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"id":                status.ID,
+		"running":           status.Running,
+		"exit_code":         status.ExitCode,
+		"runtime_transport": metadataString(sess.Metadata, "runtime_transport"),
+		"tmux_session":      metadataString(sess.Metadata, "tmux_session"),
+		"launch_cmd":        metadataString(sess.Metadata, "launch_cmd"),
+	})
 }
 
 func (s *Server) handleToolSessionProcessOutput(c *echo.Context) error {
@@ -2633,6 +2666,14 @@ func buildToolReattachCommand(sessionID string) (string, string, bool) {
 		return "", "", false
 	}
 	return fmt.Sprintf("tmux attach-session -t %s", name), name, true
+}
+
+func metadataString(values map[string]interface{}, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	value, _ := values[key].(string)
+	return strings.TrimSpace(value)
 }
 
 func tmuxSessionExists(name string) bool {

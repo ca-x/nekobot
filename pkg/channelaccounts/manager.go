@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
+	channelwechat "nekobot/pkg/channels/wechat"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/storage/ent"
@@ -130,6 +131,7 @@ func (m *Manager) ResolveForChannelID(ctx context.Context, channelID string) (*C
 	if err != nil {
 		return nil, err
 	}
+	accounts = m.prioritizeAccountsForChannelID(channelID, accounts)
 
 	for _, item := range accounts {
 		candidates := channelRuntimeCandidates(item)
@@ -140,6 +142,46 @@ func (m *Manager) ResolveForChannelID(ctx context.Context, channelID string) (*C
 	}
 
 	return nil, ErrAccountNotFound
+}
+
+func (m *Manager) prioritizeAccountsForChannelID(channelID string, accounts []ChannelAccount) []ChannelAccount {
+	if len(accounts) < 2 || m == nil || m.cfg == nil || channelID != "wechat" {
+		return accounts
+	}
+
+	store, err := channelwechat.NewCredentialStore(m.cfg)
+	if err != nil {
+		return accounts
+	}
+	creds, err := store.LoadCredentials()
+	if err != nil || creds == nil {
+		return accounts
+	}
+
+	activeBotID := strings.TrimSpace(creds.ILinkBotID)
+	if activeBotID == "" {
+		return accounts
+	}
+
+	activeIndex := -1
+	for i, account := range accounts {
+		if strings.TrimSpace(account.ChannelType) != "wechat" {
+			continue
+		}
+		if strings.TrimSpace(account.AccountKey) == activeBotID {
+			activeIndex = i
+			break
+		}
+	}
+	if activeIndex <= 0 {
+		return accounts
+	}
+
+	prioritized := make([]ChannelAccount, 0, len(accounts))
+	prioritized = append(prioritized, accounts[activeIndex])
+	prioritized = append(prioritized, accounts[:activeIndex]...)
+	prioritized = append(prioritized, accounts[activeIndex+1:]...)
+	return prioritized
 }
 
 // Create inserts a new channel account.

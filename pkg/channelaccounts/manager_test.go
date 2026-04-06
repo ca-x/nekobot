@@ -5,8 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	channelwechat "nekobot/pkg/channels/wechat"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	wxtypes "nekobot/pkg/wechat/types"
 )
 
 func TestManagerCRUD(t *testing.T) {
@@ -75,6 +77,59 @@ func TestManagerCRUD(t *testing.T) {
 	}
 	if err := mgr.Delete(ctx, created.ID); !errors.Is(err, ErrAccountNotFound) {
 		t.Fatalf("expected ErrAccountNotFound, got %v", err)
+	}
+}
+
+func TestResolveForChannelIDPrefersActiveWechatAccountForAlias(t *testing.T) {
+	ctx := context.Background()
+	mgr := newTestManager(t)
+
+	first, err := mgr.Create(ctx, ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-1@im.wechat",
+		DisplayName: "Bot 1",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create first account: %v", err)
+	}
+	second, err := mgr.Create(ctx, ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-2@im.wechat",
+		DisplayName: "Bot 2",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create second account: %v", err)
+	}
+
+	store, err := channelwechat.NewCredentialStore(mgr.cfg)
+	if err != nil {
+		t.Fatalf("new credential store: %v", err)
+	}
+	if err := store.SaveCredentials(&wxtypes.Credentials{
+		BotToken:    "token-1",
+		ILinkBotID:  first.AccountKey,
+		BaseURL:     "https://example.invalid",
+		ILinkUserID: "user-1",
+	}, false); err != nil {
+		t.Fatalf("save first credentials: %v", err)
+	}
+	if err := store.SaveCredentials(&wxtypes.Credentials{
+		BotToken:    "token-2",
+		ILinkBotID:  second.AccountKey,
+		BaseURL:     "https://example.invalid",
+		ILinkUserID: "user-2",
+	}, true); err != nil {
+		t.Fatalf("save second credentials: %v", err)
+	}
+
+	resolved, err := mgr.ResolveForChannelID(ctx, "wechat")
+	if err != nil {
+		t.Fatalf("ResolveForChannelID failed: %v", err)
+	}
+	if resolved.ID != second.ID {
+		t.Fatalf("expected active wechat account %q, got %q", second.ID, resolved.ID)
 	}
 }
 

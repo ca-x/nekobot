@@ -1728,6 +1728,7 @@
 - [ ] 让 WeChat 入站消息路由与更细粒度控制面进一步按具体 `wechat:<account>` runtime instance 收敛，而不是主要依赖“active account + type 级重载”桥接策略。
 - [ ] 继续把更多高价值 channel 迁入完整 account-aware runtime 路径。
 - [ ] 将 `AccountBinding` 接入真实消息路由与 agent runtime 解析。
+  - 当前新增进度：已不止停留在 WebUI/runtime reload；`pkg/channelaccounts.Manager.ResolveForChannelID("wechat")` 现已按 active WeChat account 优先解析裸 `wechat` 别名，且 `pkg/inboundrouter` 已补端到端回归，验证裸 `wechat` 入站消息会命中 active account 绑定的 runtime，而不是按列表顺序漂移。
 
 ### Round 2.1 Verification
 - [x] `go test -count=1 ./pkg/channels/slack ./pkg/channels/wechat ./pkg/webui -run 'Test(BuildChannelFromAccount_Slack|ParseSessionIDSupportsAccountRuntimePrefix|HandleMessageEventUsesAccountRuntimeIdentifiers|ExecuteConfirmedSkillInstallUsesRuntimeChannelID|HandleWechatBindingLifecycle_UsesSharedIlinkAuth|HandleWechatBindingActivateAndDeleteAccount|ReloadChannelsByTypePrefersEnabledWechatAccounts|GetWechatBindingStatus_NoBinding)'`
@@ -1803,7 +1804,7 @@
   - 位置：`pkg/memory/*`。
 - [ ] **Gateway 控制面与连接治理增强**
   - 现状：`pkg/gateway/server.go` 原先是开放 `CheckOrigin`、简单 WS/REST 模式；本轮已补第一层 origin allowlist，且把基础连接治理推进到 IP/rate limit，但控制面授权边界此前仍停留在“任何有效 JWT 都可访问”。
-  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；已把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性；已补上已鉴权的 `GET /api/v1/connections/{id}`，让控制面可以查询单连接详情而不必扫全量列表；已新增 `gateway.max_connections` 配置与 server 内硬限制，开始收口最基本的连接数量治理；已完成 `gateway.allowed_ips`，补齐基于远端地址的 allowlist，并同时覆盖 websocket 握手与 REST 控制面入口；已完成 `gateway.rate_limit_per_minute`，以共享入口级的 per-IP 限流同时覆盖 REST 控制面和 websocket 握手；已完成 control-plane role scope 收紧：`status` 继续只允许 `admin/owner`，`member` 只能读取属于自己的连接元数据；已完成首个 pairing 薄切片：websocket 握手支持通过 `session_id` 复用既有 gateway session，并拒绝未知 session 或非 gateway session；已补上 pairing 薄切片的握手时序修正：无效 `session_id` 现在会在 websocket upgrade 前直接返回真实 `400`；已进一步补齐 pairing hardening：兼容 legacy 空 `source` 的旧 gateway session、拒绝同一 paired session 的重复 live attach、串行化并发 attach 窗口，并要求 websocket 入站消息的 `session_id` 与当前 active paired session 保持一致；已补齐控制面细粒度删除边界：`admin/owner` 仍可删除任意连接，`member` 现在仅可删除自己拥有的 live connection，对其他用户或不存在的目标统一返回 `404`，且仍不引入 pairing enrollment / ownership 持久化模型。当前本地下一最小切片固定为 pairing 可观测性：在连接视图中显式暴露是否为 paired websocket 及其 paired session id，不改变现有授权/配对协议。并行执行方面，`browser` 与 `Slack interactive` 已拆到独立 GoalX worker 线继续推进。
+  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；已把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性；已补上已鉴权的 `GET /api/v1/connections/{id}`，让控制面可以查询单连接详情而不必扫全量列表；已新增 `gateway.max_connections` 配置与 server 内硬限制，开始收口最基本的连接数量治理；已完成 `gateway.allowed_ips`，补齐基于远端地址的 allowlist，并同时覆盖 websocket 握手与 REST 控制面入口；已完成 `gateway.rate_limit_per_minute`，以共享入口级的 per-IP 限流同时覆盖 REST 控制面和 websocket 握手；已完成 control-plane role scope 收紧：`status` 继续只允许 `admin/owner`，`member` 只能读取属于自己的连接元数据；已完成首个 pairing 薄切片：websocket 握手支持通过 `session_id` 复用既有 gateway session，并拒绝未知 session 或非 gateway session；已补上 pairing 薄切片的握手时序修正：无效 `session_id` 现在会在 websocket upgrade 前直接返回真实 `400`；已进一步补齐 pairing hardening：兼容 legacy 空 `source` 的旧 gateway session、拒绝同一 paired session 的重复 live attach、串行化并发 attach 窗口，并要求 websocket 入站消息的 `session_id` 与当前 active paired session 保持一致；已补齐控制面细粒度删除边界：`admin/owner` 仍可删除任意连接，`member` 现在仅可删除自己拥有的 live connection，对其他用户或不存在的目标统一返回 `404`，且仍不引入 pairing enrollment / ownership 持久化模型；已补齐 pairing proof：新增 `TestWSChatConcurrentAttachConflictKeepsRequestedExistingSession`，锁住并发 attach 冲突不会破坏既有 paired gateway session。当前本地下一最小切片固定为 pairing 可观测性：在连接视图中显式暴露是否为 paired websocket 及其 paired session id，不改变现有授权/配对协议。并行执行方面，`browser` 与 `Slack interactive` 已拆到独立 GoalX worker 线继续推进。
   - 目标：补控制面协议与连接策略，避免 gateway 只停留在“聊天 socket”。
   - 来源：`goclaw/gateway/openclaw/*`。
   - 位置：`pkg/gateway/*`。
@@ -1845,6 +1846,7 @@
   - 位置：`pkg/channels/wechat/*`、公共 formatter 层。
 - [ ] **Runtime 交互检测与 tmux/TTY 控制层**
   - 现状：已有 PTY/tool session，但缺针对外部交互式 agent 的 prompt 检测、菜单识别、自动确认和持续观察层。
+  - 进度：当前已补齐一条更稳定的 runtime-control 基础 seam：agent 创建的 `tool_session` 在走 `tmux` 包装启动时，会把 `runtime_transport=tmux`、`tmux_session` 与实际 `launch_cmd` 显式持久化到 session metadata，而不再只体现在返回文案里；对应 `pkg/tools` 定向测试已补齐。这为后续 WebUI 恢复、外部 runtime 观察和交互状态检测提供了稳定元数据边界。
   - 目标：为外部 agent runtime 提供稳定的交互底座。
   - 来源：`gua/runtime/*`。
   - 位置：`pkg/toolsessions/*` 或新建 runtime 模块。
@@ -1878,7 +1880,7 @@
   - 当前执行顺序：先做通用 service 契约收口，再做 WeChat runtime 消费者验证，最后再决定是否扩到 gateway/external runtime。
 - [x] memory quality pack（MMR / temporal decay / citations / cache）
 - [ ] gateway control plane hardening
-  - 当前已完成切片：`gateway.allowed_ips`、`gateway.rate_limit_per_minute`、控制面读写分离 role scope、pairing 首批 hardening、`member` 仅可删除自有 live connection；当前本地继续 pairing 可观测性薄切片，并与并行中的 `browser` / `Slack` 线分离执行，不扩到 enrollment / ownership 持久化。
+  - 当前已完成切片：`gateway.allowed_ips`、`gateway.rate_limit_per_minute`、控制面读写分离 role scope、pairing 首批 hardening、`member` 仅可删除自有 live connection、paired-session conflict retention proof；当前本地继续 pairing 可观测性薄切片，并与并行中的 `browser` / `Slack` 线分离执行，不扩到 enrollment / ownership 持久化。
 - [ ] browser session dual-mode / advanced extraction
 - **验收**: 每项独立测试通过，按功能独立提交与推送。
 
@@ -1887,6 +1889,7 @@
 - [ ] permission / elicitation bridge
 - [ ] presenter + attachment pipeline
 - [ ] runtime prompt detection / tmux control
+  - 当前新增进度：已补 tmux transport metadata persistence seam，后续继续往 prompt detection / state observation 扩展。
 - **验收**: 每项独立 smoke test + channel flow 验证通过，按功能独立提交与推送。
 
 ## Phase 状态（聚合）

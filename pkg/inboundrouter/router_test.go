@@ -11,11 +11,13 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channelaccounts"
+	channelwechat "nekobot/pkg/channels/wechat"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
 	"nekobot/pkg/storage/ent"
+	wxtypes "nekobot/pkg/wechat/types"
 )
 
 type stubAgent struct {
@@ -153,6 +155,177 @@ func TestHandleInboundRoutesSingleAgentBinding(t *testing.T) {
 			t.Fatalf("unexpected explicit prompt ids: %+v", got)
 		}
 		if got := agentStub.lastPrompt.SessionID; got != "route:"+runtimeItem.ID+":thread-1" {
+			t.Fatalf("unexpected routed session: %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound reply")
+	}
+}
+
+func TestHandleInboundWechatAliasPrefersActiveAccountBinding(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error", OutputPath: ""})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	firstAccount, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-1@im.wechat",
+		DisplayName: "Bot 1",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create first account: %v", err)
+	}
+	secondAccount, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-2@im.wechat",
+		DisplayName: "Bot 2",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create second account: %v", err)
+	}
+
+	store, err := channelwechat.NewCredentialStore(cfg)
+	if err != nil {
+		t.Fatalf("new credential store: %v", err)
+	}
+	if err := store.SaveCredentials(&wxtypes.Credentials{
+		BotToken:    "token-1",
+		ILinkBotID:  firstAccount.AccountKey,
+		BaseURL:     "https://example.invalid",
+		ILinkUserID: "user-1",
+	}, false); err != nil {
+		t.Fatalf("save first credentials: %v", err)
+	}
+	if err := store.SaveCredentials(&wxtypes.Credentials{
+		BotToken:    "token-2",
+		ILinkBotID:  secondAccount.AccountKey,
+		BaseURL:     "https://example.invalid",
+		ILinkUserID: "user-2",
+	}, true); err != nil {
+		t.Fatalf("save second credentials: %v", err)
+	}
+
+	firstRuntime, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "wechat-first",
+		DisplayName: "WeChat First",
+		Enabled:     true,
+		Provider:    "openai",
+		Model:       "gpt-4o-mini",
+	})
+	if err != nil {
+		t.Fatalf("create first runtime: %v", err)
+	}
+	secondRuntime, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "wechat-second",
+		DisplayName: "WeChat Second",
+		Enabled:     true,
+		Provider:    "anthropic",
+		Model:       "claude-sonnet-4",
+	})
+	if err != nil {
+		t.Fatalf("create second runtime: %v", err)
+	}
+	if _, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: firstAccount.ID,
+		AgentRuntimeID:   firstRuntime.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create first binding: %v", err)
+	}
+	if _, err := bindingMgr.Create(context.Background(), accountbindings.AccountBinding{
+		ChannelAccountID: secondAccount.ID,
+		AgentRuntimeID:   secondRuntime.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create second binding: %v", err)
+	}
+
+	messageBus := bus.NewLocalBus(log, 8)
+	if err := messageBus.Start(); err != nil {
+		t.Fatalf("start bus: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := messageBus.Stop(); err != nil {
+			t.Fatalf("stop bus: %v", err)
+		}
+	})
+
+	replyCh := make(chan *bus.Message, 1)
+	messageBus.RegisterOutboundHandler("wechat", func(ctx context.Context, msg *bus.Message) error {
+		replyCh <- msg
+		return nil
+	})
+
+	agentStub := &stubAgent{response: "reply from active wechat runtime"}
+	router, err := New(
+		log,
+		messageBus,
+		agentStub,
+		session.NewManager(t.TempDir(), cfg.Sessions),
+		accountMgr,
+		bindingMgr,
+		runtimeMgr,
+	)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	if err := router.HandleInbound(context.Background(), &bus.Message{
+		ChannelID: "wechat",
+		SessionID: "wechat-thread-1",
+		UserID:    "u-1",
+		Username:  "alice",
+		Type:      bus.MessageTypeText,
+		Content:   "hello",
+	}); err != nil {
+		t.Fatalf("handle inbound: %v", err)
+	}
+
+	select {
+	case reply := <-replyCh:
+		if reply.Content != "reply from active wechat runtime" {
+			t.Fatalf("unexpected reply: %q", reply.Content)
+		}
+		if got := agentStub.lastPrompt.RequestedProvider; got != "anthropic" {
+			t.Fatalf("unexpected provider: %q", got)
+		}
+		if got := agentStub.lastPrompt.RequestedModel; got != "claude-sonnet-4" {
+			t.Fatalf("unexpected model: %q", got)
+		}
+		if got := agentStub.lastPrompt.Custom["channel_account_id"]; got != secondAccount.ID {
+			t.Fatalf("expected active account id %q, got %#v", secondAccount.ID, got)
+		}
+		if got := agentStub.lastPrompt.SessionID; got != "route:"+secondRuntime.ID+":wechat-thread-1" {
 			t.Fatalf("unexpected routed session: %q", got)
 		}
 	case <-time.After(2 * time.Second):

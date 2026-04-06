@@ -353,12 +353,21 @@ func TestToolSessionHandlers_SmokeFlow(t *testing.T) {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, statusRec.Code, statusRec.Body.String())
 	}
 	var statusPayload struct {
-		ID      string `json:"id"`
-		Running bool   `json:"running"`
+		ID               string `json:"id"`
+		Running          bool   `json:"running"`
+		RuntimeTransport string `json:"runtime_transport"`
+		TmuxSession      string `json:"tmux_session"`
+		LaunchCmd        string `json:"launch_cmd"`
 	}
 	decodeJSON(t, statusRec.Body.Bytes(), &statusPayload)
 	if statusPayload.ID != created.ID || !statusPayload.Running {
 		t.Fatalf("expected running process status, got %+v", statusPayload)
+	}
+	if statusPayload.RuntimeTransport != "" && strings.TrimSpace(statusPayload.LaunchCmd) == "" {
+		t.Fatalf("expected launch command metadata for runtime-managed session, got %+v", statusPayload)
+	}
+	if statusPayload.RuntimeTransport == "tmux" && strings.TrimSpace(statusPayload.TmuxSession) == "" {
+		t.Fatalf("expected tmux session metadata in process status, got %+v", statusPayload)
 	}
 
 	inputReq := httptest.NewRequest(
@@ -538,6 +547,18 @@ func TestHandleSpawnToolSessionPassesMetadataToExecenv(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
 	}
+	var payload struct {
+		Session toolsessions.Session `json:"session"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if got, _ := payload.Session.Metadata["launch_cmd"].(string); strings.TrimSpace(got) == "" {
+		t.Fatal("expected spawned tool session to persist launch_cmd metadata")
+	}
+	if got, _ := payload.Session.Metadata["runtime_transport"].(string); got == "tmux" {
+		if got, _ := payload.Session.Metadata["tmux_session"].(string); strings.TrimSpace(got) == "" {
+			t.Fatal("expected tmux_session metadata to be populated")
+		}
+	}
 	if preparer.last.RuntimeID != "runtime-webui" {
 		t.Fatalf("expected runtime id to propagate, got %q", preparer.last.RuntimeID)
 	}
@@ -549,6 +570,80 @@ func TestHandleSpawnToolSessionPassesMetadataToExecenv(t *testing.T) {
 	}
 	if err := pm.Reset(preparer.last.SessionID); err != nil {
 		t.Fatalf("reset spawned process: %v", err)
+	}
+}
+
+func TestHandleRestartToolSessionPersistsLaunchMetadata(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	preparer := &captureWebUITestPreparer{}
+	pm := process.NewManager(log)
+	pm.SetPreparer(preparer)
+	server := &Server{
+		config:     cfg,
+		logger:     log,
+		toolSess:   toolMgr,
+		processMgr: pm,
+	}
+	e := echo.New()
+
+	sess, err := toolMgr.CreateSession(context.Background(), toolsessions.CreateSessionInput{
+		Owner:    "alice",
+		Source:   toolsessions.SourceWebUI,
+		Tool:     "codex",
+		Title:    "Restartable Session",
+		Command:  "sleep 5",
+		Workdir:  cfg.WorkspacePath(),
+		State:    toolsessions.StateRunning,
+		Metadata: map[string]interface{}{"runtime_id": "runtime-webui"},
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tool-sessions/"+sess.ID+"/restart", strings.NewReader(
+		`{"tool":"codex","command":"sleep 5","workdir":"`+cfg.WorkspacePath()+`","public_base_url":"https://ui.example.com"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/:id/restart")
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: sess.ID}})
+	if err := server.handleRestartToolSession(ctx); err != nil {
+		t.Fatalf("restart handler failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Session toolsessions.Session `json:"session"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if got, _ := payload.Session.Metadata["launch_cmd"].(string); strings.TrimSpace(got) == "" {
+		t.Fatal("expected restarted tool session to persist launch_cmd metadata")
+	}
+	if got, _ := payload.Session.Metadata["runtime_transport"].(string); got == "tmux" {
+		if got, _ := payload.Session.Metadata["tmux_session"].(string); strings.TrimSpace(got) == "" {
+			t.Fatal("expected restarted tmux_session metadata to be populated")
+		}
+	}
+	if preparer.last.SessionID != sess.ID {
+		t.Fatalf("expected restarted session id %q, got %q", sess.ID, preparer.last.SessionID)
+	}
+	if err := pm.Reset(sess.ID); err != nil {
+		t.Fatalf("reset restarted process: %v", err)
 	}
 }
 

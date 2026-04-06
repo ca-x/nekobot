@@ -1136,6 +1136,29 @@ func TestWSChatAllowsOnlyOneConcurrentAttachForRequestedSession(t *testing.T) {
 		t.Fatalf("expected exactly one conflicting attach, got %d", conflicts)
 	}
 }
+
+func TestWSChatConcurrentAttachConflictKeepsRequestedExistingSession(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+
+	if _, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway); err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	releaseReservation, err := s.reservePairingSessionID("paired-session", true)
+	if err != nil {
+		t.Fatalf("reservePairingSessionID first call failed: %v", err)
+	}
+	defer releaseReservation()
+
+	if _, err := s.reservePairingSessionID("paired-session", true); err == nil {
+		t.Fatal("expected second reservePairingSessionID call to conflict")
+	}
+
+	if _, err := s.sessionMgr.GetExisting("paired-session"); err != nil {
+		t.Fatalf("expected requested existing session to survive concurrent attach conflict, got %v", err)
+	}
+}
+
 func TestProcessMessagePassesExplicitRuntimeIDToRouter(t *testing.T) {
 	s := newTestServer(t)
 	router := &stubGatewayRouter{reply: "router reply"}
