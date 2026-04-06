@@ -231,6 +231,10 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid session_id"}`, http.StatusBadRequest)
 		return
 	}
+	if s.sessionMgr == nil {
+		http.Error(w, `{"error":"session unavailable"}`, http.StatusInternalServerError)
+		return
+	}
 	releasePairingReservation, err := s.reservePairingSessionID(sessionID, requestedSessionID != "")
 	if err != nil {
 		http.Error(w, `{"error":"session already attached"}`, http.StatusConflict)
@@ -449,19 +453,6 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 		return
 	}
 
-	// Also send via bus for logging/routing
-	busMsg := &bus.Message{
-		ID:        uuid.New().String(),
-		ChannelID: "websocket",
-		SessionID: activeSessionID,
-		UserID:    client.userID,
-		Username:  client.username,
-		Type:      bus.MessageTypeText,
-		Content:   wsMsg.Content,
-		Timestamp: time.Now(),
-	}
-	_ = s.bus.SendInbound(busMsg)
-
 	response := ""
 	routerHandled := false
 	if s.router != nil {
@@ -485,6 +476,17 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 		return
 	}
 	if response == "" {
+		busMsg := &bus.Message{
+			ID:        uuid.New().String(),
+			ChannelID: "websocket",
+			SessionID: activeSessionID,
+			UserID:    client.userID,
+			Username:  client.username,
+			Type:      bus.MessageTypeText,
+			Content:   wsMsg.Content,
+			Timestamp: time.Now(),
+		}
+		_ = s.bus.SendInbound(busMsg)
 		var err error
 		response, err = s.agent.Chat(context.Background(), client.session, wsMsg.Content)
 		if err != nil {
