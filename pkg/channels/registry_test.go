@@ -156,6 +156,35 @@ func TestBuildChannelFromAccount_Slack(t *testing.T) {
 	}
 }
 
+func TestBuildChannelFromAccount_Discord(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "discord",
+		AccountKey:  "guild-a",
+		DisplayName: "Discord Guild A",
+		Config: map[string]interface{}{
+			"enabled": true,
+			"token":   "discord-token",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "discord:guild-a" {
+		t.Fatalf("unexpected discord account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "discord" {
+		t.Fatalf("expected typed discord channel, got %T", channel)
+	}
+	if channel.Name() != "Discord Guild A" {
+		t.Fatalf("unexpected discord account channel name: %s", channel.Name())
+	}
+}
+
 func TestBuildChannelFromAccount_Wechat(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
@@ -208,6 +237,97 @@ func TestBuildChannelFromAccount_Wechat(t *testing.T) {
 	}
 	if got := typed.CurrentBotIDForTest(); got != "bot-a@im.wechat" {
 		t.Fatalf("expected account-scoped bot id %q, got %q", "bot-a@im.wechat", got)
+	}
+}
+
+func TestBuildChannelFromAccount_Feishu(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "feishu",
+		AccountKey:  "tenant-a",
+		DisplayName: "Feishu Tenant A",
+		Config: map[string]interface{}{
+			"enabled":            true,
+			"app_id":             "cli_test_app",
+			"app_secret":         "secret-test",
+			"verification_token": "verify-test",
+			"encrypt_key":        "encrypt-test",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "feishu:tenant-a" {
+		t.Fatalf("unexpected feishu account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "feishu" {
+		t.Fatalf("expected typed feishu channel, got %T", channel)
+	}
+	if channel.Name() != "Feishu Tenant A" {
+		t.Fatalf("unexpected feishu account channel name: %s", channel.Name())
+	}
+}
+
+func TestBuildChannelFromAccount_WhatsApp(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "whatsapp",
+		AccountKey:  "bridge-a",
+		DisplayName: "WhatsApp Bridge A",
+		Config: map[string]interface{}{
+			"enabled":    true,
+			"bridge_url": "ws://bridge.example.com/socket",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "whatsapp:bridge-a" {
+		t.Fatalf("unexpected whatsapp account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "whatsapp" {
+		t.Fatalf("expected typed whatsapp channel, got %T", channel)
+	}
+	if channel.Name() != "WhatsApp Bridge A" {
+		t.Fatalf("unexpected whatsapp account channel name: %s", channel.Name())
+	}
+}
+
+func TestBuildChannelFromAccount_Teams(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "teams",
+		AccountKey:  "tenant-a",
+		DisplayName: "Teams Tenant A",
+		Config: map[string]interface{}{
+			"enabled":      true,
+			"app_id":       "teams-app-id",
+			"app_password": "teams-secret",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "teams:tenant-a" {
+		t.Fatalf("unexpected teams account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "teams" {
+		t.Fatalf("expected typed teams channel, got %T", channel)
+	}
+	if channel.Name() != "Teams Tenant A" {
+		t.Fatalf("unexpected teams account channel name: %s", channel.Name())
 	}
 }
 

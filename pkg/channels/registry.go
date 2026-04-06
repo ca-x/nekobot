@@ -128,6 +128,22 @@ var channelDescriptors = []channelDescriptor{
 			transcriber := transcription.NewFromConfig(log, cfg)
 			return discord.NewChannel(log, cfg.Channels.Discord, messageBus, cmdRegistry, transcriber)
 		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			discordCfg := cfg.Channels.Discord
+			if err := decodeAccountConfig(account, &discordCfg); err != nil {
+				return nil, err
+			}
+			transcriber := transcription.NewFromConfig(log, cfg)
+			return discord.NewAccountChannel(
+				log,
+				discordCfg,
+				messageBus,
+				cmdRegistry,
+				transcriber,
+				channelInstanceID(account),
+				channelDisplayName(account, "Discord"),
+			)
+		},
 	},
 	{
 		name:    "slack",
@@ -164,6 +180,13 @@ var channelDescriptors = []channelDescriptor{
 		enabled: func(cfg *config.Config) bool { return cfg.Channels.WhatsApp.Enabled },
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return whatsapp.NewChannel(log, cfg.Channels.WhatsApp, messageBus, cmdRegistry)
+		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			whatsappCfg := cfg.Channels.WhatsApp
+			if err := decodeAccountConfig(account, &whatsappCfg); err != nil {
+				return nil, err
+			}
+			return whatsapp.NewAccountChannel(log, whatsappCfg, messageBus, cmdRegistry, channelInstanceID(account), channelDisplayName(account, "WhatsApp"))
 		},
 	},
 	{
@@ -223,6 +246,13 @@ var channelDescriptors = []channelDescriptor{
 		enabled: func(cfg *config.Config) bool { return cfg.Channels.Feishu.Enabled },
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return feishu.NewChannel(log, cfg.Channels.Feishu, messageBus, cmdRegistry)
+		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			feishuCfg := cfg.Channels.Feishu
+			if err := decodeAccountConfig(account, &feishuCfg); err != nil {
+				return nil, err
+			}
+			return feishu.NewAccountChannel(log, feishuCfg, messageBus, cmdRegistry, channelInstanceID(account), channelDisplayName(account, "Feishu"))
 		},
 	},
 	{
@@ -296,6 +326,13 @@ var channelDescriptors = []channelDescriptor{
 		enabled: func(cfg *config.Config) bool { return cfg.Channels.Teams.Enabled },
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return teams.NewChannel(log, cfg.Channels.Teams, messageBus, cmdRegistry)
+		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			teamsCfg := cfg.Channels.Teams
+			if err := decodeAccountConfig(account, &teamsCfg); err != nil {
+				return nil, err
+			}
+			return teams.NewAccountChannel(log, teamsCfg, messageBus, cmdRegistry, channelInstanceID(account), channelDisplayName(account, "Microsoft Teams"))
 		},
 	},
 	{

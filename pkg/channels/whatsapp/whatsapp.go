@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -20,10 +21,13 @@ import (
 
 // Channel implements WhatsApp channel using a WebSocket bridge.
 type Channel struct {
-	log      *logger.Logger
-	config   config.WhatsAppConfig
-	bus      bus.Bus
-	commands *commands.Registry
+	log         *logger.Logger
+	config      config.WhatsAppConfig
+	bus         bus.Bus
+	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 
 	conn      *websocket.Conn
 	mu        sync.Mutex
@@ -40,28 +44,48 @@ func NewChannel(
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, "whatsapp", "WhatsApp")
+}
+
+// NewAccountChannel creates an account-scoped WhatsApp channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.WhatsAppConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.BridgeURL == "" {
 		return nil, fmt.Errorf("whatsapp bridge_url is required")
 	}
 
 	return &Channel{
-		log:       log,
-		config:    cfg,
-		bus:       b,
-		commands:  cmdRegistry,
-		connected: false,
-		running:   false,
+		log:         log,
+		config:      cfg,
+		bus:         b,
+		commands:    cmdRegistry,
+		id:          strings.TrimSpace(channelID),
+		channelType: "whatsapp",
+		name:        defaultWhatsAppName(displayName),
+		connected:   false,
+		running:     false,
 	}, nil
 }
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "whatsapp"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "WhatsApp"
+	return c.name
+}
+
+// ChannelType returns the stable WhatsApp family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -366,4 +390,12 @@ func getStringOrDefault(m map[string]interface{}, key, defaultValue string) stri
 		return val
 	}
 	return defaultValue
+}
+
+func defaultWhatsAppName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "WhatsApp"
+	}
+	return name
 }

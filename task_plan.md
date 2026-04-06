@@ -1748,7 +1748,7 @@
 - [x] Agent 稳定性：session history sanitize、safe history window、tool-call 保真、context force compression。
 
 ### 当前明确未完成或做薄的能力
-- [ ] Slack interactive callback 已补齐技能安装确认闭环，但 shortcut / modal submission 仍只有路由入口，尚未落具体业务闭环。
+- [x] Slack interactive callback 已补齐首批完整业务闭环：`find_skills`、`settings`、`model`、`help`、`status`、`agent`、`start` 的 shortcut/modal submission 均已接通并补回归；后续如继续扩展，以新增业务场景单列。
 - [x] Runtime Prompts 本轮改动后已补回归测试与 smoke checklist 记录。
 - [x] MaixCAM 命令执行结果已支持直写设备连接，且出站链路已补齐按 `session/device` 定向回写；后续若继续增强，可单列 richer device protocol。
 - [ ] Gateway 仍偏聊天通道，缺更完整的控制面协议、连接治理和配对/授权模型。
@@ -1776,10 +1776,9 @@
   - 已完成：通道运行、发送、typing、QR 绑定已改用共享 `pkg/wechat` SDK；回复链路可自动提取本地路径，按图片/视频/文件分类上传发送，并清理正文中的路径文本。
   - 来源：`gua/server/formatter.go`、`gua/channel/wechat/wechat.go`。
   - 位置：`pkg/channels/wechat/*`、`pkg/wechat/*`。
-- [ ] **Slack interactive callback 扩展为完整交互闭环**
-  - 现状：仅有 block actions 中的 skill install confirm/cancel，而且确认流没有像 Telegram / Discord 一样的 pending state、expiry、原消息更新和统一执行路径；shortcut / modal submission 也仍未处理。
-  - 进度：已补齐技能安装确认的完整闭环（pending state / expiry / 原消息更新 / 统一执行路径），并加上 shortcut / modal submission 的可扩展路由入口；已补上首个真实业务闭环：`find_skills` shortcut -> modal -> `find-skills` command -> install confirm message；已补上第二个真实业务闭环：`settings` shortcut -> modal -> 复用现有 `/settings` command 语义返回 ephemeral 结果；本轮继续补上第三个真实业务闭环：`model` shortcut -> modal -> 复用现有 `/model` command 语义返回 ephemeral 结果；后续仍可继续扩更多 shortcut/modal 业务。
-  - 目标：继续在现有路由骨架上补具体 shortcut / modal submission 业务。
+- [x] **Slack interactive callback 扩展为完整交互闭环**
+  - 已完成：技能安装确认已补齐完整闭环（pending state / expiry / 原消息更新 / 统一执行路径），并已把 `find_skills`、`settings`、`model`、`help`、`status`、`agent`、`start` 的 shortcut/modal submission 业务闭环全部接通。
+  - 已验证：`pkg/channels/slack` 定向回归已覆盖 shortcut 打开 modal 与 view submission 执行 command 的主路径。
   - 来源：当前 `pkg/channels/slack/slack.go` 缺口 + `gua` Presenter/Action 思路。
   - 位置：`pkg/channels/slack/slack.go`。
 - [x] **Runtime Prompts 执行链路做完整回归并固化检查清单**

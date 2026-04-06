@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,18 +24,21 @@ import (
 
 // Channel implements Feishu channel as a WebSocket client.
 type Channel struct {
-	log      *logger.Logger
-	config   config.FeishuConfig
-	bus      bus.Bus
-	commands *commands.Registry
+	log         *logger.Logger
+	config      config.FeishuConfig
+	bus         bus.Bus
+	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 
-	client   *lark.Client
-	wsClient *larkws.Client
+	client       *lark.Client
+	wsClient     *larkws.Client
 	capabilities channelcapabilities.ChannelCapabilities
-	mu       sync.Mutex
-	running  bool
-	ctx      context.Context
-	cancel   context.CancelFunc
+	mu           sync.Mutex
+	running      bool
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 // NewChannel creates a new Feishu channel.
@@ -44,29 +48,49 @@ func NewChannel(
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, "feishu", "Feishu")
+}
+
+// NewAccountChannel creates an account-scoped Feishu channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.FeishuConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.AppID == "" || cfg.AppSecret == "" {
 		return nil, fmt.Errorf("feishu app_id and app_secret are required")
 	}
 
 	return &Channel{
-		log:      log,
-		config:   cfg,
-		bus:      b,
-		commands: cmdRegistry,
-		client:   lark.NewClient(cfg.AppID, cfg.AppSecret),
+		log:          log,
+		config:       cfg,
+		bus:          b,
+		commands:     cmdRegistry,
+		id:           strings.TrimSpace(channelID),
+		channelType:  "feishu",
+		name:         defaultFeishuName(displayName),
+		client:       lark.NewClient(cfg.AppID, cfg.AppSecret),
 		capabilities: channelcapabilities.GetDefaultCapabilitiesForChannel("feishu"),
-		running:  false,
+		running:      false,
 	}, nil
 }
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "feishu"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "Feishu"
+	return c.name
+}
+
+// ChannelType returns the stable Feishu family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -365,4 +389,12 @@ func stringValue(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func defaultFeishuName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "Feishu"
+	}
+	return name
 }

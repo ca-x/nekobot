@@ -58,10 +58,13 @@ type conversationContext struct {
 
 // Channel implements the Microsoft Teams channel.
 type Channel struct {
-	log      *logger.Logger
-	config   config.TeamsConfig
-	bus      bus.Bus
-	commands *commands.Registry
+	log         *logger.Logger
+	config      config.TeamsConfig
+	bus         bus.Bus
+	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -84,15 +87,30 @@ func NewChannel(
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, "teams", "Microsoft Teams")
+}
+
+// NewAccountChannel creates an account-scoped Teams channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.TeamsConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.AppID == "" || cfg.AppPassword == "" {
 		return nil, fmt.Errorf("teams app_id and app_password are required")
 	}
 
 	return &Channel{
-		log:      log,
-		config:   cfg,
-		bus:      b,
-		commands: cmdRegistry,
+		log:         log,
+		config:      cfg,
+		bus:         b,
+		commands:    cmdRegistry,
+		id:          strings.TrimSpace(channelID),
+		channelType: "teams",
+		name:        defaultTeamsName(displayName),
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second,
 		},
@@ -102,12 +120,17 @@ func NewChannel(
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "teams"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "Microsoft Teams"
+	return c.name
+}
+
+// ChannelType returns the stable Teams family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -365,4 +388,12 @@ func (c *Channel) isAllowed(userID string) bool {
 		}
 	}
 	return false
+}
+
+func defaultTeamsName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "Microsoft Teams"
+	}
+	return name
 }

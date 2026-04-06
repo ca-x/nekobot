@@ -27,6 +27,9 @@ type Channel struct {
 	config      config.DiscordConfig
 	bus         bus.Bus
 	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 	transcriber transcription.Transcriber
 	httpClient  *http.Client
 	session     *discordgo.Session
@@ -52,6 +55,19 @@ func NewChannel(
 	cmdRegistry *commands.Registry,
 	transcriber transcription.Transcriber,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, transcriber, "discord", "Discord")
+}
+
+// NewAccountChannel creates an account-scoped Discord channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.DiscordConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	transcriber transcription.Transcriber,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	// Create Discord session
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
@@ -63,6 +79,9 @@ func NewChannel(
 		config:      cfg,
 		bus:         b,
 		commands:    cmdRegistry,
+		id:          strings.TrimSpace(channelID),
+		channelType: "discord",
+		name:        defaultDiscordName(displayName),
 		transcriber: transcriber,
 		httpClient: &http.Client{
 			Timeout: 90 * time.Second,
@@ -75,12 +94,17 @@ func NewChannel(
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "discord"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "Discord"
+	return c.name
+}
+
+// ChannelType returns the stable Discord family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -538,4 +562,11 @@ func (c *Channel) transcribeAttachmentAudio(attachments []*discordgo.MessageAtta
 		}
 	}
 	return "", false
+}
+
+func defaultDiscordName(displayName string) string {
+	if trimmed := strings.TrimSpace(displayName); trimmed != "" {
+		return trimmed
+	}
+	return "Discord"
 }

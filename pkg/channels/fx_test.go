@@ -78,6 +78,50 @@ func TestRegisterChannelsFallsBackToLegacyConfigWithoutAccounts(t *testing.T) {
 	}
 }
 
+func TestRegisterChannelsPrefersTeamsChannelAccountsOverLegacyConfig(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Channels.Teams.Enabled = true
+	cfg.Channels.Teams.AppID = "legacy-app"
+	cfg.Channels.Teams.AppPassword = "legacy-secret"
+
+	log := newFXTestLogger(t)
+	client := newFXTestEntClient(t, cfg)
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+
+	_, err = accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "teams",
+		AccountKey:  "tenant-a",
+		DisplayName: "Teams Tenant A",
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"enabled":      true,
+			"app_id":       "account-app",
+			"app_password": "account-secret",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create channel account: %v", err)
+	}
+
+	manager := NewManager(log, nil)
+	if err := RegisterChannels(manager, log, nil, nil, nil, cfg, accountMgr, nil, nil, nil); err != nil {
+		t.Fatalf("RegisterChannels failed: %v", err)
+	}
+
+	ch, err := manager.GetChannel("teams")
+	if err != nil {
+		t.Fatalf("GetChannel failed: %v", err)
+	}
+	if ch.ID() != "teams:tenant-a" {
+		t.Fatalf("expected account-scoped channel id, got %s", ch.ID())
+	}
+}
+
 func newFXTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()
