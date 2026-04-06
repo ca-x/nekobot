@@ -2081,6 +2081,7 @@ func (s *Server) handleToolSessionProcessStatus(c *echo.Context) error {
 		"runtime_transport": metadataString(sess.Metadata, "runtime_transport"),
 		"tmux_session":      metadataString(sess.Metadata, "tmux_session"),
 		"launch_cmd":        metadataString(sess.Metadata, "launch_cmd"),
+		"observation":       status.Observation,
 	})
 }
 

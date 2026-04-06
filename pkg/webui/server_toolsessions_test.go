@@ -359,6 +359,10 @@ func TestToolSessionHandlers_SmokeFlow(t *testing.T) {
 		RuntimeTransport string `json:"runtime_transport"`
 		TmuxSession      string `json:"tmux_session"`
 		LaunchCmd        string `json:"launch_cmd"`
+		Observation      struct {
+			State   string `json:"state"`
+			Summary string `json:"summary"`
+		} `json:"observation"`
 	}
 	decodeJSON(t, statusRec.Body.Bytes(), &statusPayload)
 	if statusPayload.ID != created.ID || !statusPayload.Running {
@@ -721,6 +725,10 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 		RuntimeTransport string `json:"runtime_transport"`
 		TmuxSession      string `json:"tmux_session"`
 		LaunchCmd        string `json:"launch_cmd"`
+		Observation      struct {
+			State   string `json:"state"`
+			Summary string `json:"summary"`
+		} `json:"observation"`
 	}
 	decodeJSON(t, rec.Body.Bytes(), &payload)
 	if payload.ID != sess.ID {
@@ -738,6 +746,9 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 	if want := "tmux attach-session -t " + tmuxName; payload.LaunchCmd != want {
 		t.Fatalf("expected restored launch cmd %q, got %+v", want, payload)
 	}
+	if payload.Observation.State != "" && payload.Observation.State != "idle" {
+		t.Fatalf("expected empty or idle observation after restore, got %+v", payload.Observation)
+	}
 
 	updated, err := toolMgr.GetSession(context.Background(), sess.ID)
 	if err != nil {
@@ -748,6 +759,166 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 	}
 	if got, _ := updated.Metadata["tmux_session"].(string); got != tmuxName {
 		t.Fatalf("expected persisted tmux_session %q, got %q", tmuxName, got)
+	}
+}
+
+func TestHandleToolSessionProcessStatusIncludesAwaitingInputObservation(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	pm := process.NewManager(log)
+	server := &Server{
+		config:     cfg,
+		logger:     log,
+		toolSess:   toolMgr,
+		processMgr: pm,
+	}
+	e := echo.New()
+
+	sess, err := toolMgr.CreateSession(context.Background(), toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceWebUI,
+		Tool:    "codex",
+		Title:   "Prompt Session",
+		Command: "cat",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := pm.Start(context.Background(), sess.ID, "printf 'Continue? [y/N]\\n' && cat", cfg.WorkspacePath()); err != nil {
+		t.Fatalf("start process failed: %v", err)
+	}
+	t.Cleanup(func() { _ = pm.Reset(sess.ID) })
+
+	waitForProcessOutput(t, func() (bool, error) {
+		lines, _, err := pm.GetOutput(sess.ID, 0, 20)
+		if err != nil {
+			return false, err
+		}
+		for _, line := range lines {
+			if strings.Contains(line, "Continue? [y/N]") {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tool-sessions/"+sess.ID+"/process/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/:id/process/status")
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: sess.ID}})
+	if err := server.handleToolSessionProcessStatus(ctx); err != nil {
+		t.Fatalf("process status handler failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Observation struct {
+			State   string `json:"state"`
+			Summary string `json:"summary"`
+		} `json:"observation"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if payload.Observation.State != "awaiting_input" {
+		t.Fatalf("expected awaiting_input observation, got %+v", payload.Observation)
+	}
+	if !strings.Contains(payload.Observation.Summary, "[y/N]") {
+		t.Fatalf("expected observation summary to mention prompt, got %+v", payload.Observation)
+	}
+}
+
+func TestHandleToolSessionProcessStatusIncludesMenuPromptObservation(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	pm := process.NewManager(log)
+	server := &Server{
+		config:     cfg,
+		logger:     log,
+		toolSess:   toolMgr,
+		processMgr: pm,
+	}
+	e := echo.New()
+
+	sess, err := toolMgr.CreateSession(context.Background(), toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceWebUI,
+		Tool:    "codex",
+		Title:   "Menu Session",
+		Command: "cat",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateRunning,
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := pm.Start(context.Background(), sess.ID, "printf '1. Continue\\n2. Cancel\\nSelect option:\\n' && cat", cfg.WorkspacePath()); err != nil {
+		t.Fatalf("start process failed: %v", err)
+	}
+	t.Cleanup(func() { _ = pm.Reset(sess.ID) })
+
+	waitForProcessOutput(t, func() (bool, error) {
+		lines, _, err := pm.GetOutput(sess.ID, 0, 20)
+		if err != nil {
+			return false, err
+		}
+		for _, line := range lines {
+			if strings.Contains(line, "Select option:") {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tool-sessions/"+sess.ID+"/process/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/:id/process/status")
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: sess.ID}})
+	if err := server.handleToolSessionProcessStatus(ctx); err != nil {
+		t.Fatalf("process status handler failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Observation struct {
+			State   string `json:"state"`
+			Summary string `json:"summary"`
+		} `json:"observation"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if payload.Observation.State != "menu_prompt" {
+		t.Fatalf("expected menu_prompt observation, got %+v", payload.Observation)
+	}
+	if !strings.Contains(payload.Observation.Summary, "Select option") {
+		t.Fatalf("expected observation summary to mention menu prompt, got %+v", payload.Observation)
 	}
 }
 

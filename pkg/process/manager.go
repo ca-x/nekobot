@@ -44,6 +44,12 @@ type Session struct {
 	cancelRequested bool
 }
 
+// Observation captures lightweight read-only runtime state inferred from recent PTY output.
+type Observation struct {
+	State   string `json:"state,omitempty"`
+	Summary string `json:"summary,omitempty"`
+}
+
 const (
 	defaultPTYRows = 40
 	defaultPTYCols = 120
@@ -400,14 +406,15 @@ func (m *Manager) GetStatus(sessionID string) (*SessionStatus, error) {
 	defer session.OutputMutex.RUnlock()
 
 	status := &SessionStatus{
-		ID:         session.ID,
-		Command:    session.Command,
-		Workdir:    session.Workdir,
-		StartedAt:  session.StartedAt,
-		ExitedAt:   session.ExitedAt,
-		Running:    session.Running,
-		ExitCode:   session.ExitCode,
-		OutputSize: len(session.Output),
+		ID:          session.ID,
+		Command:     session.Command,
+		Workdir:     session.Workdir,
+		StartedAt:   session.StartedAt,
+		ExitedAt:    session.ExitedAt,
+		Running:     session.Running,
+		ExitCode:    session.ExitCode,
+		OutputSize:  len(session.Output),
+		Observation: classifyObservation(session.Output),
 	}
 
 	if session.Running {
@@ -429,14 +436,15 @@ func (m *Manager) List() []*SessionStatus {
 		session.OutputMutex.RLock()
 
 		status := &SessionStatus{
-			ID:         session.ID,
-			Command:    session.Command,
-			Workdir:    session.Workdir,
-			StartedAt:  session.StartedAt,
-			ExitedAt:   session.ExitedAt,
-			Running:    session.Running,
-			ExitCode:   session.ExitCode,
-			OutputSize: len(session.Output),
+			ID:          session.ID,
+			Command:     session.Command,
+			Workdir:     session.Workdir,
+			StartedAt:   session.StartedAt,
+			ExitedAt:    session.ExitedAt,
+			Running:     session.Running,
+			ExitCode:    session.ExitCode,
+			OutputSize:  len(session.Output),
+			Observation: classifyObservation(session.Output),
 		}
 
 		if session.Running {
@@ -644,13 +652,81 @@ func expandTildePath(path string) string {
 
 // SessionStatus represents session status information.
 type SessionStatus struct {
-	ID         string        `json:"id"`
-	Command    string        `json:"command"`
-	Workdir    string        `json:"workdir"`
-	StartedAt  time.Time     `json:"started_at"`
-	ExitedAt   time.Time     `json:"exited_at,omitempty"`
-	Running    bool          `json:"running"`
-	ExitCode   int           `json:"exit_code"`
-	Duration   time.Duration `json:"duration"`
-	OutputSize int           `json:"output_size"`
+	ID          string        `json:"id"`
+	Command     string        `json:"command"`
+	Workdir     string        `json:"workdir"`
+	StartedAt   time.Time     `json:"started_at"`
+	ExitedAt    time.Time     `json:"exited_at,omitempty"`
+	Running     bool          `json:"running"`
+	ExitCode    int           `json:"exit_code"`
+	Duration    time.Duration `json:"duration"`
+	OutputSize  int           `json:"output_size"`
+	Observation Observation   `json:"observation,omitempty"`
+}
+
+func classifyObservation(chunks []string) Observation {
+	if len(chunks) == 0 {
+		return Observation{}
+	}
+
+	text := strings.TrimSpace(strings.Join(chunks, ""))
+	if text == "" {
+		return Observation{}
+	}
+
+	lines := strings.Split(text, "\n")
+	summary := strings.TrimSpace(lines[len(lines)-1])
+	if summary == "" && len(lines) > 1 {
+		summary = strings.TrimSpace(lines[len(lines)-2])
+	}
+
+	lower := strings.ToLower(text)
+	switch {
+	case looksLikeMenuPrompt(lower):
+		return Observation{State: "menu_prompt", Summary: summary}
+	case looksLikeAwaitingInput(lower):
+		return Observation{State: "awaiting_input", Summary: summary}
+	case looksLikeErrorPrompt(lower):
+		return Observation{State: "error_prompt", Summary: summary}
+	default:
+		return Observation{State: "idle", Summary: summary}
+	}
+}
+
+func looksLikeAwaitingInput(lower string) bool {
+	patterns := []string{
+		"[y/n]",
+		"[y/n]?",
+		"[y/n]:",
+		"[y/n] ",
+		"[y/n]\n",
+		"[y/N]",
+		"[y/N]?",
+		"[y/N]:",
+		"continue? [y/n]",
+		"continue? [y/n",
+		"continue? [y/N]",
+		"continue? [y/N",
+		"press enter",
+		"enter to continue",
+	}
+	for _, pattern := range patterns {
+		if strings.Contains(lower, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeMenuPrompt(lower string) bool {
+	return (strings.Contains(lower, "1.") && strings.Contains(lower, "2.")) ||
+		strings.Contains(lower, "select option") ||
+		strings.Contains(lower, "choose an option") ||
+		strings.Contains(lower, "reply /select")
+}
+
+func looksLikeErrorPrompt(lower string) bool {
+	return strings.Contains(lower, "error:") ||
+		strings.Contains(lower, "failed:") ||
+		strings.Contains(lower, "permission denied")
 }

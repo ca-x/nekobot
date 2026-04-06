@@ -1688,7 +1688,7 @@
 - [x] Channels WebUI 已新增 runtime instance 可见性，但本轮仍未进入 account CRUD / binding-driven 控制页重构。
 
 ### Round 2 Residual Scope
-- [ ] 将更多 channel 逐步迁入 account-aware builder，尤其是 `wechat`、`slack` 等高价值运行时。
+- [x] 将更多 channel 逐步迁入 account-aware builder，尤其是 `wechat`、`slack` 等高价值运行时。
 - [ ] 把 `ChannelAccount + AccountBinding` 真正接到消息路由与 agent runtime 解析，而不只是启动/可见性层。
 - [ ] 将 WeChat 现有 `ilinkauth` 单活模型替换为真正的 channel-account 主链。
 
@@ -1701,6 +1701,10 @@
   - 接入 `BuildChannelFromAccount`。
   - `ChannelID / CommandRequest.Channel / runtime metadata / session namespace` 全部按 runtime instance ID 工作。
   - 修复 `slack:team-a:C123[:thread]` 这类多段实例 ID 的 session 解析。
+- [x] `discord`、`feishu`、`whatsapp`、`teams` 现也已接入 `BuildChannelFromAccount`：
+  - 统一暴露 account runtime 的 `id/type/name`。
+  - registry 层可直接构出 account-scoped channel 实例。
+  - 当前仍未单独扩展这些 channel 的更深 account/session 语义时，只把这一步视为“account-aware builder 接通”，而非全部业务主链已完成。
 - [x] `pkg/channels.Manager` 已修复 reload 索引一致性：
   - `ReloadChannel()` 会重新维护 `channelsByType/defaultByType`。
   - 避免 runtime reload 后默认别名与实例列表失真。
@@ -1727,6 +1731,16 @@
 ### Current Remaining Scope
 - [ ] 让 WeChat 入站消息路由与更细粒度控制面进一步按具体 `wechat:<account>` runtime instance 收敛，而不是主要依赖“active account + type 级重载”桥接策略。
 - [ ] 继续把更多高价值 channel 迁入完整 account-aware runtime 路径。
+  - 当前已完成 builder/account-instance 层的 channel：
+    - `gotify`
+    - `telegram`
+    - `slack`
+    - `wechat`
+    - `discord`
+    - `feishu`
+    - `whatsapp`
+    - `teams`
+  - 当前仍未完成的是“更深的 account-aware 业务语义”，不是 `BuildChannelFromAccount` 基础接线本身。
 - [ ] 将 `AccountBinding` 接入真实消息路由与 agent runtime 解析。
   - 当前新增进度：已不止停留在 WebUI/runtime reload；`pkg/channelaccounts.Manager.ResolveForChannelID("wechat")` 现已按 active WeChat account 优先解析裸 `wechat` 别名，且 `pkg/inboundrouter` 已补端到端回归，验证裸 `wechat` 入站消息会命中 active account 绑定的 runtime，而不是按列表顺序漂移。
 
@@ -1753,8 +1767,8 @@
 - [x] MaixCAM 命令执行结果已支持直写设备连接，且出站链路已补齐按 `session/device` 定向回写；后续若继续增强，可单列 richer device protocol。
 - [ ] Gateway 仍偏聊天通道，缺更完整的控制面协议、连接治理和配对/授权模型。
 - [x] Conversation binding 已补首批通用基础层：支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；更完整的跨 account/独立存储层仍待继续迁移。
-- [ ] Browser session 仍是单例固定端口 CDP，缺 relay 模式与更完整的高级控制动作。
-  - 进展补充：`auto/direct` 已完成，`print_pdf`、`extract_structured_data`、`get_text` 已落地；relay 与更多 CDP 高级动作仍待继续迁移。
+- [ ] Browser session 仍缺更完整的 relay/CDP 高级控制动作。
+  - 进展补充：`auto/direct/relay` 已完成，`print_pdf`、`extract_structured_data`、`get_text` 已落地；同时已补 custom `debug_port` / `debug_endpoint`，把 attach 从固定本地 9222/9223/9224 端口扫描收口为“默认扫描 + 可选显式 endpoint/port 覆盖”；后续仍待继续迁移更完整的 relay/CDP 高级动作。
 - [x] Memory 检索后处理首轮质量增强已完成：MMR、多样性、时间衰减、引用格式、embedding cache 已落地；后续如继续扩展，以更高阶排序/多源融合为新事项单列。
 - [ ] 现有 channel 能力已补基础 capability 矩阵，但平台差异仍未全面接入各 channel 运行时消费路径。
 - [ ] 缺“按聊天用户长期驻留的外部 agent runtime”这一层，尚未形成类似 `gua` 的用户级外部代理会话编排。
@@ -1787,10 +1801,11 @@
   - 位置：`pkg/prompts/*`、`pkg/webui/*`、`pkg/agent/*`。
 
 ### P1（高价值缺口）
-- [ ] **通用 conversation/thread binding 层**
+- [x] **通用 conversation/thread binding 层（当前批次范围）**
   - 现状：`pkg/conversationbindings/service.go` 只是在 tool session 之上做 source/channel/conversation 绑定，缺跨 account/conversation/session 的通用记录、清理与路由抽象。
   - 进度：已完成首批基础层增强，支持绑定记录视图、按 conversation/session 检索、绑定元数据与过期清理；已补齐绑定查询结果的稳定排序语义，`ListBindings` / `GetBindingsBySession` / session 级 record 展开不再依赖写入顺序；本轮继续补齐 rebinding 语义，旧 session 在失去主 conversation 后会按稳定排序提升新的 primary conversation key。当前仍复用 `tool sessions` 持久化，尚未抽出独立存储与跨 account 统一模型。
-  - 当前已锁定的下一实现边界：先补强通用绑定查询/写入契约、确定性排序和 rebinding 语义，再让 `pkg/channels/wechat/runtime.go` 对齐新契约；暂不引入独立存储，也不在同批次接入 `gateway`。
+  - 已完成范围：当前批次已完成通用查询/写入契约、确定性排序、rebinding 语义和 WeChat 首个消费者对齐。
+  - 后续剩余：独立存储与更广的 `gateway/external runtime` 接入不再算本批未完成项，应在后续单列。
   - 目标：抽出可复用于 channels / gateway / external agent runtime 的统一绑定层。
   - 来源：`goclaw/channels/thread_bindings.go`、`thread_binding_storage.go`。
   - 位置：新建 `pkg/conversationbindings/*` 或扩展现有模块。
@@ -1813,11 +1828,11 @@
   - 目标：提升浏览器工具的可靠性和能力上限。
   - 来源：`goclaw/agent/tools/browser_session.go`、`browser_relay.go`、`browser_cdp.go`。
   - 位置：`pkg/tools/browser*.go`。
-- [ ] **OAuth 凭证中心管理器**
-  - 现状：`pkg/auth/*` 偏单次登录流程，缺按 provider/profile 统一管理、自动刷新、校验与持久化中心。
-  - 目标：支持更稳的 OAuth provider 运维能力。
+- [x] **OAuth 凭证中心管理器**
+  - 已完成：`pkg/auth/center.go` 已提供统一 `CredentialCenter`，支持 provider/account 级存取、校验、刷新、撤销与生命周期状态推导，并保持对现有 `AuthStore` 的兼容写透。
+  - 已验证：`pkg/auth/center_test.go` 已覆盖存储、刷新持久化、状态推导、撤销与不可刷新凭证拒绝路径。
   - 来源：`goclaw/providers/oauth/*`。
-  - 位置：`pkg/auth/*` 或新建 `pkg/oauth/*`。
+  - 位置：`pkg/auth/*`。
 
 ### P2（次优先级）
 - [x] **MaixCAM 命令响应回设备端**
@@ -1845,7 +1860,7 @@
   - 位置：`pkg/channels/wechat/*`、公共 formatter 层。
 - [ ] **Runtime 交互检测与 tmux/TTY 控制层**
   - 现状：已有 PTY/tool session，但缺针对外部交互式 agent 的 prompt 检测、菜单识别、自动确认和持续观察层。
-  - 进度：当前已补齐两条更稳定的 runtime-control 基础 seam：agent 创建的 `tool_session` 在走 `tmux` 包装启动时，会把 `runtime_transport=tmux`、`tmux_session` 与实际 `launch_cmd` 显式持久化到 session metadata，而不再只体现在返回文案里；对应 `pkg/tools` 定向测试已补齐。随后 WebUI 在按需从 tmux 恢复 detached session 时，也已同步把恢复后的 attach 命令和 tmux session 回写到 metadata，避免状态查询继续停留在恢复前的旧启动命令。这为后续 WebUI 恢复、外部 runtime 观察和交互状态检测提供了稳定元数据边界。
+  - 进度：当前已补齐三条更稳定的 runtime-control 基础 seam：agent 创建的 `tool_session` 在走 `tmux` 包装启动时，会把 `runtime_transport=tmux`、`tmux_session` 与实际 `launch_cmd` 显式持久化到 session metadata，而不再只体现在返回文案里；WebUI 在按需从 tmux 恢复 detached session 时，也会把恢复后的 attach 命令和 tmux session 回写到 metadata；此外 `process/status` 已新增只读 observation 视图，能从最近 PTY 输出中识别 `idle` / `awaiting_input` / `menu_prompt` / `error_prompt` 等轻量运行态信号。当前仍未进入自动确认/自动选择，只先把观察面收口。
   - 目标：为外部 agent runtime 提供稳定的交互底座。
   - 来源：`gua/runtime/*`。
   - 位置：`pkg/toolsessions/*` 或新建 runtime 模块。
@@ -1881,7 +1896,8 @@
 - [ ] gateway control plane hardening
   - 当前已完成切片：`gateway.allowed_ips`、`gateway.rate_limit_per_minute`、控制面读写分离 role scope、pairing 首批 hardening、`member` 仅可删除自有 live connection、paired-session conflict retention proof、upgrade 前 session-unavailable 失败语义修正、router 接管 websocket chat 时停止重复 inbound bus 投递；当前本地继续更细的控制面/配对协议收口，不扩到 enrollment / ownership 持久化。
 - [ ] browser session dual-mode / advanced extraction
-- 当前已锁定的下一切片：custom CDP endpoint / port 接入，先解决 relay/direct 仍偏固定本地端口的问题，再继续扩更完整高级动作。
+- 当前已完成切片：`auto/direct/relay`、`print_pdf`、`extract_structured_data`、`get_text`、custom `debug_port/debug_endpoint`。
+- 当前下一切片：继续补更完整 relay/CDP 高级动作，而不是重复做 attach endpoint/port 接入。
 - **验收**: 每项独立测试通过，按功能独立提交与推送。
 
 ### Batch E（gua 高价值迁移）
@@ -1889,7 +1905,7 @@
 - [ ] permission / elicitation bridge
 - [ ] presenter + attachment pipeline
 - [ ] runtime prompt detection / tmux control
-  - 当前新增进度：已补 tmux transport metadata persistence seam，并补齐 restore 后 attach metadata persistence；后续继续往 prompt detection / state observation 扩展。
+  - 当前新增进度：已补 tmux transport metadata persistence seam、restore 后 attach metadata persistence，并在 `process/status` 透出只读 observation 视图；后续继续往更细的 prompt/menu detection 与自动确认控制扩展。
 - **验收**: 每项独立 smoke test + channel flow 验证通过，按功能独立提交与推送。
 
 ## Phase 状态（聚合）
