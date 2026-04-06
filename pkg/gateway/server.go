@@ -80,6 +80,7 @@ type Server struct {
 	reservedPairingSessionIDs map[string]struct{}
 	rateLimiters              map[string]*rate.Limiter
 	beforeWSUpgrade           func(sessionID string)
+	beforeWelcomeSend         func(client *Client)
 	mu                        sync.RWMutex
 }
 
@@ -275,6 +276,9 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 	)
 
 	// Send welcome message
+	if s.beforeWelcomeSend != nil {
+		s.beforeWelcomeSend(client)
+	}
 	welcome := WSMessage{
 		Type:      "system",
 		Content:   "Connected to nekobot gateway",
@@ -636,7 +640,7 @@ func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) {
-	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead)
+	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage)
 	if !ok {
 		return
 	}

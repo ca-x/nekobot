@@ -443,7 +443,7 @@ func TestDeleteConnectionEndpointRequiresAuth(t *testing.T) {
 	}
 }
 
-func TestDeleteConnectionEndpointReturnsNotFoundForMemberWithoutOwnedTarget(t *testing.T) {
+func TestDeleteConnectionEndpointRejectsMemberRoleWithoutManageScope(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
@@ -455,12 +455,12 @@ func TestDeleteConnectionEndpointReturnsNotFoundForMemberWithoutOwnedTarget(t *t
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
 	}
 }
 
-func TestDeleteConnectionEndpointAllowsMemberRoleForOwnedConnection(t *testing.T) {
+func TestDeleteConnectionEndpointRejectsMemberRoleForOwnedConnection(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
@@ -481,19 +481,11 @@ func TestDeleteConnectionEndpointAllowsMemberRoleForOwnedConnection(t *testing.T
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
 	}
-	if len(s.clients) != 0 {
-		t.Fatalf("expected client to be removed, got %d active clients", len(s.clients))
-	}
-	select {
-	case _, ok := <-client.send:
-		if ok {
-			t.Fatal("expected client send channel to be closed")
-		}
-	default:
-		t.Fatal("expected client send channel to be closed")
+	if len(s.clients) != 1 {
+		t.Fatalf("expected client to remain, got %d active clients", len(s.clients))
 	}
 }
 
@@ -518,8 +510,8 @@ func TestDeleteConnectionEndpointRejectsMemberRoleForOtherUsersConnection(t *tes
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rec.Code)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
 	}
 	if len(s.clients) != 1 {
 		t.Fatalf("expected client to remain, got %d active clients", len(s.clients))
