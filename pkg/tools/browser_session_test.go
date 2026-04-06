@@ -184,3 +184,75 @@ func TestBrowserSessionStartWithModeRelayFailsWithoutExistingInstance(t *testing
 		t.Fatal("expected session to remain not ready")
 	}
 }
+
+func TestBrowserSessionStartWithOptionsDirectPrefersCustomPort(t *testing.T) {
+	session := &BrowserSession{
+		timeout: 5 * time.Second,
+	}
+
+	var connectCalls []int
+	session.connectFn = func(port int, timeout time.Duration) error {
+		connectCalls = append(connectCalls, port)
+		if port != 9555 {
+			t.Fatalf("expected custom debug port 9555 first, got %d", port)
+		}
+		session.ready = true
+		session.mode = BrowserModeDirect
+		return nil
+	}
+	session.launchFn = func(timeout time.Duration) error {
+		t.Fatal("launch should not be called when custom debug port connects")
+		return nil
+	}
+
+	if err := session.StartWithOptions(2*time.Second, BrowserStartOptions{
+		Mode:  BrowserModeDirect,
+		Ports: []int{9555},
+	}); err != nil {
+		t.Fatalf("StartWithOptions failed: %v", err)
+	}
+	if len(connectCalls) != 1 {
+		t.Fatalf("expected 1 custom port connect attempt, got %d", len(connectCalls))
+	}
+	if got := session.ConnectionMode(); got != BrowserModeDirect {
+		t.Fatalf("expected direct mode, got %q", got)
+	}
+}
+
+func TestBrowserSessionStartWithOptionsRelayUsesCustomEndpointWithoutLaunch(t *testing.T) {
+	session := &BrowserSession{
+		timeout: 5 * time.Second,
+	}
+
+	endpointCalls := 0
+	session.connectEndpointFn = func(endpoint string, timeout time.Duration) error {
+		endpointCalls++
+		if endpoint != "http://chrome.internal:9333" {
+			t.Fatalf("expected custom endpoint, got %q", endpoint)
+		}
+		session.ready = true
+		session.mode = BrowserModeRelay
+		return nil
+	}
+	session.connectFn = func(port int, timeout time.Duration) error {
+		t.Fatalf("port-based connect should not be called when custom endpoint is provided, got %d", port)
+		return nil
+	}
+	session.launchFn = func(timeout time.Duration) error {
+		t.Fatal("launch should not be called in relay mode with custom endpoint")
+		return nil
+	}
+
+	if err := session.StartWithOptions(2*time.Second, BrowserStartOptions{
+		Mode:     BrowserModeRelay,
+		Endpoint: "http://chrome.internal:9333",
+	}); err != nil {
+		t.Fatalf("StartWithOptions failed: %v", err)
+	}
+	if endpointCalls != 1 {
+		t.Fatalf("expected 1 endpoint connect attempt, got %d", endpointCalls)
+	}
+	if got := session.ConnectionMode(); got != BrowserModeRelay {
+		t.Fatalf("expected relay mode, got %q", got)
+	}
+}

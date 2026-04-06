@@ -112,6 +112,14 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum":        []string{"auto", "direct", "relay"},
 				"description": "Browser session startup mode. auto reuses existing Chrome before launching; direct only uses direct CDP attach/launch; relay only attaches to an existing browser and never launches a new one.",
 			},
+			"debug_port": map[string]interface{}{
+				"type":        "integer",
+				"description": "Optional Chrome DevTools port override. When set, browser attach prefers this port instead of the default 9222/9223/9224 scan.",
+			},
+			"debug_endpoint": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional Chrome DevTools base URL such as http://host:9222. When set, attach attempts this endpoint before any port scan.",
+			},
 			"landscape": map[string]interface{}{
 				"type":        "boolean",
 				"description": "Render PDF in landscape orientation (for print_pdf action).",
@@ -214,12 +222,12 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 		zap.String("url", urlStr))
 
 	sessionMgr := GetBrowserSession(b.log)
-	mode, err := b.startMode(params)
+	opts, err := b.startOptions(params)
 	if err != nil {
 		return "", err
 	}
 	if !sessionMgr.IsReady() {
-		if err := sessionMgr.StartWithMode(b.timeout, mode); err != nil {
+		if err := sessionMgr.StartWithOptions(b.timeout, opts); err != nil {
 			return "", fmt.Errorf("failed to start browser: %w", err)
 		}
 	}
@@ -250,15 +258,43 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 }
 
 func (b *BrowserTool) startMode(params map[string]interface{}) (BrowserConnectionMode, error) {
+	opts, err := b.startOptions(params)
+	if err != nil {
+		return "", err
+	}
+	return opts.Mode, nil
+}
+
+func (b *BrowserTool) startOptions(params map[string]interface{}) (BrowserStartOptions, error) {
 	rawMode, _ := params["mode"].(string)
 	if strings.TrimSpace(rawMode) == "" {
-		return BrowserModeAuto, nil
+		rawMode = string(BrowserModeAuto)
 	}
 	mode := resolveBrowserMode(rawMode)
 	if mode == BrowserModeAuto && strings.TrimSpace(strings.ToLower(rawMode)) != string(BrowserModeAuto) {
-		return "", fmt.Errorf("invalid browser mode: %s", rawMode)
+		return BrowserStartOptions{}, fmt.Errorf("invalid browser mode: %s", rawMode)
 	}
-	return mode, nil
+
+	var ports []int
+	if rawPort, ok := params["debug_port"].(float64); ok {
+		port := int(rawPort)
+		if float64(port) != rawPort || port <= 0 || port > 65535 {
+			return BrowserStartOptions{}, fmt.Errorf("invalid debug_port: %v", rawPort)
+		}
+		ports = []int{port}
+	}
+
+	rawEndpoint, _ := params["debug_endpoint"].(string)
+	endpoint, err := normalizeBrowserEndpoint(rawEndpoint)
+	if err != nil {
+		return BrowserStartOptions{}, err
+	}
+
+	return BrowserStartOptions{
+		Mode:     mode,
+		Ports:    ports,
+		Endpoint: endpoint,
+	}, nil
 }
 
 func (b *BrowserTool) navigationParams(params map[string]interface{}, urlStr string) map[string]interface{} {
@@ -267,6 +303,12 @@ func (b *BrowserTool) navigationParams(params map[string]interface{}, urlStr str
 	}
 	if rawMode, ok := params["mode"].(string); ok && strings.TrimSpace(rawMode) != "" {
 		navigateParams["mode"] = rawMode
+	}
+	if rawPort, ok := params["debug_port"].(float64); ok {
+		navigateParams["debug_port"] = rawPort
+	}
+	if rawEndpoint, ok := params["debug_endpoint"].(string); ok && strings.TrimSpace(rawEndpoint) != "" {
+		navigateParams["debug_endpoint"] = rawEndpoint
 	}
 	return navigateParams
 }
@@ -489,11 +531,11 @@ func (b *BrowserTool) printPDF(ctx context.Context, params map[string]interface{
 
 	sessionMgr := GetBrowserSession(b.log)
 	if !sessionMgr.IsReady() {
-		mode, err := b.startMode(params)
+		opts, err := b.startOptions(params)
 		if err != nil {
 			return "", err
 		}
-		if err := sessionMgr.StartWithMode(b.timeout, mode); err != nil {
+		if err := sessionMgr.StartWithOptions(b.timeout, opts); err != nil {
 			return "", fmt.Errorf("failed to start browser: %w", err)
 		}
 	}

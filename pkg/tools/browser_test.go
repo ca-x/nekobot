@@ -227,8 +227,10 @@ func TestBrowserToolNavigationParamsPreserveMode(t *testing.T) {
 	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
 
 	params := tool.navigationParams(map[string]interface{}{
-		"url":  "https://example.com",
-		"mode": "relay",
+		"url":            "https://example.com",
+		"mode":           "relay",
+		"debug_port":     float64(9555),
+		"debug_endpoint": "http://chrome.internal:9333",
 	}, "https://override.example.com")
 
 	if got, _ := params["url"].(string); got != "https://override.example.com" {
@@ -236,6 +238,48 @@ func TestBrowserToolNavigationParamsPreserveMode(t *testing.T) {
 	}
 	if got, _ := params["mode"].(string); got != "relay" {
 		t.Fatalf("expected relay mode preserved, got %#v", params["mode"])
+	}
+	if got, _ := params["debug_port"].(float64); got != 9555 {
+		t.Fatalf("expected debug_port preserved, got %#v", params["debug_port"])
+	}
+	if got, _ := params["debug_endpoint"].(string); got != "http://chrome.internal:9333" {
+		t.Fatalf("expected debug_endpoint preserved, got %#v", params["debug_endpoint"])
+	}
+}
+
+func TestBrowserToolStartOptionsFromParams(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	opts, err := tool.startOptions(map[string]interface{}{
+		"mode":           "relay",
+		"debug_port":     float64(9555),
+		"debug_endpoint": "http://chrome.internal:9333",
+	})
+	if err != nil {
+		t.Fatalf("startOptions returned error: %v", err)
+	}
+	if opts.Mode != BrowserModeRelay {
+		t.Fatalf("expected relay mode, got %+v", opts)
+	}
+	if len(opts.Ports) != 1 || opts.Ports[0] != 9555 {
+		t.Fatalf("expected custom debug port 9555, got %+v", opts)
+	}
+	if opts.Endpoint != "http://chrome.internal:9333" {
+		t.Fatalf("expected custom endpoint, got %+v", opts)
+	}
+}
+
+func TestBrowserToolStartOptionsRejectsInvalidDebugPort(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, err := tool.startOptions(map[string]interface{}{
+		"debug_port": float64(0),
+	})
+	if err == nil {
+		t.Fatal("expected invalid debug_port error")
+	}
+	if !strings.Contains(err.Error(), "invalid debug_port") {
+		t.Fatalf("expected invalid debug_port error, got %v", err)
 	}
 }
 

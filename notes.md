@@ -1,5 +1,45 @@
 # Notes: nextclaw + picoclaw → nekobot 特性分析
 
+## 2026-04-06 当前主线进度补记
+
+### 本轮新增完成
+- `pkg/channelaccounts.Manager.ResolveForChannelID("wechat")`
+  - 已按 active WeChat account 优先解析裸 `wechat` 别名，而不再依赖账号列表顺序。
+- `pkg/inboundrouter`
+  - 已补端到端回归，锁定裸 `wechat` 入站消息会命中 active account 绑定的 runtime。
+- `pkg/tools` / `pkg/webui`
+  - tmux 包装启动时，`tool_session` 已持久化：
+    - `runtime_transport=tmux`
+    - `tmux_session`
+    - `launch_cmd`
+  - WebUI 触发 tmux restore 后，也会把恢复后的 attach 命令回写到 session metadata。
+- `pkg/gateway`
+  - websocket `session unavailable` 现在会在 upgrade 前返回真实 HTTP 失败。
+  - 当 router 已接管 websocket chat 时，不再重复把同一消息投到 inbound bus。
+
+### 对计划状态的校正
+- `gateway pairing 可观测性`
+  - 代码与测试里早已存在：
+    - `paired`
+    - `paired_session_id`
+  - 计划文件此前在这点上已落后于代码，不应再把它当作“下一最小切片”重复推进。
+- `browser relay / advanced extraction`
+  - 代码里已存在：
+    - `mode=auto|direct|relay`
+    - `print_pdf`
+    - `extract_structured_data`
+    - `get_text`
+  - 当前真实剩余缺口更偏向：
+    - 自定义 CDP endpoint / port
+    - 更完整 relay/CDP 高级动作
+
+### 当前建议的下一最小切片
+- 优先补 `browser` 的 custom CDP endpoint / port 接入。
+- 这是因为：
+  - 计划里 browser 主线仍未完成
+  - 代码现状里 relay/direct 仍主要绑定固定本地端口
+  - 这个切片边界小、验证清晰、适合单独提交
+
 ## 2026-04-02 全局规划约束补记
 
 ### 新的全局约束

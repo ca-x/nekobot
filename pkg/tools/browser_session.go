@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
 	"sync"
@@ -31,18 +32,26 @@ const (
 
 // BrowserSession manages a persistent browser session.
 type BrowserSession struct {
-	client    *cdp.Client
-	conn      *rpcc.Conn
-	cancel    context.CancelFunc
-	cmd       *exec.Cmd
-	debugURL  string
-	timeout   time.Duration
-	mu        sync.RWMutex
-	ready     bool
-	log       *logger.Logger
-	mode      BrowserConnectionMode
-	connectFn func(port int, timeout time.Duration) error
-	launchFn  func(timeout time.Duration) error
+	client            *cdp.Client
+	conn              *rpcc.Conn
+	cancel            context.CancelFunc
+	cmd               *exec.Cmd
+	debugURL          string
+	timeout           time.Duration
+	mu                sync.RWMutex
+	ready             bool
+	log               *logger.Logger
+	mode              BrowserConnectionMode
+	connectFn         func(port int, timeout time.Duration) error
+	connectEndpointFn func(endpoint string, timeout time.Duration) error
+	launchFn          func(timeout time.Duration) error
+}
+
+// BrowserStartOptions describes how to attach to an existing browser session.
+type BrowserStartOptions struct {
+	Mode     BrowserConnectionMode
+	Ports    []int
+	Endpoint string
 }
 
 // GetBrowserSession returns the singleton browser session.
@@ -53,6 +62,7 @@ func GetBrowserSession(log *logger.Logger) *BrowserSession {
 			log:     log,
 		}
 		browserSession.connectFn = browserSession.connect
+		browserSession.connectEndpointFn = browserSession.connectEndpoint
 		browserSession.launchFn = browserSession.launch
 	})
 	return browserSession
@@ -65,6 +75,11 @@ func (s *BrowserSession) Start(timeout time.Duration) error {
 
 // StartWithMode starts the browser session with the requested connection mode.
 func (s *BrowserSession) StartWithMode(timeout time.Duration, mode BrowserConnectionMode) error {
+	return s.StartWithOptions(timeout, BrowserStartOptions{Mode: mode})
+}
+
+// StartWithOptions starts the browser session with explicit attach options.
+func (s *BrowserSession) StartWithOptions(timeout time.Duration, opts BrowserStartOptions) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -75,17 +90,36 @@ func (s *BrowserSession) StartWithMode(timeout time.Duration, mode BrowserConnec
 	if timeout > 0 {
 		s.timeout = timeout
 	}
-	mode = resolveBrowserMode(string(mode))
+	mode := resolveBrowserMode(string(opts.Mode))
+	ports := normalizeBrowserPorts(opts.Ports)
+	endpoint := strings.TrimSpace(opts.Endpoint)
 	if s.connectFn == nil {
 		s.connectFn = s.connect
+	}
+	if s.connectEndpointFn == nil {
+		s.connectEndpointFn = s.connectEndpoint
 	}
 	if s.launchFn == nil {
 		s.launchFn = s.launch
 	}
 
+	if endpoint != "" {
+		if err := s.connectEndpointFn(endpoint, s.timeout); err == nil {
+			switch mode {
+			case BrowserModeRelay:
+				s.mode = BrowserModeRelay
+			default:
+				s.mode = BrowserModeDirect
+			}
+			return nil
+		} else if mode == BrowserModeRelay {
+			return fmt.Errorf("relay browser session not available: %w", err)
+		}
+	}
+
 	switch mode {
 	case BrowserModeDirect:
-		for _, port := range []int{9222, 9223, 9224} {
+		for _, port := range ports {
 			if err := s.connectFn(port, s.timeout); err == nil {
 				s.mode = BrowserModeDirect
 				return nil
@@ -93,7 +127,7 @@ func (s *BrowserSession) StartWithMode(timeout time.Duration, mode BrowserConnec
 		}
 		return s.launchFn(s.timeout)
 	case BrowserModeRelay:
-		for _, port := range []int{9222, 9223, 9224} {
+		for _, port := range ports {
 			if err := s.connectFn(port, s.timeout); err == nil {
 				s.mode = BrowserModeRelay
 				return nil
@@ -101,7 +135,7 @@ func (s *BrowserSession) StartWithMode(timeout time.Duration, mode BrowserConnec
 		}
 		return fmt.Errorf("relay browser session not available")
 	default:
-		for _, port := range []int{9222, 9223, 9224} {
+		for _, port := range ports {
 			if err := s.connectFn(port, s.timeout); err == nil {
 				s.mode = BrowserModeDirect
 				return nil
@@ -165,10 +199,14 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 }
 
 func (s *BrowserSession) connect(port int, timeout time.Duration) error {
+	return s.connectEndpoint(fmt.Sprintf("http://127.0.0.1:%d", port), timeout)
+}
+
+func (s *BrowserSession) connectEndpoint(endpoint string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	devt := devtool.New(fmt.Sprintf("http://127.0.0.1:%d", port))
+	devt := devtool.New(strings.TrimSpace(endpoint))
 	pt, err := devt.Get(ctx, devtool.Page)
 	if err != nil {
 		return fmt.Errorf("failed to get page target: %w", err)
@@ -253,6 +291,43 @@ func resolveBrowserMode(mode string) BrowserConnectionMode {
 	default:
 		return BrowserModeAuto
 	}
+}
+
+func normalizeBrowserPorts(ports []int) []int {
+	if len(ports) == 0 {
+		return []int{9222, 9223, 9224}
+	}
+	out := make([]int, 0, len(ports))
+	seen := make(map[int]struct{}, len(ports))
+	for _, port := range ports {
+		if port <= 0 {
+			continue
+		}
+		if _, ok := seen[port]; ok {
+			continue
+		}
+		seen[port] = struct{}{}
+		out = append(out, port)
+	}
+	if len(out) == 0 {
+		return []int{9222, 9223, 9224}
+	}
+	return out
+}
+
+func normalizeBrowserEndpoint(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid debug_endpoint: %w", err)
+	}
+	if strings.TrimSpace(parsed.Scheme) == "" || strings.TrimSpace(parsed.Host) == "" {
+		return "", fmt.Errorf("invalid debug_endpoint")
+	}
+	return value, nil
 }
 
 // findChrome finds the Chrome executable in PATH.
