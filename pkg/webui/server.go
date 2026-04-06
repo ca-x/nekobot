@@ -3733,6 +3733,9 @@ func (s *Server) reloadChannelsByType(channelType string) error {
 			desiredIDs[runtimeID] = struct{}{}
 			desiredAccounts = append(desiredAccounts, account)
 		}
+		if channelType == "wechat" {
+			desiredAccounts = s.prioritizeActiveWechatAccount(desiredAccounts)
+		}
 
 		existingChannels := s.channels.ListChannelsByType(channelType)
 		if len(desiredAccounts) > 0 {
@@ -3778,6 +3781,45 @@ func (s *Server) reloadChannelsByType(channelType string) error {
 	}
 
 	return s.reloadChannel(channelType)
+}
+
+func (s *Server) prioritizeActiveWechatAccount(
+	accounts []channelaccounts.ChannelAccount,
+) []channelaccounts.ChannelAccount {
+	if len(accounts) < 2 || s == nil || s.config == nil {
+		return accounts
+	}
+
+	store, err := channelwechat.NewCredentialStore(s.config)
+	if err != nil {
+		return accounts
+	}
+	creds, err := store.LoadCredentials()
+	if err != nil || creds == nil {
+		return accounts
+	}
+
+	activeBotID := strings.TrimSpace(creds.ILinkBotID)
+	if activeBotID == "" {
+		return accounts
+	}
+
+	activeIndex := -1
+	for i, account := range accounts {
+		if strings.TrimSpace(account.AccountKey) == activeBotID {
+			activeIndex = i
+			break
+		}
+	}
+	if activeIndex <= 0 {
+		return accounts
+	}
+
+	prioritized := make([]channelaccounts.ChannelAccount, 0, len(accounts))
+	prioritized = append(prioritized, accounts[activeIndex])
+	prioritized = append(prioritized, accounts[:activeIndex]...)
+	prioritized = append(prioritized, accounts[activeIndex+1:]...)
+	return prioritized
 }
 
 func (s *Server) reloadChannelForAccount(channelType, accountID string) error {

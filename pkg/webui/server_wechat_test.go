@@ -537,6 +537,118 @@ func TestReloadChannelsByTypePrefersEnabledWechatAccounts(t *testing.T) {
 	}
 }
 
+func TestReloadChannelsByTypePrefersActiveWechatAccountForAlias(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Channels.WeChat.Enabled = false
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("logger.New failed: %v", err)
+	}
+
+	client := newTestEntClient(t, cfg)
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+
+	first, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-1@im.wechat",
+		DisplayName: "WeChat Bot 1",
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"enabled":       true,
+			"bot_token":     "token-1",
+			"ilink_bot_id":  "bot-1@im.wechat",
+			"ilink_user_id": "user-1",
+			"base_url":      "https://example.invalid",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create first account: %v", err)
+	}
+	second, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-2@im.wechat",
+		DisplayName: "WeChat Bot 2",
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"enabled":       true,
+			"bot_token":     "token-2",
+			"ilink_bot_id":  "bot-2@im.wechat",
+			"ilink_user_id": "user-2",
+			"base_url":      "https://example.invalid",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create second account: %v", err)
+	}
+
+	store, err := wechat.NewCredentialStore(cfg)
+	if err != nil {
+		t.Fatalf("NewCredentialStore failed: %v", err)
+	}
+	if err := store.SaveCredentials(&wxtypes.Credentials{
+		BotToken:    "token-1",
+		ILinkBotID:  "bot-1@im.wechat",
+		BaseURL:     "https://example.invalid",
+		ILinkUserID: "user-1",
+	}, false); err != nil {
+		t.Fatalf("SaveCredentials first failed: %v", err)
+	}
+	if err := store.SaveCredentials(&wxtypes.Credentials{
+		BotToken:    "token-2",
+		ILinkBotID:  "bot-2@im.wechat",
+		BaseURL:     "https://example.invalid",
+		ILinkUserID: "user-2",
+	}, true); err != nil {
+		t.Fatalf("SaveCredentials second failed: %v", err)
+	}
+
+	messageBus := bus.NewLocalBus(log, 8)
+	if err := messageBus.Start(); err != nil {
+		t.Fatalf("Start bus failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := messageBus.Stop(); err != nil {
+			t.Fatalf("Stop bus failed: %v", err)
+		}
+	})
+
+	manager := pkgchannels.NewManager(log, messageBus)
+	if err := manager.Register(&wechatReloadStubChannel{id: "wechat", channelType: "wechat", enabled: true}); err != nil {
+		t.Fatalf("register legacy channel: %v", err)
+	}
+
+	s := &Server{
+		config:     cfg,
+		logger:     log,
+		channels:   manager,
+		accountMgr: accountMgr,
+	}
+
+	if err := s.reloadChannelsByType("wechat"); err != nil {
+		t.Fatalf("reloadChannelsByType failed: %v", err)
+	}
+
+	legacy, err := manager.GetChannel("wechat")
+	if err != nil {
+		t.Fatalf("GetChannel alias failed: %v", err)
+	}
+	if legacy.ID() != second.ChannelType+":"+second.AccountKey {
+		t.Fatalf("expected alias to resolve active account runtime %q, got %q", second.ChannelType+":"+second.AccountKey, legacy.ID())
+	}
+	if legacy.ID() == first.ChannelType+":"+first.AccountKey {
+		t.Fatalf("expected alias to avoid inactive account runtime %q", first.ChannelType+":"+first.AccountKey)
+	}
+}
+
 type wechatReloadStubChannel struct {
 	id          string
 	channelType string
