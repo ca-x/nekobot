@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -644,6 +645,109 @@ func TestHandleRestartToolSessionPersistsLaunchMetadata(t *testing.T) {
 	}
 	if err := pm.Reset(sess.ID); err != nil {
 		t.Fatalf("reset restarted process: %v", err)
+	}
+}
+
+func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) {
+	if !tmuxAvailable() {
+		t.Skip("tmux not available")
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	pm := process.NewManager(log)
+	server := &Server{
+		config:     cfg,
+		logger:     log,
+		toolSess:   toolMgr,
+		processMgr: pm,
+	}
+	e := echo.New()
+
+	sess, err := toolMgr.CreateSession(context.Background(), toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceWebUI,
+		Tool:    "codex",
+		Title:   "Restorable Session",
+		Command: "sleep 30",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateDetached,
+		Metadata: map[string]interface{}{
+			"runtime_transport": "tmux",
+			"tmux_session":      tmuxSessionName("restore-session"),
+			"launch_cmd":        "tmux new-session -A -s stale sh -c 'sleep 30'",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	tmuxName := tmuxSessionName(sess.ID)
+	cmd := exec.Command("tmux", "new-session", "-d", "-s", tmuxName, "sh", "-lc", "sleep 30")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("create tmux session: %v (%s)", err, strings.TrimSpace(string(output)))
+	}
+	t.Cleanup(func() {
+		_ = pm.Reset(sess.ID)
+		_ = exec.Command("tmux", "kill-session", "-t", tmuxName).Run()
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tool-sessions/"+sess.ID+"/process/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/:id/process/status")
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: sess.ID}})
+	if err := server.handleToolSessionProcessStatus(ctx); err != nil {
+		t.Fatalf("process status handler failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		ID               string `json:"id"`
+		Running          bool   `json:"running"`
+		RuntimeTransport string `json:"runtime_transport"`
+		TmuxSession      string `json:"tmux_session"`
+		LaunchCmd        string `json:"launch_cmd"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if payload.ID != sess.ID {
+		t.Fatalf("expected session id %q, got %q", sess.ID, payload.ID)
+	}
+	if !payload.Running {
+		t.Fatalf("expected restored process to be running, got %+v", payload)
+	}
+	if payload.RuntimeTransport != "tmux" {
+		t.Fatalf("expected runtime transport tmux, got %+v", payload)
+	}
+	if payload.TmuxSession != tmuxName {
+		t.Fatalf("expected tmux session %q, got %+v", tmuxName, payload)
+	}
+	if want := "tmux attach-session -t " + tmuxName; payload.LaunchCmd != want {
+		t.Fatalf("expected restored launch cmd %q, got %+v", want, payload)
+	}
+
+	updated, err := toolMgr.GetSession(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatalf("get restored session: %v", err)
+	}
+	if got, _ := updated.Metadata["launch_cmd"].(string); got != "tmux attach-session -t "+tmuxName {
+		t.Fatalf("expected persisted launch_cmd to be updated, got %q", got)
+	}
+	if got, _ := updated.Metadata["tmux_session"].(string); got != tmuxName {
+		t.Fatalf("expected persisted tmux_session %q, got %q", tmuxName, got)
 	}
 }
 

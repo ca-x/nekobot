@@ -2585,6 +2585,18 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 		return false
 	}
 
+	metadata := cloneMap(sess.Metadata)
+	metadata["runtime_transport"] = "tmux"
+	metadata["tmux_session"] = tmuxName
+	metadata["launch_cmd"] = attachCmd
+	if err := s.toolSess.UpdateSessionMetadata(context.Background(), id, metadata); err != nil {
+		s.logger.Warn("Failed to persist restored tool session metadata",
+			zap.String("session_id", id),
+			zap.String("tmux_session", tmuxName),
+			zap.Error(err),
+		)
+	}
+
 	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", map[string]interface{}{
 		"launch_cmd":   attachCmd,
 		"tmux_session": tmuxName,
