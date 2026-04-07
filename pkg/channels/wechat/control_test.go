@@ -1182,6 +1182,27 @@ func TestSelectPermissionOption(t *testing.T) {
 	}
 }
 
+func TestFormatACPPermissionPromptIncludesNumericReplyHint(t *testing.T) {
+	got := formatACPPermissionPrompt(
+		"需要确认",
+		"WriteFile",
+		"",
+		"",
+		[]acpPendingOption{
+			{ID: "allow-once", Name: "允许一次", Index: 1},
+			{ID: "allow-always", Name: "总是允许", Index: 2},
+			{ID: "reject-once", Name: "拒绝", Index: 3},
+		},
+	)
+
+	if !strings.Contains(got, "回复 /select N") {
+		t.Fatalf("expected /select hint, got %q", got)
+	}
+	if !strings.Contains(got, "也可以直接回复对应编号") {
+		t.Fatalf("expected numeric reply hint, got %q", got)
+	}
+}
+
 func TestControlServiceRestoresPersistedACPSessions(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()

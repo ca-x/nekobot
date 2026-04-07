@@ -1789,7 +1789,7 @@ func formatACPPermissionPrompt(
 	case 2:
 		lines = append(lines, "回复 /yes 允许，/no 或 /cancel 拒绝，也可以用 /select 1 或 /select 2。")
 	default:
-		lines = append(lines, "回复 /select N 选择对应选项。")
+		lines = append(lines, "回复 /select N 选择对应选项，也可以直接回复对应编号。")
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n\n"))
 }
