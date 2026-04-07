@@ -48,6 +48,45 @@ func TestResolveSessionReusesExistingSession(t *testing.T) {
 	}
 }
 
+func TestResolveSessionCreatesNewSessionWhenExistingCommandOrToolDiffers(t *testing.T) {
+	mgr, sessionMgr := newTestManager(t)
+	ctx := context.Background()
+
+	existing, err := sessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceAgent,
+		Tool:    "claude",
+		Title:   "Claude Session",
+		Command: "claude --old",
+		Workdir: "/tmp/ws-a",
+		State:   toolsessions.StateDetached,
+		Metadata: map[string]interface{}{
+			metadataAgentKind: "claude",
+			metadataWorkspace: "/tmp/ws-a",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "claude",
+		Workspace: "/tmp/ws-a",
+		Tool:      "claude",
+		Command:   "claude --new",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected new session when command differs")
+	}
+	if resolved.ID == existing.ID {
+		t.Fatalf("expected a new session instead of reusing %q", existing.ID)
+	}
+}
+
 func TestResolveSessionCreatesNewDetachedSession(t *testing.T) {
 	mgr, _ := newTestManager(t)
 	ctx := context.Background()
@@ -135,6 +174,81 @@ func TestNormalizeSpecRejectsWorkspaceTraversalEscape(t *testing.T) {
 	}
 	if got := err.Error(); got == "" || !strings.Contains(got, "absolute workspace path is required") {
 		t.Fatalf("expected absolute workspace error, got %v", err)
+	}
+}
+
+
+func TestResolveSessionDoesNotReuseDifferentTool(t *testing.T) {
+	mgr, sessionMgr := newTestManager(t)
+	ctx := context.Background()
+
+	if _, err := sessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceAgent,
+		Tool:    "claude",
+		Title:   "Claude Session",
+		Command: "claude",
+		Workdir: "/tmp/ws-a",
+		State:   toolsessions.StateDetached,
+		Metadata: map[string]interface{}{
+			metadataAgentKind: "claude",
+			metadataWorkspace: "/tmp/ws-a",
+		},
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "claude",
+		Workspace: "/tmp/ws-a",
+		Tool:      "codex",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected different tool to require a new session")
+	}
+	if resolved.Tool != "codex" {
+		t.Fatalf("expected created tool codex, got %q", resolved.Tool)
+	}
+}
+
+func TestResolveSessionDoesNotReuseDifferentCommand(t *testing.T) {
+	mgr, sessionMgr := newTestManager(t)
+	ctx := context.Background()
+
+	if _, err := sessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceAgent,
+		Tool:    "claude",
+		Title:   "Claude Session",
+		Command: "claude --dangerously-skip-permissions",
+		Workdir: "/tmp/ws-a",
+		State:   toolsessions.StateDetached,
+		Metadata: map[string]interface{}{
+			metadataAgentKind: "claude",
+			metadataWorkspace: "/tmp/ws-a",
+		},
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "claude",
+		Workspace: "/tmp/ws-a",
+		Command:   "claude",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected different command to require a new session")
+	}
+	if resolved.Command != "claude" {
+		t.Fatalf("expected created command claude, got %q", resolved.Command)
 	}
 }
 
