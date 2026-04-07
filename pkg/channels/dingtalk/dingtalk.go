@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -183,8 +184,12 @@ func (c *Channel) onMessageReceived(ctx context.Context, data *chatbot.BotCallba
 		zap.String("sender_id", senderID),
 		zap.String("chat_id", chatID))
 
-	// Check for slash commands
-	if c.commands.IsCommand(content) {
+	// Respect the channel capability matrix before routing native commands.
+	scope := channelcapabilities.CapabilityScopeDM
+	if data.ConversationType != "1" {
+		scope = channelcapabilities.CapabilityScopeGroup
+	}
+	if c.supportsNativeCommands(scope) && c.commands.IsCommand(content) {
 		c.handleCommand(senderID, senderNick, chatID, content, data.SessionWebhook)
 		return nil, nil
 	}
@@ -207,6 +212,15 @@ func (c *Channel) onMessageReceived(ctx context.Context, data *chatbot.BotCallba
 	}
 
 	return nil, nil
+}
+
+func (c *Channel) supportsNativeCommands(scope channelcapabilities.CapabilityScope) bool {
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityNativeCommands,
+		scope,
+		false,
+	)
 }
 
 // handleCommand processes a command message.

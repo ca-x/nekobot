@@ -17,6 +17,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -198,8 +199,8 @@ func (c *Channel) handleC2CMessage() event.C2CMessageEventHandler {
 			zap.String("sender", senderID),
 			zap.Int("length", len(content)))
 
-		// Check for slash commands
-		if c.commands.IsCommand(content) {
+		// Respect the channel capability matrix before routing native commands.
+		if c.supportsNativeCommands(channelcapabilities.CapabilityScopeDM) && c.commands.IsCommand(content) {
 			c.handleCommand(senderID, senderID, content, data.ID)
 			return nil
 		}
@@ -263,8 +264,8 @@ func (c *Channel) handleGroupATMessage() event.GroupATMessageEventHandler {
 			zap.String("group", groupID),
 			zap.Int("length", len(content)))
 
-		// Check for slash commands
-		if c.commands.IsCommand(content) {
+		// Respect the channel capability matrix before routing native commands.
+		if c.supportsNativeCommands(channelcapabilities.CapabilityScopeGroup) && c.commands.IsCommand(content) {
 			c.handleCommand(senderID, groupID, content, data.ID)
 			return nil
 		}
@@ -288,6 +289,15 @@ func (c *Channel) handleGroupATMessage() event.GroupATMessageEventHandler {
 
 		return nil
 	}
+}
+
+func (c *Channel) supportsNativeCommands(scope channelcapabilities.CapabilityScope) bool {
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityNativeCommands,
+		scope,
+		false,
+	)
 }
 
 // handleCommand processes a command message.

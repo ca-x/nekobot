@@ -18,6 +18,7 @@ import (
 	"google.golang.org/api/option"
 
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -187,8 +188,8 @@ func (c *Channel) HandleWebhook(ctx context.Context, event *chat.DeprecatedEvent
 		zap.String("sender", event.User.DisplayName),
 		zap.String("space", spaceName))
 
-	// Check for slash commands
-	if c.commands.IsCommand(content) {
+	// Respect the channel capability matrix before routing native commands.
+	if c.supportsNativeCommands() && c.commands.IsCommand(content) {
 		c.handleCommand(senderID, event.User.DisplayName, spaceName, content, event)
 		return nil
 	}
@@ -211,6 +212,15 @@ func (c *Channel) HandleWebhook(ctx context.Context, event *chat.DeprecatedEvent
 	}
 
 	return nil
+}
+
+func (c *Channel) supportsNativeCommands() bool {
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityNativeCommands,
+		channelcapabilities.CapabilityScopeGroup,
+		false,
+	)
 }
 
 // handleCommand processes a command message.

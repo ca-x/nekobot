@@ -1848,7 +1848,7 @@
     - `whatsapp` 的 `native_commands=off`
     - `telegram` 的 `inline_buttons=dm`
     - `wework` 的 `native_commands=off`
-    这三条默认矩阵现在都会在运行时生效；本轮另外补齐了 `account-scoped runtime ID` 下的 capability 读取不再误用实例 ID，避免 `whatsapp:*` / `wework:*` 在多账号模式下错误绕过 `native_commands=off` 默认矩阵。当前仍未完成的是更多 channel/runtime 对其余 capability 的全面消费。
+    这三条默认矩阵现在都会在运行时生效；本轮另外补齐了 `account-scoped runtime ID` 下的 capability 读取不再误用实例 ID，避免 `whatsapp:*` / `wework:*` 在多账号模式下错误绕过 `native_commands=off` 默认矩阵；并把 `dingtalk`、`qq`、`googlechat` 的 native command 入口统一接到 capability 判定上，减少“直接 `commands.IsCommand(...)`”旁路。当前仍未完成的是更多 channel/runtime 对其余 capability 的全面消费。
   - 目标：统一 reactions / buttons / threads / polls / streaming / native commands 等能力声明，并逐步用于运行时决策。
   - 来源：`goclaw/channels/capabilities.go`。
   - 位置：`pkg/channels/*`。
