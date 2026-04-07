@@ -1854,6 +1854,7 @@
   - 位置：`pkg/channels/*`。
 - [ ] **按用户隔离的外部 agent runtime**
   - 现状：`nekobot` 有 tool session 和本地 agent，但缺 `gua` 式“每个聊天用户绑定一个长期外部 agent 进程/工作目录/权限回路”的编排层。
+  - 进度：已补最小 foundation：`pkg/externalagent.Manager` 现在能按 `owner + agent_kind + workspace` 解析或创建复用的 detached `tool_session`，为后续真正的 user-scoped external runtime 生命周期编排提供持久会话底座。当前仍未接入 channel/gateway 消费者，也未补权限/工作目录策略层。
   - 目标：为 Claude Code / Codex / 其他外部 agent 准备用户级长期会话底座。
   - 来源：`gua/agent/claude/session.go`、`gua/agent/claude/mcp.go`、`gua/server/server.go`。
   - 位置：新建 `pkg/externalagent/*` 或等价模块。
@@ -1906,6 +1907,7 @@
 
 ### Batch E（gua 高价值迁移）
 - [ ] user-scoped external agent runtime foundation
+- 当前已完成切片：`pkg/externalagent.Manager` 的 session resolve/create foundation；后续继续补 channel/gateway 接线与权限/工作目录策略。
 - [ ] permission / elicitation bridge
 - [ ] presenter + attachment pipeline
 - [ ] runtime prompt detection / tmux control

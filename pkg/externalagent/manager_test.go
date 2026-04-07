@@ -1,0 +1,186 @@
+package externalagent
+
+import (
+	"context"
+	"testing"
+
+	"nekobot/pkg/config"
+	"nekobot/pkg/logger"
+	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/toolsessions"
+)
+
+func TestResolveSessionReusesExistingSession(t *testing.T) {
+	mgr, sessionMgr := newTestManager(t)
+	ctx := context.Background()
+
+	existing, err := sessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceAgent,
+		Tool:    "claude",
+		Title:   "Claude Session",
+		Command: "claude",
+		Workdir: "/tmp/ws-a",
+		State:   toolsessions.StateDetached,
+		Metadata: map[string]interface{}{
+			metadataAgentKind: "claude",
+			metadataWorkspace: "/tmp/ws-a",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "claude",
+		Workspace: "/tmp/ws-a",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if created {
+		t.Fatal("expected existing session reuse")
+	}
+	if resolved.ID != existing.ID {
+		t.Fatalf("expected existing session %q, got %q", existing.ID, resolved.ID)
+	}
+}
+
+func TestResolveSessionCreatesNewDetachedSession(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	ctx := context.Background()
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+		Workspace: "/tmp/ws-b",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected new session creation")
+	}
+	if resolved.State != toolsessions.StateDetached {
+		t.Fatalf("expected detached state, got %q", resolved.State)
+	}
+	if got, _ := resolved.Metadata[metadataAgentKind].(string); got != "codex" {
+		t.Fatalf("expected agent kind codex, got %q", got)
+	}
+	if got, _ := resolved.Metadata[metadataWorkspace].(string); got != "/tmp/ws-b" {
+		t.Fatalf("expected workspace /tmp/ws-b, got %q", got)
+	}
+}
+
+func TestResolveSessionIgnoresNonStringMetadataWithoutPanicking(t *testing.T) {
+	mgr, sessionMgr := newTestManager(t)
+	ctx := context.Background()
+
+	if _, err := sessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceAgent,
+		Tool:    "claude",
+		Title:   "Broken Metadata Session",
+		Command: "claude",
+		Workdir: "/tmp/ws-a",
+		State:   toolsessions.StateDetached,
+		Metadata: map[string]interface{}{
+			metadataAgentKind: 123,
+			metadataWorkspace: true,
+		},
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "claude",
+		Workspace: "/tmp/ws-a",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected broken metadata session not to be reused")
+	}
+	if resolved == nil || resolved.ID == "" {
+		t.Fatal("expected a newly created session")
+	}
+}
+
+func TestNormalizeSpecFillsDefaults(t *testing.T) {
+	spec, err := normalizeSpec(SessionSpec{
+		Owner:     " alice ",
+		AgentKind: " Claude ",
+		Workspace: "/tmp/project/..//project-a",
+	})
+	if err != nil {
+		t.Fatalf("normalizeSpec failed: %v", err)
+	}
+	if spec.Owner != "alice" {
+		t.Fatalf("expected trimmed owner, got %q", spec.Owner)
+	}
+	if spec.AgentKind != "claude" {
+		t.Fatalf("expected normalized agent kind, got %q", spec.AgentKind)
+	}
+	if spec.Tool != "claude" {
+		t.Fatalf("expected default tool claude, got %q", spec.Tool)
+	}
+	if spec.Command != "claude" {
+		t.Fatalf("expected default command claude, got %q", spec.Command)
+	}
+	if spec.Title != "Claude Session" {
+		t.Fatalf("expected default title, got %q", spec.Title)
+	}
+	if spec.Workspace != "/tmp/project-a" {
+		t.Fatalf("expected cleaned workspace, got %q", spec.Workspace)
+	}
+}
+
+func newTestManager(t *testing.T) (*Manager, *toolsessions.Manager) {
+	t.Helper()
+
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	manager, err := NewManager(sessionMgr)
+	if err != nil {
+		t.Fatalf("new external agent manager: %v", err)
+	}
+	return manager, sessionMgr
+}
+
+func newTestLogger(t *testing.T) *logger.Logger {
+	t.Helper()
+	cfg := logger.DefaultConfig()
+	cfg.OutputPath = ""
+	cfg.Development = true
+	log, err := logger.New(cfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	return log
+}
+
+func newTestEntClient(t *testing.T, cfg *config.Config) *ent.Client {
+	t.Helper()
+	client, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open runtime ent client: %v", err)
+	}
+	if err := config.EnsureRuntimeEntSchema(client); err != nil {
+		_ = client.Close()
+		t.Fatalf("ensure runtime schema: %v", err)
+	}
+	return client
+}
