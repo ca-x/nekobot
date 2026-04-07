@@ -31,10 +31,13 @@ const (
 
 // Channel implements an infoflow webhook channel.
 type Channel struct {
-	log      *logger.Logger
-	config   config.InfoflowConfig
-	bus      bus.Bus
-	commands *commands.Registry
+	log         *logger.Logger
+	config      config.InfoflowConfig
+	bus         bus.Bus
+	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -51,15 +54,30 @@ func NewChannel(
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, "infoflow", "Infoflow")
+}
+
+// NewAccountChannel creates an account-scoped infoflow channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.InfoflowConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.WebhookURL == "" {
 		return nil, fmt.Errorf("infoflow webhook_url is required")
 	}
 
 	return &Channel{
-		log:      log,
-		config:   cfg,
-		bus:      b,
-		commands: cmdRegistry,
+		log:         log,
+		config:      cfg,
+		bus:         b,
+		commands:    cmdRegistry,
+		id:          strings.TrimSpace(channelID),
+		channelType: "infoflow",
+		name:        defaultInfoflowName(displayName),
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second,
 		},
@@ -67,10 +85,13 @@ func NewChannel(
 }
 
 // ID returns channel ID.
-func (c *Channel) ID() string { return "infoflow" }
+func (c *Channel) ID() string { return c.id }
 
 // Name returns channel name.
-func (c *Channel) Name() string { return "Infoflow" }
+func (c *Channel) Name() string { return c.name }
+
+// ChannelType returns the stable Infoflow family key.
+func (c *Channel) ChannelType() string { return c.channelType }
 
 // IsEnabled returns whether channel is enabled.
 func (c *Channel) IsEnabled() bool { return c.config.Enabled }
@@ -401,4 +422,12 @@ func pkcs7Unpad(src []byte, blockSize int) ([]byte, error) {
 		}
 	}
 	return src[:len(src)-padding], nil
+}
+
+func defaultInfoflowName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "Infoflow"
+	}
+	return name
 }

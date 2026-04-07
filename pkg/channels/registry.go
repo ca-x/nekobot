@@ -317,6 +317,13 @@ var channelDescriptors = []channelDescriptor{
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return serverchan.NewChannel(log, cfg.Channels.ServerChan, ag, messageBus, cmdRegistry)
 		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			serverChanCfg := cfg.Channels.ServerChan
+			if err := decodeAccountConfig(account, &serverChanCfg); err != nil {
+				return nil, err
+			}
+			return serverchan.NewAccountChannel(log, serverChanCfg, ag, messageBus, cmdRegistry, channelInstanceID(account), channelDisplayName(account, "ServerChan"))
+		},
 	},
 	{
 		name: "googlechat",
@@ -372,6 +379,13 @@ var channelDescriptors = []channelDescriptor{
 		enabled: func(cfg *config.Config) bool { return cfg.Channels.Infoflow.Enabled },
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return infoflow.NewChannel(log, cfg.Channels.Infoflow, messageBus, cmdRegistry)
+		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			infoflowCfg := cfg.Channels.Infoflow
+			if err := decodeAccountConfig(account, &infoflowCfg); err != nil {
+				return nil, err
+			}
+			return infoflow.NewAccountChannel(log, infoflowCfg, messageBus, cmdRegistry, channelInstanceID(account), channelDisplayName(account, "Infoflow"))
 		},
 	},
 }

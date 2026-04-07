@@ -65,11 +65,14 @@ type Response struct {
 
 // Channel implements ServerChan Bot channel.
 type Channel struct {
-	log      *logger.Logger
-	config   config.ServerChanConfig
-	agent    *agent.Agent
-	bus      bus.Bus
-	commands *commands.Registry
+	log         *logger.Logger
+	config      config.ServerChanConfig
+	agent       *agent.Agent
+	bus         bus.Bus
+	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 
 	client  *http.Client
 	running bool
@@ -105,16 +108,32 @@ func NewChannel(
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, ag, b, cmdRegistry, "serverchan", "ServerChan")
+}
+
+// NewAccountChannel creates an account-scoped ServerChan channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.ServerChanConfig,
+	ag *agent.Agent,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.BotToken == "" {
 		return nil, fmt.Errorf("serverchan bot_token is required")
 	}
 
 	return &Channel{
-		log:      log,
-		config:   cfg,
-		agent:    ag,
-		bus:      b,
-		commands: cmdRegistry,
+		log:         log,
+		config:      cfg,
+		agent:       ag,
+		bus:         b,
+		commands:    cmdRegistry,
+		id:          strings.TrimSpace(channelID),
+		channelType: "serverchan",
+		name:        defaultServerChanName(displayName),
 		client: &http.Client{
 			Timeout: requestTimeout * time.Second,
 		},
@@ -125,12 +144,17 @@ func NewChannel(
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "serverchan"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "ServerChan"
+	return c.name
+}
+
+// ChannelType returns the stable ServerChan family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -449,4 +473,12 @@ func (c *Channel) isAllowed(userID, chatID string) bool {
 	}
 
 	return false
+}
+
+func defaultServerChanName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "ServerChan"
+	}
+	return name
 }

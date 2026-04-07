@@ -454,6 +454,65 @@ func TestBuildChannelFromAccount_GoogleChat(t *testing.T) {
 	}
 }
 
+func TestBuildChannelFromAccount_ServerChan(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "serverchan",
+		AccountKey:  "bot-a",
+		DisplayName: "ServerChan Bot A",
+		Config: map[string]interface{}{
+			"enabled":   true,
+			"bot_token": "sctoken",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "serverchan:bot-a" {
+		t.Fatalf("unexpected serverchan account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "serverchan" {
+		t.Fatalf("expected typed serverchan channel, got %T", channel)
+	}
+	if channel.Name() != "ServerChan Bot A" {
+		t.Fatalf("unexpected serverchan account channel name: %s", channel.Name())
+	}
+}
+
+func TestBuildChannelFromAccount_Infoflow(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "infoflow",
+		AccountKey:  "flow-a",
+		DisplayName: "Infoflow A",
+		Config: map[string]interface{}{
+			"enabled":     true,
+			"webhook_url": "http://127.0.0.1:8768/infoflow/webhook",
+			"aes_key":     "secret",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "infoflow:flow-a" {
+		t.Fatalf("unexpected infoflow account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "infoflow" {
+		t.Fatalf("expected typed infoflow channel, got %T", channel)
+	}
+	if channel.Name() != "Infoflow A" {
+		t.Fatalf("unexpected infoflow account channel name: %s", channel.Name())
+	}
+}
+
 func newRegistryTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()
