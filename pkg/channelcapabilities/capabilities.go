@@ -208,6 +208,66 @@ func GetDefaultCapabilitiesForChannel(channelType string) ChannelCapabilities {
 			Media:          CapabilityScopeAll,
 			NativeCommands: CapabilityScopeOff,
 		}
+	case "feishu":
+		return ChannelCapabilities{
+			Reactions:      CapabilityScopeAll,
+			InlineButtons:  CapabilityScopeOff,
+			Threads:        CapabilityScopeOff,
+			Polls:          CapabilityScopeAll,
+			Streaming:      CapabilityScopeOff,
+			Media:          CapabilityScopeAll,
+			NativeCommands: CapabilityScopeAll,
+		}
+	case "dingtalk":
+		return ChannelCapabilities{
+			Reactions:      CapabilityScopeAll,
+			InlineButtons:  CapabilityScopeOff,
+			Threads:        CapabilityScopeOff,
+			Polls:          CapabilityScopeAll,
+			Streaming:      CapabilityScopeOff,
+			Media:          CapabilityScopeAll,
+			NativeCommands: CapabilityScopeAll,
+		}
+	case "qq":
+		return ChannelCapabilities{
+			Reactions:      CapabilityScopeAll,
+			InlineButtons:  CapabilityScopeOff,
+			Threads:        CapabilityScopeOff,
+			Polls:          CapabilityScopeAll,
+			Streaming:      CapabilityScopeOff,
+			Media:          CapabilityScopeAll,
+			NativeCommands: CapabilityScopeAll,
+		}
+	case "googlechat":
+		return ChannelCapabilities{
+			Reactions:      CapabilityScopeAll,
+			InlineButtons:  CapabilityScopeOff,
+			Threads:        CapabilityScopeGroup,
+			Polls:          CapabilityScopeOff,
+			Streaming:      CapabilityScopeOff,
+			Media:          CapabilityScopeAll,
+			NativeCommands: CapabilityScopeGroup,
+		}
+	case "wechat":
+		return ChannelCapabilities{
+			Reactions:      CapabilityScopeOff,
+			InlineButtons:  CapabilityScopeOff,
+			Threads:        CapabilityScopeOff,
+			Polls:          CapabilityScopeOff,
+			Streaming:      CapabilityScopeOff,
+			Media:          CapabilityScopeAll,
+			NativeCommands: CapabilityScopeOff,
+		}
+	case "teams":
+		return ChannelCapabilities{
+			Reactions:      CapabilityScopeAll,
+			InlineButtons:  CapabilityScopeAll,
+			Threads:        CapabilityScopeGroup,
+			Polls:          CapabilityScopeAll,
+			Streaming:      CapabilityScopeOff,
+			Media:          CapabilityScopeAll,
+			NativeCommands: CapabilityScopeOff,
+		}
 	default:
 		return DefaultCapabilities()
 	}

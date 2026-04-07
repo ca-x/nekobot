@@ -24,6 +24,49 @@ func TestGetDefaultCapabilitiesForChannel(t *testing.T) {
 		t.Fatalf("expected wework native commands off, got %q", wework.NativeCommands)
 	}
 
+	// Test newly added channel capabilities
+	feishu := GetDefaultCapabilitiesForChannel("feishu")
+	if feishu.NativeCommands != CapabilityScopeAll {
+		t.Fatalf("expected feishu native commands all, got %q", feishu.NativeCommands)
+	}
+	if feishu.Reactions != CapabilityScopeAll {
+		t.Fatalf("expected feishu reactions all, got %q", feishu.Reactions)
+	}
+
+	dingtalk := GetDefaultCapabilitiesForChannel("dingtalk")
+	if dingtalk.NativeCommands != CapabilityScopeAll {
+		t.Fatalf("expected dingtalk native commands all, got %q", dingtalk.NativeCommands)
+	}
+
+	qq := GetDefaultCapabilitiesForChannel("qq")
+	if qq.NativeCommands != CapabilityScopeAll {
+		t.Fatalf("expected qq native commands all, got %q", qq.NativeCommands)
+	}
+
+	googlechat := GetDefaultCapabilitiesForChannel("googlechat")
+	if googlechat.NativeCommands != CapabilityScopeGroup {
+		t.Fatalf("expected googlechat native commands group, got %q", googlechat.NativeCommands)
+	}
+	if googlechat.Threads != CapabilityScopeGroup {
+		t.Fatalf("expected googlechat threads group, got %q", googlechat.Threads)
+	}
+
+	wechat := GetDefaultCapabilitiesForChannel("wechat")
+	if wechat.NativeCommands != CapabilityScopeOff {
+		t.Fatalf("expected wechat native commands off, got %q", wechat.NativeCommands)
+	}
+	if wechat.Media != CapabilityScopeAll {
+		t.Fatalf("expected wechat media all, got %q", wechat.Media)
+	}
+
+	teams := GetDefaultCapabilitiesForChannel("teams")
+	if teams.InlineButtons != CapabilityScopeAll {
+		t.Fatalf("expected teams inline buttons all, got %q", teams.InlineButtons)
+	}
+	if teams.Threads != CapabilityScopeGroup {
+		t.Fatalf("expected teams threads group, got %q", teams.Threads)
+	}
+
 	unknown := GetDefaultCapabilitiesForChannel("unknown")
 	if unknown.Media != CapabilityScopeAll {
 		t.Fatalf("expected unknown channel to use default media scope, got %q", unknown.Media)
