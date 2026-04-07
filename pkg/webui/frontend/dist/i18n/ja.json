@@ -1162,5 +1162,17 @@
   "disabled": "無効",
   "runtimeTopologyBindingModeSingle": "single_agent",
   "runtimeTopologyBindingModeMulti": "multi_agent",
-  "remove": "削除"
+  "remove": "削除",
+  "close": "閉じる",
+  "open": "開く",
+  "chatNoModelsTitle": "モデルがまだ設定されていません",
+  "chatNoModelsDescription": "チャットを始める前に、provider からモデルを検出するか、models ワークスペースで手動追加してください。",
+  "chatOpenModels": "モデル画面を開く",
+  "loginFailed": "ログインに失敗しました",
+  "initFailed": "初期化に失敗しました",
+  "requiredField": "この項目は必須です",
+  "invalidFormat": "形式が正しくありません",
+  "passwordShow": "パスワードを表示",
+  "passwordHide": "パスワードを非表示",
+  "fieldRequired": "必須"
 }
