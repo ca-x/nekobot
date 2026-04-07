@@ -1828,8 +1828,8 @@
   - 位置：`pkg/gateway/*`。
 - [ ] **Browser session 双模式与高级提取动作**
   - 现状：`pkg/tools/browser_session.go` 已具备 `auto/direct/relay` attach 语义与自定义 `debug_port/debug_endpoint`，浏览器工具继续按独立 CDP 动作补能力面。
-  - 进度：已完成首批 session 层增强，支持 `auto/direct` 模式和优先复用已运行 Chrome 的连接策略；浏览器工具现已暴露 `mode` 参数；第一版 `relay` 模式已落地，语义先收口为“只连接既有浏览器实例、绝不自行 launch”；高级提取动作已补 `print_pdf`、`extract_structured_data`、`get_text`；本轮继续补上 `get_metrics`、`emulate_device` 与 `set_viewport` 三个 CDP 高级动作，并补参数/辅助构造测试，作为更完整 relay/CDP 高级控制面的下一批基础能力。
-  - 下一切片：继续补更细的 relay/CDP 高级动作与会话控制，而不是重复做 attach endpoint/port 接入。
+  - 进度：已完成首批 session 层增强，支持 `auto/direct` 模式和优先复用已运行 Chrome 的连接策略；浏览器工具现已暴露 `mode` 参数；第一版 `relay` 模式已落地，语义先收口为“只连接既有浏览器实例、绝不自行 launch”；高级提取动作已补 `print_pdf`、`extract_structured_data`、`get_text`；本轮继续补上 `get_metrics`、`emulate_device`、`set_viewport`，以及基于 active DevTools endpoint 的 `list_pages` / `new_page` / `activate_page` / `close_page` 页面控制动作，并补参数/辅助构造/DevTools seam 测试，作为更完整 relay/CDP 高级控制面的下一批基础能力。
+  - 下一切片：继续补更细的 relay/CDP 高级动作（例如 page-scoped 操作、network/storage/console 观察或更强 session control），而不是重复做 attach endpoint/port 接入。
   - 目标：提升浏览器工具的可靠性和能力上限。
   - 来源：`goclaw/agent/tools/browser_session.go`、`browser_relay.go`、`browser_cdp.go`。
   - 位置：`pkg/tools/browser*.go`。
@@ -1902,8 +1902,8 @@
 - [ ] gateway control plane hardening
   - 当前已完成切片：`gateway.allowed_ips`、`gateway.rate_limit_per_minute`、控制面读写分离 role scope、pairing 首批 hardening、`member` 仅可删除自有 live connection、paired-session conflict retention proof、upgrade 前 session-unavailable 失败语义修正、router 接管 websocket chat 时停止重复 inbound bus 投递；当前本地继续更细的控制面/配对协议收口，不扩到 enrollment / ownership 持久化。
 - [ ] browser session dual-mode / advanced extraction
-- 当前已完成切片：`auto/direct/relay`、`print_pdf`、`extract_structured_data`、`get_text`、custom `debug_port/debug_endpoint`、`get_metrics`、`emulate_device`、`set_viewport`。
-- 当前下一切片：继续补更完整 relay/CDP 高级动作与会话控制，而不是重复做 attach endpoint/port 接入。
+- 当前已完成切片：`auto/direct/relay`、`print_pdf`、`extract_structured_data`、`get_text`、custom `debug_port/debug_endpoint`、`get_metrics`、`emulate_device`、`set_viewport`、`list_pages`、`new_page`、`activate_page`、`close_page`。
+- 当前下一切片：继续补更完整 relay/CDP 高级动作与会话控制（page-scoped/network/storage/console 等），而不是重复做 attach endpoint/port 接入。
 - **验收**: 每项独立测试通过，按功能独立提交与推送。
 
 ### Batch E（gua 高价值迁移）

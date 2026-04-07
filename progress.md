@@ -689,8 +689,9 @@
   - `npm --prefix pkg/webui/frontend run build` passed
 
 - Completed next browser advanced CDP action slice from `task_plan.md`:
-  - added `browser` actions `get_metrics`, `emulate_device`, and `set_viewport` in `pkg/tools/browser.go`.
-  - extended browser tool parameter schema with the new actions plus `device` profile selection.
-  - added deterministic helpers for device-profile and viewport validation, with regression tests in `pkg/tools/browser_test.go`.
+  - added `browser` actions `get_metrics`, `emulate_device`, `set_viewport`, `list_pages`, `new_page`, `activate_page`, and `close_page` in `pkg/tools/browser.go`.
+  - extended browser tool parameter schema with the new actions plus `device` profile selection and `target_id` for page control.
+  - taught `BrowserSession` to expose a reusable DevTools management seam from the active attach endpoint, so higher-level CDP control actions do not need to reconstruct attach logic.
+  - added deterministic helpers for device-profile / viewport validation and page-target control, with regression tests in `pkg/tools/browser_test.go` and `pkg/tools/browser_session_test.go`.
 - Verification run:
   - `go test -count=1 ./pkg/tools` passed.

@@ -1384,7 +1384,6 @@ func installStubBrowserSession(t *testing.T) *BrowserSession {
 	t.Helper()
 
 	oldSession := browserSession
-	oldOnce := browserSessionOnce
 
 	browserSession = nil
 	browserSessionOnce = sync.Once{}
@@ -1392,7 +1391,7 @@ func installStubBrowserSession(t *testing.T) *BrowserSession {
 
 	t.Cleanup(func() {
 		browserSession = oldSession
-		browserSessionOnce = oldOnce
+		browserSessionOnce = sync.Once{}
 	})
 
 	return session
