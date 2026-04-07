@@ -165,6 +165,48 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
+func TestMetricsEndpoint(t *testing.T) {
+	s := newTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode metrics response: %v", err)
+	}
+
+	// Check required fields exist
+	requiredFields := []string{
+		"gateway_connections_total",
+		"gateway_connections_paired",
+		"gateway_connections_unpaired",
+		"gateway_rate_limit_per_minute",
+		"gateway_max_connections",
+	}
+	for _, field := range requiredFields {
+		if _, ok := body[field]; !ok {
+			t.Fatalf("expected metrics field %s not found", field)
+		}
+	}
+
+	// Verify values with no connections
+	if body["gateway_connections_total"] != float64(0) {
+		t.Fatalf("expected 0 total connections, got %v", body["gateway_connections_total"])
+	}
+	if body["gateway_connections_paired"] != float64(0) {
+		t.Fatalf("expected 0 paired connections, got %v", body["gateway_connections_paired"])
+	}
+	if body["gateway_connections_unpaired"] != float64(0) {
+		t.Fatalf("expected 0 unpaired connections, got %v", body["gateway_connections_unpaired"])
+	}
+}
+
 func TestStatusEndpoint(t *testing.T) {
 	s, token := newAuthedTestServer(t)
 

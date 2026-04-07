@@ -160,6 +160,9 @@ func (s *Server) setupRoutes() {
 		}
 	})
 
+	// Metrics endpoint (Prometheus-style)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
+
 	s.mux = mux
 }
 
@@ -699,6 +702,33 @@ func (s *Server) handleDeleteConnections(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]int{"deleted": len(targets)})
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	totalConns := len(s.clients)
+	pairedCount := 0
+	for _, client := range s.clients {
+		if client.session != nil {
+			pairedCount++
+		}
+	}
+	s.mu.RUnlock()
+
+	metrics := map[string]interface{}{
+		"gateway_connections_total":        totalConns,
+		"gateway_connections_paired":       pairedCount,
+		"gateway_connections_unpaired":     totalConns - pairedCount,
+		"gateway_rate_limit_per_minute":    s.config.Gateway.RateLimitPerMinute,
+		"gateway_max_connections":          s.config.Gateway.MaxConnections,
+		"gateway_allowed_origins_count":    len(s.config.Gateway.AllowedOrigins),
+		"gateway_allowed_ips_count":        len(s.config.Gateway.AllowedIPs),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(metrics); err != nil {
+		s.logger.Warn("Failed to encode gateway metrics", zap.Error(err))
+	}
 }
 
 func (s *Server) requireAuthenticatedAPI(
