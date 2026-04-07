@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/mafredri/cdp/protocol/dom"
 	"github.com/mafredri/cdp/protocol/emulation"
 	"github.com/mafredri/cdp/protocol/input"
+	"github.com/mafredri/cdp/protocol/network"
 	"github.com/mafredri/cdp/protocol/page"
 	"github.com/mafredri/cdp/protocol/runtime"
 	"go.uber.org/zap"
@@ -73,7 +75,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "get_url", "get_links", "get_meta", "get_images", "get_headings", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -188,6 +190,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getURL(ctx, params)
 	case "get_links":
 		return b.getLinks(ctx, params)
+	case "get_cookies":
+		return b.getCookies(ctx, params)
 	case "get_meta":
 		return b.getMeta(ctx, params)
 	case "get_images":
@@ -900,6 +904,44 @@ func (b *BrowserTool) getLinks(ctx context.Context, params map[string]interface{
 	}
 	const prefix = "Script executed successfully\nResult: "
 	return strings.TrimPrefix(result, prefix), nil
+}
+
+func (b *BrowserTool) getCookies(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		return "", fmt.Errorf("browser session not ready")
+	}
+
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	cookies, err := client.Network.GetCookies(ctx, network.NewGetCookiesArgs())
+	if err != nil {
+		return "", fmt.Errorf("failed to get cookies: %w", err)
+	}
+
+	result := make([]map[string]any, 0, len(cookies.Cookies))
+	for _, cookie := range cookies.Cookies {
+		result = append(result, map[string]any{
+			"name":   cookie.Name,
+			"value":  cookie.Value,
+			"domain": cookie.Domain,
+			"path":   cookie.Path,
+		})
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshal cookies: %w", err)
+	}
+	return string(data), nil
 }
 
 func (b *BrowserTool) getMeta(ctx context.Context, params map[string]interface{}) (string, error) {
