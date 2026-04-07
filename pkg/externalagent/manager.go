@@ -63,10 +63,20 @@ func (m *Manager) ResolveSession(ctx context.Context, spec SessionSpec) (*toolse
 		if item.State == toolsessions.StateArchived || item.State == toolsessions.StateTerminated {
 			continue
 		}
-		if metadataString(item.Metadata, metadataAgentKind) == normalized.AgentKind &&
-			metadataString(item.Metadata, metadataWorkspace) == normalized.Workspace {
-			return item, false, nil
+		if metadataString(item.Metadata, metadataAgentKind) != normalized.AgentKind ||
+			metadataString(item.Metadata, metadataWorkspace) != normalized.Workspace {
+			continue
 		}
+		if strings.TrimSpace(item.Tool) != normalized.Tool {
+			continue
+		}
+		if strings.TrimSpace(item.Command) != normalized.Command {
+			continue
+		}
+		if filepath.Clean(strings.TrimSpace(item.Workdir)) != normalized.Workspace {
+			continue
+		}
+		return item, false, nil
 	}
 
 	created, err := m.sessions.CreateSession(ctx, toolsessions.CreateSessionInput{
