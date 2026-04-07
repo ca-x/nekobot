@@ -17,6 +17,9 @@ func TestBuildWeChatAgentInput(t *testing.T) {
 	if !strings.Contains(input, "Preferred workspace root: /tmp/nekobot-workspace") {
 		t.Fatalf("expected workspace hint, got %q", input)
 	}
+	if !strings.Contains(input, "/select N") {
+		t.Fatalf("expected select guidance, got %q", input)
+	}
 	if !strings.Contains(input, "[User Message]\n请总结这个错误") {
 		t.Fatalf("expected user message section, got %q", input)
 	}
@@ -29,5 +32,8 @@ func TestBuildWeChatAgentInput_EmptyContent(t *testing.T) {
 	}
 	if !strings.Contains(input, "Preferred workspace root: /tmp/work") {
 		t.Fatalf("expected workspace hint for empty content, got %q", input)
+	}
+	if !strings.Contains(input, "1. ...") || !strings.Contains(input, "/select N") {
+		t.Fatalf("expected numbered-choice presenter guidance, got %q", input)
 	}
 }

@@ -9,7 +9,9 @@ import (
 const wechatPresenterInstructions = `WeChat does not render Markdown. Use plain text only.
 For rich content such as code blocks longer than 5 lines, tables, SVG, Mermaid, or formatted reports, write the content to a local file under the current workspace or /tmp and include the absolute file path in your reply.
 When a local absolute file path appears in your reply, the system may send it as a WeChat attachment automatically.
-Short plain text can be returned directly.`
+Short plain text can be returned directly.
+When you need the user to choose among multiple options, render them as a short numbered plain-text list like "1. ..." and "2. ...", and keep the numbering stable.
+When you ask the user to choose, explicitly mention that they can reply with "/select N" using that same numbering.`
 
 func buildWeChatAgentInput(content, workspace string) string {
 	trimmedContent := strings.TrimSpace(content)
