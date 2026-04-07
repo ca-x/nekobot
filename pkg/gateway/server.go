@@ -571,18 +571,38 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	connCount := len(s.clients)
 	pairedCount := 0
+	pairedGeneratedCount := 0
+	pairedRequestedCount := 0
+	pairedLegacyCount := 0
 	for _, client := range s.clients {
-		if describeConnection(client).Paired {
-			pairedCount++
+		conn := describeConnection(client)
+		if !conn.Paired {
+			continue
+		}
+		pairedCount++
+		source := "generated"
+		if conn.SessionSource != nil && strings.TrimSpace(*conn.SessionSource) != "" {
+			source = strings.TrimSpace(*conn.SessionSource)
+		}
+		switch source {
+		case "requested":
+			pairedRequestedCount++
+		case "legacy":
+			pairedLegacyCount++
+		default:
+			pairedGeneratedCount++
 		}
 	}
 	s.mu.RUnlock()
 
 	status := map[string]interface{}{
-		"version":            version.GetVersion(),
-		"connections":        connCount,
-		"paired_connections": pairedCount,
-		"bus_metrics":        s.bus.GetMetrics(),
+		"version":                      version.GetVersion(),
+		"connections":                  connCount,
+		"paired_connections":           pairedCount,
+		"paired_generated_connections": pairedGeneratedCount,
+		"paired_requested_connections": pairedRequestedCount,
+		"paired_legacy_connections":    pairedLegacyCount,
+		"bus_metrics":                  s.bus.GetMetrics(),
 		"gateway": map[string]interface{}{
 			"host": s.config.Gateway.Host,
 			"port": s.config.Gateway.Port,
@@ -681,8 +701,9 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDeleteConnections(w http.ResponseWriter, r *http.Request) {
-	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage)
-	if !ok {
+	authCtx, err := s.authenticateDeleteConnections(r)
+	if err != nil {
+		s.writeDeleteConnectionsAuthError(w, err)
 		return
 	}
 
@@ -732,6 +753,35 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(metrics); err != nil {
 		s.logger.Warn("Failed to encode gateway metrics", zap.Error(err))
+	}
+}
+
+func (s *Server) authenticateDeleteConnections(r *http.Request) (*authContext, error) {
+	if err := s.checkClientIP(r); err != nil {
+		return nil, fmt.Errorf("forbidden")
+	}
+	if err := s.checkRateLimit(r); err != nil {
+		return nil, fmt.Errorf("rate_limit")
+	}
+	authCtx, err := s.authenticateRequest(r)
+	if err != nil {
+		return nil, fmt.Errorf("unauthorized")
+	}
+	role := strings.ToLower(strings.TrimSpace(authCtx.role))
+	if role == "member" || role == "admin" || role == "owner" {
+		return authCtx, nil
+	}
+	return nil, fmt.Errorf("forbidden")
+}
+
+func (s *Server) writeDeleteConnectionsAuthError(w http.ResponseWriter, err error) {
+	switch err.Error() {
+	case "unauthorized":
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+	case "rate_limit":
+		http.Error(w, `{"error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+	default:
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 	}
 }
 

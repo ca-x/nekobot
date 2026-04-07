@@ -1,3 +1,10 @@
+- Completed gateway control-plane hardening phase 18 (pairing source breakdown in status):
+  - extended `/api/v1/status` with `paired_generated_connections`, `paired_requested_connections`, and `paired_legacy_connections`.
+  - kept the slice read-only and derived from existing live connection/session-source classification without introducing new pairing persistence.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(StatusEndpointReportsPairingSourceBreakdown|StatusEndpointReportsPairedConnections|StatusEndpointCountsConnectionsDeterministically)$'` passed.
+  - `go test -count=1 ./pkg/gateway` passed.
+
 # Progress Log
 
 ## 2026-03-26

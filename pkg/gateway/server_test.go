@@ -537,7 +537,7 @@ func TestDeleteConnectionsEndpointRemovesAllClientsForAdmin(t *testing.T) {
 	}
 }
 
-func TestDeleteConnectionsEndpointRejectsMemberRoleEvenForOwnedClients(t *testing.T) {
+func TestDeleteConnectionsEndpointAllowsMemberRoleForOwnedClientsOnly(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
@@ -545,23 +545,39 @@ func TestDeleteConnectionsEndpointRejectsMemberRoleEvenForOwnedClients(t *testin
 		"role": "member",
 	})
 
-	s.clients["client-a"] = &Client{id: "client-a", send: make(chan []byte, 1), userID: "viewer-id", username: "viewer"}
-	s.clients["client-b"] = &Client{id: "client-b", send: make(chan []byte, 1), userID: "other-id", username: "other"}
+	owned := &Client{id: "client-a", send: make(chan []byte, 1), userID: "viewer-id", username: "viewer"}
+	other := &Client{id: "client-b", send: make(chan []byte, 1), userID: "other-id", username: "other"}
+	s.clients[owned.id] = owned
+	s.clients[other.id] = other
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(s.clients) != 2 {
-		t.Fatalf("expected member bulk delete to keep clients intact, got %d", len(s.clients))
+
+	var body map[string]int
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode bulk delete response: %v", err)
+	}
+	if body["deleted"] != 1 {
+		t.Fatalf("expected deleted=1, got %+v", body)
+	}
+	if len(s.clients) != 1 {
+		t.Fatalf("expected one remaining client, got %d", len(s.clients))
+	}
+	if _, ok := s.clients[other.id]; !ok {
+		t.Fatal("expected non-owned client to remain")
+	}
+	if _, ok := s.clients[owned.id]; ok {
+		t.Fatal("expected owned client to be removed")
 	}
 }
 
-func TestDeleteConnectionsEndpointRejectsMemberRoleWithoutManageScope(t *testing.T) {
+func TestDeleteConnectionsEndpointDeletesOwnedClientsWhenMemberHasOnlyOwnedConnections(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
@@ -576,11 +592,18 @@ func TestDeleteConnectionsEndpointRejectsMemberRoleWithoutManageScope(t *testing
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(s.clients) != 1 {
-		t.Fatalf("expected member bulk delete to keep clients intact, got %d", len(s.clients))
+	var body map[string]int
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode bulk delete response: %v", err)
+	}
+	if body["deleted"] != 1 {
+		t.Fatalf("expected deleted=1, got %+v", body)
+	}
+	if len(s.clients) != 0 {
+		t.Fatalf("expected member bulk delete to remove owned client, got %d", len(s.clients))
 	}
 }
 
@@ -867,6 +890,41 @@ func TestStatusEndpointCountsConnectionsDeterministically(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "\"connections\":2") {
 		t.Fatalf("expected response to report 2 connections, got %s", rec.Body.String())
+	}
+}
+
+func TestStatusEndpointReportsPairingSourceBreakdown(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	generated := &Client{id: "client-generated", send: make(chan []byte, 1), session: &session.Session{ID: "client-generated", Source: session.SourceGateway}}
+	requested := &Client{id: "client-requested", send: make(chan []byte, 1), requestedSessionID: "gateway-session", session: &session.Session{ID: "gateway-session", Source: session.SourceGateway}}
+	legacy := &Client{id: "client-legacy", send: make(chan []byte, 1), requestedSessionID: "legacy-session", session: &session.Session{ID: "legacy-session", Source: ""}}
+
+	s.clients[generated.id] = generated
+	s.clients[requested.id] = requested
+	s.clients[legacy.id] = legacy
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode status response: %v", err)
+	}
+	if got := body["paired_generated_connections"]; got != float64(1) {
+		t.Fatalf("expected 1 generated paired connection, got %v", got)
+	}
+	if got := body["paired_requested_connections"]; got != float64(1) {
+		t.Fatalf("expected 1 requested paired connection, got %v", got)
+	}
+	if got := body["paired_legacy_connections"]; got != float64(1) {
+		t.Fatalf("expected 1 legacy paired connection, got %v", got)
 	}
 }
 
