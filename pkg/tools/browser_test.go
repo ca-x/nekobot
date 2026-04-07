@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mafredri/cdp/devtool"
+	"github.com/mafredri/cdp/protocol/network"
 )
 
 func TestBrowserToolStartModeFromParams(t *testing.T) {
@@ -312,6 +313,110 @@ func TestBrowserToolParametersIncludeGetCookies(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected get_cookies action in enum, got %#v", enumValues)
+	}
+}
+
+func TestBrowserToolParametersIncludeCookieControlActions(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+	for _, want := range []string{"set_cookie", "clear_cookies"} {
+		found := false
+		for _, value := range enumValues {
+			if value == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected %s action in enum, got %#v", want, enumValues)
+		}
+	}
+}
+
+func TestBrowserToolBuildSetCookieArgs(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	args, err := tool.buildSetCookieArgs(map[string]interface{}{
+		"name":      "session",
+		"text":      "token-1",
+		"url":       "https://example.com/app",
+		"secure":    true,
+		"http_only": true,
+		"same_site": "lax",
+	})
+	if err != nil {
+		t.Fatalf("buildSetCookieArgs returned error: %v", err)
+	}
+	if args.Name != "session" || args.Value != "token-1" {
+		t.Fatalf("unexpected cookie args: %+v", args)
+	}
+	if args.URL == nil || *args.URL != "https://example.com/app" {
+		t.Fatalf("expected cookie url, got %+v", args.URL)
+	}
+	if args.Secure == nil || !*args.Secure {
+		t.Fatalf("expected secure flag, got %+v", args.Secure)
+	}
+	if args.HTTPOnly == nil || !*args.HTTPOnly {
+		t.Fatalf("expected httpOnly flag, got %+v", args.HTTPOnly)
+	}
+	if args.SameSite != network.CookieSameSiteLax {
+		t.Fatalf("expected same_site lax, got %v", args.SameSite)
+	}
+}
+
+func TestBrowserToolBuildSetCookieArgsRejectsMissingName(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	_, err := tool.buildSetCookieArgs(map[string]interface{}{
+		"text": "token-1",
+		"url":  "https://example.com",
+	})
+	if err == nil {
+		t.Fatal("expected missing name error")
+	}
+	if !strings.Contains(err.Error(), "name parameter is required") {
+		t.Fatalf("expected name required error, got %v", err)
+	}
+}
+
+func TestBrowserToolBuildSetCookieArgsRejectsRelativeURL(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	_, err := tool.buildSetCookieArgs(map[string]interface{}{
+		"name": "session",
+		"text": "token-1",
+		"url":  "example.com/app",
+	})
+	if err == nil {
+		t.Fatal("expected absolute URL error")
+	}
+	if !strings.Contains(err.Error(), "absolute URL is required") {
+		t.Fatalf("expected absolute URL error, got %v", err)
+	}
+}
+
+func TestBrowserToolBuildSetCookieArgsRejectsInvalidSameSite(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	_, err := tool.buildSetCookieArgs(map[string]interface{}{
+		"name":      "session",
+		"text":      "token-1",
+		"url":       "https://example.com",
+		"same_site": "weird",
+	})
+	if err == nil {
+		t.Fatal("expected invalid same_site error")
+	}
+	if !strings.Contains(err.Error(), "invalid same_site") {
+		t.Fatalf("expected invalid same_site error, got %v", err)
 	}
 }
 
@@ -1398,3 +1503,117 @@ func installStubBrowserSession(t *testing.T) *BrowserSession {
 }
 
 var _ browserDevTools = (*stubBrowserDevTools)(nil)
+
+func TestBrowserToolParametersIncludeGetConsole(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+	found := false
+	for _, value := range enumValues {
+		if value == "get_console" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected get_console action in enum, got %#v", enumValues)
+	}
+}
+
+func TestBrowserToolBuildConsoleOptionsDefaultsAndFilters(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	defaults := tool.buildConsoleOptions(map[string]interface{}{})
+	if defaults.MaxEntries != 100 || defaults.ErrorsOnly || defaults.WarningsOnly || defaults.InfoOnly {
+		t.Fatalf("unexpected default console options: %+v", defaults)
+	}
+
+	opts := tool.buildConsoleOptions(map[string]interface{}{
+		"errors_only": true,
+		"max_entries": float64(12),
+	})
+	if !opts.ErrorsOnly || opts.MaxEntries != 12 {
+		t.Fatalf("unexpected custom console options: %+v", opts)
+	}
+}
+
+func TestBrowserConsoleEntryMatchesRespectsPriority(t *testing.T) {
+	if !browserConsoleEntryMatches("error", browserConsoleOptions{ErrorsOnly: true}) {
+		t.Fatal("expected error filter to match error")
+	}
+	if browserConsoleEntryMatches("warning", browserConsoleOptions{ErrorsOnly: true}) {
+		t.Fatal("expected error filter to reject warning")
+	}
+	if !browserConsoleEntryMatches("warning", browserConsoleOptions{WarningsOnly: true}) {
+		t.Fatal("expected warning filter to match warning")
+	}
+	if !browserConsoleEntryMatches("info", browserConsoleOptions{InfoOnly: true}) {
+		t.Fatal("expected info filter to match info")
+	}
+	if !browserConsoleEntryMatches("log", browserConsoleOptions{InfoOnly: true}) {
+		t.Fatal("expected info filter to match log")
+	}
+}
+
+func TestBrowserConsoleEntryFromLogUsesArgsAsText(t *testing.T) {
+	line := 17
+	url := "https://example.com/app.js"
+	entry := browserConsoleEntryFromLog(&cdpLog.EntryAddedReply{
+		Entry: cdpLog.Entry{
+			Source:     "javascript",
+			Level:      "warning",
+			Text:       "fallback",
+			Timestamp:  runtime.Timestamp(1000),
+			URL:        &url,
+			LineNumber: &line,
+			Args:       []runtime.RemoteObject{{Value: json.RawMessage(`"warn"`)}, {Description: stringPtr("details")}},
+		},
+	})
+	if entry.Source != "javascript" || entry.Level != "warning" {
+		t.Fatalf("unexpected log entry identity: %+v", entry)
+	}
+	if entry.Text != "\"warn\" details" {
+		t.Fatalf("expected joined args text, got %q", entry.Text)
+	}
+	if entry.URL != url || entry.LineNumber == nil || *entry.LineNumber != line {
+		t.Fatalf("expected url/line preserved, got %+v", entry)
+	}
+	if len(entry.Args) != 2 {
+		t.Fatalf("expected 2 args, got %+v", entry.Args)
+	}
+}
+
+func TestBrowserConsoleEntryFromRuntimeUsesContext(t *testing.T) {
+	ctxValue := "named-console"
+	entry := browserConsoleEntryFromRuntime(&runtime.ConsoleAPICalledReply{
+		Type:      "error",
+		Timestamp: runtime.Timestamp(2000),
+		Context:   &ctxValue,
+		Args:      []runtime.RemoteObject{{Description: stringPtr("boom")}},
+	})
+	if entry.Source != "console" || entry.Level != "error" || entry.Type != "error" {
+		t.Fatalf("unexpected runtime entry identity: %+v", entry)
+	}
+	if entry.Context != ctxValue {
+		t.Fatalf("expected context %q, got %+v", ctxValue, entry)
+	}
+	if entry.Text != "boom" {
+		t.Fatalf("expected text boom, got %q", entry.Text)
+	}
+}
+
+func stringPtr(value string) *string {
+	return &value
+}

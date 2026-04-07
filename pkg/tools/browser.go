@@ -77,7 +77,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_selects", "get_textareas", "get_headings", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "get_links", "get_cookies", "set_cookie", "clear_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_selects", "get_textareas", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"list_pages", "new_page", "activate_page", "close_page",
 					"print_pdf", "extract_structured_data",
 					"reload", "get_metrics", "emulate_device", "set_viewport", "close",
@@ -98,7 +98,11 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 			},
 			"text": map[string]interface{}{
 				"type":        "string",
-				"description": "Text to type (for type action)",
+				"description": "Text to type, select value, or cookie value depending on action",
+			},
+			"name": map[string]interface{}{
+				"type":        "string",
+				"description": "Cookie name (for set_cookie action)",
 			},
 			"width": map[string]interface{}{
 				"type":        "integer",
@@ -158,6 +162,19 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum":        []string{"all", "schema_org", "json_ld", "meta"},
 				"description": "Structured data extraction mode for extract_structured_data.",
 			},
+			"secure": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Set secure flag on cookie (for set_cookie action).",
+			},
+			"http_only": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Set HttpOnly flag on cookie (for set_cookie action).",
+			},
+			"same_site": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"strict", "lax", "none"},
+				"description": "Optional SameSite policy for set_cookie.",
+			},
 			"device": map[string]interface{}{
 				"type":        "string",
 				"enum":        []string{"iphone", "ipad", "android", "desktop"},
@@ -204,6 +221,10 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getLinks(ctx, params)
 	case "get_cookies":
 		return b.getCookies(ctx, params)
+	case "set_cookie":
+		return b.setCookie(ctx, params)
+	case "clear_cookies":
+		return b.clearCookies(ctx, params)
 	case "get_meta":
 		return b.getMeta(ctx, params)
 	case "get_images":
@@ -426,6 +447,47 @@ func (b *BrowserTool) buildDeviceProfile(params map[string]interface{}) (browser
 	default:
 		return browserDeviceProfile{}, fmt.Errorf("invalid device: %s", device)
 	}
+}
+
+func (b *BrowserTool) buildSetCookieArgs(params map[string]interface{}) (*network.SetCookieArgs, error) {
+	name := strings.TrimSpace(stringParam(params, "name"))
+	if name == "" {
+		return nil, fmt.Errorf("name parameter is required")
+	}
+	value, ok := params["text"].(string)
+	if !ok {
+		return nil, fmt.Errorf("text parameter is required")
+	}
+	urlStr := strings.TrimSpace(stringParam(params, "url"))
+	if urlStr == "" {
+		return nil, fmt.Errorf("url parameter is required")
+	}
+	parsedURL, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+	if !parsedURL.IsAbs() || strings.TrimSpace(parsedURL.Scheme) == "" || strings.TrimSpace(parsedURL.Host) == "" {
+		return nil, fmt.Errorf("absolute URL is required")
+	}
+	args := network.NewSetCookieArgs(name, value).SetURL(urlStr)
+	if secure, ok := params["secure"].(bool); ok {
+		args.SetSecure(secure)
+	}
+	if httpOnly, ok := params["http_only"].(bool); ok {
+		args.SetHTTPOnly(httpOnly)
+	}
+	switch strings.TrimSpace(strings.ToLower(stringParam(params, "same_site"))) {
+	case "":
+	case "strict":
+		args.SameSite = network.CookieSameSiteStrict
+	case "lax":
+		args.SameSite = network.CookieSameSiteLax
+	case "none":
+		args.SameSite = network.CookieSameSiteNone
+	default:
+		return nil, fmt.Errorf("invalid same_site: %s", stringParam(params, "same_site"))
+	}
+	return args, nil
 }
 
 func (b *BrowserTool) buildViewport(params map[string]interface{}) (int, int, error) {
@@ -1030,6 +1092,61 @@ func (b *BrowserTool) getCookies(ctx context.Context, params map[string]interfac
 		return "", fmt.Errorf("marshal cookies: %w", err)
 	}
 	return string(data), nil
+}
+
+func (b *BrowserTool) setCookie(ctx context.Context, params map[string]interface{}) (string, error) {
+	args, err := b.buildSetCookieArgs(params)
+	if err != nil {
+		return "", err
+	}
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		opts, err := b.startOptions(params)
+		if err != nil {
+			return "", err
+		}
+		if err := sessionMgr.StartWithOptions(b.timeout, opts); err != nil {
+			return "", fmt.Errorf("failed to start browser: %w", err)
+		}
+	}
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+	reply, err := client.Network.SetCookie(ctx, args)
+	if err != nil {
+		return "", fmt.Errorf("failed to set cookie: %w", err)
+	}
+	if reply != nil && !reply.Success {
+		return "", fmt.Errorf("failed to set cookie")
+	}
+	payload := map[string]any{"name": args.Name, "url": *args.URL}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal cookie result: %w", err)
+	}
+	return string(data), nil
+}
+
+func (b *BrowserTool) clearCookies(ctx context.Context, params map[string]interface{}) (string, error) {
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		opts, err := b.startOptions(params)
+		if err != nil {
+			return "", err
+		}
+		if err := sessionMgr.StartWithOptions(b.timeout, opts); err != nil {
+			return "", fmt.Errorf("failed to start browser: %w", err)
+		}
+	}
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+	if err := client.Network.ClearBrowserCookies(ctx); err != nil {
+		return "", fmt.Errorf("failed to clear cookies: %w", err)
+	}
+	return "Browser cookies cleared", nil
 }
 
 func (b *BrowserTool) getMeta(ctx context.Context, params map[string]interface{}) (string, error) {

@@ -695,3 +695,38 @@
   - added deterministic helpers for device-profile / viewport validation and page-target control, with regression tests in `pkg/tools/browser_test.go` and `pkg/tools/browser_session_test.go`.
 - Verification run:
   - `go test -count=1 ./pkg/tools` passed.
+
+- Completed follow-up browser cookie/session-control slice from `task_plan.md`:
+  - added `browser` actions `set_cookie` and `clear_cookies` in `pkg/tools/browser.go`.
+  - added cookie-parameter schema support for `name`, `value`, `secure`, `http_only`, and `same_site`.
+  - added validation helpers for cookie-setting arguments and regression tests covering required fields, absolute URL enforcement, and SameSite normalization.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'TestBrowserToolParametersIncludeCookieControlActions|TestBrowserToolBuildSetCookieArgs|TestBrowserToolBuildSetCookieArgsRejectsMissingName|TestBrowserToolBuildSetCookieArgsRejectsRelativeURL|TestBrowserToolBuildSetCookieArgsRejectsInvalidSameSite'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
+
+
+- Completed follow-up browser storage control slice from `task_plan.md`:
+  - added `browser` actions `get_storage`, `set_storage`, `remove_storage`, and `clear_storage`.
+  - kept the slice page-scoped and relay-friendly by implementing it as generated JavaScript over the already attached browser session, without reopening attach/session orchestration.
+  - added validation and script-shape regression tests for storage scope, key/value requirements, and generated JS behavior.
+- Completed browser console capture closure that was already partially in flight:
+  - finished the missing `get_console` helper types/options/collection utilities so the browser control surface compiles and returns bounded console/log entries.
+  - kept the implementation minimal: level filtering + bounded collection over existing Runtime/Log subscriptions, without introducing persistent console session state.
+- Verification run:
+  - `go test -count=1 ./pkg/tools` passed.
+
+- Completed browser storage/console control follow-up slice:
+  - wired browser storage actions (`get_storage`, `set_storage`, `remove_storage`, `clear_storage`) into the runtime execute switch and restored their JS script builder implementation.
+  - extended `get_storage` so it can return either the full storage map or a single key lookup.
+  - implemented minimal `get_console` log capture with level filtering and bounded result size so the already-exposed browser action is now functional.
+- Verification run:
+  - `go test -count=1 ./pkg/tools` passed.
+
+- Completed follow-up browser cookie/session-control slice from `task_plan.md`:
+  - added `browser` actions `set_cookie` and `clear_cookies` in `pkg/tools/browser.go`.
+  - added cookie-parameter schema support for `name`, `text`, `secure`, `http_only`, and `same_site`.
+  - added validation helpers for cookie-setting arguments and regression tests covering required fields, absolute URL enforcement, and SameSite normalization.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'TestBrowserToolParametersIncludeCookieControlActions|TestBrowserToolBuildSetCookieArgs|TestBrowserToolBuildSetCookieArgsRejectsMissingName|TestBrowserToolBuildSetCookieArgsRejectsRelativeURL|TestBrowserToolBuildSetCookieArgsRejectsInvalidSameSite'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
+
