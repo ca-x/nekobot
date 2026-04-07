@@ -563,6 +563,34 @@ func TestBrowserToolParametersIncludeGetSelects(t *testing.T) {
 	}
 }
 
+func TestBrowserToolParametersIncludeGetTextareas(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+	found := false
+	for _, value := range enumValues {
+		if value == "get_textareas" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected get_textareas action in enum, got %#v", enumValues)
+	}
+}
+
 func TestBrowserToolExecuteRejectsMissingSelectValue(t *testing.T) {
 	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
 
@@ -877,6 +905,21 @@ func TestBrowserToolGetSelectsRejectsRelativeURLBeforeNavigation(t *testing.T) {
 
 	_, err := tool.Execute(context.Background(), map[string]interface{}{
 		"action": "get_selects",
+		"url":    "example.com/path",
+	})
+	if err == nil {
+		t.Fatal("expected invalid URL error")
+	}
+	if !strings.Contains(err.Error(), "absolute URL is required") {
+		t.Fatalf("expected absolute URL error, got %v", err)
+	}
+}
+
+func TestBrowserToolGetTextareasRejectsRelativeURLBeforeNavigation(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "get_textareas",
 		"url":    "example.com/path",
 	})
 	if err == nil {

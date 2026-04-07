@@ -75,7 +75,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_selects", "get_headings", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_selects", "get_textareas", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -208,6 +208,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getInputs(ctx, params)
 	case "get_selects":
 		return b.getSelects(ctx, params)
+	case "get_textareas":
+		return b.getTextareas(ctx, params)
 	case "get_headings":
 		return b.getHeadings(ctx, params)
 	case "wait":
@@ -1199,6 +1201,36 @@ func (b *BrowserTool) getSelects(ctx context.Context, params map[string]interfac
     disabled: opt.disabled,
     index: opt.index
   }))
+})))`,
+	})
+	if err != nil {
+		return "", err
+	}
+	const prefix = "Script executed successfully\nResult: "
+	return strings.TrimPrefix(result, prefix), nil
+}
+
+func (b *BrowserTool) getTextareas(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	result, err := b.executeScript(ctx, map[string]interface{}{
+		"script": `JSON.stringify(Array.from(document.querySelectorAll('textarea')).map((textarea, idx) => ({
+  index: idx,
+  id: textarea.id || null,
+  name: textarea.name || null,
+  rows: textarea.rows || null,
+  cols: textarea.cols || null,
+  maxlength: textarea.maxLength || null,
+  placeholder: textarea.placeholder || null,
+  value: textarea.value || null,
+  textLength: (textarea.value || '').length,
+  required: textarea.required || false,
+  disabled: textarea.disabled || false,
+  readonly: textarea.readOnly || false
 })))`,
 	})
 	if err != nil {
