@@ -1858,7 +1858,7 @@
   - 来源：`gua/agent/claude/session.go`、`gua/agent/claude/mcp.go`、`gua/server/server.go`。
   - 位置：新建 `pkg/externalagent/*` 或等价模块。
 - [ ] **WeChat Presenter / 交互协议与附件输出管线**
-  - 现状：附件输出已完成；presenter 输出规则已注入 agent 输入；交互协议方面已补齐技能安装确认的 `/yes` `/no` `/cancel` 闭环，且 presenter 现在会明确要求模型在需要用户选择时输出稳定编号列表并提示可用 `/select N`；更广泛的弱交互场景仍待继续接入。
+  - 现状：附件输出已完成；presenter 输出规则已注入 agent 输入；交互协议方面已补齐技能安装确认的 `/yes` `/no` `/cancel` 闭环，且 presenter 现在会明确要求模型在需要用户选择时输出稳定编号列表并提示可用 `/select N`；技能安装确认提示当前也已显式渲染 `1. 允许安装 / 2. 拒绝安装`，并允许用户直接回复 `1/2`。更广泛的弱交互场景仍待继续接入。
   - 目标：继续增强弱交互通道上的可操作性。
   - 来源：`gua/channel/wechat/presenter.go`、`gua/server/formatter.go`。
   - 位置：`pkg/channels/wechat/*`、公共 formatter 层。

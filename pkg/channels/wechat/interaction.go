@@ -57,7 +57,7 @@ func formatWeChatPrompt(promptText string, interaction *commands.CommandInteract
 		body = "Claude 正在等待确认。"
 	}
 
-	return body + "\n回复 /yes 或 /select 1 允许，/no、/cancel 或 /select 2 拒绝。"
+	return body + "\n\n1. 允许安装\n2. 拒绝安装\n\n回复 /yes 或 /select 1 允许，/no、/cancel 或 /select 2 拒绝，也可以直接回复 1 或 2。"
 }
 
 func parseWeChatInteractionAction(input string) (*interactionAction, bool) {

@@ -412,3 +412,21 @@ func TestFormatWeChatPromptIncludesSelectAliasesForSkillInstall(t *testing.T) {
 		t.Fatalf("expected /select 2 hint, got %q", got)
 	}
 }
+
+func TestFormatWeChatPromptIncludesNumberedChoicesForSkillInstall(t *testing.T) {
+	got := formatWeChatPrompt("", &commands.CommandInteraction{
+		Type:    commands.InteractionTypeSkillInstallConfirm,
+		Repo:    "owner/repo",
+		Message: "请确认安装。",
+	})
+
+	if !strings.Contains(got, "1. 允许安装") {
+		t.Fatalf("expected numbered allow option, got %q", got)
+	}
+	if !strings.Contains(got, "2. 拒绝安装") {
+		t.Fatalf("expected numbered deny option, got %q", got)
+	}
+	if !strings.Contains(got, "也可以直接回复 1 或 2") {
+		t.Fatalf("expected numeric shortcut hint, got %q", got)
+	}
+}
