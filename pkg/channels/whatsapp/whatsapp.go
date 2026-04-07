@@ -270,7 +270,7 @@ func (c *Channel) supportsNativeCommands(senderID, chatID string) bool {
 	}
 
 	return channelcapabilities.IsCapabilityEnabled(
-		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ID()),
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
 		channelcapabilities.CapabilityNativeCommands,
 		scope,
 		false,

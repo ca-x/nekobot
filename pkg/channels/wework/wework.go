@@ -294,7 +294,7 @@ func (c *Channel) processMessage(senderID, content, messageID string) {
 
 func (c *Channel) supportsNativeCommands() bool {
 	return channelcapabilities.IsCapabilityEnabled(
-		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ID()),
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
 		channelcapabilities.CapabilityNativeCommands,
 		channelcapabilities.CapabilityScopeDM,
 		false,
