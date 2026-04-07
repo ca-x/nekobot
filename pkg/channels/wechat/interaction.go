@@ -69,10 +69,8 @@ func parseWeChatInteractionAction(input string) (*interactionAction, bool) {
 		return &interactionAction{Type: interactionActionConfirm}, true
 	case lower == "/no" || lower == "/n" || lower == "/cancel" || lower == "/deny":
 		return &interactionAction{Type: interactionActionDeny}, true
-	case lower == "1":
-		return &interactionAction{Type: interactionActionSelect, Value: "1"}, true
-	case lower == "2":
-		return &interactionAction{Type: interactionActionSelect, Value: "2"}, true
+	case isDigitsOnly(lower):
+		return &interactionAction{Type: interactionActionSelect, Value: lower}, true
 	case strings.HasPrefix(lower, "/select "):
 		value := strings.TrimSpace(trimmed[len("/select "):])
 		if value == "" {
@@ -84,6 +82,18 @@ func parseWeChatInteractionAction(input string) (*interactionAction, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func isDigitsOnly(value string) bool {
+	if strings.TrimSpace(value) == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *Channel) resolvePendingInteraction(msg wxtypes.WeixinMessage, content string) (string, bool, error) {

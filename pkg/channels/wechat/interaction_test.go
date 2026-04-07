@@ -26,6 +26,7 @@ func TestParseWeChatInteractionAction(t *testing.T) {
 		{name: "select", input: "/select 2", wantType: interactionActionSelect, wantValue: "2", wantOK: true},
 		{name: "numeric confirm", input: "1", wantType: interactionActionSelect, wantValue: "1", wantOK: true},
 		{name: "numeric deny", input: "2", wantType: interactionActionSelect, wantValue: "2", wantOK: true},
+		{name: "numeric generic select", input: "3", wantType: interactionActionSelect, wantValue: "3", wantOK: true},
 		{name: "passthrough", input: "/settings", wantType: interactionActionPassthrough, wantValue: "/settings", wantOK: true},
 		{name: "plain text", input: "hello", wantOK: false},
 	}
@@ -319,6 +320,66 @@ func TestResolvePendingInteractionDelegatesToRuntimeApprovals(t *testing.T) {
 	}
 	if reply != "runtime resumed" {
 		t.Fatalf("unexpected runtime interaction reply: %q", reply)
+	}
+}
+
+func TestResolvePendingInteractionDelegatesNumericSelectToRuntimeApprovals(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	fake := &fakeACPInteractiveClient{
+		prompt: "运行时需要确认: WriteFile\n\n1. 允许一次\n2. 总是允许\n3. 拒绝\n\n回复 /select N 选择对应选项。",
+		reply:  "runtime resumed",
+	}
+	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
+		return fake, nil
+	}
+
+	ctx := context.Background()
+	if _, err := controlSvc.CreateRuntime(ctx, "user-1", RuntimeCreateRequest{
+		Name:   "claude1",
+		Driver: "acp",
+		Tool:   "claude",
+	}); err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+	if _, err := controlSvc.SendToRuntime(ctx, "user-1", "", "hello acp"); err != nil {
+		t.Fatalf("SendToRuntime failed: %v", err)
+	}
+
+	ch := &Channel{
+		runtime:              controlSvc,
+		pendingSkillInstalls: map[string]pendingSkillInstall{},
+	}
+	reply, handled, err := ch.resolvePendingInteraction(wxtypes.WeixinMessage{FromUserID: "user-1"}, "3")
+	if err != nil {
+		t.Fatalf("resolve pending interaction: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected runtime interaction to be handled")
+	}
+	if reply != "runtime resumed" {
+		t.Fatalf("unexpected runtime interaction reply: %q", reply)
+	}
+	if fake.last.Type != interactionActionSelect || fake.last.Value != "3" {
+		t.Fatalf("expected numeric select to be forwarded, got %#v", fake.last)
 	}
 }
 
