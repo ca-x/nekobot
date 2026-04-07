@@ -75,7 +75,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_headings", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -198,6 +198,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getImages(ctx, params)
 	case "get_forms":
 		return b.getForms(ctx, params)
+	case "get_buttons":
+		return b.getButtons(ctx, params)
 	case "get_headings":
 		return b.getHeadings(ctx, params)
 	case "wait":
@@ -1024,6 +1026,32 @@ func (b *BrowserTool) getForms(ctx context.Context, params map[string]interface{
     method: form.method || 'get',
     fields: fields
   };
+})))`,
+	})
+	if err != nil {
+		return "", err
+	}
+	const prefix = "Script executed successfully\nResult: "
+	return strings.TrimPrefix(result, prefix), nil
+}
+
+func (b *BrowserTool) getButtons(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	result, err := b.executeScript(ctx, map[string]interface{}{
+		"script": `JSON.stringify(Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], input[type="reset"]')).map((btn, idx) => ({
+  index: idx,
+  tag: btn.tagName.toLowerCase(),
+  type: btn.type || 'button',
+  id: btn.id || null,
+  name: btn.name || null,
+  text: btn.tagName === 'BUTTON' ? (btn.textContent || '').trim() : null,
+  value: btn.value || null,
+  disabled: btn.disabled || false
 })))`,
 	})
 	if err != nil {
