@@ -15,6 +15,7 @@ import (
 	"github.com/mafredri/cdp/protocol/dom"
 	"github.com/mafredri/cdp/protocol/emulation"
 	"github.com/mafredri/cdp/protocol/input"
+	cdpLog "github.com/mafredri/cdp/protocol/log"
 	"github.com/mafredri/cdp/protocol/network"
 	"github.com/mafredri/cdp/protocol/page"
 	"github.com/mafredri/cdp/protocol/performance"
@@ -76,9 +77,10 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"type": "string",
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
-					"click", "type", "select", "get_html",
+					"click", "type", "select", "get_html", "get_console",
 					"get_text", "get_title", "get_url", "get_links", "get_cookies", "set_cookie", "clear_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_selects", "get_textareas", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"list_pages", "new_page", "activate_page", "close_page",
+					"get_storage", "set_storage", "remove_storage", "clear_storage",
 					"print_pdf", "extract_structured_data",
 					"reload", "get_metrics", "emulate_device", "set_viewport", "close",
 				},
@@ -290,6 +292,25 @@ type browserDeviceProfile struct {
 	Platform   string
 	Touch      bool
 	MaxTouches int
+}
+
+type browserConsoleOptions struct {
+	ErrorsOnly   bool
+	WarningsOnly bool
+	InfoOnly     bool
+	MaxEntries   int
+}
+
+type browserConsoleEntry struct {
+	Source     string   `json:"source"`
+	Level      string   `json:"level"`
+	Type       string   `json:"type,omitempty"`
+	Text       string   `json:"text"`
+	Timestamp  string   `json:"timestamp,omitempty"`
+	URL        string   `json:"url,omitempty"`
+	Context    string   `json:"context,omitempty"`
+	LineNumber *int     `json:"line_number,omitempty"`
+	Args       []string `json:"args,omitempty"`
 }
 
 // navigate navigates to a URL.
@@ -978,6 +999,69 @@ func (b *BrowserTool) getHTML(ctx context.Context, params map[string]interface{}
 	}
 
 	return html.OuterHTML, nil
+}
+
+func (b *BrowserTool) getConsole(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		return "", fmt.Errorf("browser session not ready")
+	}
+
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	opts := b.buildConsoleOptions(params)
+	if err := client.Log.Enable(ctx); err != nil {
+		return "", fmt.Errorf("failed to enable browser log domain: %w", err)
+	}
+	if err := client.Runtime.Enable(ctx); err != nil {
+		return "", fmt.Errorf("failed to enable browser runtime domain: %w", err)
+	}
+
+	entryAdded, err := client.Log.EntryAdded(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to subscribe to browser log entries: %w", err)
+	}
+	defer entryAdded.Close()
+
+	consoleCalled, err := client.Runtime.ConsoleAPICalled(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to subscribe to browser console api calls: %w", err)
+	}
+	defer consoleCalled.Close()
+
+	timeout := 500 * time.Millisecond
+	if deadline, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 && remaining < timeout {
+			timeout = remaining
+		}
+	}
+
+	entries := collectBrowserConsoleEntries(ctx, entryAdded, consoleCalled, opts.MaxEntries, timeout)
+	filtered := make([]browserConsoleEntry, 0, len(entries))
+	for _, entry := range entries {
+		if !browserConsoleEntryMatches(entry.Level, opts) {
+			continue
+		}
+		filtered = append(filtered, entry)
+		if len(filtered) >= opts.MaxEntries {
+			break
+		}
+	}
+
+	data, err := json.Marshal(filtered)
+	if err != nil {
+		return "", fmt.Errorf("marshal browser console entries: %w", err)
+	}
+	return string(data), nil
 }
 
 func (b *BrowserTool) getText(ctx context.Context, params map[string]interface{}) (string, error) {
@@ -1716,6 +1800,76 @@ func (b *BrowserTool) createPageTarget(ctx context.Context, devtools browserDevT
 	return target, nil
 }
 
+func (b *BrowserTool) browserStorageAction(ctx context.Context, params map[string]interface{}) (string, error) {
+	action, _ := params["action"].(string)
+	script, err := b.buildStorageScript(action, params)
+	if err != nil {
+		return "", err
+	}
+	return b.executeScript(ctx, map[string]interface{}{"script": script})
+}
+
+func (b *BrowserTool) buildStorageScript(action string, params map[string]interface{}) (string, error) {
+	storageScope := stringParam(params, "storage")
+	if storageScope == "" {
+		return "", fmt.Errorf("storage parameter is required")
+	}
+
+	var storageExpr string
+	switch storageScope {
+	case "local":
+		storageExpr = "window.localStorage"
+	case "session":
+		storageExpr = "window.sessionStorage"
+	default:
+		return "", fmt.Errorf("invalid storage: %s", storageScope)
+	}
+
+	switch action {
+	case "get_storage":
+		return fmt.Sprintf(`(() => {
+  const storage = %s;
+  const out = {};
+  Object.keys(storage).forEach(key => {
+    out[key] = storage.getItem(key);
+  });
+  return JSON.stringify(out);
+})()`, storageExpr), nil
+	case "set_storage":
+		key := stringParam(params, "key")
+		if key == "" {
+			return "", fmt.Errorf("key parameter is required")
+		}
+		value, ok := params["value"].(string)
+		if !ok {
+			return "", fmt.Errorf("value parameter is required")
+		}
+		return fmt.Sprintf(`(() => {
+  const storage = %s;
+  storage.setItem(%q, %q);
+  return storage.getItem(%q);
+})()`, storageExpr, key, value, key), nil
+	case "remove_storage":
+		key := stringParam(params, "key")
+		if key == "" {
+			return "", fmt.Errorf("key parameter is required")
+		}
+		return fmt.Sprintf(`(() => {
+  const storage = %s;
+  storage.removeItem(%q);
+  return JSON.stringify({removed: %q});
+})()`, storageExpr, key, key), nil
+	case "clear_storage":
+		return fmt.Sprintf(`(() => {
+  const storage = %s;
+  storage.clear();
+  return JSON.stringify({cleared: true});
+})()`, storageExpr), nil
+	default:
+		return "", fmt.Errorf("unsupported storage action: %s", action)
+	}
+}
+
 // close closes the browser session.
 func (b *BrowserTool) close() (string, error) {
 	sessionMgr := GetBrowserSession(b.log)
@@ -1784,6 +1938,26 @@ func marshalBrowserTarget(target *devtool.Target) (string, error) {
 	return string(data), nil
 }
 
+func (b *BrowserTool) buildConsoleOptions(params map[string]interface{}) browserConsoleOptions {
+	opts := browserConsoleOptions{MaxEntries: 100}
+	if value, ok := params["errors_only"].(bool); ok {
+		opts.ErrorsOnly = value
+	}
+	if value, ok := params["warnings_only"].(bool); ok {
+		opts.WarningsOnly = value
+	}
+	if value, ok := params["info_only"].(bool); ok {
+		opts.InfoOnly = value
+	}
+	if value, ok := params["max_entries"].(float64); ok {
+		maxEntries := int(value)
+		if value == float64(maxEntries) && maxEntries > 0 {
+			opts.MaxEntries = maxEntries
+		}
+	}
+	return opts
+}
+
 func formatCDPResult(result *runtime.RemoteObject) (string, error) {
 	if result == nil {
 		return "null", nil
@@ -1795,4 +1969,185 @@ func formatCDPResult(result *runtime.RemoteObject) (string, error) {
 		return *result.Description, nil
 	}
 	return "", nil
+}
+
+func browserConsoleEntryMatches(level string, opts browserConsoleOptions) bool {
+	normalized := strings.TrimSpace(strings.ToLower(level))
+	switch {
+	case opts.ErrorsOnly:
+		return normalized == "error"
+	case opts.WarningsOnly:
+		return normalized == "warning"
+	case opts.InfoOnly:
+		return normalized == "info" || normalized == "log"
+	default:
+		return true
+	}
+}
+
+func browserTimestampString(ts runtime.Timestamp) string {
+	value := float64(ts)
+	if value <= 0 {
+		return ""
+	}
+	return time.Unix(0, int64(value*float64(time.Millisecond))).UTC().Format(time.RFC3339Nano)
+}
+
+func browserConsoleArgs(args []runtime.RemoteObject) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	values := make([]string, 0, len(args))
+	for _, arg := range args {
+		value, err := formatCDPResult(&arg)
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		values = append(values, value)
+	}
+	return values
+}
+
+func browserConsoleText(args []string, fallback string) string {
+	text := strings.TrimSpace(strings.Join(args, " "))
+	if text != "" {
+		return text
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func browserConsoleEntryFromLog(entry *cdpLog.EntryAddedReply) browserConsoleEntry {
+	if entry == nil {
+		return browserConsoleEntry{}
+	}
+	result := browserConsoleEntry{
+		Source:    strings.TrimSpace(entry.Entry.Source),
+		Level:     strings.TrimSpace(entry.Entry.Level),
+		Timestamp: browserTimestampString(entry.Entry.Timestamp),
+		Args:      browserConsoleArgs(entry.Entry.Args),
+	}
+	if entry.Entry.URL != nil {
+		result.URL = strings.TrimSpace(*entry.Entry.URL)
+	}
+	if entry.Entry.LineNumber != nil {
+		line := *entry.Entry.LineNumber
+		result.LineNumber = &line
+	}
+	result.Text = browserConsoleText(result.Args, entry.Entry.Text)
+	return result
+}
+
+func browserConsoleEntryFromRuntime(entry *runtime.ConsoleAPICalledReply) browserConsoleEntry {
+	if entry == nil {
+		return browserConsoleEntry{}
+	}
+	result := browserConsoleEntry{
+		Source:    "console",
+		Level:     strings.TrimSpace(entry.Type),
+		Type:      strings.TrimSpace(entry.Type),
+		Timestamp: browserTimestampString(entry.Timestamp),
+		Args:      browserConsoleArgs(entry.Args),
+	}
+	if entry.Context != nil {
+		result.Context = strings.TrimSpace(*entry.Context)
+	}
+	result.Text = browserConsoleText(result.Args, strings.TrimSpace(entry.Type))
+	return result
+}
+
+func collectBrowserConsoleEntries(
+	ctx context.Context,
+	entryAdded cdpLog.EntryAddedClient,
+	consoleCalled runtime.ConsoleAPICalledClient,
+	maxEntries int,
+	timeout time.Duration,
+) []browserConsoleEntry {
+	if maxEntries <= 0 {
+		maxEntries = 100
+	}
+	if timeout <= 0 {
+		timeout = 500 * time.Millisecond
+	}
+
+	deadline := time.Now().Add(timeout)
+	entries := make([]browserConsoleEntry, 0, min(maxEntries, 16))
+	for len(entries) < maxEntries && time.Now().Before(deadline) {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		wait := remaining
+		if wait > 25*time.Millisecond {
+			wait = 25 * time.Millisecond
+		}
+		if entryAdded != nil {
+			if item, ok := recvLogEntryWithin(ctx, entryAdded, wait); ok && item != nil {
+				entry := browserConsoleEntryFromLog(item)
+				if entry.Text != "" || len(entry.Args) > 0 {
+					entries = append(entries, entry)
+				}
+			}
+		}
+		if len(entries) >= maxEntries || time.Now().After(deadline) {
+			break
+		}
+		if consoleCalled != nil {
+			if item, ok := recvRuntimeConsoleWithin(ctx, consoleCalled, wait); ok && item != nil {
+				entry := browserConsoleEntryFromRuntime(item)
+				if entry.Text != "" || len(entry.Args) > 0 {
+					entries = append(entries, entry)
+				}
+			}
+		}
+	}
+	return entries
+}
+
+func recvLogEntryWithin(ctx context.Context, client cdpLog.EntryAddedClient, wait time.Duration) (*cdpLog.EntryAddedReply, bool) {
+	type result struct {
+		item *cdpLog.EntryAddedReply
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		item, err := client.Recv()
+		ch <- result{item: item, err: err}
+	}()
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	case res := <-ch:
+		return res.item, res.err == nil
+	}
+}
+
+func recvRuntimeConsoleWithin(ctx context.Context, client runtime.ConsoleAPICalledClient, wait time.Duration) (*runtime.ConsoleAPICalledReply, bool) {
+	type result struct {
+		item *runtime.ConsoleAPICalledReply
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		item, err := client.Recv()
+		ch <- result{item: item, err: err}
+	}()
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	case res := <-ch:
+		return res.item, res.err == nil
+	}
 }

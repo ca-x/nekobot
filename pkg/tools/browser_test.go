@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	"github.com/mafredri/cdp/devtool"
+	cdpLog "github.com/mafredri/cdp/protocol/log"
 	"github.com/mafredri/cdp/protocol/network"
+	"github.com/mafredri/cdp/protocol/runtime"
 )
 
 func TestBrowserToolStartModeFromParams(t *testing.T) {
