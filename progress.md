@@ -687,3 +687,10 @@
 - Verification run:
   - `go test -count=1 ./pkg/preprocess` passed
   - `npm --prefix pkg/webui/frontend run build` passed
+
+- Completed next browser advanced CDP action slice from `task_plan.md`:
+  - added `browser` actions `get_metrics`, `emulate_device`, and `set_viewport` in `pkg/tools/browser.go`.
+  - extended browser tool parameter schema with the new actions plus `device` profile selection.
+  - added deterministic helpers for device-profile and viewport validation, with regression tests in `pkg/tools/browser_test.go`.
+- Verification run:
+  - `go test -count=1 ./pkg/tools` passed.

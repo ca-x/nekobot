@@ -37,6 +37,7 @@ type BrowserSession struct {
 	cancel            context.CancelFunc
 	cmd               *exec.Cmd
 	debugURL          string
+	endpoint          string
 	timeout           time.Duration
 	mu                sync.RWMutex
 	ready             bool
@@ -45,6 +46,15 @@ type BrowserSession struct {
 	connectFn         func(port int, timeout time.Duration) error
 	connectEndpointFn func(endpoint string, timeout time.Duration) error
 	launchFn          func(timeout time.Duration) error
+	devtoolsFactory   func(endpoint string) browserDevTools
+}
+
+type browserDevTools interface {
+	List(ctx context.Context) ([]*devtool.Target, error)
+	Create(ctx context.Context) (*devtool.Target, error)
+	CreateURL(ctx context.Context, openURL string) (*devtool.Target, error)
+	Activate(ctx context.Context, t *devtool.Target) error
+	Close(ctx context.Context, t *devtool.Target) error
 }
 
 // BrowserStartOptions describes how to attach to an existing browser session.
@@ -64,6 +74,9 @@ func GetBrowserSession(log *logger.Logger) *BrowserSession {
 		browserSession.connectFn = browserSession.connect
 		browserSession.connectEndpointFn = browserSession.connectEndpoint
 		browserSession.launchFn = browserSession.launch
+		browserSession.devtoolsFactory = func(endpoint string) browserDevTools {
+			return devtool.New(endpoint)
+		}
 	})
 	return browserSession
 }
@@ -101,6 +114,11 @@ func (s *BrowserSession) StartWithOptions(timeout time.Duration, opts BrowserSta
 	}
 	if s.launchFn == nil {
 		s.launchFn = s.launch
+	}
+	if s.devtoolsFactory == nil {
+		s.devtoolsFactory = func(endpoint string) browserDevTools {
+			return devtool.New(endpoint)
+		}
 	}
 
 	if endpoint != "" {
@@ -220,6 +238,7 @@ func (s *BrowserSession) connectEndpoint(endpoint string, timeout time.Duration)
 	s.conn = conn
 	s.client = cdp.NewClient(conn)
 	s.debugURL = pt.WebSocketDebuggerURL
+	s.endpoint = strings.TrimSpace(endpoint)
 	s.ready = true
 	return nil
 }
@@ -252,6 +271,7 @@ func (s *BrowserSession) Stop() error {
 	s.client = nil
 	s.conn = nil
 	s.mode = BrowserModeAuto
+	s.endpoint = ""
 
 	return nil
 }
@@ -280,6 +300,22 @@ func (s *BrowserSession) ConnectionMode() BrowserConnectionMode {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.mode
+}
+
+func (s *BrowserSession) GetDevTools() (browserDevTools, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if !s.ready {
+		return nil, fmt.Errorf("browser session not ready")
+	}
+	if strings.TrimSpace(s.endpoint) == "" {
+		return nil, fmt.Errorf("browser devtools endpoint unavailable")
+	}
+	if s.devtoolsFactory == nil {
+		return nil, fmt.Errorf("browser devtools factory unavailable")
+	}
+	return s.devtoolsFactory(s.endpoint), nil
 }
 
 func resolveBrowserMode(mode string) BrowserConnectionMode {

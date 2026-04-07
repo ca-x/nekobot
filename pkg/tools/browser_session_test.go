@@ -1,9 +1,12 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/mafredri/cdp/devtool"
 )
 
 func TestResolveBrowserMode(t *testing.T) {
@@ -254,5 +257,54 @@ func TestBrowserSessionStartWithOptionsRelayUsesCustomEndpointWithoutLaunch(t *t
 	}
 	if got := session.ConnectionMode(); got != BrowserModeRelay {
 		t.Fatalf("expected relay mode, got %q", got)
+	}
+}
+
+type testBrowserDevTools struct{}
+
+func (testBrowserDevTools) List(context.Context) ([]*devtool.Target, error) { return nil, nil }
+func (testBrowserDevTools) Create(context.Context) (*devtool.Target, error) { return nil, nil }
+func (testBrowserDevTools) CreateURL(context.Context, string) (*devtool.Target, error) {
+	return nil, nil
+}
+func (testBrowserDevTools) Activate(context.Context, *devtool.Target) error { return nil }
+func (testBrowserDevTools) Close(context.Context, *devtool.Target) error    { return nil }
+
+func TestBrowserSessionGetDevToolsRequiresReadySession(t *testing.T) {
+	session := &BrowserSession{}
+
+	_, err := session.GetDevTools()
+	if err == nil {
+		t.Fatal("expected browser session not ready error")
+	}
+	if err.Error() != "browser session not ready" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBrowserSessionGetDevToolsReturnsFactoryForEndpoint(t *testing.T) {
+	session := &BrowserSession{
+		ready:    true,
+		endpoint: "http://chrome.internal:9333",
+	}
+
+	called := 0
+	session.devtoolsFactory = func(endpoint string) browserDevTools {
+		called++
+		if endpoint != "http://chrome.internal:9333" {
+			t.Fatalf("expected endpoint propagated to devtools factory, got %q", endpoint)
+		}
+		return testBrowserDevTools{}
+	}
+
+	devtools, err := session.GetDevTools()
+	if err != nil {
+		t.Fatalf("GetDevTools returned error: %v", err)
+	}
+	if devtools == nil {
+		t.Fatal("expected devtools instance")
+	}
+	if called != 1 {
+		t.Fatalf("expected devtools factory to be called once, got %d", called)
 	}
 }

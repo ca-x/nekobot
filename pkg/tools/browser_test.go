@@ -2,8 +2,12 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/mafredri/cdp/devtool"
 )
 
 func TestBrowserToolStartModeFromParams(t *testing.T) {
@@ -935,3 +939,463 @@ func TestHTMLToTextStripsTags(t *testing.T) {
 		t.Fatalf("expected stripped text, got %q", got)
 	}
 }
+
+func TestBrowserToolParametersIncludeGetMetrics(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+	found := false
+	for _, value := range enumValues {
+		if value == "get_metrics" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected get_metrics action in enum, got %#v", enumValues)
+	}
+}
+
+func TestBrowserToolParametersIncludeEmulateDevice(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+	found := false
+	for _, value := range enumValues {
+		if value == "emulate_device" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected emulate_device action in enum, got %#v", enumValues)
+	}
+}
+
+func TestBrowserToolParametersIncludeSetViewport(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+	found := false
+	for _, value := range enumValues {
+		if value == "set_viewport" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected set_viewport action in enum, got %#v", enumValues)
+	}
+}
+
+func TestBrowserToolBuildDeviceProfile(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	profile, err := tool.buildDeviceProfile(map[string]interface{}{"device": "iphone"})
+	if err != nil {
+		t.Fatalf("buildDeviceProfile returned error: %v", err)
+	}
+	if profile.Name != "iphone" || profile.Width != 390 || profile.Height != 844 || !profile.Mobile {
+		t.Fatalf("unexpected iphone profile: %+v", profile)
+	}
+
+	profile, err = tool.buildDeviceProfile(map[string]interface{}{"device": "desktop"})
+	if err != nil {
+		t.Fatalf("buildDeviceProfile returned error: %v", err)
+	}
+	if profile.Mobile {
+		t.Fatalf("expected desktop profile to be non-mobile, got %+v", profile)
+	}
+}
+
+func TestBrowserToolBuildDeviceProfileRejectsInvalidDevice(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, err := tool.buildDeviceProfile(map[string]interface{}{"device": "watch"})
+	if err == nil {
+		t.Fatal("expected invalid device error")
+	}
+	if !strings.Contains(err.Error(), "invalid device") {
+		t.Fatalf("expected invalid device error, got %v", err)
+	}
+}
+
+func TestBrowserToolBuildViewportRejectsMissingWidth(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, _, err := tool.buildViewport(map[string]interface{}{"height": float64(768)})
+	if err == nil {
+		t.Fatal("expected missing width error")
+	}
+	if !strings.Contains(err.Error(), "width parameter is required") {
+		t.Fatalf("expected width required error, got %v", err)
+	}
+}
+
+func TestBrowserToolBuildViewportRejectsInvalidHeight(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, _, err := tool.buildViewport(map[string]interface{}{"width": float64(1280), "height": float64(0)})
+	if err == nil {
+		t.Fatal("expected invalid height error")
+	}
+	if !strings.Contains(err.Error(), "invalid height") {
+		t.Fatalf("expected invalid height error, got %v", err)
+	}
+}
+
+func TestBrowserToolBuildViewportAcceptsPositiveDimensions(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	width, height, err := tool.buildViewport(map[string]interface{}{"width": float64(1280), "height": float64(720)})
+	if err != nil {
+		t.Fatalf("buildViewport returned error: %v", err)
+	}
+	if width != 1280 || height != 720 {
+		t.Fatalf("unexpected viewport: %d x %d", width, height)
+	}
+}
+
+func TestRequireTargetIDRejectsMissingTargetID(t *testing.T) {
+	_, err := requireTargetID(map[string]interface{}{})
+	if err == nil {
+		t.Fatal("expected missing target_id error")
+	}
+	if !strings.Contains(err.Error(), "target_id parameter is required") {
+		t.Fatalf("expected target_id error, got %v", err)
+	}
+}
+
+func TestRequireTargetIDAcceptsTrimmedTargetID(t *testing.T) {
+	target, err := requireTargetID(map[string]interface{}{"target_id": "  target-123  "})
+	if err != nil {
+		t.Fatalf("requireTargetID returned error: %v", err)
+	}
+	if target.ID != "target-123" {
+		t.Fatalf("expected trimmed target id, got %q", target.ID)
+	}
+}
+
+func TestMarshalBrowserTargetRejectsNilTarget(t *testing.T) {
+	_, err := marshalBrowserTarget(nil)
+	if err == nil {
+		t.Fatal("expected nil target error")
+	}
+	if !strings.Contains(err.Error(), "browser page target unavailable") {
+		t.Fatalf("expected nil target error, got %v", err)
+	}
+}
+
+func TestMarshalBrowserTargetIncludesTargetFields(t *testing.T) {
+	out, err := marshalBrowserTarget(&devtool.Target{
+		ID:                   "page-1",
+		Type:                 devtool.Page,
+		Title:                "Example",
+		URL:                  "https://example.com",
+		DevToolsFrontendURL:  "/devtools/inspector.html?page-1",
+		WebSocketDebuggerURL: "ws://chrome.internal/page-1",
+	})
+	if err != nil {
+		t.Fatalf("marshalBrowserTarget returned error: %v", err)
+	}
+	if !strings.Contains(out, "\"id\":\"page-1\"") {
+		t.Fatalf("expected id in marshaled target, got %s", out)
+	}
+	if !strings.Contains(out, "\"type\":\"page\"") {
+		t.Fatalf("expected type in marshaled target, got %s", out)
+	}
+	if !strings.Contains(out, "\"url\":\"https://example.com\"") {
+		t.Fatalf("expected url in marshaled target, got %s", out)
+	}
+}
+
+func TestBrowserToolParametersIncludePageManagementActions(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+
+	for _, want := range []string{"list_pages", "new_page", "activate_page", "close_page"} {
+		found := false
+		for _, value := range enumValues {
+			if value == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected %s action in enum, got %#v", want, enumValues)
+		}
+	}
+}
+
+func TestBrowserToolCreatePageTargetRejectsRelativeURL(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	_, err := tool.createPageTarget(context.Background(), &stubBrowserDevTools{}, "example.com/path")
+	if err == nil {
+		t.Fatal("expected relative URL error")
+	}
+	if !strings.Contains(err.Error(), "absolute URL is required") {
+		t.Fatalf("expected absolute URL error, got %v", err)
+	}
+}
+
+func TestBrowserToolNewPageUsesCreateURL(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	devtools := &stubBrowserDevTools{
+		createURLTarget: &devtool.Target{
+			ID:    "page-2",
+			Type:  devtool.Page,
+			Title: "Example",
+			URL:   "https://example.com",
+		},
+	}
+	session.ready = true
+	session.endpoint = "http://stub:9222"
+	session.devtoolsFactory = func(endpoint string) browserDevTools {
+		if endpoint != "http://stub:9222" {
+			t.Fatalf("unexpected endpoint %q", endpoint)
+		}
+		return devtools
+	}
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "new_page",
+		"url":    "https://example.com",
+	})
+	if err != nil {
+		t.Fatalf("new_page returned error: %v", err)
+	}
+	if devtools.lastCreateURL != "https://example.com" {
+		t.Fatalf("expected CreateURL call, got %q", devtools.lastCreateURL)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("unmarshal new_page response: %v", err)
+	}
+	if payload["id"] != "page-2" {
+		t.Fatalf("expected page id page-2, got %v", payload["id"])
+	}
+	if payload["url"] != "https://example.com" {
+		t.Fatalf("expected page url https://example.com, got %v", payload["url"])
+	}
+}
+
+func TestBrowserToolListPagesReturnsJSON(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	devtools := &stubBrowserDevTools{
+		listTargets: []*devtool.Target{
+			{ID: "page-1", Type: devtool.Page, Title: "One", URL: "https://one.example"},
+			{ID: "page-2", Type: devtool.Page, Title: "Two", URL: "https://two.example"},
+		},
+	}
+	session.ready = true
+	session.endpoint = "http://stub:9222"
+	session.devtoolsFactory = func(string) browserDevTools { return devtools }
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "list_pages",
+	})
+	if err != nil {
+		t.Fatalf("list_pages returned error: %v", err)
+	}
+
+	var payload []map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("unmarshal list_pages response: %v", err)
+	}
+	if len(payload) != 2 {
+		t.Fatalf("expected 2 pages, got %d", len(payload))
+	}
+	if payload[0]["id"] != "page-1" || payload[1]["id"] != "page-2" {
+		t.Fatalf("unexpected page payload: %+v", payload)
+	}
+}
+
+func TestBrowserToolActivatePageRequiresTargetID(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	session.ready = true
+	session.endpoint = "http://stub:9222"
+	session.devtoolsFactory = func(string) browserDevTools { return &stubBrowserDevTools{} }
+
+	_, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "activate_page",
+	})
+	if err == nil {
+		t.Fatal("expected missing target_id error")
+	}
+	if !strings.Contains(err.Error(), "target_id parameter is required") {
+		t.Fatalf("expected missing target_id error, got %v", err)
+	}
+}
+
+func TestBrowserToolActivateAndClosePageUseTargetID(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	devtools := &stubBrowserDevTools{}
+	session.ready = true
+	session.endpoint = "http://stub:9222"
+	session.devtoolsFactory = func(string) browserDevTools { return devtools }
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action":    "activate_page",
+		"target_id": "page-9",
+	})
+	if err != nil {
+		t.Fatalf("activate_page returned error: %v", err)
+	}
+	if devtools.activatedTargetID != "page-9" {
+		t.Fatalf("expected activate target page-9, got %q", devtools.activatedTargetID)
+	}
+	if !strings.Contains(out, "page-9") {
+		t.Fatalf("expected activate response to mention target id, got %q", out)
+	}
+
+	out, err = tool.Execute(context.Background(), map[string]interface{}{
+		"action":    "close_page",
+		"target_id": "page-9",
+	})
+	if err != nil {
+		t.Fatalf("close_page returned error: %v", err)
+	}
+	if devtools.closedTargetID != "page-9" {
+		t.Fatalf("expected close target page-9, got %q", devtools.closedTargetID)
+	}
+	if !strings.Contains(out, "page-9") {
+		t.Fatalf("expected close response to mention target id, got %q", out)
+	}
+}
+
+type stubBrowserDevTools struct {
+	listTargets       []*devtool.Target
+	createTarget      *devtool.Target
+	createURLTarget   *devtool.Target
+	listErr           error
+	createErr         error
+	createURLErr      error
+	activateErr       error
+	closeErr          error
+	lastCreateURL     string
+	activatedTargetID string
+	closedTargetID    string
+}
+
+func (s *stubBrowserDevTools) List(context.Context) ([]*devtool.Target, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	return s.listTargets, nil
+}
+
+func (s *stubBrowserDevTools) Create(context.Context) (*devtool.Target, error) {
+	if s.createErr != nil {
+		return nil, s.createErr
+	}
+	if s.createTarget != nil {
+		return s.createTarget, nil
+	}
+	return &devtool.Target{ID: "new-page", Type: devtool.Page}, nil
+}
+
+func (s *stubBrowserDevTools) CreateURL(_ context.Context, openURL string) (*devtool.Target, error) {
+	s.lastCreateURL = openURL
+	if s.createURLErr != nil {
+		return nil, s.createURLErr
+	}
+	if s.createURLTarget != nil {
+		return s.createURLTarget, nil
+	}
+	return &devtool.Target{ID: "new-page", Type: devtool.Page, URL: openURL}, nil
+}
+
+func (s *stubBrowserDevTools) Activate(_ context.Context, t *devtool.Target) error {
+	if s.activateErr != nil {
+		return s.activateErr
+	}
+	if t != nil {
+		s.activatedTargetID = t.ID
+	}
+	return nil
+}
+
+func (s *stubBrowserDevTools) Close(_ context.Context, t *devtool.Target) error {
+	if s.closeErr != nil {
+		return s.closeErr
+	}
+	if t != nil {
+		s.closedTargetID = t.ID
+	}
+	return nil
+}
+
+func installStubBrowserSession(t *testing.T) *BrowserSession {
+	t.Helper()
+
+	oldSession := browserSession
+	oldOnce := browserSessionOnce
+
+	browserSession = nil
+	browserSessionOnce = sync.Once{}
+	session := GetBrowserSession(newToolsTestLogger(t))
+
+	t.Cleanup(func() {
+		browserSession = oldSession
+		browserSessionOnce = oldOnce
+	})
+
+	return session
+}
+
+var _ browserDevTools = (*stubBrowserDevTools)(nil)

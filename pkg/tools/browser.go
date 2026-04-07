@@ -11,11 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mafredri/cdp/devtool"
 	"github.com/mafredri/cdp/protocol/dom"
 	"github.com/mafredri/cdp/protocol/emulation"
 	"github.com/mafredri/cdp/protocol/input"
 	"github.com/mafredri/cdp/protocol/network"
 	"github.com/mafredri/cdp/protocol/page"
+	"github.com/mafredri/cdp/protocol/performance"
 	"github.com/mafredri/cdp/protocol/runtime"
 	"go.uber.org/zap"
 
@@ -76,8 +78,9 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
 					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_selects", "get_textareas", "get_headings", "wait", "scroll", "go_back", "go_forward",
+					"list_pages", "new_page", "activate_page", "close_page",
 					"print_pdf", "extract_structured_data",
-					"reload", "close",
+					"reload", "get_metrics", "emulate_device", "set_viewport", "close",
 				},
 				"description": "Browser action to perform",
 			},
@@ -155,6 +158,15 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum":        []string{"all", "schema_org", "json_ld", "meta"},
 				"description": "Structured data extraction mode for extract_structured_data.",
 			},
+			"device": map[string]interface{}{
+				"type":        "string",
+				"enum":        []string{"iphone", "ipad", "android", "desktop"},
+				"description": "Device profile to emulate for emulate_device action.",
+			},
+			"target_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Browser target/page ID for activate_page and close_page actions.",
+			},
 		},
 		"required": []string{"action"},
 	}
@@ -220,17 +232,43 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.goBack(ctx)
 	case "go_forward":
 		return b.goForward(ctx)
+	case "list_pages":
+		return b.listPages(ctx, params)
+	case "new_page":
+		return b.newPage(ctx, params)
+	case "activate_page":
+		return b.activatePage(ctx, params)
+	case "close_page":
+		return b.closePage(ctx, params)
 	case "print_pdf":
 		return b.printPDF(ctx, params)
 	case "extract_structured_data":
 		return b.extractStructuredData(ctx, params)
 	case "reload":
 		return b.reload(ctx)
+	case "get_metrics":
+		return b.getMetrics(ctx, params)
+	case "emulate_device":
+		return b.emulateDevice(ctx, params)
+	case "set_viewport":
+		return b.setViewport(ctx, params)
 	case "close":
 		return b.close()
 	default:
 		return "", fmt.Errorf("unknown action: %s", action)
 	}
+}
+
+type browserDeviceProfile struct {
+	Name       string
+	Width      int
+	Height     int
+	Scale      float64
+	Mobile     bool
+	UserAgent  string
+	Platform   string
+	Touch      bool
+	MaxTouches int
 }
 
 // navigate navigates to a URL.
@@ -372,6 +410,42 @@ func (b *BrowserTool) buildPrintToPDFArgs(params map[string]interface{}) *page.P
 	}
 
 	return pdfArgs
+}
+
+func (b *BrowserTool) buildDeviceProfile(params map[string]interface{}) (browserDeviceProfile, error) {
+	device, _ := params["device"].(string)
+	switch strings.TrimSpace(strings.ToLower(device)) {
+	case "iphone":
+		return browserDeviceProfile{Name: "iphone", Width: 390, Height: 844, Scale: 3, Mobile: true, UserAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", Platform: "iPhone", Touch: true, MaxTouches: 5}, nil
+	case "ipad":
+		return browserDeviceProfile{Name: "ipad", Width: 820, Height: 1180, Scale: 2, Mobile: true, UserAgent: "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1", Platform: "iPad", Touch: true, MaxTouches: 5}, nil
+	case "android":
+		return browserDeviceProfile{Name: "android", Width: 412, Height: 915, Scale: 2.625, Mobile: true, UserAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36", Platform: "Android", Touch: true, MaxTouches: 5}, nil
+	case "desktop":
+		return browserDeviceProfile{Name: "desktop", Width: 1440, Height: 900, Scale: 1, Mobile: false, UserAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36", Platform: "Linux x86_64", Touch: false, MaxTouches: 0}, nil
+	default:
+		return browserDeviceProfile{}, fmt.Errorf("invalid device: %s", device)
+	}
+}
+
+func (b *BrowserTool) buildViewport(params map[string]interface{}) (int, int, error) {
+	rawWidth, ok := params["width"].(float64)
+	if !ok {
+		return 0, 0, fmt.Errorf("width parameter is required")
+	}
+	rawHeight, ok := params["height"].(float64)
+	if !ok {
+		return 0, 0, fmt.Errorf("height parameter is required")
+	}
+	width := int(rawWidth)
+	height := int(rawHeight)
+	if rawWidth != float64(width) || width <= 0 {
+		return 0, 0, fmt.Errorf("invalid width: %v", rawWidth)
+	}
+	if rawHeight != float64(height) || height <= 0 {
+		return 0, 0, fmt.Errorf("invalid height: %v", rawHeight)
+	}
+	return width, height, nil
 }
 
 func (b *BrowserTool) buildExtractionScript(extractType string) string {
@@ -1309,6 +1383,222 @@ func (b *BrowserTool) reload(ctx context.Context) (string, error) {
 	return "Page reloaded", nil
 }
 
+func (b *BrowserTool) getMetrics(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		return "", fmt.Errorf("browser session not ready")
+	}
+
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+	if err := client.Performance.Enable(ctx, performance.NewEnableArgs()); err != nil {
+		return "", fmt.Errorf("failed to enable performance metrics: %w", err)
+	}
+	metrics, err := client.Performance.GetMetrics(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get performance metrics: %w", err)
+	}
+	payload := make(map[string]float64, len(metrics.Metrics))
+	for _, metric := range metrics.Metrics {
+		payload[metric.Name] = metric.Value
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal metrics: %w", err)
+	}
+	return string(data), nil
+}
+
+func (b *BrowserTool) emulateDevice(ctx context.Context, params map[string]interface{}) (string, error) {
+	profile, err := b.buildDeviceProfile(params)
+	if err != nil {
+		return "", err
+	}
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		opts, err := b.startOptions(params)
+		if err != nil {
+			return "", err
+		}
+		if err := sessionMgr.StartWithOptions(b.timeout, opts); err != nil {
+			return "", fmt.Errorf("failed to start browser: %w", err)
+		}
+	}
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+	if err := client.Emulation.SetDeviceMetricsOverride(ctx, emulation.NewSetDeviceMetricsOverrideArgs(profile.Width, profile.Height, profile.Scale, profile.Mobile)); err != nil {
+		return "", fmt.Errorf("failed to set device metrics override: %w", err)
+	}
+	if err := client.Emulation.SetUserAgentOverride(ctx, emulation.NewSetUserAgentOverrideArgs(profile.UserAgent).SetPlatform(profile.Platform)); err != nil {
+		return "", fmt.Errorf("failed to set user agent override: %w", err)
+	}
+	if err := client.Emulation.SetTouchEmulationEnabled(ctx, emulation.NewSetTouchEmulationEnabledArgs(profile.Touch).SetMaxTouchPoints(profile.MaxTouches)); err != nil {
+		return "", fmt.Errorf("failed to set touch emulation: %w", err)
+	}
+	payload := map[string]any{"device": profile.Name, "width": profile.Width, "height": profile.Height, "scale": profile.Scale, "mobile": profile.Mobile, "platform": profile.Platform, "touch": profile.Touch, "max_touch_points": profile.MaxTouches}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal emulation profile: %w", err)
+	}
+	return string(data), nil
+}
+
+func (b *BrowserTool) setViewport(ctx context.Context, params map[string]interface{}) (string, error) {
+	width, height, err := b.buildViewport(params)
+	if err != nil {
+		return "", err
+	}
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		opts, err := b.startOptions(params)
+		if err != nil {
+			return "", err
+		}
+		if err := sessionMgr.StartWithOptions(b.timeout, opts); err != nil {
+			return "", fmt.Errorf("failed to start browser: %w", err)
+		}
+	}
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+	if err := client.Emulation.SetDeviceMetricsOverride(ctx, emulation.NewSetDeviceMetricsOverrideArgs(width, height, 1.0, false)); err != nil {
+		return "", fmt.Errorf("failed to set viewport: %w", err)
+	}
+	payload := map[string]any{"width": width, "height": height}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal viewport: %w", err)
+	}
+	return string(data), nil
+}
+
+func (b *BrowserTool) listPages(ctx context.Context, params map[string]interface{}) (string, error) {
+	devtools, err := b.ensureDevTools(ctx, params)
+	if err != nil {
+		return "", err
+	}
+
+	targets, err := devtools.List(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to list browser pages: %w", err)
+	}
+
+	result := make([]map[string]any, 0, len(targets))
+	for _, target := range targets {
+		if target == nil {
+			continue
+		}
+		result = append(result, map[string]any{
+			"id":       target.ID,
+			"type":     string(target.Type),
+			"title":    target.Title,
+			"url":      target.URL,
+			"devtools": target.DevToolsFrontendURL,
+			"ws_debug": target.WebSocketDebuggerURL,
+		})
+	}
+
+	data, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshal browser pages: %w", err)
+	}
+	return string(data), nil
+}
+
+func (b *BrowserTool) newPage(ctx context.Context, params map[string]interface{}) (string, error) {
+	devtools, err := b.ensureDevTools(ctx, params)
+	if err != nil {
+		return "", err
+	}
+
+	target, err := b.createPageTarget(ctx, devtools, stringParam(params, "url"))
+	if err != nil {
+		return "", err
+	}
+	return marshalBrowserTarget(target)
+}
+
+func (b *BrowserTool) activatePage(ctx context.Context, params map[string]interface{}) (string, error) {
+	devtools, err := b.ensureDevTools(ctx, params)
+	if err != nil {
+		return "", err
+	}
+
+	target, err := requireTargetID(params)
+	if err != nil {
+		return "", err
+	}
+	if err := devtools.Activate(ctx, target); err != nil {
+		return "", fmt.Errorf("failed to activate browser page %s: %w", target.ID, err)
+	}
+	return fmt.Sprintf("Activated browser page: %s", target.ID), nil
+}
+
+func (b *BrowserTool) closePage(ctx context.Context, params map[string]interface{}) (string, error) {
+	devtools, err := b.ensureDevTools(ctx, params)
+	if err != nil {
+		return "", err
+	}
+
+	target, err := requireTargetID(params)
+	if err != nil {
+		return "", err
+	}
+	if err := devtools.Close(ctx, target); err != nil {
+		return "", fmt.Errorf("failed to close browser page %s: %w", target.ID, err)
+	}
+	return fmt.Sprintf("Closed browser page: %s", target.ID), nil
+}
+
+func (b *BrowserTool) ensureDevTools(ctx context.Context, params map[string]interface{}) (browserDevTools, error) {
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		opts, err := b.startOptions(params)
+		if err != nil {
+			return nil, err
+		}
+		if err := sessionMgr.StartWithOptions(b.timeout, opts); err != nil {
+			return nil, fmt.Errorf("failed to start browser: %w", err)
+		}
+	}
+	return sessionMgr.GetDevTools()
+}
+
+func (b *BrowserTool) createPageTarget(ctx context.Context, devtools browserDevTools, rawURL string) (*devtool.Target, error) {
+	if strings.TrimSpace(rawURL) == "" {
+		target, err := devtools.Create(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create browser page: %w", err)
+		}
+		return target, nil
+	}
+
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+	if !parsedURL.IsAbs() || strings.TrimSpace(parsedURL.Scheme) == "" || strings.TrimSpace(parsedURL.Host) == "" {
+		return nil, fmt.Errorf("absolute URL is required")
+	}
+
+	target, err := devtools.CreateURL(ctx, rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create browser page: %w", err)
+	}
+	return target, nil
+}
+
 // close closes the browser session.
 func (b *BrowserTool) close() (string, error) {
 	sessionMgr := GetBrowserSession(b.log)
@@ -1343,6 +1633,38 @@ func htmlToText(html string) string {
 	}
 
 	return text.String()
+}
+
+func stringParam(params map[string]interface{}, key string) string {
+	value, _ := params[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func requireTargetID(params map[string]interface{}) (*devtool.Target, error) {
+	targetID := stringParam(params, "target_id")
+	if targetID == "" {
+		return nil, fmt.Errorf("target_id parameter is required")
+	}
+	return &devtool.Target{ID: targetID}, nil
+}
+
+func marshalBrowserTarget(target *devtool.Target) (string, error) {
+	if target == nil {
+		return "", fmt.Errorf("browser page target unavailable")
+	}
+
+	data, err := json.Marshal(map[string]any{
+		"id":       target.ID,
+		"type":     string(target.Type),
+		"title":    target.Title,
+		"url":      target.URL,
+		"devtools": target.DevToolsFrontendURL,
+		"ws_debug": target.WebSocketDebuggerURL,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal browser page: %w", err)
+	}
+	return string(data), nil
 }
 
 func formatCDPResult(result *runtime.RemoteObject) (string, error) {
