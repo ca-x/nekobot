@@ -75,7 +75,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_headings", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_selects", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -206,6 +206,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getLists(ctx, params)
 	case "get_inputs":
 		return b.getInputs(ctx, params)
+	case "get_selects":
+		return b.getSelects(ctx, params)
 	case "get_headings":
 		return b.getHeadings(ctx, params)
 	case "wait":
@@ -1164,6 +1166,39 @@ func (b *BrowserTool) getInputs(ctx context.Context, params map[string]interface
     }));
   }
   return info;
+})))`,
+	})
+	if err != nil {
+		return "", err
+	}
+	const prefix = "Script executed successfully\nResult: "
+	return strings.TrimPrefix(result, prefix), nil
+}
+
+func (b *BrowserTool) getSelects(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	result, err := b.executeScript(ctx, map[string]interface{}{
+		"script": `JSON.stringify(Array.from(document.querySelectorAll('select')).map((select, idx) => ({
+  index: idx,
+  id: select.id || null,
+  name: select.name || null,
+  multiple: select.multiple || false,
+  disabled: select.disabled || false,
+  required: select.required || false,
+  size: select.size || 1,
+  selectedCount: Array.from(select.options).filter(opt => opt.selected).length,
+  options: Array.from(select.options).map(opt => ({
+    value: opt.value,
+    text: opt.textContent.trim(),
+    selected: opt.selected,
+    disabled: opt.disabled,
+    index: opt.index
+  }))
 })))`,
 	})
 	if err != nil {
