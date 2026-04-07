@@ -137,7 +137,7 @@ func (c *Channel) resolvePendingInteraction(msg wxtypes.WeixinMessage, content s
 			c.clearPendingSkillInstall(msg.FromUserID)
 			return "已取消安装。", true, nil
 		default:
-			return "当前操作不支持该 /select 选项。", true, nil
+			return "当前操作不支持该 /select 选项。请回复 /select 1 允许安装，或 /select 2 拒绝安装，也可以直接回复 1 或 2。", true, nil
 		}
 	case interactionActionConfirm:
 		c.clearPendingSkillInstall(msg.FromUserID)

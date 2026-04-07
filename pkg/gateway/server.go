@@ -678,7 +678,7 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDeleteConnections(w http.ResponseWriter, r *http.Request) {
-	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead)
+	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage)
 	if !ok {
 		return
 	}

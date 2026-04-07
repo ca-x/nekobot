@@ -207,6 +207,32 @@ func TestResolvePendingInteractionSelectDenyAlias(t *testing.T) {
 	}
 }
 
+func TestResolvePendingInteractionInvalidSelectShowsSupportedOptions(t *testing.T) {
+	ch := &Channel{
+		pendingSkillInstalls: map[string]pendingSkillInstall{},
+	}
+	ch.setPendingSkillInstall("user-1", pendingSkillInstall{
+		UserID:    "user-1",
+		Command:   "find-skills",
+		Repo:      "owner/repo",
+		CreatedAt: time.Now(),
+	})
+
+	reply, handled, err := ch.resolvePendingInteraction(wxtypes.WeixinMessage{FromUserID: "user-1"}, "/select 3")
+	if err != nil {
+		t.Fatalf("resolve pending interaction: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected interaction to be handled")
+	}
+	if !strings.Contains(reply, "/select 1") || !strings.Contains(reply, "/select 2") {
+		t.Fatalf("expected supported options hint, got %q", reply)
+	}
+	if _, ok := ch.getPendingSkillInstall("user-1"); !ok {
+		t.Fatal("expected pending interaction to remain after invalid select")
+	}
+}
+
 func TestResolvePendingInteractionNumericConfirmAlias(t *testing.T) {
 	registry := commands.NewRegistry()
 	if err := registry.Register(&commands.Command{

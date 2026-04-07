@@ -464,7 +464,7 @@ func TestDeleteConnectionsEndpointRemovesAllClientsForAdmin(t *testing.T) {
 	}
 }
 
-func TestDeleteConnectionsEndpointRemovesOnlyOwnedClientsForMember(t *testing.T) {
+func TestDeleteConnectionsEndpointRejectsMemberRoleEvenForOwnedClients(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
@@ -480,22 +480,34 @@ func TestDeleteConnectionsEndpointRemovesOnlyOwnedClientsForMember(t *testing.T)
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
 	}
+	if len(s.clients) != 2 {
+		t.Fatalf("expected member bulk delete to keep clients intact, got %d", len(s.clients))
+	}
+}
 
-	var body map[string]int
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode bulk delete response: %v", err)
+func TestDeleteConnectionsEndpointRejectsMemberRoleWithoutManageScope(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"uid":  "viewer-id",
+		"role": "member",
+	})
+
+	s.clients["client-a"] = &Client{id: "client-a", send: make(chan []byte, 1), userID: "viewer-id", username: "viewer"}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if body["deleted"] != 1 {
-		t.Fatalf("expected deleted=1, got %+v", body)
-	}
-	if _, ok := s.clients["client-a"]; ok {
-		t.Fatal("expected owned client to be removed")
-	}
-	if _, ok := s.clients["client-b"]; !ok {
-		t.Fatal("expected unowned client to remain")
+	if len(s.clients) != 1 {
+		t.Fatalf("expected member bulk delete to keep clients intact, got %d", len(s.clients))
 	}
 }
 
