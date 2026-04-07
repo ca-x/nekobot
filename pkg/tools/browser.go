@@ -73,7 +73,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "get_url", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "get_links", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -186,6 +186,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getTitle(ctx, params)
 	case "get_url":
 		return b.getURL(ctx, params)
+	case "get_links":
+		return b.getLinks(ctx, params)
 	case "wait":
 		return b.wait(ctx, params)
 	case "scroll":
@@ -872,6 +874,26 @@ func (b *BrowserTool) getURL(ctx context.Context, params map[string]interface{})
 		return "", fmt.Errorf("failed to get frame tree: %w", err)
 	}
 	return frameTree.FrameTree.Frame.URL, nil
+}
+
+func (b *BrowserTool) getLinks(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	result, err := b.executeScript(ctx, map[string]interface{}{
+		"script": `JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(a => ({
+  text: (a.textContent || '').trim(),
+  href: a.href
+})))`,
+	})
+	if err != nil {
+		return "", err
+	}
+	const prefix = "Script executed successfully\nResult: "
+	return strings.TrimPrefix(result, prefix), nil
 }
 
 // wait waits for a specified duration.
