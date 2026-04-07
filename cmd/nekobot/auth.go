@@ -54,6 +54,17 @@ Examples:
 	Run: runAuthLogout,
 }
 
+var authRefreshCmd = &cobra.Command{
+	Use:   "refresh",
+	Short: "Refresh stored OAuth credentials for an API provider",
+	Long: `Refresh stored OAuth credentials for an API provider.
+
+Examples:
+  # Refresh a provider credential
+  nekobot auth refresh --provider openai`,
+	Run: runAuthRefresh,
+}
+
 var authStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show authentication status",
@@ -74,10 +85,15 @@ func init() {
 
 	authLogoutCmd.Flags().StringVarP(&authProvider, "provider", "p", "", "API provider to logout from")
 	authLogoutCmd.Flags().BoolVar(&authLogoutAll, "all", false, "Logout from all providers")
+	authRefreshCmd.Flags().StringVarP(&authProvider, "provider", "p", "", "API provider to refresh")
+	if err := authRefreshCmd.MarkFlagRequired("provider"); err != nil {
+		panic(fmt.Sprintf("mark auth refresh provider flag required: %v", err))
+	}
 
 	// Add subcommands
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
+	authCmd.AddCommand(authRefreshCmd)
 	authCmd.AddCommand(authStatusCmd)
 
 	// Add to root
@@ -148,9 +164,9 @@ func runAuthLogin(cmd *cobra.Command, args []string) {
 
 	// Store credential
 	if err := center.Put(cmd.Context(), auth.CredentialRecord{
-		UserScope: authScopeGlobal(),
-		Provider:  authProvider,
-		AccountID: cred.AccountID,
+		UserScope:  authScopeGlobal(),
+		Provider:   authProvider,
+		AccountID:  cred.AccountID,
 		Credential: *cred,
 	}); err != nil {
 		log.Error("Failed to store credential", zap.Error(err))
@@ -226,6 +242,37 @@ func runAuthLogout(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("✅ Logged out from %s\n", auth.ProviderDisplayName(authProvider))
+}
+
+func runAuthRefresh(cmd *cobra.Command, args []string) {
+	log, err := logger.New(&logger.Config{
+		Level: logger.LevelInfo,
+	})
+	if err != nil {
+		fmt.Printf("Error creating logger: %v\n", err)
+		os.Exit(1)
+	}
+
+	store, err := auth.NewAuthStore()
+	if err != nil {
+		log.Error("Failed to initialize auth store", zap.Error(err))
+		os.Exit(1)
+	}
+	center := auth.NewCredentialCenter(store)
+
+	record, err := center.Refresh(cmd.Context(), auth.CredentialQuery{
+		UserScope: authScopeGlobal(),
+		Provider:  authProvider,
+	})
+	if err != nil {
+		log.Error("Failed to refresh credential", zap.Error(err))
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Refreshed %s\n", auth.ProviderDisplayName(authProvider))
+	if record != nil && !record.Credential.ExpiresAt.IsZero() {
+		fmt.Printf("Token expires: %s\n", record.Credential.ExpiresAt.Format("2006-01-02 15:04:05"))
+	}
 }
 
 func runAuthStatus(cmd *cobra.Command, args []string) {

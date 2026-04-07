@@ -1822,7 +1822,7 @@
   - 位置：`pkg/memory/*`。
 - [ ] **Gateway 控制面与连接治理增强**
   - 现状：`pkg/gateway/server.go` 原先是开放 `CheckOrigin`、简单 WS/REST 模式；本轮已补第一层 origin allowlist，且把基础连接治理推进到 IP/rate limit，但控制面授权边界此前仍停留在“任何有效 JWT 都可访问”。
-  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；已把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性；已补上已鉴权的 `GET /api/v1/connections/{id}`，让控制面可以查询单连接详情而不必扫全量列表；已新增 `gateway.max_connections` 配置与 server 内硬限制，开始收口最基本的连接数量治理；已完成 `gateway.allowed_ips`，补齐基于远端地址的 allowlist，并同时覆盖 websocket 握手与 REST 控制面入口；已完成 `gateway.rate_limit_per_minute`，以共享入口级的 per-IP 限流同时覆盖 REST 控制面和 websocket 握手；已完成 control-plane role scope 收紧：`status` 继续只允许 `admin/owner`，`member` 只能读取属于自己的连接元数据；已完成首个 pairing 薄切片：websocket 握手支持通过 `session_id` 复用既有 gateway session，并拒绝未知 session 或非 gateway session；已补上 pairing 薄切片的握手时序修正：无效 `session_id` 现在会在 websocket upgrade 前直接返回真实 `400`；已进一步补齐 pairing hardening：兼容 legacy 空 `source` 的旧 gateway session、拒绝同一 paired session 的重复 live attach、串行化并发 attach 窗口，并要求 websocket 入站消息的 `session_id` 与当前 active paired session 保持一致；已补齐控制面细粒度删除边界：`admin/owner` 仍可删除任意连接，`member` 现在仅可删除自己拥有的 live connection，对其他用户或不存在的目标统一返回 `404`，且仍不引入 pairing enrollment / ownership 持久化模型；已补齐 pairing proof：新增 `TestWSChatConcurrentAttachConflictKeepsRequestedExistingSession`，锁住并发 attach 冲突不会破坏既有 paired gateway session；已补当前 websocket handler 的两个稳定性缺口：`session unavailable` 现在会在 upgrade 前返回真实 HTTP 失败，且 router 接管 websocket chat 时不再重复走 inbound bus。当前下一最小切片转向更细的控制面/配对协议收口，而不再重复做已落地的 pairing 可观测性。
+  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；已把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性；已补上已鉴权的 `GET /api/v1/connections/{id}`，让控制面可以查询单连接详情而不必扫全量列表；已新增 `gateway.max_connections` 配置与 server 内硬限制，开始收口最基本的连接数量治理；已完成 `gateway.allowed_ips`，补齐基于远端地址的 allowlist，并同时覆盖 websocket 握手与 REST 控制面入口；已完成 `gateway.rate_limit_per_minute`，以共享入口级的 per-IP 限流同时覆盖 REST 控制面和 websocket 握手；已完成 control-plane role scope 收紧：`status` 继续只允许 `admin/owner`，`member` 只能读取属于自己的连接元数据；已完成首个 pairing 薄切片：websocket 握手支持通过 `session_id` 复用既有 gateway session，并拒绝未知 session 或非 gateway session；已补上 pairing 薄切片的握手时序修正：无效 `session_id` 现在会在 websocket upgrade 前直接返回真实 `400`；已进一步补齐 pairing hardening：兼容 legacy 空 `source` 的旧 gateway session、拒绝同一 paired session 的重复 live attach、串行化并发 attach 窗口，并要求 websocket 入站消息的 `session_id` 与当前 active paired session 保持一致；已补齐控制面细粒度删除边界：`admin/owner` 仍可删除任意连接，`member` 现在仅可删除自己拥有的 live connection，对其他用户或不存在的目标统一返回 `404`，且仍不引入 pairing enrollment / ownership 持久化模型；已补齐 pairing proof：新增 `TestWSChatConcurrentAttachConflictKeepsRequestedExistingSession`，锁住并发 attach 冲突不会破坏既有 paired gateway session；已补当前 websocket handler 的两个稳定性缺口：`session unavailable` 现在会在 upgrade 前返回真实 HTTP 失败，且 router 接管 websocket chat 时不再重复走 inbound bus；当前又补齐连接诊断字段 `session_source/requested_session_id`，让控制面能区分 `generated/requested/legacy` pairing 来源。下一最小切片再转向更细的控制面/配对协议收口。
   - 目标：补控制面协议与连接策略，避免 gateway 只停留在“聊天 socket”。
   - 来源：`goclaw/gateway/openclaw/*`。
   - 位置：`pkg/gateway/*`。
@@ -1832,11 +1832,11 @@
   - 目标：提升浏览器工具的可靠性和能力上限。
   - 来源：`goclaw/agent/tools/browser_session.go`、`browser_relay.go`、`browser_cdp.go`。
   - 位置：`pkg/tools/browser*.go`。
-- [ ] **OAuth 凭证中心管理器**
-  - 现状：`pkg/auth/*` 偏单次登录流程，缺按 provider/profile 统一管理、自动刷新、校验与持久化中心。
-  - 目标：支持更稳的 OAuth provider 运维能力。
+- [x] **OAuth 凭证中心管理器**
+  - 已完成：`pkg/auth/center.go` 已提供统一 `CredentialCenter`，支持 provider/account 级 `Put/Get/List/Validate/Refresh/Revoke`，并对现有 `AuthStore` 做兼容写透；CLI 侧也已补 `nekobot auth refresh --provider ...` 作为显式刷新入口。
+  - 已验证：`pkg/auth/center_test.go` 已覆盖 write-through、refresh 持久化回写、生命周期状态推导、revoke 删除与无 refresh token 拒绝路径；`./cmd/nekobot` 已通过包级测试。
   - 来源：`goclaw/providers/oauth/*`。
-  - 位置：`pkg/auth/*` 或新建 `pkg/oauth/*`。
+  - 位置：`pkg/auth/*`。
 
 ### P2（次优先级）
 - [x] **MaixCAM 命令响应回设备端**
