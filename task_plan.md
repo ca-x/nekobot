@@ -150,8 +150,8 @@
 - [x] Phase 1: 复核当前 `nekobot` provider/model 耦合结构与 `axonhub` 参考形态
 - [x] Phase 2: 形成独立迁移计划文件并接入主计划索引
 - [x] Phase 3: 完成端到端重构设计收束并落文档
-- [ ] Phase 4: 执行 provider connection / model config / runtime call path 数据模型与存储层重构
-- [ ] Phase 5: 执行 API / WebUI 迁移
+- [x] Phase 4: 执行 provider connection / model config / runtime call path 数据模型与存储层重构
+- [x] Phase 5: 执行 API / WebUI 迁移
 - [x] Phase 6: 恢复 `agent tool_session spawn -> process -> tasks.Service` 主线
 
 ### Decisions Made
@@ -880,8 +880,8 @@
 ### Phases
 - [x] Phase 1: 收敛 Claude Code 架构共性，明确 `AgentDefinition + Task Runtime + Permission Mode + Tool Registry + Session State`
 - [x] Phase 2: 评估新增能力并分层
-- [ ] Phase 3: 优先落地本地基础设施能力
-- [ ] Phase 4: 在本地基础设施稳定后，再评估远程/跨端能力
+- [x] Phase 3: 优先落地本地基础设施能力
+- [x] Phase 4: 在本地基础设施稳定后，再评估远程/跨端能力
 
 ### Decisions Made
 - 第一优先级：
