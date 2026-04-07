@@ -265,6 +265,13 @@ var channelDescriptors = []channelDescriptor{
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return dingtalk.NewChannel(log, cfg.Channels.DingTalk, messageBus, cmdRegistry)
 		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			dingtalkCfg := cfg.Channels.DingTalk
+			if err := decodeAccountConfig(account, &dingtalkCfg); err != nil {
+				return nil, err
+			}
+			return dingtalk.NewAccountChannel(log, dingtalkCfg, messageBus, cmdRegistry, channelInstanceID(account), channelDisplayName(account, "DingTalk"))
+		},
 	},
 	{
 		name:    "qq",
@@ -273,6 +280,13 @@ var channelDescriptors = []channelDescriptor{
 		enabled: func(cfg *config.Config) bool { return cfg.Channels.QQ.Enabled },
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return qq.NewChannel(log, cfg.Channels.QQ, messageBus, cmdRegistry)
+		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			qqCfg := cfg.Channels.QQ
+			if err := decodeAccountConfig(account, &qqCfg); err != nil {
+				return nil, err
+			}
+			return qq.NewAccountChannel(log, qqCfg, messageBus, cmdRegistry, channelInstanceID(account), channelDisplayName(account, "QQ"))
 		},
 	},
 	{
@@ -313,6 +327,13 @@ var channelDescriptors = []channelDescriptor{
 		enabled: func(cfg *config.Config) bool { return cfg.Channels.GoogleChat.Enabled },
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return googlechat.NewChannel(log, cfg.Channels.GoogleChat, messageBus, cmdRegistry)
+		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			googleChatCfg := cfg.Channels.GoogleChat
+			if err := decodeAccountConfig(account, &googleChatCfg); err != nil {
+				return nil, err
+			}
+			return googlechat.NewAccountChannel(log, googleChatCfg, messageBus, cmdRegistry, channelInstanceID(account), channelDisplayName(account, "Google Chat"))
 		},
 	},
 	{

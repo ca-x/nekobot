@@ -4,6 +4,7 @@ package dingtalk
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,10 +20,13 @@ import (
 
 // Channel implements DingTalk channel as a Stream client.
 type Channel struct {
-	log      *logger.Logger
-	config   config.DingTalkConfig
-	bus      bus.Bus
-	commands *commands.Registry
+	log         *logger.Logger
+	config      config.DingTalkConfig
+	bus         bus.Bus
+	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 
 	streamClient *client.StreamClient
 	running      bool
@@ -40,27 +44,47 @@ func NewChannel(
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, "dingtalk", "DingTalk")
+}
+
+// NewAccountChannel creates an account-scoped DingTalk channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.DingTalkConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return nil, fmt.Errorf("dingtalk client_id and client_secret are required")
 	}
 
 	return &Channel{
-		log:      log,
-		config:   cfg,
-		bus:      b,
-		commands: cmdRegistry,
-		running:  false,
+		log:         log,
+		config:      cfg,
+		bus:         b,
+		commands:    cmdRegistry,
+		id:          strings.TrimSpace(channelID),
+		channelType: "dingtalk",
+		name:        defaultDingTalkName(displayName),
+		running:     false,
 	}, nil
 }
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "dingtalk"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "DingTalk"
+	return c.name
+}
+
+// ChannelType returns the stable DingTalk family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -288,4 +312,12 @@ func (c *Channel) isAllowed(userID string) bool {
 	}
 
 	return false
+}
+
+func defaultDingTalkName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "DingTalk"
+	}
+	return name
 }

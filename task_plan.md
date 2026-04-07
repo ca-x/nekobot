@@ -1740,6 +1740,10 @@
     - `feishu`
     - `whatsapp`
     - `teams`
+    - `wework`
+    - `dingtalk`
+    - `qq`
+    - `googlechat`
   - 当前仍未完成的是“更深的 account-aware 业务语义”，不是 `BuildChannelFromAccount` 基础接线本身。
 - [ ] 将 `AccountBinding` 接入真实消息路由与 agent runtime 解析。
   - 当前新增进度：已不止停留在 WebUI/runtime reload；`pkg/channelaccounts.Manager.ResolveForChannelID("wechat")` 现已按 active WeChat account 优先解析裸 `wechat` 别名，且 `pkg/inboundrouter` 已补端到端回归，验证裸 `wechat` 入站消息会命中 active account 绑定的 runtime，而不是按列表顺序漂移。

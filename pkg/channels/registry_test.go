@@ -364,6 +364,96 @@ func TestBuildChannelFromAccount_WeWork(t *testing.T) {
 	}
 }
 
+func TestBuildChannelFromAccount_DingTalk(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "dingtalk",
+		AccountKey:  "tenant-a",
+		DisplayName: "DingTalk Tenant A",
+		Config: map[string]interface{}{
+			"enabled":       true,
+			"client_id":     "ding-client",
+			"client_secret": "ding-secret",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "dingtalk:tenant-a" {
+		t.Fatalf("unexpected dingtalk account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "dingtalk" {
+		t.Fatalf("expected typed dingtalk channel, got %T", channel)
+	}
+	if channel.Name() != "DingTalk Tenant A" {
+		t.Fatalf("unexpected dingtalk account channel name: %s", channel.Name())
+	}
+}
+
+func TestBuildChannelFromAccount_QQ(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "qq",
+		AccountKey:  "bot-a",
+		DisplayName: "QQ Bot A",
+		Config: map[string]interface{}{
+			"enabled":    true,
+			"app_id":     "qq-app",
+			"app_secret": "qq-secret",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "qq:bot-a" {
+		t.Fatalf("unexpected qq account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "qq" {
+		t.Fatalf("expected typed qq channel, got %T", channel)
+	}
+	if channel.Name() != "QQ Bot A" {
+		t.Fatalf("unexpected qq account channel name: %s", channel.Name())
+	}
+}
+
+func TestBuildChannelFromAccount_GoogleChat(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "googlechat",
+		AccountKey:  "space-a",
+		DisplayName: "Google Chat Space A",
+		Config: map[string]interface{}{
+			"enabled":          true,
+			"project_id":       "google-project",
+			"credentials_file": "/tmp/googlechat-creds.json",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "googlechat:space-a" {
+		t.Fatalf("unexpected googlechat account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "googlechat" {
+		t.Fatalf("expected typed googlechat channel, got %T", channel)
+	}
+	if channel.Name() != "Google Chat Space A" {
+		t.Fatalf("unexpected googlechat account channel name: %s", channel.Name())
+	}
+}
+
 func newRegistryTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()

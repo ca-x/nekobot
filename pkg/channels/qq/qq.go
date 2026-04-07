@@ -4,6 +4,7 @@ package qq
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,10 +24,13 @@ import (
 
 // Channel implements QQ Bot channel using official botgo SDK.
 type Channel struct {
-	log      *logger.Logger
-	config   config.QQConfig
-	bus      bus.Bus
-	commands *commands.Registry
+	log         *logger.Logger
+	config      config.QQConfig
+	bus         bus.Bus
+	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 
 	api            openapi.OpenAPI
 	tokenSource    oauth2.TokenSource
@@ -45,6 +49,18 @@ func NewChannel(
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, "qq", "QQ")
+}
+
+// NewAccountChannel creates an account-scoped QQ channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.QQConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.AppID == "" || cfg.AppSecret == "" {
 		return nil, fmt.Errorf("qq app_id and app_secret are required")
 	}
@@ -54,6 +70,9 @@ func NewChannel(
 		config:       cfg,
 		bus:          b,
 		commands:     cmdRegistry,
+		id:           strings.TrimSpace(channelID),
+		channelType:  "qq",
+		name:         defaultQQName(displayName),
 		processedIDs: make(map[string]bool),
 		running:      false,
 	}, nil
@@ -61,12 +80,17 @@ func NewChannel(
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "qq"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "QQ"
+	return c.name
+}
+
+// ChannelType returns the stable QQ family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -389,4 +413,12 @@ func (c *Channel) isAllowed(id string) bool {
 	}
 
 	return false
+}
+
+func defaultQQName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "QQ"
+	}
+	return name
 }

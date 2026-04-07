@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,10 +25,13 @@ import (
 
 // Channel implements Google Chat channel.
 type Channel struct {
-	log      *logger.Logger
-	config   config.GoogleChatConfig
-	bus      bus.Bus
-	commands *commands.Registry
+	log         *logger.Logger
+	config      config.GoogleChatConfig
+	bus         bus.Bus
+	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 
 	service    *chat.Service
 	httpClient *http.Client
@@ -44,15 +48,30 @@ func NewChannel(
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, "googlechat", "Google Chat")
+}
+
+// NewAccountChannel creates an account-scoped Google Chat channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.GoogleChatConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.ProjectID == "" {
 		return nil, fmt.Errorf("googlechat project_id is required")
 	}
 
 	return &Channel{
-		log:      log,
-		config:   cfg,
-		bus:      b,
-		commands: cmdRegistry,
+		log:         log,
+		config:      cfg,
+		bus:         b,
+		commands:    cmdRegistry,
+		id:          strings.TrimSpace(channelID),
+		channelType: "googlechat",
+		name:        defaultGoogleChatName(displayName),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -62,12 +81,17 @@ func NewChannel(
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "googlechat"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "GoogleChat"
+	return c.name
+}
+
+// ChannelType returns the stable Google Chat family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -333,4 +357,12 @@ func (c *Channel) isAllowed(userID string) bool {
 	}
 
 	return false
+}
+
+func defaultGoogleChatName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "GoogleChat"
+	}
+	return name
 }
