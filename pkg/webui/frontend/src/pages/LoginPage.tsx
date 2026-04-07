@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { api, setToken } from '@/api/client';
 import { t } from '@/lib/i18n';
 import { toast } from 'sonner';
+import { PasswordInput } from '@/components/ui/password-input';
+import { Button } from '@/components/ui/button';
 
 interface LoginResponse {
   token: string;
@@ -54,7 +57,7 @@ export default function LoginPage() {
       setToken(data.token);
       navigate('/chat', { replace: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Login failed');
+      toast.error(err instanceof Error ? err.message : t('loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -86,6 +89,7 @@ export default function LoginPage() {
                 className="block text-sm font-medium text-foreground mb-1.5"
               >
                 {t('username')}
+                <span className="ml-1 text-destructive">*</span>
               </label>
               <input
                 id="username"
@@ -97,35 +101,28 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
                 placeholder={t('username')}
+                aria-label={t('username')}
               />
             </div>
 
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-foreground mb-1.5"
-              >
-                {t('password')}
-              </label>
-              <input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
-                placeholder={t('password')}
-              />
-            </div>
+            <PasswordInput
+              id="password"
+              label={t('password')}
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={t('password')}
+            />
 
-            <button
+            <Button
               type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
+              disabled={loading || !username.trim() || !password.trim()}
+              className="w-full"
             >
-              {loading ? '\u2026' : t('login')}
-            </button>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('login')}
+            </Button>
           </form>
         </div>
       </div>

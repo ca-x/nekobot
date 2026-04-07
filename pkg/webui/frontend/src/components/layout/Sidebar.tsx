@@ -211,6 +211,7 @@ export default function Sidebar() {
           className={shellButtonClass}
           title={mobileSidebarOpen ? t('close') : t('open')}
           aria-label={mobileSidebarOpen ? t('close') : t('open')}
+          aria-expanded={mobileSidebarOpen}
         >
           {mobileSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>

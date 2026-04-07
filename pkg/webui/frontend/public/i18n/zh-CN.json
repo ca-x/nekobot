@@ -1162,5 +1162,17 @@
   "disabled": "已禁用",
   "runtimeTopologyBindingModeSingle": "single_agent",
   "runtimeTopologyBindingModeMulti": "multi_agent",
-  "remove": "删除"
+  "remove": "删除",
+  "close": "关闭",
+  "open": "打开",
+  "chatNoModelsTitle": "尚未配置模型",
+  "chatNoModelsDescription": "请先从供应商发现模型，或从模型工作区手动添加模型，然后再开始聊天。",
+  "chatOpenModels": "打开模型页面",
+  "loginFailed": "登录失败",
+  "initFailed": "初始化失败",
+  "requiredField": "此字段为必填项",
+  "invalidFormat": "格式无效",
+  "passwordShow": "显示密码",
+  "passwordHide": "隐藏密码",
+  "fieldRequired": "必填"
 }

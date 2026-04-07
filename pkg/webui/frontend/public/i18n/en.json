@@ -1162,5 +1162,17 @@
   "disabled": "Disabled",
   "runtimeTopologyBindingModeSingle": "single_agent",
   "runtimeTopologyBindingModeMulti": "multi_agent",
-  "remove": "Remove"
+  "remove": "Remove",
+  "close": "Close",
+  "open": "Open",
+  "chatNoModelsTitle": "No models configured",
+  "chatNoModelsDescription": "Discover models from a provider or add them from the models workspace before starting a chat.",
+  "chatOpenModels": "Open models",
+  "loginFailed": "Login failed",
+  "initFailed": "Initialization failed",
+  "requiredField": "This field is required",
+  "invalidFormat": "Invalid format",
+  "passwordShow": "Show password",
+  "passwordHide": "Hide password",
+  "fieldRequired": "Required"
 }

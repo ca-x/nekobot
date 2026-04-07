@@ -25,6 +25,9 @@ import { useProviders } from '@/hooks/useProviders';
 import { useAccountBindings, useChannelAccounts, useRuntimeAgents } from '@/hooks/useTopology';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { MessageBubble } from '@/components/chat/MessageBubble';
+import { StatusPill } from '@/components/chat/StatusPill';
+import { ChatLoadErrorState } from '@/components/chat/ChatLoadErrorState';
 
 interface ProviderGroupInfo {
   name: string;
@@ -58,13 +61,6 @@ function fromSelectValue(value: string): string {
   return value === EMPTY_VALUE ? '' : value;
 }
 
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 function useAppConfig() {
   return useQuery<ConfigData>({
     queryKey: ['config'],
@@ -75,43 +71,6 @@ function useAppConfig() {
 
 function formatQueryErrorMessage(error: unknown, fallbackKey: string): string {
   return error instanceof Error && error.message.trim() ? error.message : t(fallbackKey);
-}
-
-function ChatLoadErrorState({
-  title,
-  description,
-  message,
-  onRetry,
-  retrying,
-}: {
-  title: string;
-  description: string;
-  message: string;
-  onRetry: () => void;
-  retrying: boolean;
-}) {
-  return (
-    <div className="rounded-[1.5rem] border border-rose-200/80 bg-rose-50/70 p-4 shadow-[0_20px_50px_-38px_rgba(160,60,70,0.4)]">
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700">
-          <AlertCircle className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-rose-950">{title}</div>
-          <p className="mt-1 text-xs leading-5 text-rose-900/80">{description}</p>
-          <div className="mt-3 rounded-2xl border border-rose-200/80 bg-white/90 px-3 py-2 text-xs text-rose-950">
-            {message}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 flex justify-end">
-        <Button type="button" variant="outline" className="rounded-full" onClick={onRetry} disabled={retrying}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
-          {t('refresh')}
-        </Button>
-      </div>
-    </div>
-  );
 }
 
 function buildModelList(
@@ -176,89 +135,6 @@ function buildModelList(
   }
 
   return { models, defaultProvider, defaultModel, defaultFallback, routeTargets };
-}
-
-function MessageBubble({ message }: { message: ChatMessage }) {
-  if (message.role === 'user') {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[82%] space-y-2">
-          <div className="rounded-[1.4rem] rounded-br-md bg-[hsl(var(--gray-900))] px-4 py-3 text-sm leading-6 text-white shadow-[0_16px_40px_-24px_rgba(20,15,10,0.75)] whitespace-pre-wrap break-words">
-            {message.content}
-          </div>
-          <div className="eyebrow-label mono-data text-right text-muted-foreground/80">
-            {formatTime(message.timestamp)}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (message.role === 'assistant') {
-    return (
-      <div className="flex justify-start">
-        <div className="max-w-[88%] space-y-2">
-          <div className="rounded-[1.4rem] rounded-bl-md border border-[hsl(var(--brand-200))] bg-white/90 px-4 py-3 text-sm leading-6 text-foreground shadow-[0_18px_42px_-30px_rgba(120,55,75,0.35)] backdrop-blur whitespace-pre-wrap break-words">
-            {message.content}
-          </div>
-          <div className="eyebrow-label mono-data text-muted-foreground/80">
-            {formatTime(message.timestamp)}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex justify-center">
-      <div
-        className={cn(
-          'max-w-[90%] rounded-full px-3 py-1.5 text-xs',
-          message.role === 'error'
-            ? 'bg-destructive/10 text-destructive'
-            : 'bg-[hsl(var(--gray-100))] text-muted-foreground',
-        )}
-      >
-        {message.content}
-      </div>
-    </div>
-  );
-}
-
-function StatusPill({
-  status,
-  isAwaitingReply,
-}: {
-  status: string;
-  isAwaitingReply: boolean;
-}) {
-  const colorClass =
-    status === 'connected'
-      ? 'bg-emerald-500'
-      : status === 'connecting'
-        ? 'bg-amber-500 animate-pulse'
-        : 'bg-rose-500';
-
-  const label =
-    status === 'connected'
-      ? t('wsConnected')
-      : status === 'connecting'
-        ? t('chatConnecting')
-        : t('wsDisconnected');
-
-  return (
-    <div className="flex max-w-full flex-col items-start gap-1.5 sm:items-end">
-      <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-border/70 bg-card/92 px-3.5 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur">
-        <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', colorClass)} />
-        <span className="min-w-0 break-words font-medium">{label}</span>
-      </div>
-      {isAwaitingReply && (
-        <span className="inline-flex h-7 items-center rounded-full bg-accent px-2.5 text-[11px] font-medium text-accent-foreground whitespace-nowrap">
-          {t('chatWaitingReply')}
-        </span>
-      )}
-    </div>
-  );
 }
 
 function contextBudgetTone(status: 'ok' | 'warning' | 'critical') {
@@ -667,13 +543,13 @@ export default function ChatPage() {
                           <Sparkles className="h-4 w-4" />
                         </div>
                         <div className="space-y-2">
-                          <div className="text-sm font-semibold text-[hsl(var(--brand-900))] dark:text-[hsl(var(--brand-200))]">No models configured</div>
-                          <p className="text-xs leading-5 text-[hsl(var(--brand-800))]/70 dark:text-[hsl(var(--brand-300))]/70">Discover models from a provider or add them from the models workspace before starting a chat.</p>
+                          <div className="text-sm font-semibold text-[hsl(var(--brand-900))] dark:text-[hsl(var(--brand-200))]">{t('chatNoModelsTitle')}</div>
+                          <p className="text-xs leading-5 text-[hsl(var(--brand-800))]/70 dark:text-[hsl(var(--brand-300))]/70">{t('chatNoModelsDescription')}</p>
                           <Link
                             to="/models"
                             className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--brand-700))] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[hsl(var(--brand-800))] dark:bg-[hsl(var(--brand-300))] dark:text-[hsl(var(--brand-900))] dark:hover:bg-[hsl(var(--brand-200))]"
                           >
-                            Open models
+                            {t('chatOpenModels')}
                             <ArrowRight className="h-3 w-3" />
                           </Link>
                         </div>

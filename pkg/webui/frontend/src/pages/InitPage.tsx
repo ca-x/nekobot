@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { api, setToken } from '@/api/client';
 import { t } from '@/lib/i18n';
 import { toast } from 'sonner';
+import { PasswordInput } from '@/components/ui/password-input';
+import { Button } from '@/components/ui/button';
 
 interface InitResponse {
   token: string;
@@ -115,7 +118,7 @@ export default function InitPage() {
       }
       navigate('/chat', { replace: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Initialization failed');
+      toast.error(err instanceof Error ? err.message : t('initFailed'));
     } finally {
       setLoading(false);
     }
@@ -165,6 +168,7 @@ export default function InitPage() {
                     className="block text-sm font-medium text-foreground mb-1.5"
                   >
                     {t('username')}
+                    <span className="ml-1 text-destructive">*</span>
                   </label>
                   <input
                     id="username"
@@ -179,24 +183,15 @@ export default function InitPage() {
                   />
                 </div>
 
-                <div>
-                  <label
-                    htmlFor="password"
-                    className="block text-sm font-medium text-foreground mb-1.5"
-                  >
-                    {t('password')}
-                  </label>
-                  <input
-                    id="password"
-                    type="password"
-                    autoComplete="new-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
-                    placeholder={t('password')}
-                  />
-                </div>
+                <PasswordInput
+                  id="password"
+                  label={t('password')}
+                  required
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t('password')}
+                />
               </div>
 
               <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-5">
@@ -351,13 +346,14 @@ export default function InitPage() {
               </div>
             </div>
 
-            <button
+            <Button
               type="submit"
-              disabled={loading}
-              className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
+              disabled={loading || !username.trim() || !password.trim()}
+              className="w-full"
             >
-              {loading ? '\u2026' : t('initialize')}
-            </button>
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t('initialize')}
+            </Button>
           </form>
         </div>
       </div>
