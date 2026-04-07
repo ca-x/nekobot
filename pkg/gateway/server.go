@@ -705,6 +705,10 @@ func (s *Server) handleDeleteConnections(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage); !ok {
+		return
+	}
+
 	s.mu.RLock()
 	totalConns := len(s.clients)
 	pairedCount := 0
@@ -716,13 +720,13 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	metrics := map[string]interface{}{
-		"gateway_connections_total":        totalConns,
-		"gateway_connections_paired":       pairedCount,
-		"gateway_connections_unpaired":     totalConns - pairedCount,
-		"gateway_rate_limit_per_minute":    s.config.Gateway.RateLimitPerMinute,
-		"gateway_max_connections":          s.config.Gateway.MaxConnections,
-		"gateway_allowed_origins_count":    len(s.config.Gateway.AllowedOrigins),
-		"gateway_allowed_ips_count":        len(s.config.Gateway.AllowedIPs),
+		"gateway_connections_total":     totalConns,
+		"gateway_connections_paired":    pairedCount,
+		"gateway_connections_unpaired":  totalConns - pairedCount,
+		"gateway_rate_limit_per_minute": s.config.Gateway.RateLimitPerMinute,
+		"gateway_max_connections":       s.config.Gateway.MaxConnections,
+		"gateway_allowed_origins_count": len(s.config.Gateway.AllowedOrigins),
+		"gateway_allowed_ips_count":     len(s.config.Gateway.AllowedIPs),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

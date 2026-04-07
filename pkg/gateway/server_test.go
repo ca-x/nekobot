@@ -165,10 +165,41 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
-func TestMetricsEndpoint(t *testing.T) {
+func TestMetricsEndpointRequiresAuth(t *testing.T) {
 	s := newTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestMetricsEndpointRejectsMemberRole(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"uid":  "viewer-id",
+		"role": "member",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 

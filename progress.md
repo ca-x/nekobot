@@ -747,3 +747,11 @@
   - `go test -count=1 ./pkg/tools -run 'TestBrowserToolParametersIncludeGetNetwork|TestBrowserNetworkEntryFromRequest|TestBrowserNetworkEntryFromResponse|TestBrowserNetworkEntryFromFinishedAndFailed'` passed.
   - `go test -count=1 ./pkg/tools` passed.
 
+
+- Completed gateway control-plane hardening phase 18 (metrics auth gate):
+  - moved `GET /metrics` behind the same authenticated control-plane gate as the rest of the gateway admin surface.
+  - kept the scope intentionally narrow by requiring manage-level access only, without changing metric shape or pairing semantics.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'TestMetricsEndpoint(RequiresAuth|RejectsMemberRole)?$|TestMetricsEndpoint$'` passed.
+  - `go test -count=1 ./pkg/gateway` passed.
+
