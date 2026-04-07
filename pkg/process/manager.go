@@ -50,6 +50,35 @@ type Observation struct {
 	Summary string `json:"summary,omitempty"`
 }
 
+// AutoResponseConfig configures automatic responses to interactive prompts.
+type AutoResponseConfig struct {
+	Enabled          bool              `json:"enabled"`
+	DefaultConfirm   string            `json:"default_confirm"`
+	DefaultDeny      string            `json:"default_deny"`
+	MenuSelections   map[string]string `json:"menu_selections"`
+	AutoConfirmPatterns []string       `json:"auto_confirm_patterns"`
+	AutoDenyPatterns    []string       `json:"auto_deny_patterns"`
+}
+
+// DefaultAutoResponseConfig returns sensible defaults for auto-response.
+func DefaultAutoResponseConfig() AutoResponseConfig {
+	return AutoResponseConfig{
+		Enabled:        false,
+		DefaultConfirm: "y",
+		DefaultDeny:    "n",
+		MenuSelections: make(map[string]string),
+		AutoConfirmPatterns: []string{
+			"continue? [y/n]",
+			"proceed? [y/n]",
+			"is this ok",
+		},
+		AutoDenyPatterns: []string{
+			"abort?",
+			"cancel?",
+		},
+	}
+}
+
 const (
 	defaultPTYRows = 40
 	defaultPTYCols = 120
@@ -345,6 +374,85 @@ func (m *Manager) Write(sessionID, data string) error {
 	}
 
 	_, err := io.WriteString(session.PTY, data)
+	return err
+}
+
+// AutoRespond analyzes session output and sends automatic responses if configured.
+func (m *Manager) AutoRespond(sessionID string, cfg AutoResponseConfig) (bool, string, error) {
+	if !cfg.Enabled {
+		return false, "", nil
+	}
+
+	m.mu.RLock()
+	session, exists := m.sessions[sessionID]
+	m.mu.RUnlock()
+
+	if !exists {
+		return false, "", fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	session.OutputMutex.RLock()
+	obs := classifyObservation(session.Output)
+	session.OutputMutex.RUnlock()
+
+	switch obs.State {
+	case "awaiting_input":
+		return m.handleAwaitingInput(session, obs.Summary, cfg)
+	case "menu_prompt":
+		return m.handleMenuPrompt(session, obs.Summary, cfg)
+	default:
+		return false, "", nil
+	}
+}
+
+func (m *Manager) handleAwaitingInput(session *Session, summary string, cfg AutoResponseConfig) (bool, string, error) {
+	lower := strings.ToLower(summary)
+
+	// Check auto-confirm patterns
+	for _, pattern := range cfg.AutoConfirmPatterns {
+		if strings.Contains(lower, strings.ToLower(pattern)) {
+			if err := m.sendResponse(session, cfg.DefaultConfirm); err != nil {
+				return false, "", err
+			}
+			return true, cfg.DefaultConfirm, nil
+		}
+}
+
+	// Check auto-deny patterns
+	for _, pattern := range cfg.AutoDenyPatterns {
+		if strings.Contains(lower, strings.ToLower(pattern)) {
+			if err := m.sendResponse(session, cfg.DefaultDeny); err != nil {
+				return false, "", err
+			}
+			return true, cfg.DefaultDeny, nil
+		}
+	}
+
+	return false, "", nil
+}
+
+func (m *Manager) handleMenuPrompt(session *Session, summary string, cfg AutoResponseConfig) (bool, string, error) {
+	// Try to find a configured selection for this menu
+	for menuKey, selection := range cfg.MenuSelections {
+		if strings.Contains(strings.ToLower(summary), strings.ToLower(menuKey)) {
+			if err := m.sendResponse(session, selection); err != nil {
+				return false, "", err
+			}
+			return true, selection, nil
+		}
+	}
+	return false, "", nil
+}
+
+func (m *Manager) sendResponse(session *Session, response string) error {
+	if !session.Running || session.PTY == nil {
+		return fmt.Errorf("session not ready for response")
+	}
+	// Add newline if not present
+	if !strings.HasSuffix(response, "\n") {
+		response += "\n"
+	}
+	_, err := io.WriteString(session.PTY, response)
 	return err
 }
 
