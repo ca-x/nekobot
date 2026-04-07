@@ -73,7 +73,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -182,6 +182,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getHTML(ctx, params)
 	case "get_text":
 		return b.getText(ctx, params)
+	case "get_title":
+		return b.getTitle(ctx, params)
 	case "wait":
 		return b.wait(ctx, params)
 	case "scroll":
@@ -827,6 +829,23 @@ func (b *BrowserTool) getText(ctx context.Context, params map[string]interface{}
 	}
 
 	return htmlToText(html), nil
+}
+
+func (b *BrowserTool) getTitle(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	result, err := b.executeScript(ctx, map[string]interface{}{
+		"script": "document.title",
+	})
+	if err != nil {
+		return "", err
+	}
+	const prefix = "Script executed successfully\nResult: "
+	return strings.TrimPrefix(result, prefix), nil
 }
 
 // wait waits for a specified duration.
