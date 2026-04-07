@@ -75,7 +75,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_headings", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -204,6 +204,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getTables(ctx, params)
 	case "get_lists":
 		return b.getLists(ctx, params)
+	case "get_inputs":
+		return b.getInputs(ctx, params)
 	case "get_headings":
 		return b.getHeadings(ctx, params)
 	case "wait":
@@ -1124,6 +1126,44 @@ func (b *BrowserTool) getLists(ctx context.Context, params map[string]interface{
     itemCount: items.length,
     items: items
   };
+})))`,
+	})
+	if err != nil {
+		return "", err
+	}
+	const prefix = "Script executed successfully\nResult: "
+	return strings.TrimPrefix(result, prefix), nil
+}
+
+func (b *BrowserTool) getInputs(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	result, err := b.executeScript(ctx, map[string]interface{}{
+		"script": `JSON.stringify(Array.from(document.querySelectorAll('input, textarea, select')).map((input, idx) => {
+  const info = {
+    index: idx,
+    tag: input.tagName.toLowerCase(),
+    type: input.type || null,
+    id: input.id || null,
+    name: input.name || null,
+    value: input.value || null,
+    placeholder: input.placeholder || null,
+    required: input.required || false,
+    disabled: input.disabled || false,
+    readonly: input.readOnly || false
+  };
+  if (input.tagName === 'SELECT') {
+    info.options = Array.from(input.options).map(opt => ({
+      value: opt.value,
+      text: opt.textContent.trim(),
+      selected: opt.selected
+    }));
+  }
+  return info;
 })))`,
 	})
 	if err != nil {
