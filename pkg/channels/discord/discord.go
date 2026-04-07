@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -177,8 +178,11 @@ func (c *Channel) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate
 	content := strings.TrimSpace(m.Content)
 	msgType := bus.MessageTypeText
 
-	// Check if it's a command
-	if c.commands.IsCommand(content) {
+	scope := channelcapabilities.CapabilityScopeDM
+	if m.GuildID != "" {
+		scope = channelcapabilities.CapabilityScopeGroup
+	}
+	if c.supportsNativeCommands(scope) && c.commands.IsCommand(content) {
 		c.handleCommand(s, m)
 		return
 	}
@@ -210,6 +214,15 @@ func (c *Channel) handleMessage(s *discordgo.Session, m *discordgo.MessageCreate
 	if err := c.bus.SendInbound(msg); err != nil {
 		c.log.Error("Failed to send inbound message", zap.Error(err))
 	}
+}
+
+func (c *Channel) supportsNativeCommands(scope channelcapabilities.CapabilityScope) bool {
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityNativeCommands,
+		scope,
+		false,
+	)
 }
 
 // handleCommand processes a command message.

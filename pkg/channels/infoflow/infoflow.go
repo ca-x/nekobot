@@ -19,6 +19,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -210,7 +211,7 @@ func (c *Channel) handleWebhook(w http.ResponseWriter, r *http.Request) {
 		sessionID = "infoflow:" + sessionID
 	}
 
-	if c.commands.IsCommand(content) {
+	if c.supportsNativeCommands(channelcapabilities.CapabilityScopeGroup) && c.commands.IsCommand(content) {
 		c.handleCommand(sessionID, userID, payload.Username, content, payload.ReplyWebhook)
 		return
 	}
@@ -235,6 +236,15 @@ func (c *Channel) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	if err := c.bus.SendInbound(msg); err != nil {
 		c.log.Error("Failed to send Infoflow inbound message", zap.Error(err))
 	}
+}
+
+func (c *Channel) supportsNativeCommands(scope channelcapabilities.CapabilityScope) bool {
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityNativeCommands,
+		scope,
+		false,
+	)
 }
 
 func (c *Channel) handleCommand(sessionID, userID, username, content, replyWebhook string) {

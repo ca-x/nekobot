@@ -17,6 +17,7 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -327,8 +328,7 @@ func (c *Channel) processUpdate(update Update) {
 		zap.String("chat_id", chatID),
 		zap.String("username", username))
 
-	// Check for slash commands
-	if c.commands.IsCommand(content) {
+	if c.supportsNativeCommands(channelcapabilities.CapabilityScopeDM) && c.commands.IsCommand(content) {
 		c.handleCommand(userID, username, chatID, content)
 		return
 	}
@@ -359,6 +359,15 @@ func (c *Channel) processUpdate(update Update) {
 	if err := c.sendMessage(chatID, reply, false); err != nil {
 		c.log.Error("Failed to send ServerChan agent reply", zap.Error(err))
 	}
+}
+
+func (c *Channel) supportsNativeCommands(scope channelcapabilities.CapabilityScope) bool {
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityNativeCommands,
+		scope,
+		false,
+	)
 }
 
 // handleCommand processes a command message.
