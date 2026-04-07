@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -219,7 +220,7 @@ func (c *Channel) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	content := strings.TrimSpace(act.Text)
 
-	if c.commands.IsCommand(content) {
+	if c.supportsNativeCommands() && c.commands.IsCommand(content) {
 		c.handleCommand(sessionID, act, content)
 		return
 	}
@@ -241,6 +242,15 @@ func (c *Channel) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	if err := c.bus.SendInbound(msg); err != nil {
 		c.log.Error("Failed to dispatch Teams message to bus", zap.Error(err))
 	}
+}
+
+func (c *Channel) supportsNativeCommands() bool {
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityNativeCommands,
+		channelcapabilities.CapabilityScopeGroup,
+		false,
+	)
 }
 
 func (c *Channel) handleCommand(sessionID string, act activity, content string) {
