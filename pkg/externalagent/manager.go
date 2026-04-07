@@ -106,6 +106,9 @@ func normalizeSpec(spec SessionSpec) (SessionSpec, error) {
 		return SessionSpec{}, fmt.Errorf("workspace is required")
 	}
 	spec.Workspace = filepath.Clean(spec.Workspace)
+	if !filepath.IsAbs(spec.Workspace) {
+		return SessionSpec{}, fmt.Errorf("absolute workspace path is required")
+	}
 	if spec.Tool == "" {
 		spec.Tool = spec.AgentKind
 	}

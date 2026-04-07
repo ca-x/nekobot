@@ -2,6 +2,7 @@ package externalagent
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"nekobot/pkg/config"
@@ -106,6 +107,34 @@ func TestResolveSessionIgnoresNonStringMetadataWithoutPanicking(t *testing.T) {
 	}
 	if resolved == nil || resolved.ID == "" {
 		t.Fatal("expected a newly created session")
+	}
+}
+
+func TestNormalizeSpecRejectsRelativeWorkspace(t *testing.T) {
+	_, err := normalizeSpec(SessionSpec{
+		Owner:     "alice",
+		AgentKind: "claude",
+		Workspace: "relative/project",
+	})
+	if err == nil {
+		t.Fatal("expected relative workspace error")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "absolute workspace path is required") {
+		t.Fatalf("expected absolute workspace error, got %v", err)
+	}
+}
+
+func TestNormalizeSpecRejectsWorkspaceTraversalEscape(t *testing.T) {
+	_, err := normalizeSpec(SessionSpec{
+		Owner:     "alice",
+		AgentKind: "claude",
+		Workspace: "../project-a",
+	})
+	if err == nil {
+		t.Fatal("expected workspace traversal error")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "absolute workspace path is required") {
+		t.Fatalf("expected absolute workspace error, got %v", err)
 	}
 }
 
