@@ -73,7 +73,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -184,6 +184,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getText(ctx, params)
 	case "get_title":
 		return b.getTitle(ctx, params)
+	case "get_url":
+		return b.getURL(ctx, params)
 	case "wait":
 		return b.wait(ctx, params)
 	case "scroll":
@@ -846,6 +848,30 @@ func (b *BrowserTool) getTitle(ctx context.Context, params map[string]interface{
 	}
 	const prefix = "Script executed successfully\nResult: "
 	return strings.TrimPrefix(result, prefix), nil
+}
+
+func (b *BrowserTool) getURL(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		return "", fmt.Errorf("browser session not ready")
+	}
+
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	frameTree, err := client.Page.GetFrameTree(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get frame tree: %w", err)
+	}
+	return frameTree.FrameTree.Frame.URL, nil
 }
 
 // wait waits for a specified duration.
