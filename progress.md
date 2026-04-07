@@ -730,3 +730,11 @@
   - `go test -count=1 ./pkg/tools -run 'TestBrowserToolParametersIncludeCookieControlActions|TestBrowserToolBuildSetCookieArgs|TestBrowserToolBuildSetCookieArgsRejectsMissingName|TestBrowserToolBuildSetCookieArgsRejectsRelativeURL|TestBrowserToolBuildSetCookieArgsRejectsInvalidSameSite'` passed.
   - `go test -count=1 ./pkg/tools` passed.
 
+
+- Completed follow-up browser relay/CDP slice from `task_plan.md`:
+  - added `browser` action `get_console` in `pkg/tools/browser.go`.
+  - added console filter options `errors_only`, `warnings_only`, `info_only`, and `max_entries`.
+  - added deterministic console entry normalization helpers for log/runtime events with regression tests in `pkg/tools/browser_test.go`.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'TestBrowserToolParametersIncludeGetConsole|TestBrowserToolBuildConsoleOptionsDefaultsAndFilters|TestBrowserConsoleEntryMatchesRespectsPriority|TestBrowserConsoleEntryFrom(Log|Runtime)'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
