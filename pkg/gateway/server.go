@@ -55,14 +55,16 @@ type websocketRouter interface {
 
 // Client represents a connected WebSocket client.
 type Client struct {
-	id          string
-	conn        *websocket.Conn
-	send        chan []byte
-	session     agent.SessionInterface
-	userID      string
-	username    string
-	connectedAt time.Time
-	remoteAddr  string
+	id                 string
+	conn               *websocket.Conn
+	send               chan []byte
+	session            agent.SessionInterface
+	userID             string
+	username           string
+	connectedAt        time.Time
+	remoteAddr         string
+	sessionSource      string
+	requestedSessionID string
 }
 
 // Server is the WebSocket/REST gateway server.
@@ -85,14 +87,16 @@ type Server struct {
 }
 
 type connectionStatus struct {
-	ID          string  `json:"id"`
-	UserID      string  `json:"user_id"`
-	Username    string  `json:"username"`
-	SessionID   *string `json:"session_id"`
-	Paired      bool    `json:"paired"`
-	PairedID    *string `json:"paired_session_id"`
-	ConnectedAt string  `json:"connected_at"`
-	RemoteAddr  string  `json:"remote_addr"`
+	ID                 string  `json:"id"`
+	UserID             string  `json:"user_id"`
+	Username           string  `json:"username"`
+	SessionID          *string `json:"session_id"`
+	Paired             bool    `json:"paired"`
+	PairedID           *string `json:"paired_session_id"`
+	SessionSource      *string `json:"session_source,omitempty"`
+	RequestedSessionID *string `json:"requested_session_id,omitempty"`
+	ConnectedAt        string  `json:"connected_at"`
+	RemoteAddr         string  `json:"remote_addr"`
 }
 
 type authContext struct {
@@ -144,6 +148,7 @@ func (s *Server) setupRoutes() {
 	// REST endpoints
 	mux.HandleFunc("GET /api/v1/status", s.handleStatus)
 	mux.HandleFunc("GET /api/v1/connections", s.handleConnections)
+	mux.HandleFunc("DELETE /api/v1/connections", s.handleDeleteConnections)
 	mux.HandleFunc("GET /api/v1/connections/{id}", s.handleConnection)
 	mux.HandleFunc("DELETE /api/v1/connections/{id}", s.handleDeleteConnection)
 
@@ -259,14 +264,16 @@ func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := &Client{
-		id:          clientID,
-		conn:        conn,
-		send:        make(chan []byte, 256),
-		session:     sess,
-		userID:      authCtx.userID,
-		username:    authCtx.username,
-		connectedAt: time.Now().UTC(),
-		remoteAddr:  r.RemoteAddr,
+		id:                 clientID,
+		conn:               conn,
+		send:               make(chan []byte, 256),
+		session:            sess,
+		userID:             authCtx.userID,
+		username:           authCtx.username,
+		connectedAt:        time.Now().UTC(),
+		remoteAddr:         r.RemoteAddr,
+		sessionSource:      classifyGatewaySessionSource(sess, requestedSessionID),
+		requestedSessionID: strings.TrimSpace(requestedSessionID),
 	}
 
 	s.mu.Lock()
@@ -670,6 +677,30 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleDeleteConnections(w http.ResponseWriter, r *http.Request) {
+	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeRead)
+	if !ok {
+		return
+	}
+
+	s.mu.RLock()
+	targets := make([]*Client, 0, len(s.clients))
+	for _, client := range s.clients {
+		if !gatewayControlPlaneCanManageConnection(authCtx, client) {
+			continue
+		}
+		targets = append(targets, client)
+	}
+	s.mu.RUnlock()
+
+	for _, client := range targets {
+		s.removeClient(client)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]int{"deleted": len(targets)})
+}
+
 func (s *Server) requireAuthenticatedAPI(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -775,6 +806,8 @@ func describeConnection(client *Client) connectionStatus {
 	var sessionID *string
 	paired := false
 	var pairedID *string
+	var sessionSource *string
+	var requestedSessionID *string
 	if identifiable, ok := client.session.(interface{ GetID() string }); ok {
 		id := strings.TrimSpace(identifiable.GetID())
 		if id != "" {
@@ -783,17 +816,56 @@ func describeConnection(client *Client) connectionStatus {
 			pairedID = &id
 		}
 	}
+	if value := strings.TrimSpace(client.sessionSource); value != "" {
+		sessionSource = &value
+	} else if paired {
+		value := inferGatewaySessionSource(client)
+		if value != "" {
+			sessionSource = &value
+		}
+	}
+	if value := strings.TrimSpace(client.requestedSessionID); value != "" {
+		requestedSessionID = &value
+	}
 
 	return connectionStatus{
-		ID:          client.id,
-		UserID:      client.userID,
-		Username:    client.username,
-		SessionID:   sessionID,
-		Paired:      paired,
-		PairedID:    pairedID,
-		ConnectedAt: client.connectedAt.UTC().Format(time.RFC3339),
-		RemoteAddr:  client.remoteAddr,
+		ID:                 client.id,
+		UserID:             client.userID,
+		Username:           client.username,
+		SessionID:          sessionID,
+		Paired:             paired,
+		PairedID:           pairedID,
+		SessionSource:      sessionSource,
+		RequestedSessionID: requestedSessionID,
+		ConnectedAt:        client.connectedAt.UTC().Format(time.RFC3339),
+		RemoteAddr:         client.remoteAddr,
 	}
+}
+
+func classifyGatewaySessionSource(sess agent.SessionInterface, requestedSessionID string) string {
+	if strings.TrimSpace(requestedSessionID) == "" {
+		if sess != nil {
+			return "generated"
+		}
+		return ""
+	}
+	if managed, ok := sess.(*session.Session); ok && strings.TrimSpace(managed.Source) == "" {
+		return "legacy"
+	}
+	return "requested"
+}
+
+func inferGatewaySessionSource(client *Client) string {
+	if client == nil || client.session == nil {
+		return ""
+	}
+	if managed, ok := client.session.(*session.Session); ok && strings.TrimSpace(managed.Source) == "" {
+		return "legacy"
+	}
+	if gatewaySessionID(client) != strings.TrimSpace(client.id) {
+		return "requested"
+	}
+	return "generated"
 }
 
 func gatewaySessionID(client *Client) string {

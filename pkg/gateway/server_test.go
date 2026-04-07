@@ -262,11 +262,17 @@ func TestConnectionsEndpoint(t *testing.T) {
 	if got := body[0]["paired_session_id"]; got != nil {
 		t.Fatalf("expected first paired_session_id nil, got %v", got)
 	}
+	if got := body[0]["session_source"]; got != nil {
+		t.Fatalf("expected first session_source nil without paired session, got %v", got)
+	}
 	if got := body[1]["paired"]; got != true {
 		t.Fatalf("expected second paired true, got %v", got)
 	}
 	if got := body[1]["paired_session_id"]; got != "paired-session" {
 		t.Fatalf("expected second paired_session_id paired-session, got %v", got)
+	}
+	if got := body[1]["session_source"]; got != "requested" {
+		t.Fatalf("expected second session_source requested, got %v", got)
 	}
 }
 
@@ -431,6 +437,80 @@ func TestDeleteConnectionEndpointReturnsNotFoundForUnknownClient(t *testing.T) {
 	}
 }
 
+func TestDeleteConnectionsEndpointRemovesAllClientsForAdmin(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	s.clients["client-a"] = &Client{id: "client-a", send: make(chan []byte, 1), userID: "user-a", username: "alice"}
+	s.clients["client-b"] = &Client{id: "client-b", send: make(chan []byte, 1), userID: "user-b", username: "bob"}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var body map[string]int
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode bulk delete response: %v", err)
+	}
+	if body["deleted"] != 2 {
+		t.Fatalf("expected deleted=2, got %+v", body)
+	}
+	if len(s.clients) != 0 {
+		t.Fatalf("expected all clients removed, got %d", len(s.clients))
+	}
+}
+
+func TestDeleteConnectionsEndpointRemovesOnlyOwnedClientsForMember(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"uid":  "viewer-id",
+		"role": "member",
+	})
+
+	s.clients["client-a"] = &Client{id: "client-a", send: make(chan []byte, 1), userID: "viewer-id", username: "viewer"}
+	s.clients["client-b"] = &Client{id: "client-b", send: make(chan []byte, 1), userID: "other-id", username: "other"}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var body map[string]int
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode bulk delete response: %v", err)
+	}
+	if body["deleted"] != 1 {
+		t.Fatalf("expected deleted=1, got %+v", body)
+	}
+	if _, ok := s.clients["client-a"]; ok {
+		t.Fatal("expected owned client to be removed")
+	}
+	if _, ok := s.clients["client-b"]; !ok {
+		t.Fatal("expected unowned client to remain")
+	}
+}
+
+func TestDeleteConnectionsEndpointRequiresAuth(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections", nil)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
+
 func TestDeleteConnectionEndpointRequiresAuth(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 
@@ -567,6 +647,50 @@ func TestGetConnectionEndpointReturnsConnectionDetails(t *testing.T) {
 	}
 	if got := body["paired_session_id"]; got != "gateway-session" {
 		t.Fatalf("expected paired_session_id gateway-session, got %v", got)
+	}
+	if got := body["session_source"]; got != "requested" {
+		t.Fatalf("expected session_source requested, got %v", got)
+	}
+}
+
+func TestConnectionsEndpointMarksLegacyGatewaySessionSource(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	now := time.Unix(1_700_001_000, 0).UTC()
+
+	legacySession, err := s.sessionMgr.GetWithSource("legacy-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+	legacySession.Source = ""
+
+	s.clients["client-a"] = &Client{
+		id:          "client-a",
+		send:        make(chan []byte, 1),
+		userID:      "user-a",
+		username:    "alice",
+		session:     legacySession,
+		connectedAt: now,
+		remoteAddr:  "10.0.0.5:1234",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body []map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode connections response: %v", err)
+	}
+	if len(body) != 1 {
+		t.Fatalf("expected 1 connection, got %d", len(body))
+	}
+	if got := body[0]["session_source"]; got != "legacy" {
+		t.Fatalf("expected session_source legacy, got %v", got)
 	}
 }
 
