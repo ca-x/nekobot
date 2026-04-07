@@ -75,7 +75,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_headings", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -200,6 +200,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getForms(ctx, params)
 	case "get_buttons":
 		return b.getButtons(ctx, params)
+	case "get_tables":
+		return b.getTables(ctx, params)
 	case "get_headings":
 		return b.getHeadings(ctx, params)
 	case "wait":
@@ -1052,6 +1054,44 @@ func (b *BrowserTool) getButtons(ctx context.Context, params map[string]interfac
   text: btn.tagName === 'BUTTON' ? (btn.textContent || '').trim() : null,
   value: btn.value || null,
   disabled: btn.disabled || false
+})))`,
+	})
+	if err != nil {
+		return "", err
+	}
+	const prefix = "Script executed successfully\nResult: "
+	return strings.TrimPrefix(result, prefix), nil
+}
+
+func (b *BrowserTool) getTables(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	result, err := b.executeScript(ctx, map[string]interface{}{
+		"script": `JSON.stringify(Array.from(document.querySelectorAll('table')).map((table, idx) => {
+  const headers = Array.from(table.querySelectorAll('th')).map(th => ({
+    text: (th.textContent || '').trim(),
+    scope: th.scope || null
+  }));
+  const rows = Array.from(table.querySelectorAll('tr')).map(tr =>
+    Array.from(tr.querySelectorAll('td')).map(td => ({
+      text: (td.textContent || '').trim(),
+      colSpan: td.colSpan || 1,
+      rowSpan: td.rowSpan || 1
+    }))
+  ).filter(row => row.length > 0);
+  return {
+    index: idx,
+    id: table.id || null,
+    caption: table.querySelector('caption') ? (table.querySelector('caption').textContent || '').trim() : null,
+    headers: headers,
+    rows: rows,
+    rowCount: rows.length,
+    columnCount: headers.length || (rows[0] ? rows[0].length : 0)
+  };
 })))`,
 	})
 	if err != nil {
