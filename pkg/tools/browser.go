@@ -75,7 +75,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
 					"click", "type", "select", "get_html",
-					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_headings", "wait", "scroll", "go_back", "go_forward",
+					"get_text", "get_title", "get_url", "get_links", "get_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"print_pdf", "extract_structured_data",
 					"reload", "close",
 				},
@@ -202,6 +202,8 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getButtons(ctx, params)
 	case "get_tables":
 		return b.getTables(ctx, params)
+	case "get_lists":
+		return b.getLists(ctx, params)
 	case "get_headings":
 		return b.getHeadings(ctx, params)
 	case "wait":
@@ -1091,6 +1093,36 @@ func (b *BrowserTool) getTables(ctx context.Context, params map[string]interface
     rows: rows,
     rowCount: rows.length,
     columnCount: headers.length || (rows[0] ? rows[0].length : 0)
+  };
+})))`,
+	})
+	if err != nil {
+		return "", err
+	}
+	const prefix = "Script executed successfully\nResult: "
+	return strings.TrimPrefix(result, prefix), nil
+}
+
+func (b *BrowserTool) getLists(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	result, err := b.executeScript(ctx, map[string]interface{}{
+		"script": `JSON.stringify(Array.from(document.querySelectorAll('ul, ol')).map((list, idx) => {
+  const items = Array.from(list.querySelectorAll(':scope > li')).map(li => ({
+    text: (li.textContent || '').trim(),
+    nested: li.querySelector('ul, ol') ? true : false
+  }));
+  return {
+    index: idx,
+    tag: list.tagName.toLowerCase(),
+    id: list.id || null,
+    class: list.className || null,
+    itemCount: items.length,
+    items: items
   };
 })))`,
 	})
