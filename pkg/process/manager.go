@@ -693,7 +693,8 @@ func classifyObservation(chunks []string) Observation {
 	}
 }
 
-func looksLikeAwaitingInput(lower string) bool {
+func looksLikeAwaitingInput(input string) bool {
+	lower := strings.ToLower(input)
 	patterns := []string{
 		"[y/n]",
 		"[y/n]?",
@@ -702,6 +703,8 @@ func looksLikeAwaitingInput(lower string) bool {
 		"[y/n]\n",
 		"[y/N]",
 		"[y/N]?",
+		"[Y/n]",
+		"[Y/n]?",
 		"[y/N]:",
 		"continue? [y/n]",
 		"continue? [y/n",
@@ -709,6 +712,34 @@ func looksLikeAwaitingInput(lower string) bool {
 		"continue? [y/N",
 		"press enter",
 		"enter to continue",
+		"press any key",
+		"hit any key",
+		"any key to",
+		"press [enter]",
+		"(y/n)",
+		"(y/n)?",
+		"yes/no",
+		"yes/no?",
+		"[yes/no]",
+		"confirm",
+		"confirm?",
+		"confirmation",
+		"abort?",
+		"retry?",
+		"retry",
+		"overwrite?",
+		"overwrite",
+		"delete?",
+		"delete",
+		"remove?",
+		"remove",
+		"continue?",
+		"proceed?",
+		"is this ok",
+		"is this okay",
+		"do you want to",
+		"would you like to",
+		"are you sure",
 	}
 	for _, pattern := range patterns {
 		if strings.Contains(lower, strings.ToLower(pattern)) {
@@ -718,15 +749,44 @@ func looksLikeAwaitingInput(lower string) bool {
 	return false
 }
 
-func looksLikeMenuPrompt(lower string) bool {
+func looksLikeMenuPrompt(input string) bool {
+	lower := strings.ToLower(input)
 	return (strings.Contains(lower, "1.") && strings.Contains(lower, "2.")) ||
+		(strings.Contains(lower, "1)") && strings.Contains(lower, "2)")) ||
 		strings.Contains(lower, "select option") ||
 		strings.Contains(lower, "choose an option") ||
-		strings.Contains(lower, "reply /select")
+		strings.Contains(lower, "reply /select") ||
+		strings.Contains(lower, "select:") ||
+		strings.Contains(lower, "choose:") ||
+		strings.Contains(lower, "options:") ||
+		strings.Contains(lower, "menu:") ||
+		strings.Contains(lower, "pick an option") ||
+		strings.Contains(lower, "enter your choice") ||
+		strings.Contains(lower, "select one") ||
+		strings.Contains(lower, "which option") ||
+		strings.Contains(lower, "[1]") ||
+		strings.Contains(lower, "[2]") ||
+		strings.Contains(lower, "[3]")
 }
 
-func looksLikeErrorPrompt(lower string) bool {
+func looksLikeErrorPrompt(input string) bool {
+	lower := strings.ToLower(input)
 	return strings.Contains(lower, "error:") ||
 		strings.Contains(lower, "failed:") ||
-		strings.Contains(lower, "permission denied")
+		strings.Contains(lower, "permission denied") ||
+		strings.Contains(lower, "fatal:") ||
+		strings.Contains(lower, "panic:") ||
+		strings.Contains(lower, "exception:") ||
+		strings.Contains(lower, "cannot") ||
+		strings.Contains(lower, "unable to") ||
+		strings.Contains(lower, "not found") ||
+		strings.Contains(lower, "does not exist") ||
+		strings.Contains(lower, "is required") ||
+		strings.Contains(lower, "invalid") ||
+		strings.Contains(lower, "unrecognized") ||
+		strings.Contains(lower, "unknown command") ||
+		strings.Contains(lower, "syntax error") ||
+		strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "timed out") ||
+		strings.Contains(lower, "timeout")
 }
