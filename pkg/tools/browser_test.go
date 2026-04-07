@@ -1583,6 +1583,24 @@ func TestBrowserNetworkEntryFromFinishedAndFailed(t *testing.T) {
 	}
 }
 
+func TestBrowserToolExecuteDispatchesAdvancedBrowserActions(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	actions := map[string]string{
+		"get_console":    "getConsole",
+		"get_network":    "getNetwork",
+		"get_storage":    "browserStorageAction",
+		"set_storage":    "browserStorageAction",
+		"remove_storage": "browserStorageAction",
+		"clear_storage":  "browserStorageAction",
+	}
+	for action := range actions {
+		_, err := tool.Execute(context.Background(), map[string]interface{}{"action": action})
+		if err == nil {
+			t.Fatalf("expected %s to reach handler and fail on missing runtime inputs", action)
+		}
+	}
+}
+
 func TestBrowserToolParametersIncludeGetConsole(t *testing.T) {
 	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
 
