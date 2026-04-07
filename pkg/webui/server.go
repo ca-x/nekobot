@@ -44,6 +44,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/execenv"
+	"nekobot/pkg/externalagent"
 	"nekobot/pkg/gateway"
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/inboundrouter"
@@ -77,38 +78,39 @@ import (
 
 // Server is the WebUI HTTP server.
 type Server struct {
-	echo        *echo.Echo
-	httpServer  *http.Server
-	config      *config.Config
-	loader      *config.Loader
-	logger      *logger.Logger
-	agent       *agent.Agent
-	approval    *approval.Manager
-	channels    *channels.Manager
-	bus         bus.Bus
-	commands    *commands.Registry
-	prefs       *userprefs.Manager
-	toolSess    *toolsessions.Manager
-	sessionMgr  *session.Manager
-	processMgr  *process.Manager
-	prompts     *prompts.Manager
-	providers   *providerstore.Manager
-	runtimeMgr  *runtimeagents.Manager
-	accountMgr  *channelaccounts.Manager
-	bindingMgr  *accountbindings.Manager
-	topologySvc *runtimetopology.Service
-	cronMgr     *cron.Manager
-	skillsMgr   *skills.Manager
-	workspace   *workspace.Manager
-	entClient   *ent.Client
-	snapshotMgr *session.SnapshotManager
-	auditLogger *audit.Logger
-	ilinkAuth   *ilinkauth.Service
-	serviceCtrl serviceController
-	taskStore   *tasks.Store
-	watcher     *watch.Watcher
-	port        int
-	startedAt   time.Time
+	echo          *echo.Echo
+	httpServer    *http.Server
+	config        *config.Config
+	loader        *config.Loader
+	logger        *logger.Logger
+	agent         *agent.Agent
+	approval      *approval.Manager
+	channels      *channels.Manager
+	bus           bus.Bus
+	commands      *commands.Registry
+	prefs         *userprefs.Manager
+	toolSess      *toolsessions.Manager
+	externalAgent *externalagent.Manager
+	sessionMgr    *session.Manager
+	processMgr    *process.Manager
+	prompts       *prompts.Manager
+	providers     *providerstore.Manager
+	runtimeMgr    *runtimeagents.Manager
+	accountMgr    *channelaccounts.Manager
+	bindingMgr    *accountbindings.Manager
+	topologySvc   *runtimetopology.Service
+	cronMgr       *cron.Manager
+	skillsMgr     *skills.Manager
+	workspace     *workspace.Manager
+	entClient     *ent.Client
+	snapshotMgr   *session.SnapshotManager
+	auditLogger   *audit.Logger
+	ilinkAuth     *ilinkauth.Service
+	serviceCtrl   serviceController
+	taskStore     *tasks.Store
+	watcher       *watch.Watcher
+	port          int
+	startedAt     time.Time
 }
 
 type serviceController interface {
@@ -188,16 +190,27 @@ func NewServer(
 	}
 
 	s := &Server{
-		config:      cfg,
-		loader:      loader,
-		logger:      log,
-		agent:       ag,
-		approval:    approvalMgr,
-		channels:    chanMgr,
-		bus:         messageBus,
-		commands:    cmdRegistry,
-		prefs:       prefsMgr,
-		toolSess:    toolSessionMgr,
+		config:   cfg,
+		loader:   loader,
+		logger:   log,
+		agent:    ag,
+		approval: approvalMgr,
+		channels: chanMgr,
+		bus:      messageBus,
+		commands: cmdRegistry,
+		prefs:    prefsMgr,
+		toolSess: toolSessionMgr,
+		externalAgent: func() *externalagent.Manager {
+			if toolSessionMgr == nil {
+				return nil
+			}
+			manager, err := externalagent.NewManager(toolSessionMgr)
+			if err != nil {
+				log.Warn("Failed to initialize external agent manager", zap.Error(err))
+				return nil
+			}
+			return manager
+		}(),
 		sessionMgr:  sessionMgr,
 		processMgr:  processManager,
 		prompts:     promptManager,
@@ -441,6 +454,7 @@ func (s *Server) setup() {
 	api.POST("/tool-sessions/:id/attach-token", s.handleCreateToolSessionAttachToken)
 	api.POST("/tool-sessions/consume-token", s.handleConsumeToolSessionAttachToken)
 	api.POST("/tool-sessions/spawn", s.handleSpawnToolSession)
+	api.POST("/external-agents/resolve-session", s.handleResolveExternalAgentSession)
 	api.GET("/tool-sessions/:id/process/status", s.handleToolSessionProcessStatus)
 	api.GET("/tool-sessions/:id/process/output", s.handleToolSessionProcessOutput)
 	api.POST("/tool-sessions/:id/process/input", s.handleToolSessionProcessInput)
@@ -1790,6 +1804,44 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 		"access_mode":     sess.AccessMode,
 		"access_url":      accessURL,
 		"access_password": accessPassword,
+	})
+}
+
+func (s *Server) handleResolveExternalAgentSession(c *echo.Context) error {
+	if s.externalAgent == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "external agent manager not available"})
+	}
+
+	var body struct {
+		AgentKind string `json:"agent_kind"`
+		Workspace string `json:"workspace"`
+		Tool      string `json:"tool"`
+		Title     string `json:"title"`
+		Command   string `json:"command"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	session, created, err := s.externalAgent.ResolveSession(c.Request().Context(), externalagent.SessionSpec{
+		Owner:     s.currentUsername(c),
+		AgentKind: body.AgentKind,
+		Workspace: body.Workspace,
+		Tool:      body.Tool,
+		Title:     body.Title,
+		Command:   body.Command,
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	return c.JSON(status, map[string]interface{}{
+		"created": created,
+		"session": session,
 	})
 }
 
