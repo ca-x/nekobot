@@ -30,10 +30,13 @@ import (
 
 // Channel implements WeWork channel with webhook server and API.
 type Channel struct {
-	log      *logger.Logger
-	config   config.WeWorkConfig
-	bus      bus.Bus
-	commands *commands.Registry
+	log         *logger.Logger
+	config      config.WeWorkConfig
+	bus         bus.Bus
+	commands    *commands.Registry
+	id          string
+	channelType string
+	name        string
 
 	accessToken    string
 	tokenExpiresAt int64
@@ -52,15 +55,30 @@ func NewChannel(
 	b bus.Bus,
 	cmdRegistry *commands.Registry,
 ) (*Channel, error) {
+	return NewAccountChannel(log, cfg, b, cmdRegistry, "wework", "WeWork")
+}
+
+// NewAccountChannel creates an account-scoped WeWork channel instance.
+func NewAccountChannel(
+	log *logger.Logger,
+	cfg config.WeWorkConfig,
+	b bus.Bus,
+	cmdRegistry *commands.Registry,
+	channelID string,
+	displayName string,
+) (*Channel, error) {
 	if cfg.CorpID == "" || cfg.AgentID == "" || cfg.CorpSecret == "" {
 		return nil, fmt.Errorf("wework corp_id, agent_id and corp_secret are required")
 	}
 
 	return &Channel{
-		log:      log,
-		config:   cfg,
-		bus:      b,
-		commands: cmdRegistry,
+		log:         log,
+		config:      cfg,
+		bus:         b,
+		commands:    cmdRegistry,
+		id:          strings.TrimSpace(channelID),
+		channelType: "wework",
+		name:        defaultWeWorkName(displayName),
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -70,12 +88,17 @@ func NewChannel(
 
 // ID returns the channel identifier.
 func (c *Channel) ID() string {
-	return "wework"
+	return c.id
 }
 
 // Name returns the channel name.
 func (c *Channel) Name() string {
-	return "WeWork"
+	return c.name
+}
+
+// ChannelType returns the stable WeWork family key.
+func (c *Channel) ChannelType() string {
+	return c.channelType
 }
 
 // IsEnabled returns whether the channel is enabled.
@@ -276,6 +299,14 @@ func (c *Channel) supportsNativeCommands() bool {
 		channelcapabilities.CapabilityScopeDM,
 		false,
 	)
+}
+
+func defaultWeWorkName(displayName string) string {
+	name := strings.TrimSpace(displayName)
+	if name == "" {
+		return "WeWork"
+	}
+	return name
 }
 
 // handleCommand processes a command message.

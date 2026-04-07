@@ -285,6 +285,13 @@ var channelDescriptors = []channelDescriptor{
 		build: func(log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
 			return wework.NewChannel(log, cfg.Channels.WeWork, messageBus, cmdRegistry)
 		},
+		buildFromAccount: func(account channelaccounts.ChannelAccount, log *logger.Logger, messageBus bus.Bus, ag *agent.Agent, cmdRegistry *commands.Registry, prefsMgr *userprefs.Manager, toolSessionMgr *toolsessions.Manager, processMgr *process.Manager, cfg *config.Config) (Channel, error) {
+			weworkCfg := cfg.Channels.WeWork
+			if err := decodeAccountConfig(account, &weworkCfg); err != nil {
+				return nil, err
+			}
+			return wework.NewAccountChannel(log, weworkCfg, messageBus, cmdRegistry, channelInstanceID(account), channelDisplayName(account, "WeWork"))
+		},
 	},
 	{
 		name: "serverchan",

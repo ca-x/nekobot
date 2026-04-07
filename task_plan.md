@@ -1828,11 +1828,11 @@
   - 目标：提升浏览器工具的可靠性和能力上限。
   - 来源：`goclaw/agent/tools/browser_session.go`、`browser_relay.go`、`browser_cdp.go`。
   - 位置：`pkg/tools/browser*.go`。
-- [x] **OAuth 凭证中心管理器**
-  - 已完成：`pkg/auth/center.go` 已提供统一 `CredentialCenter`，支持 provider/account 级存取、校验、刷新、撤销与生命周期状态推导，并保持对现有 `AuthStore` 的兼容写透。
-  - 已验证：`pkg/auth/center_test.go` 已覆盖存储、刷新持久化、状态推导、撤销与不可刷新凭证拒绝路径。
+- [ ] **OAuth 凭证中心管理器**
+  - 现状：`pkg/auth/*` 偏单次登录流程，缺按 provider/profile 统一管理、自动刷新、校验与持久化中心。
+  - 目标：支持更稳的 OAuth provider 运维能力。
   - 来源：`goclaw/providers/oauth/*`。
-  - 位置：`pkg/auth/*`。
+  - 位置：`pkg/auth/*` 或新建 `pkg/oauth/*`。
 
 ### P2（次优先级）
 - [x] **MaixCAM 命令响应回设备端**

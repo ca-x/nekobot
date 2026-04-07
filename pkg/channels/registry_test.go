@@ -331,6 +331,39 @@ func TestBuildChannelFromAccount_Teams(t *testing.T) {
 	}
 }
 
+func TestBuildChannelFromAccount_WeWork(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := newRegistryTestLogger(t)
+
+	account := channelaccounts.ChannelAccount{
+		ChannelType: "wework",
+		AccountKey:  "corp-a",
+		DisplayName: "WeWork Corp A",
+		Config: map[string]interface{}{
+			"enabled":          true,
+			"corp_id":          "ww-corp",
+			"agent_id":         "1000001",
+			"corp_secret":      "secret",
+			"token":            "token",
+			"encoding_aes_key": "aes-key",
+		},
+	}
+
+	channel, err := BuildChannelFromAccount(account, log, nil, nil, nil, nil, nil, nil, cfg)
+	if err != nil {
+		t.Fatalf("BuildChannelFromAccount failed: %v", err)
+	}
+	if channel.ID() != "wework:corp-a" {
+		t.Fatalf("unexpected wework account channel id: %s", channel.ID())
+	}
+	if typed, ok := channel.(TypedChannel); !ok || typed.ChannelType() != "wework" {
+		t.Fatalf("expected typed wework channel, got %T", channel)
+	}
+	if channel.Name() != "WeWork Corp A" {
+		t.Fatalf("unexpected wework account channel name: %s", channel.Name())
+	}
+}
+
 func newRegistryTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()
