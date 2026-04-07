@@ -77,7 +77,7 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"type": "string",
 				"enum": []string{
 					"navigate", "screenshot", "execute_script",
-					"click", "type", "select", "get_html", "get_console",
+					"click", "type", "select", "get_html", "get_console", "get_network",
 					"get_text", "get_title", "get_url", "get_links", "get_cookies", "set_cookie", "clear_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_selects", "get_textareas", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"list_pages", "new_page", "activate_page", "close_page",
 					"get_storage", "set_storage", "remove_storage", "clear_storage",
@@ -177,6 +177,10 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"enum":        []string{"strict", "lax", "none"},
 				"description": "Optional SameSite policy for set_cookie.",
 			},
+			"max_entries": map[string]interface{}{
+				"type":        "integer",
+				"description": "Maximum number of collected console or network entries.",
+			},
 			"device": map[string]interface{}{
 				"type":        "string",
 				"enum":        []string{"iphone", "ipad", "android", "desktop"},
@@ -213,6 +217,10 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.selectOption(ctx, params)
 	case "get_html":
 		return b.getHTML(ctx, params)
+	case "get_console":
+		return b.getConsole(ctx, params)
+	case "get_network":
+		return b.getNetwork(ctx, params)
 	case "get_text":
 		return b.getText(ctx, params)
 	case "get_title":
@@ -311,6 +319,23 @@ type browserConsoleEntry struct {
 	Context    string   `json:"context,omitempty"`
 	LineNumber *int     `json:"line_number,omitempty"`
 	Args       []string `json:"args,omitempty"`
+}
+
+type browserNetworkEntry struct {
+	RequestID   string `json:"request_id"`
+	Phase       string `json:"phase"`
+	Type        string `json:"type,omitempty"`
+	Method      string `json:"method,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Status      *int   `json:"status,omitempty"`
+	StatusText  string `json:"status_text,omitempty"`
+	MimeType    string `json:"mime_type,omitempty"`
+	Protocol    string `json:"protocol,omitempty"`
+	RemoteIP    string `json:"remote_ip,omitempty"`
+	FromCache   bool   `json:"from_cache,omitempty"`
+	EncodedSize *int64 `json:"encoded_size,omitempty"`
+	ErrorText   string `json:"error_text,omitempty"`
+	Timestamp   string `json:"timestamp,omitempty"`
 }
 
 // navigate navigates to a URL.
@@ -999,6 +1024,69 @@ func (b *BrowserTool) getHTML(ctx context.Context, params map[string]interface{}
 	}
 
 	return html.OuterHTML, nil
+}
+
+func (b *BrowserTool) getNetwork(ctx context.Context, params map[string]interface{}) (string, error) {
+	if urlStr, ok := params["url"].(string); ok && strings.TrimSpace(urlStr) != "" {
+		if _, err := b.navigate(ctx, params); err != nil {
+			return "", err
+		}
+	}
+
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		return "", fmt.Errorf("browser session not ready")
+	}
+	client, err := sessionMgr.GetClient()
+	if err != nil {
+		return "", err
+	}
+	if err := client.Network.Enable(ctx, nil); err != nil {
+		return "", fmt.Errorf("failed to enable browser network domain: %w", err)
+	}
+
+	requests, err := client.Network.RequestWillBeSent(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to subscribe to network requests: %w", err)
+	}
+	defer requests.Close()
+	responses, err := client.Network.ResponseReceived(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to subscribe to network responses: %w", err)
+	}
+	defer responses.Close()
+	finished, err := client.Network.LoadingFinished(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to subscribe to network completion: %w", err)
+	}
+	defer finished.Close()
+	failed, err := client.Network.LoadingFailed(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to subscribe to network failures: %w", err)
+	}
+	defer failed.Close()
+
+	maxEntries := 100
+	if value, ok := params["max_entries"].(float64); ok {
+		converted := int(value)
+		if value == float64(converted) && converted > 0 {
+			maxEntries = converted
+		}
+	}
+	timeout := 500 * time.Millisecond
+	if value, ok := params["duration"].(float64); ok {
+		converted := int(value)
+		if value == float64(converted) && converted > 0 {
+			timeout = time.Duration(converted) * time.Millisecond
+		}
+	}
+
+	entries := collectBrowserNetworkEntries(ctx, requests, responses, finished, failed, maxEntries, timeout)
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return "", fmt.Errorf("marshal browser network entries: %w", err)
+	}
+	return string(data), nil
 }
 
 func (b *BrowserTool) getConsole(ctx context.Context, params map[string]interface{}) (string, error) {
@@ -1969,6 +2057,220 @@ func formatCDPResult(result *runtime.RemoteObject) (string, error) {
 		return *result.Description, nil
 	}
 	return "", nil
+}
+
+func browserNetworkEntryFromRequest(entry *network.RequestWillBeSentReply) browserNetworkEntry {
+	if entry == nil {
+		return browserNetworkEntry{}
+	}
+	return browserNetworkEntry{
+		RequestID: string(entry.RequestID),
+		Phase:     "request",
+		Type:      strings.TrimSpace(entry.Type.String()),
+		Method:    strings.TrimSpace(entry.Request.Method),
+		URL:       strings.TrimSpace(entry.Request.URL),
+		Timestamp: browserMonotonicTimestampString(entry.Timestamp),
+	}
+}
+
+func browserNetworkEntryFromResponse(entry *network.ResponseReceivedReply) browserNetworkEntry {
+	if entry == nil {
+		return browserNetworkEntry{}
+	}
+	status := entry.Response.Status
+	result := browserNetworkEntry{
+		RequestID:  string(entry.RequestID),
+		Phase:      "response",
+		Type:       strings.TrimSpace(entry.Type.String()),
+		URL:        strings.TrimSpace(entry.Response.URL),
+		Status:     &status,
+		StatusText: strings.TrimSpace(entry.Response.StatusText),
+		MimeType:   strings.TrimSpace(entry.Response.MimeType),
+		Timestamp:  browserMonotonicTimestampString(entry.Timestamp),
+	}
+	if entry.Response.Protocol != nil {
+		result.Protocol = strings.TrimSpace(*entry.Response.Protocol)
+	}
+	if entry.Response.RemoteIPAddress != nil {
+		result.RemoteIP = strings.TrimSpace(*entry.Response.RemoteIPAddress)
+	}
+	if entry.Response.FromDiskCache != nil && *entry.Response.FromDiskCache {
+		result.FromCache = true
+	}
+	if entry.Response.FromPrefetchCache != nil && *entry.Response.FromPrefetchCache {
+		result.FromCache = true
+	}
+	return result
+}
+
+func browserNetworkEntryFromFinished(entry *network.LoadingFinishedReply) browserNetworkEntry {
+	if entry == nil {
+		return browserNetworkEntry{}
+	}
+	size := int64(entry.EncodedDataLength)
+	return browserNetworkEntry{
+		RequestID:   string(entry.RequestID),
+		Phase:       "finished",
+		EncodedSize: &size,
+		Timestamp:   browserMonotonicTimestampString(entry.Timestamp),
+	}
+}
+
+func browserNetworkEntryFromFailed(entry *network.LoadingFailedReply) browserNetworkEntry {
+	if entry == nil {
+		return browserNetworkEntry{}
+	}
+	return browserNetworkEntry{
+		RequestID: string(entry.RequestID),
+		Phase:     "failed",
+		Type:      strings.TrimSpace(entry.Type.String()),
+		ErrorText: strings.TrimSpace(entry.ErrorText),
+		Timestamp: browserMonotonicTimestampString(entry.Timestamp),
+	}
+}
+
+func browserMonotonicTimestampString(ts network.MonotonicTime) string {
+	value := float64(ts)
+	if value <= 0 {
+		return ""
+	}
+	return time.Unix(0, int64(value*float64(time.Second))).UTC().Format(time.RFC3339Nano)
+}
+
+func collectBrowserNetworkEntries(
+	ctx context.Context,
+	requests network.RequestWillBeSentClient,
+	responses network.ResponseReceivedClient,
+	finished network.LoadingFinishedClient,
+	failed network.LoadingFailedClient,
+	maxEntries int,
+	timeout time.Duration,
+) []browserNetworkEntry {
+	if maxEntries <= 0 {
+		maxEntries = 100
+	}
+	if timeout <= 0 {
+		timeout = 500 * time.Millisecond
+	}
+
+	deadline := time.Now().Add(timeout)
+	entries := make([]browserNetworkEntry, 0, min(maxEntries, 16))
+	for len(entries) < maxEntries && time.Now().Before(deadline) {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		wait := remaining
+		if wait > 25*time.Millisecond {
+			wait = 25 * time.Millisecond
+		}
+		if requests != nil {
+			if item, ok := recvNetworkRequestWithin(ctx, requests, wait); ok && item != nil {
+				entries = append(entries, browserNetworkEntryFromRequest(item))
+			}
+		}
+		if len(entries) >= maxEntries || time.Now().After(deadline) {
+			break
+		}
+		if responses != nil {
+			if item, ok := recvNetworkResponseWithin(ctx, responses, wait); ok && item != nil {
+				entries = append(entries, browserNetworkEntryFromResponse(item))
+			}
+		}
+		if len(entries) >= maxEntries || time.Now().After(deadline) {
+			break
+		}
+		if finished != nil {
+			if item, ok := recvNetworkFinishedWithin(ctx, finished, wait); ok && item != nil {
+				entries = append(entries, browserNetworkEntryFromFinished(item))
+			}
+		}
+		if len(entries) >= maxEntries || time.Now().After(deadline) {
+			break
+		}
+		if failed != nil {
+			if item, ok := recvNetworkFailedWithin(ctx, failed, wait); ok && item != nil {
+				entries = append(entries, browserNetworkEntryFromFailed(item))
+			}
+		}
+	}
+	return entries
+}
+
+func recvNetworkRequestWithin(ctx context.Context, client network.RequestWillBeSentClient, wait time.Duration) (*network.RequestWillBeSentReply, bool) {
+	type result struct {
+		item *network.RequestWillBeSentReply
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() { item, err := client.Recv(); ch <- result{item: item, err: err} }()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	case res := <-ch:
+		return res.item, res.err == nil
+	}
+}
+
+func recvNetworkResponseWithin(ctx context.Context, client network.ResponseReceivedClient, wait time.Duration) (*network.ResponseReceivedReply, bool) {
+	type result struct {
+		item *network.ResponseReceivedReply
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() { item, err := client.Recv(); ch <- result{item: item, err: err} }()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	case res := <-ch:
+		return res.item, res.err == nil
+	}
+}
+
+func recvNetworkFinishedWithin(ctx context.Context, client network.LoadingFinishedClient, wait time.Duration) (*network.LoadingFinishedReply, bool) {
+	type result struct {
+		item *network.LoadingFinishedReply
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() { item, err := client.Recv(); ch <- result{item: item, err: err} }()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	case res := <-ch:
+		return res.item, res.err == nil
+	}
+}
+
+func recvNetworkFailedWithin(ctx context.Context, client network.LoadingFailedClient, wait time.Duration) (*network.LoadingFailedReply, bool) {
+	type result struct {
+		item *network.LoadingFailedReply
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() { item, err := client.Recv(); ch <- result{item: item, err: err} }()
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return nil, false
+	case <-timer.C:
+		return nil, false
+	case res := <-ch:
+		return res.item, res.err == nil
+	}
 }
 
 func browserConsoleEntryMatches(level string, opts browserConsoleOptions) bool {

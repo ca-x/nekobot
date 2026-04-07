@@ -1506,6 +1506,83 @@ func installStubBrowserSession(t *testing.T) *BrowserSession {
 
 var _ browserDevTools = (*stubBrowserDevTools)(nil)
 
+func TestBrowserToolParametersIncludeGetNetwork(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+	found := false
+	for _, value := range enumValues {
+		if value == "get_network" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected get_network action in enum, got %#v", enumValues)
+	}
+}
+
+func TestBrowserNetworkEntryFromRequest(t *testing.T) {
+	entry := browserNetworkEntryFromRequest(&network.RequestWillBeSentReply{
+		RequestID: "req-1",
+		Type:      network.ResourceTypeDocument,
+		Request: network.Request{
+			Method: "GET",
+			URL:    "https://example.com",
+		},
+	})
+	if entry.RequestID != "req-1" || entry.Phase != "request" || entry.Method != "GET" || entry.URL != "https://example.com" {
+		t.Fatalf("unexpected request entry: %+v", entry)
+	}
+}
+
+func TestBrowserNetworkEntryFromResponse(t *testing.T) {
+	proto := "h2"
+	ip := "203.0.113.10"
+	fromCache := true
+	entry := browserNetworkEntryFromResponse(&network.ResponseReceivedReply{
+		RequestID: "req-2",
+		Type:      network.ResourceTypeXHR,
+		Response: network.Response{
+			URL:             "https://example.com/api",
+			Status:          200,
+			StatusText:      "OK",
+			MimeType:        "application/json",
+			Protocol:        &proto,
+			RemoteIPAddress: &ip,
+			FromDiskCache:   &fromCache,
+		},
+	})
+	if entry.RequestID != "req-2" || entry.Phase != "response" || entry.Status == nil || *entry.Status != 200 {
+		t.Fatalf("unexpected response entry: %+v", entry)
+	}
+	if !entry.FromCache || entry.Protocol != "h2" || entry.RemoteIP != ip {
+		t.Fatalf("expected cache/protocol/ip fields, got %+v", entry)
+	}
+}
+
+func TestBrowserNetworkEntryFromFinishedAndFailed(t *testing.T) {
+	finished := browserNetworkEntryFromFinished(&network.LoadingFinishedReply{RequestID: "req-3", EncodedDataLength: 512})
+	if finished.Phase != "finished" || finished.EncodedSize == nil || *finished.EncodedSize != 512 {
+		t.Fatalf("unexpected finished entry: %+v", finished)
+	}
+	failed := browserNetworkEntryFromFailed(&network.LoadingFailedReply{RequestID: "req-4", ErrorText: "net::ERR_ABORTED", Type: network.ResourceTypeImage})
+	if failed.Phase != "failed" || failed.ErrorText != "net::ERR_ABORTED" {
+		t.Fatalf("unexpected failed entry: %+v", failed)
+	}
+}
+
 func TestBrowserToolParametersIncludeGetConsole(t *testing.T) {
 	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
 

@@ -738,3 +738,12 @@
 - Verification run:
   - `go test -count=1 ./pkg/tools -run 'TestBrowserToolParametersIncludeGetConsole|TestBrowserToolBuildConsoleOptionsDefaultsAndFilters|TestBrowserConsoleEntryMatchesRespectsPriority|TestBrowserConsoleEntryFrom(Log|Runtime)'` passed.
   - `go test -count=1 ./pkg/tools` passed.
+
+- Completed browser minimal network-observation slice from `task_plan.md`:
+  - added `browser` action `get_network` in `pkg/tools/browser.go`.
+  - implemented a bounded request/response/finished/failed event collector using the existing CDP session without expanding into HAR/interception.
+  - added regression tests for network action exposure and event-summary shaping.
+- Verification run:
+  - `go test -count=1 ./pkg/tools -run 'TestBrowserToolParametersIncludeGetNetwork|TestBrowserNetworkEntryFromRequest|TestBrowserNetworkEntryFromResponse|TestBrowserNetworkEntryFromFinishedAndFailed'` passed.
+  - `go test -count=1 ./pkg/tools` passed.
+

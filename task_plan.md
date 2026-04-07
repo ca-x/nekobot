@@ -1902,7 +1902,7 @@
 - [ ] gateway control plane hardening
   - 当前已完成切片：`gateway.allowed_ips`、`gateway.rate_limit_per_minute`、控制面读写分离 role scope、pairing 首批 hardening、`member` 仅可删除自有 live connection、paired-session conflict retention proof、upgrade 前 session-unavailable 失败语义修正、router 接管 websocket chat 时停止重复 inbound bus 投递；当前本地继续更细的控制面/配对协议收口，不扩到 enrollment / ownership 持久化。
 - [ ] browser session dual-mode / advanced extraction
-- 当前已完成切片：`auto/direct/relay`、`print_pdf`、`extract_structured_data`、`get_text`、custom `debug_port/debug_endpoint`、`get_metrics`、`emulate_device`、`set_viewport`、`list_pages`、`new_page`、`activate_page`、`close_page`、`get_storage`、`set_storage`、`remove_storage`、`clear_storage`、`get_console`。
+- 当前已完成切片：`auto/direct/relay`、`print_pdf`、`extract_structured_data`、`get_text`、custom `debug_port/debug_endpoint`、`get_metrics`、`emulate_device`、`set_viewport`、`list_pages`、`new_page`、`activate_page`、`close_page`、`get_storage`、`set_storage`、`remove_storage`、`clear_storage`、`get_console`、`get_network`。
 - 当前下一切片：继续补更完整 relay/CDP 高级动作与会话控制（network 等），而不是重复做 attach endpoint/port 接入。
 - **验收**: 每项独立测试通过，按功能独立提交与推送。
 
