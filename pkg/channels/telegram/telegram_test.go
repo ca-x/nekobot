@@ -116,3 +116,16 @@ func newTestChannel(t *testing.T) *Channel {
 }
 
 var _ = tgbotapi.InlineKeyboardMarkup{}
+
+func TestSupportsNativeCommandsRespectsDefaultCapabilityScope(t *testing.T) {
+	channel := newTestChannel(t)
+	if !channel.supportsNativeCommands("private") {
+		t.Fatal("expected native commands enabled for private chats")
+	}
+	if !channel.supportsNativeCommands("group") {
+		t.Fatal("expected native commands enabled for group chats")
+	}
+	if !channel.supportsNativeCommands("supergroup") {
+		t.Fatal("expected native commands enabled for supergroup chats")
+	}
+}

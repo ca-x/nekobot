@@ -471,7 +471,7 @@ func (c *Channel) handleMessage(message *tgbotapi.Message) {
 		zap.String("text", content))
 
 	// Check if it's a command
-	if c.commands.IsCommand(content) {
+	if c.supportsNativeCommands(chatTypeForChatID(message.Chat.ID)) && c.commands.IsCommand(content) {
 		if msgType == bus.MessageTypeText {
 			c.handleCommand(message)
 			return
@@ -1101,6 +1101,21 @@ func (c *Channel) editSettingsMessage(chatID int64, messageID int, text string, 
 		}
 		_, _ = c.bot.Send(msg)
 	}
+}
+
+func (c *Channel) supportsNativeCommands(chatType string) bool {
+	scope := channelcapabilities.CapabilityScopeDM
+	switch strings.TrimSpace(strings.ToLower(chatType)) {
+	case "group", "supergroup":
+		scope = channelcapabilities.CapabilityScopeGroup
+	}
+
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ChannelType()),
+		channelcapabilities.CapabilityNativeCommands,
+		scope,
+		false,
+	)
 }
 
 func (c *Channel) supportsInlineButtons(chatType string) bool {
