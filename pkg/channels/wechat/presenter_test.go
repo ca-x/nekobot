@@ -50,3 +50,13 @@ func TestFormatForConfirmationIncludesSelectHints(t *testing.T) {
 		t.Fatalf("expected numeric reply hint, got %q", formatted)
 	}
 }
+
+func TestFormatForInteractiveIncludesNumericReplyHint(t *testing.T) {
+	formatted := FormatForInteractive("请选择", []string{"选项A", "选项B"})
+	if !strings.Contains(formatted, "/select 1") {
+		t.Fatalf("expected /select example, got %q", formatted)
+	}
+	if !strings.Contains(formatted, "直接回复对应编号") {
+		t.Fatalf("expected numeric reply hint, got %q", formatted)
+	}
+}

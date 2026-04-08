@@ -69,7 +69,7 @@ func FormatForInteractive(prompt string, options []string) string {
 	for i, opt := range options {
 		_, _ = fmt.Fprintf(&builder, "%d. %s\n", i+1, opt)
 	}
-	builder.WriteString("\n回复 /select N 选择，例如 /select 1")
+	builder.WriteString("\n回复 /select N 选择，例如 /select 1，也可以直接回复对应编号")
 	return builder.String()
 }
 
