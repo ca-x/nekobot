@@ -461,3 +461,44 @@ func TestResolveSessionPersistsLaunchIdentityMetadata(t *testing.T) {
 		t.Fatalf("expected metadata command persisted, got %q", got)
 	}
 }
+
+func TestResolveSessionDoesNotReuseWhenLaunchMetadataDisagrees(t *testing.T) {
+	mgr, sessionMgr := newTestManager(t)
+	ctx := context.Background()
+
+	existing, err := sessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceAgent,
+		Tool:    "claude",
+		Title:   "Claude Session",
+		Command: "claude",
+		Workdir: "/tmp/ws-a",
+		State:   toolsessions.StateDetached,
+		Metadata: map[string]interface{}{
+			metadataAgentKind: "claude",
+			metadataWorkspace: "/tmp/ws-a",
+			metadataTool:      "claude",
+			metadataCommand:   "claude --old",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "claude",
+		Workspace: "/tmp/ws-a",
+		Tool:      "claude",
+		Command:   "claude",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected mismatched launch metadata to require a new session")
+	}
+	if resolved.ID == existing.ID {
+		t.Fatalf("expected a new session instead of reusing %q", existing.ID)
+	}
+}

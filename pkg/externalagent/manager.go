@@ -75,6 +75,12 @@ func (m *Manager) ResolveSession(ctx context.Context, spec SessionSpec) (*toolse
 		if strings.TrimSpace(item.Command) != normalized.Command {
 			continue
 		}
+		if metadataString(item.Metadata, metadataTool) != "" && metadataString(item.Metadata, metadataTool) != normalized.Tool {
+			continue
+		}
+		if metadataString(item.Metadata, metadataCommand) != "" && metadataString(item.Metadata, metadataCommand) != normalized.Command {
+			continue
+		}
 		if filepath.Clean(strings.TrimSpace(item.Workdir)) != normalized.Workspace {
 			continue
 		}
