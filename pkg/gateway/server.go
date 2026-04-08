@@ -722,8 +722,12 @@ func (s *Server) handleDeleteConnections(w http.ResponseWriter, r *http.Request)
 		s.removeClient(client)
 	}
 
+	s.mu.RLock()
+	remaining := len(s.clients)
+	s.mu.RUnlock()
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]int{"deleted": len(targets)})
+	_ = json.NewEncoder(w).Encode(map[string]int{"deleted": len(targets), "remaining": remaining})
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {

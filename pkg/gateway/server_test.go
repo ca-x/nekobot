@@ -567,6 +567,9 @@ func TestDeleteConnectionsEndpointRemovesAllClientsForAdmin(t *testing.T) {
 	if body["deleted"] != 2 {
 		t.Fatalf("expected deleted=2, got %+v", body)
 	}
+	if body["remaining"] != 0 {
+		t.Fatalf("expected remaining=0, got %+v", body)
+	}
 	if len(s.clients) != 0 {
 		t.Fatalf("expected all clients removed, got %d", len(s.clients))
 	}
@@ -600,6 +603,9 @@ func TestDeleteConnectionsEndpointAllowsMemberRoleForOwnedClientsOnly(t *testing
 	}
 	if body["deleted"] != 1 {
 		t.Fatalf("expected deleted=1, got %+v", body)
+	}
+	if body["remaining"] != 1 {
+		t.Fatalf("expected remaining=1, got %+v", body)
 	}
 	if len(s.clients) != 1 {
 		t.Fatalf("expected one remaining client, got %d", len(s.clients))
@@ -636,6 +642,9 @@ func TestDeleteConnectionsEndpointDeletesOwnedClientsWhenMemberHasOnlyOwnedConne
 	}
 	if body["deleted"] != 1 {
 		t.Fatalf("expected deleted=1, got %+v", body)
+	}
+	if body["remaining"] != 0 {
+		t.Fatalf("expected remaining=0, got %+v", body)
 	}
 	if len(s.clients) != 0 {
 		t.Fatalf("expected member bulk delete to remove owned client, got %d", len(s.clients))
