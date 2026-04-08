@@ -371,3 +371,32 @@ func TestResolveSessionIgnoresIncompleteLaunchIdentity(t *testing.T) {
 		t.Fatalf("expected a clean newly created session, got %+v", resolved)
 	}
 }
+
+func TestResolveSessionCreatesNormalizedLaunchMetadata(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	ctx := context.Background()
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: " Claude ",
+		Workspace: "/tmp/ws-normalized",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected new session creation")
+	}
+	if resolved.Tool != "claude" {
+		t.Fatalf("expected normalized default tool claude, got %q", resolved.Tool)
+	}
+	if resolved.Command != "claude" {
+		t.Fatalf("expected normalized default command claude, got %q", resolved.Command)
+	}
+	if resolved.Title != "Claude Session" {
+		t.Fatalf("expected normalized default title, got %q", resolved.Title)
+	}
+	if got, _ := resolved.Metadata[metadataAgentKind].(string); got != "claude" {
+		t.Fatalf("expected normalized metadata agent kind, got %q", got)
+	}
+}
