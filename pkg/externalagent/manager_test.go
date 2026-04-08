@@ -177,7 +177,6 @@ func TestNormalizeSpecRejectsWorkspaceTraversalEscape(t *testing.T) {
 	}
 }
 
-
 func TestResolveSessionDoesNotReuseDifferentTool(t *testing.T) {
 	mgr, sessionMgr := newTestManager(t)
 	ctx := context.Background()
@@ -326,4 +325,49 @@ func newTestEntClient(t *testing.T, cfg *config.Config) *ent.Client {
 		t.Fatalf("ensure runtime schema: %v", err)
 	}
 	return client
+}
+
+func TestResolveSessionIgnoresIncompleteLaunchIdentity(t *testing.T) {
+	mgr, sessionMgr := newTestManager(t)
+	ctx := context.Background()
+
+	create := func(tool string, command string, workdir string) {
+		t.Helper()
+		if _, err := sessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+			Owner:   "alice",
+			Source:  toolsessions.SourceAgent,
+			Tool:    tool,
+			Title:   "Broken Session",
+			Command: command,
+			Workdir: workdir,
+			State:   toolsessions.StateDetached,
+			Metadata: map[string]interface{}{
+				metadataAgentKind: "claude",
+				metadataWorkspace: "/tmp/ws-a",
+			},
+		}); err != nil {
+			t.Fatalf("create session: %v", err)
+		}
+	}
+
+	create("", "claude", "/tmp/ws-a")
+	create("claude", "", "/tmp/ws-a")
+	create("claude", "claude", "")
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "claude",
+		Workspace: "/tmp/ws-a",
+		Tool:      "claude",
+		Command:   "claude",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected incomplete launch identity sessions not to be reused")
+	}
+	if resolved.Tool != "claude" || resolved.Command != "claude" || resolved.Workdir != "/tmp/ws-a" {
+		t.Fatalf("expected a clean newly created session, got %+v", resolved)
+	}
 }
