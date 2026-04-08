@@ -37,3 +37,16 @@ func TestBuildWeChatAgentInput_EmptyContent(t *testing.T) {
 		t.Fatalf("expected numbered-choice presenter guidance, got %q", input)
 	}
 }
+
+func TestFormatForConfirmationIncludesSelectHints(t *testing.T) {
+	formatted := FormatForConfirmation("是否继续？")
+	if !strings.Contains(formatted, "/yes") || !strings.Contains(formatted, "/no") {
+		t.Fatalf("expected yes/no hints, got %q", formatted)
+	}
+	if !strings.Contains(formatted, "/select 1") || !strings.Contains(formatted, "/select 2") {
+		t.Fatalf("expected /select hints, got %q", formatted)
+	}
+	if !strings.Contains(formatted, "直接回复 1、2") {
+		t.Fatalf("expected numeric reply hint, got %q", formatted)
+	}
+}

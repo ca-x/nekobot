@@ -31,9 +31,9 @@ const (
 
 // FormatOptions provides formatting hints to the presenter.
 type FormatOptions struct {
-	Mode       PresenterMode
-	MaxLength  int
-	Workspace  string
+	Mode        PresenterMode
+	MaxLength   int
+	Workspace   string
 	Attachments []string
 }
 
@@ -75,7 +75,7 @@ func FormatForInteractive(prompt string, options []string) string {
 
 // FormatForConfirmation creates a yes/no confirmation prompt.
 func FormatForConfirmation(prompt string) string {
-	return fmt.Sprintf("%s\n\n1. 是 (Yes)\n2. 否 (No)\n\n回复 /yes、/no 或直接回复 1、2", prompt)
+	return fmt.Sprintf("%s\n\n1. 是 (Yes)\n2. 否 (No)\n\n回复 /yes、/no、/select 1、/select 2 或直接回复 1、2", prompt)
 }
 
 // ShouldUseFileAttachment determines if content should be sent as file attachment.
