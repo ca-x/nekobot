@@ -12,6 +12,8 @@ import (
 const (
 	metadataAgentKind = "external_agent_kind"
 	metadataWorkspace = "external_agent_workspace"
+	metadataTool      = "external_agent_tool"
+	metadataCommand   = "external_agent_command"
 )
 
 // SessionSpec describes the external-agent session identity and launch contract.
@@ -90,6 +92,8 @@ func (m *Manager) ResolveSession(ctx context.Context, spec SessionSpec) (*toolse
 		Metadata: map[string]interface{}{
 			metadataAgentKind: normalized.AgentKind,
 			metadataWorkspace: normalized.Workspace,
+			metadataTool:      normalized.Tool,
+			metadataCommand:   normalized.Command,
 		},
 	})
 	if err != nil {

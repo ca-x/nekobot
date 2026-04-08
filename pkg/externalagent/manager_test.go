@@ -436,3 +436,28 @@ func TestResolveSessionDoesNotReuseDifferentOwner(t *testing.T) {
 		t.Fatalf("expected new session owner bob, got %q", resolved.Owner)
 	}
 }
+
+func TestResolveSessionPersistsLaunchIdentityMetadata(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	ctx := context.Background()
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+		Workspace: "/tmp/ws-metadata",
+		Tool:      "codex",
+		Command:   "codex --profile fast",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected new session creation")
+	}
+	if got, _ := resolved.Metadata[metadataTool].(string); got != "codex" {
+		t.Fatalf("expected metadata tool codex, got %q", got)
+	}
+	if got, _ := resolved.Metadata[metadataCommand].(string); got != "codex --profile fast" {
+		t.Fatalf("expected metadata command persisted, got %q", got)
+	}
+}
