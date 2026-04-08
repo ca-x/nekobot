@@ -14,6 +14,7 @@ func TestNativeCommandsCapabilityDefaultsForSelectedChannels(t *testing.T) {
 		{channel: "qq", scope: CapabilityScopeDM, want: true},
 		{channel: "qq", scope: CapabilityScopeGroup, want: true},
 		{channel: "googlechat", scope: CapabilityScopeGroup, want: true},
+		{channel: "maixcam", scope: CapabilityScopeDM, want: true},
 	}
 
 	for _, tt := range tests {

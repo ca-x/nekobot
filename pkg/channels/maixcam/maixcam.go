@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -289,7 +290,7 @@ func (c *Channel) handleTextMessage(msg MaixCamMessage, conn net.Conn) {
 	}
 
 	// Check for slash commands
-	if c.commands.IsCommand(content) {
+	if c.supportsNativeCommands() && c.commands.IsCommand(content) {
 		c.handleCommand(msg, conn, deviceID, content)
 		return
 	}
@@ -310,6 +311,15 @@ func (c *Channel) handleTextMessage(msg MaixCamMessage, conn net.Conn) {
 	if err := c.bus.SendInbound(busMsg); err != nil {
 		c.log.Error("Failed to send inbound message", zap.Error(err))
 	}
+}
+
+func (c *Channel) supportsNativeCommands() bool {
+	return channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel(c.ID()),
+		channelcapabilities.CapabilityNativeCommands,
+		channelcapabilities.CapabilityScopeDM,
+		false,
+	)
 }
 
 // handleCommand processes a command message.

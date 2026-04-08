@@ -208,6 +208,16 @@ func GetDefaultCapabilitiesForChannel(channelType string) ChannelCapabilities {
 			Media:          CapabilityScopeAll,
 			NativeCommands: CapabilityScopeOff,
 		}
+	case "maixcam":
+		return ChannelCapabilities{
+			Reactions:      CapabilityScopeOff,
+			InlineButtons:  CapabilityScopeOff,
+			Threads:        CapabilityScopeOff,
+			Polls:          CapabilityScopeOff,
+			Streaming:      CapabilityScopeOff,
+			Media:          CapabilityScopeAll,
+			NativeCommands: CapabilityScopeAll,
+		}
 	case "feishu":
 		return ChannelCapabilities{
 			Reactions:      CapabilityScopeAll,

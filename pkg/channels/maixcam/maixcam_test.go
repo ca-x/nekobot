@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"nekobot/pkg/bus"
+	channelcapabilities "nekobot/pkg/channelcapabilities"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 )
@@ -136,4 +137,19 @@ func decodeStubPayload(t *testing.T, conn *stubConn) map[string]interface{} {
 		t.Fatalf("failed to decode payload %q: %v", conn.buffer.String(), err)
 	}
 	return payload
+}
+
+func TestSupportsNativeCommandsUsesCapabilityMatrix(t *testing.T) {
+	channel := &Channel{}
+	if !channel.supportsNativeCommands() {
+		t.Fatal("expected maixcam native commands to be enabled by capability matrix")
+	}
+	if !channelcapabilities.IsCapabilityEnabled(
+		channelcapabilities.GetDefaultCapabilitiesForChannel("maixcam"),
+		channelcapabilities.CapabilityNativeCommands,
+		channelcapabilities.CapabilityScopeDM,
+		false,
+	) {
+		t.Fatal("expected direct capability check to enable maixcam native commands")
+	}
 }
