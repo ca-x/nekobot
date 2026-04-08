@@ -733,21 +733,41 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	totalConns := len(s.clients)
 	pairedCount := 0
+	pairedGeneratedCount := 0
+	pairedRequestedCount := 0
+	pairedLegacyCount := 0
 	for _, client := range s.clients {
-		if client.session != nil {
-			pairedCount++
+		details := describeConnection(client)
+		if !details.Paired {
+			continue
+		}
+		pairedCount++
+		source := "generated"
+		if details.SessionSource != nil && strings.TrimSpace(*details.SessionSource) != "" {
+			source = strings.TrimSpace(*details.SessionSource)
+		}
+		switch source {
+		case "requested":
+			pairedRequestedCount++
+		case "legacy":
+			pairedLegacyCount++
+		default:
+			pairedGeneratedCount++
 		}
 	}
 	s.mu.RUnlock()
 
 	metrics := map[string]interface{}{
-		"gateway_connections_total":     totalConns,
-		"gateway_connections_paired":    pairedCount,
-		"gateway_connections_unpaired":  totalConns - pairedCount,
-		"gateway_rate_limit_per_minute": s.config.Gateway.RateLimitPerMinute,
-		"gateway_max_connections":       s.config.Gateway.MaxConnections,
-		"gateway_allowed_origins_count": len(s.config.Gateway.AllowedOrigins),
-		"gateway_allowed_ips_count":     len(s.config.Gateway.AllowedIPs),
+		"gateway_connections_total":            totalConns,
+		"gateway_connections_paired":           pairedCount,
+		"gateway_connections_unpaired":         totalConns - pairedCount,
+		"gateway_connections_paired_generated": pairedGeneratedCount,
+		"gateway_connections_paired_requested": pairedRequestedCount,
+		"gateway_connections_paired_legacy":    pairedLegacyCount,
+		"gateway_rate_limit_per_minute":        s.config.Gateway.RateLimitPerMinute,
+		"gateway_max_connections":              s.config.Gateway.MaxConnections,
+		"gateway_allowed_origins_count":        len(s.config.Gateway.AllowedOrigins),
+		"gateway_allowed_ips_count":            len(s.config.Gateway.AllowedIPs),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

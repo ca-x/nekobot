@@ -195,6 +195,41 @@ func TestMetricsEndpointRejectsMemberRole(t *testing.T) {
 	}
 }
 
+func TestMetricsEndpointReportsPairingSourceBreakdown(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	generated := &Client{id: "client-generated", send: make(chan []byte, 1), session: &session.Session{ID: "client-generated", Source: session.SourceGateway}}
+	requested := &Client{id: "client-requested", send: make(chan []byte, 1), requestedSessionID: "gateway-session", session: &session.Session{ID: "gateway-session", Source: session.SourceGateway}}
+	legacy := &Client{id: "client-legacy", send: make(chan []byte, 1), requestedSessionID: "legacy-session", session: &session.Session{ID: "legacy-session", Source: ""}}
+
+	s.clients[generated.id] = generated
+	s.clients[requested.id] = requested
+	s.clients[legacy.id] = legacy
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode metrics response: %v", err)
+	}
+	if got := body["gateway_connections_paired_generated"]; got != float64(1) {
+		t.Fatalf("expected 1 generated paired metric, got %v", got)
+	}
+	if got := body["gateway_connections_paired_requested"]; got != float64(1) {
+		t.Fatalf("expected 1 requested paired metric, got %v", got)
+	}
+	if got := body["gateway_connections_paired_legacy"]; got != float64(1) {
+		t.Fatalf("expected 1 legacy paired metric, got %v", got)
+	}
+}
+
 func TestMetricsEndpoint(t *testing.T) {
 	s, token := newAuthedTestServer(t)
 
