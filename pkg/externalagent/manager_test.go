@@ -400,3 +400,39 @@ func TestResolveSessionCreatesNormalizedLaunchMetadata(t *testing.T) {
 		t.Fatalf("expected normalized metadata agent kind, got %q", got)
 	}
 }
+
+func TestResolveSessionDoesNotReuseDifferentOwner(t *testing.T) {
+	mgr, sessionMgr := newTestManager(t)
+	ctx := context.Background()
+
+	if _, err := sessionMgr.CreateSession(ctx, toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceAgent,
+		Tool:    "claude",
+		Title:   "Claude Session",
+		Command: "claude",
+		Workdir: "/tmp/ws-a",
+		State:   toolsessions.StateDetached,
+		Metadata: map[string]interface{}{
+			metadataAgentKind: "claude",
+			metadataWorkspace: "/tmp/ws-a",
+		},
+	}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "bob",
+		AgentKind: "claude",
+		Workspace: "/tmp/ws-a",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected different owner to require a new session")
+	}
+	if resolved.Owner != "bob" {
+		t.Fatalf("expected new session owner bob, got %q", resolved.Owner)
+	}
+}
