@@ -71,6 +71,8 @@ func parseWeChatInteractionAction(input string) (*interactionAction, bool) {
 		return &interactionAction{Type: interactionActionDeny}, true
 	case isDigitsOnly(lower):
 		return &interactionAction{Type: interactionActionSelect, Value: lower}, true
+	case lower == "/select":
+		return nil, false
 	case strings.HasPrefix(lower, "/select "):
 		value := strings.TrimSpace(trimmed[len("/select "):])
 		if value == "" {

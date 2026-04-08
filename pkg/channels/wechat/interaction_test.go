@@ -53,6 +53,12 @@ func TestParseWeChatInteractionAction(t *testing.T) {
 	}
 }
 
+func TestParseWeChatInteractionActionRejectsEmptySelectValue(t *testing.T) {
+	if action, ok := parseWeChatInteractionAction("/select   "); ok || action != nil {
+		t.Fatalf("expected empty /select to be rejected, got ok=%v action=%#v", ok, action)
+	}
+}
+
 func TestPendingSkillInstallExpires(t *testing.T) {
 	ch := &Channel{
 		pendingSkillInstalls: map[string]pendingSkillInstall{},
