@@ -181,6 +181,10 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 				"type":        "integer",
 				"description": "Maximum number of collected console or network entries.",
 			},
+			"resource_type": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional network resource type filter for get_network (for example document, xhr, fetch, image).",
+			},
 			"device": map[string]interface{}{
 				"type":        "string",
 				"enum":        []string{"iphone", "ipad", "android", "desktop"},
@@ -307,6 +311,12 @@ type browserConsoleOptions struct {
 	WarningsOnly bool
 	InfoOnly     bool
 	MaxEntries   int
+}
+
+type browserNetworkOptions struct {
+	MaxEntries   int
+	Duration     time.Duration
+	ResourceType string
 }
 
 type browserConsoleEntry struct {
@@ -1066,22 +1076,8 @@ func (b *BrowserTool) getNetwork(ctx context.Context, params map[string]interfac
 	}
 	defer failed.Close()
 
-	maxEntries := 100
-	if value, ok := params["max_entries"].(float64); ok {
-		converted := int(value)
-		if value == float64(converted) && converted > 0 {
-			maxEntries = converted
-		}
-	}
-	timeout := 500 * time.Millisecond
-	if value, ok := params["duration"].(float64); ok {
-		converted := int(value)
-		if value == float64(converted) && converted > 0 {
-			timeout = time.Duration(converted) * time.Millisecond
-		}
-	}
-
-	entries := collectBrowserNetworkEntries(ctx, requests, responses, finished, failed, maxEntries, timeout)
+	opts := b.buildNetworkOptions(params)
+	entries := collectBrowserNetworkEntries(ctx, requests, responses, finished, failed, opts)
 	data, err := json.Marshal(entries)
 	if err != nil {
 		return "", fmt.Errorf("marshal browser network entries: %w", err)
@@ -2026,6 +2022,27 @@ func marshalBrowserTarget(target *devtool.Target) (string, error) {
 	return string(data), nil
 }
 
+func (b *BrowserTool) buildNetworkOptions(params map[string]interface{}) browserNetworkOptions {
+	opts := browserNetworkOptions{
+		MaxEntries: 100,
+		Duration:   500 * time.Millisecond,
+	}
+	if value, ok := params["max_entries"].(float64); ok {
+		maxEntries := int(value)
+		if value == float64(maxEntries) && maxEntries > 0 {
+			opts.MaxEntries = maxEntries
+		}
+	}
+	if value, ok := params["duration"].(float64); ok {
+		duration := int(value)
+		if value == float64(duration) && duration > 0 {
+			opts.Duration = time.Duration(duration) * time.Millisecond
+		}
+	}
+	opts.ResourceType = strings.TrimSpace(strings.ToLower(stringParam(params, "resource_type")))
+	return opts
+}
+
 func (b *BrowserTool) buildConsoleOptions(params map[string]interface{}) browserConsoleOptions {
 	opts := browserConsoleOptions{MaxEntries: 100}
 	if value, ok := params["errors_only"].(bool); ok {
@@ -2129,6 +2146,13 @@ func browserNetworkEntryFromFailed(entry *network.LoadingFailedReply) browserNet
 	}
 }
 
+func browserNetworkEntryMatches(entry browserNetworkEntry, opts browserNetworkOptions) bool {
+	if strings.TrimSpace(opts.ResourceType) == "" {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(entry.Type), strings.TrimSpace(opts.ResourceType))
+}
+
 func browserMonotonicTimestampString(ts network.MonotonicTime) string {
 	value := float64(ts)
 	if value <= 0 {
@@ -2143,19 +2167,18 @@ func collectBrowserNetworkEntries(
 	responses network.ResponseReceivedClient,
 	finished network.LoadingFinishedClient,
 	failed network.LoadingFailedClient,
-	maxEntries int,
-	timeout time.Duration,
+	opts browserNetworkOptions,
 ) []browserNetworkEntry {
-	if maxEntries <= 0 {
-		maxEntries = 100
+	if opts.MaxEntries <= 0 {
+		opts.MaxEntries = 100
 	}
-	if timeout <= 0 {
-		timeout = 500 * time.Millisecond
+	if opts.Duration <= 0 {
+		opts.Duration = 500 * time.Millisecond
 	}
 
-	deadline := time.Now().Add(timeout)
-	entries := make([]browserNetworkEntry, 0, min(maxEntries, 16))
-	for len(entries) < maxEntries && time.Now().Before(deadline) {
+	deadline := time.Now().Add(opts.Duration)
+	entries := make([]browserNetworkEntry, 0, min(opts.MaxEntries, 16))
+	for len(entries) < opts.MaxEntries && time.Now().Before(deadline) {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			break
@@ -2166,31 +2189,43 @@ func collectBrowserNetworkEntries(
 		}
 		if requests != nil {
 			if item, ok := recvNetworkRequestWithin(ctx, requests, wait); ok && item != nil {
-				entries = append(entries, browserNetworkEntryFromRequest(item))
+				entry := browserNetworkEntryFromRequest(item)
+				if browserNetworkEntryMatches(entry, opts) {
+					entries = append(entries, entry)
+				}
 			}
 		}
-		if len(entries) >= maxEntries || time.Now().After(deadline) {
+		if len(entries) >= opts.MaxEntries || time.Now().After(deadline) {
 			break
 		}
 		if responses != nil {
 			if item, ok := recvNetworkResponseWithin(ctx, responses, wait); ok && item != nil {
-				entries = append(entries, browserNetworkEntryFromResponse(item))
+				entry := browserNetworkEntryFromResponse(item)
+				if browserNetworkEntryMatches(entry, opts) {
+					entries = append(entries, entry)
+				}
 			}
 		}
-		if len(entries) >= maxEntries || time.Now().After(deadline) {
+		if len(entries) >= opts.MaxEntries || time.Now().After(deadline) {
 			break
 		}
 		if finished != nil {
 			if item, ok := recvNetworkFinishedWithin(ctx, finished, wait); ok && item != nil {
-				entries = append(entries, browserNetworkEntryFromFinished(item))
+				entry := browserNetworkEntryFromFinished(item)
+				if browserNetworkEntryMatches(entry, opts) {
+					entries = append(entries, entry)
+				}
 			}
 		}
-		if len(entries) >= maxEntries || time.Now().After(deadline) {
+		if len(entries) >= opts.MaxEntries || time.Now().After(deadline) {
 			break
 		}
 		if failed != nil {
 			if item, ok := recvNetworkFailedWithin(ctx, failed, wait); ok && item != nil {
-				entries = append(entries, browserNetworkEntryFromFailed(item))
+				entry := browserNetworkEntryFromFailed(item)
+				if browserNetworkEntryMatches(entry, opts) {
+					entries = append(entries, entry)
+				}
 			}
 		}
 	}

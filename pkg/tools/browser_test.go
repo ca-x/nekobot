@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mafredri/cdp/devtool"
 	cdpLog "github.com/mafredri/cdp/protocol/log"
@@ -1505,6 +1506,35 @@ func installStubBrowserSession(t *testing.T) *BrowserSession {
 }
 
 var _ browserDevTools = (*stubBrowserDevTools)(nil)
+
+func TestBrowserToolBuildNetworkOptions(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	defaults := tool.buildNetworkOptions(map[string]interface{}{})
+	if defaults.MaxEntries != 100 || defaults.Duration != 500*time.Millisecond || defaults.ResourceType != "" {
+		t.Fatalf("unexpected default network options: %+v", defaults)
+	}
+	opts := tool.buildNetworkOptions(map[string]interface{}{
+		"max_entries":   float64(12),
+		"duration":      float64(750),
+		"resource_type": "XHR",
+	})
+	if opts.MaxEntries != 12 || opts.Duration != 750*time.Millisecond || opts.ResourceType != "xhr" {
+		t.Fatalf("unexpected custom network options: %+v", opts)
+	}
+}
+
+func TestBrowserNetworkEntryMatchesResourceTypeFilter(t *testing.T) {
+	entry := browserNetworkEntry{Type: "XHR"}
+	if !browserNetworkEntryMatches(entry, browserNetworkOptions{}) {
+		t.Fatal("expected empty filter to match")
+	}
+	if !browserNetworkEntryMatches(entry, browserNetworkOptions{ResourceType: "xhr"}) {
+		t.Fatal("expected xhr filter to match regardless of case")
+	}
+	if browserNetworkEntryMatches(entry, browserNetworkOptions{ResourceType: "document"}) {
+		t.Fatal("expected document filter to reject xhr entry")
+	}
+}
 
 func TestBrowserToolParametersIncludeGetNetwork(t *testing.T) {
 	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
