@@ -599,6 +599,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"version":                      version.GetVersion(),
 		"connections":                  connCount,
 		"paired_connections":           pairedCount,
+		"unpaired_connections":         connCount - pairedCount,
 		"paired_generated_connections": pairedGeneratedCount,
 		"paired_requested_connections": pairedRequestedCount,
 		"paired_legacy_connections":    pairedLegacyCount,

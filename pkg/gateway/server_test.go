@@ -963,6 +963,42 @@ func TestStatusEndpointReportsPairingSourceBreakdown(t *testing.T) {
 	}
 }
 
+func TestStatusEndpointReportsUnpairedConnections(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	pairedSession, err := s.sessionMgr.GetWithSource("paired-session", session.SourceGateway)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	s.clients["client-a"] = &Client{id: "client-a", send: make(chan []byte, 1), session: pairedSession}
+	s.clients["client-b"] = &Client{id: "client-b", send: make(chan []byte, 1)}
+	s.clients["client-c"] = &Client{id: "client-c", send: make(chan []byte, 1)}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode status response: %v", err)
+	}
+	if body["connections"] != float64(3) {
+		t.Fatalf("expected 3 connections, got %v", body["connections"])
+	}
+	if body["paired_connections"] != float64(1) {
+		t.Fatalf("expected 1 paired connection, got %v", body["paired_connections"])
+	}
+	if body["unpaired_connections"] != float64(2) {
+		t.Fatalf("expected 2 unpaired connections, got %v", body["unpaired_connections"])
+	}
+}
+
 func TestStatusEndpointReportsPairedConnections(t *testing.T) {
 	s, token := newAuthedTestServer(t)
 
