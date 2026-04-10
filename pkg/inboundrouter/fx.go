@@ -6,12 +6,16 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
+	"nekobot/pkg/agent"
 	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/logger"
 )
 
 // Module provides the unified inbound router.
 var Module = fx.Module("inboundrouter",
+	fx.Provide(func(ag *agent.Agent) routingAgent {
+		return ag
+	}),
 	fx.Provide(New),
 	fx.Invoke(registerLifecycle),
 )
