@@ -19,6 +19,8 @@ const HarnessAuditPage = lazy(() => import('./pages/HarnessAuditPage'));
 const RuntimeTopologyPage = lazy(() => import('./pages/RuntimeTopologyPage'));
 const SystemPage = lazy(() => import('./pages/SystemPage'));
 const CronPage = lazy(() => import('./pages/CronPage'));
+const WebhooksPage = lazy(() => import('./pages/WebhooksPage'));
+const PolicyPage = lazy(() => import('./pages/PolicyPage'));
 
 function Loading() {
   return (
@@ -48,6 +50,8 @@ export default function App() {
           <Route path="/harness/audit" element={<HarnessAuditPage />} />
           <Route path="/runtime-topology" element={<RuntimeTopologyPage />} />
           <Route path="/cron" element={<CronPage />} />
+          <Route path="/webhooks" element={<WebhooksPage />} />
+          <Route path="/policy" element={<PolicyPage />} />
           <Route path="/system" element={<SystemPage />} />
           <Route path="/" element={<Navigate to="/chat" replace />} />
         </Route>

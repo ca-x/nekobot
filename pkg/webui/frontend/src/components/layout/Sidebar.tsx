@@ -17,6 +17,8 @@ import {
   Activity,
   Library,
   Clock3,
+  Webhook,
+  Shield,
   ShieldCheck,
   Waypoints,
   Sun,
@@ -63,6 +65,8 @@ export default function Sidebar() {
     { target: '/harness/audit', label: t('tabHarnessAudit'), icon: ShieldCheck },
     { target: '/runtime-topology', label: t('tabRuntimeTopology'), icon: Waypoints },
     { target: '/cron', label: t('tabCron'), icon: Clock3 },
+    { target: '/webhooks', label: t('tabWebhooks'), icon: Webhook },
+    { target: '/policy', label: t('tabPolicy'), icon: Shield },
     { target: '/system', label: t('tabStatus'), icon: Activity },
   ];
 
