@@ -24,6 +24,7 @@ type Config struct {
 	Gateway       GatewayConfig       `mapstructure:"gateway" json:"gateway"`
 	Tools         ToolsConfig         `mapstructure:"tools" json:"tools"`
 	Heartbeat     HeartbeatConfig     `mapstructure:"heartbeat" json:"heartbeat"`
+	Webhook       WebhookConfig       `mapstructure:"webhook" json:"webhook"`
 	Redis         RedisConfig         `mapstructure:"redis" json:"redis"`
 	State         StateConfig         `mapstructure:"state" json:"state"`
 	Bus           BusConfig           `mapstructure:"bus" json:"bus"`
@@ -242,6 +243,12 @@ type InfoflowConfig struct {
 type HeartbeatConfig struct {
 	Enabled         bool `mapstructure:"enabled" json:"enabled"`
 	IntervalMinutes int  `mapstructure:"interval_minutes" json:"interval_minutes"` // minutes, min 5
+}
+
+// WebhookConfig for generic authenticated webhook trigger endpoint.
+type WebhookConfig struct {
+	Enabled bool   `mapstructure:"enabled" json:"enabled"`
+	Path    string `mapstructure:"path" json:"path"`
 }
 
 // RedisConfig is the shared Redis connection configuration.
@@ -495,6 +502,10 @@ func DefaultConfig() *Config {
 		Heartbeat: HeartbeatConfig{
 			Enabled:         true,
 			IntervalMinutes: 30, // 30 minutes
+		},
+		Webhook: WebhookConfig{
+			Enabled: false,
+			Path:    "/api/webhooks/agent",
 		},
 		Redis: RedisConfig{
 			Addr: "localhost:6379",

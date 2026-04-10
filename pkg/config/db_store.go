@@ -17,6 +17,7 @@ var runtimeConfigSections = []string{
 	"tools",
 	"transcription",
 	"heartbeat",
+	"webhook",
 	"redis",
 	"state",
 	"bus",
@@ -174,6 +175,8 @@ func marshalSection(cfg *Config, section string) ([]byte, error) {
 		return json.Marshal(cfg.Transcription)
 	case "heartbeat":
 		return json.Marshal(cfg.Heartbeat)
+	case "webhook":
+		return json.Marshal(cfg.Webhook)
 	case "redis":
 		return json.Marshal(cfg.Redis)
 	case "state":
@@ -246,6 +249,12 @@ func applySection(cfg *Config, section string, payload []byte) error {
 			return fmt.Errorf("decode heartbeat config: %w", err)
 		}
 		cfg.Heartbeat = v
+	case "webhook":
+		var v WebhookConfig
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("decode webhook config: %w", err)
+		}
+		cfg.Webhook = v
 	case "redis":
 		var v RedisConfig
 		if err := json.Unmarshal(payload, &v); err != nil {

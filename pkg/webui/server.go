@@ -53,6 +53,7 @@ import (
 	"nekobot/pkg/modelroute"
 	"nekobot/pkg/modelstore"
 	"nekobot/pkg/permissionrules"
+	"nekobot/pkg/policy"
 	"nekobot/pkg/process"
 	"nekobot/pkg/prompts"
 	"nekobot/pkg/providerregistry"
@@ -78,39 +79,40 @@ import (
 
 // Server is the WebUI HTTP server.
 type Server struct {
-	echo          *echo.Echo
-	httpServer    *http.Server
-	config        *config.Config
-	loader        *config.Loader
-	logger        *logger.Logger
-	agent         *agent.Agent
-	approval      *approval.Manager
-	channels      *channels.Manager
-	bus           bus.Bus
-	commands      *commands.Registry
-	prefs         *userprefs.Manager
-	toolSess      *toolsessions.Manager
-	externalAgent *externalagent.Manager
-	sessionMgr    *session.Manager
-	processMgr    *process.Manager
-	prompts       *prompts.Manager
-	providers     *providerstore.Manager
-	runtimeMgr    *runtimeagents.Manager
-	accountMgr    *channelaccounts.Manager
-	bindingMgr    *accountbindings.Manager
-	topologySvc   *runtimetopology.Service
-	cronMgr       *cron.Manager
-	skillsMgr     *skills.Manager
-	workspace     *workspace.Manager
-	entClient     *ent.Client
-	snapshotMgr   *session.SnapshotManager
-	auditLogger   *audit.Logger
-	ilinkAuth     *ilinkauth.Service
-	serviceCtrl   serviceController
-	taskStore     *tasks.Store
-	watcher       *watch.Watcher
-	port          int
-	startedAt     time.Time
+	echo               *echo.Echo
+	httpServer         *http.Server
+	config             *config.Config
+	loader             *config.Loader
+	logger             *logger.Logger
+	agent              *agent.Agent
+	approval           *approval.Manager
+	channels           *channels.Manager
+	bus                bus.Bus
+	commands           *commands.Registry
+	prefs              *userprefs.Manager
+	toolSess           *toolsessions.Manager
+	externalAgent      *externalagent.Manager
+	sessionMgr         *session.Manager
+	processMgr         *process.Manager
+	prompts            *prompts.Manager
+	providers          *providerstore.Manager
+	runtimeMgr         *runtimeagents.Manager
+	accountMgr         *channelaccounts.Manager
+	bindingMgr         *accountbindings.Manager
+	topologySvc        *runtimetopology.Service
+	cronMgr            *cron.Manager
+	skillsMgr          *skills.Manager
+	workspace          *workspace.Manager
+	entClient          *ent.Client
+	snapshotMgr        *session.SnapshotManager
+	auditLogger        *audit.Logger
+	ilinkAuth          *ilinkauth.Service
+	serviceCtrl        serviceController
+	taskStore          *tasks.Store
+	watcher            *watch.Watcher
+	webhookTestHandler func(ctx context.Context, username, message string) (string, error)
+	port               int
+	startedAt          time.Time
 }
 
 type serviceController interface {
@@ -204,7 +206,7 @@ func NewServer(
 			if toolSessionMgr == nil {
 				return nil
 			}
-			manager, err := externalagent.NewManager(toolSessionMgr)
+			manager, err := externalagent.NewManager(cfg, toolSessionMgr)
 			if err != nil {
 				log.Warn("Failed to initialize external agent manager", zap.Error(err))
 				return nil
@@ -304,6 +306,7 @@ func (s *Server) setup() {
 	e.POST("/api/auth/login", s.handleLogin)
 	e.GET("/api/auth/init-status", s.handleInitStatus)
 	e.POST("/api/auth/init", s.handleInitPassword)
+	e.POST("/api/auth/init/repair-workspace", s.handleInitRepairWorkspace)
 
 	// Chat WebSocket (auth handled inside via token query param)
 	e.GET("/api/chat/ws", s.handleChatWS)
@@ -338,6 +341,8 @@ func (s *Server) setup() {
 	api.POST("/permission-rules", s.handleCreatePermissionRule)
 	api.PUT("/permission-rules/:id", s.handleUpdatePermissionRule)
 	api.DELETE("/permission-rules/:id", s.handleDeletePermissionRule)
+	api.GET("/policy/presets", s.handleGetPolicyPresets)
+	api.POST("/policy/evaluate", s.handleEvaluatePolicy)
 
 	// Channel routes
 	api.GET("/channels", s.handleGetChannels)
@@ -435,6 +440,8 @@ func (s *Server) setup() {
 	api.POST("/marketplace/skills/:id/install-deps", s.handleInstallMarketplaceSkillDependencies)
 	api.GET("/workspace/status", s.handleGetWorkspaceStatus)
 	api.POST("/workspace/repair", s.handleRepairWorkspace)
+	api.POST("/webhooks/test", s.handleTestWebhook)
+	s.registerConfiguredWebhookRoute(api)
 
 	// Auth management (change password, profile)
 	api.POST("/auth/change-password", s.handleChangePassword)
@@ -487,6 +494,31 @@ func (s *Server) setup() {
 	s.echo = e
 }
 
+func (s *Server) registerConfiguredWebhookRoute(api *echo.Group) {
+	if s == nil || api == nil || s.config == nil {
+		return
+	}
+	path := normalizeConfiguredWebhookPath(s.config.Webhook.Path)
+	if path == "" || path == "/webhooks/test" {
+		return
+	}
+	api.POST(path, s.handleTestWebhook)
+}
+
+func normalizeConfiguredWebhookPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "/api/") {
+		trimmed = strings.TrimPrefix(trimmed, "/api")
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	return strings.TrimSpace(trimmed)
+}
+
 // Start starts the WebUI server.
 func (s *Server) Start() error {
 	addr := fmt.Sprintf(":%d", s.port)
@@ -534,16 +566,22 @@ func (s *Server) handleInitStatus(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to resolve config path"})
 	}
+	workspaceStatus, err := workspace.NewManager(s.config.WorkspacePath(), s.logger).Inspect()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to inspect workspace"})
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"initialized": initialized,
 		"bootstrap": map[string]interface{}{
-			"config_path": configPath,
-			"db_dir":      s.config.Storage.DBDir,
-			"workspace":   s.config.Agents.Defaults.Workspace,
-			"logger":      s.config.Logger,
-			"gateway":     s.config.Gateway,
-			"webui":       s.config.WebUI,
+			"config_path":      configPath,
+			"db_dir":           s.config.Storage.DBDir,
+			"workspace":        s.config.Agents.Defaults.Workspace,
+			"logger":           s.config.Logger,
+			"gateway":          s.config.Gateway,
+			"webui":            s.config.WebUI,
+			"webhook":          s.config.Webhook,
+			"workspace_status": workspaceStatus,
 		},
 	})
 }
@@ -639,6 +677,20 @@ func (s *Server) handleInitPassword(c *echo.Context) error {
 		"user":             s.authProfileResponse(profile),
 		"restart_required": len(restartSections) > 0,
 		"restart_sections": restartSections,
+	})
+}
+
+func (s *Server) handleInitRepairWorkspace(c *echo.Context) error {
+	if err := workspace.NewManager(s.config.WorkspacePath(), s.logger).Ensure(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to repair workspace"})
+	}
+	status, err := workspace.NewManager(s.config.WorkspacePath(), s.logger).Inspect()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to inspect workspace"})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"status":           "repaired",
+		"workspace_status": status,
 	})
 }
 
@@ -1823,26 +1875,34 @@ func (s *Server) handleResolveExternalAgentSession(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	session, created, err := s.externalAgent.ResolveSession(c.Request().Context(), externalagent.SessionSpec{
-		Owner:     s.currentUsername(c),
-		AgentKind: body.AgentKind,
-		Workspace: body.Workspace,
-		Tool:      body.Tool,
-		Title:     body.Title,
-		Command:   body.Command,
-	})
+	var probe externalAgentProcessProbe
+	var starter externalagent.ProcessStarter
+	if s.processMgr != nil {
+		probe.mgr = s.processMgr
+		starter = s.processMgr
+	}
+	result, err := externalagent.ExecuteResolveFlow(
+		c.Request().Context(),
+		s.externalAgent,
+		externalagent.NewResolveOrchestrator(s.config, s.logger, s.entClient, s.approval, s.taskStore),
+		s.config.WorkspacePath(),
+		probe,
+		starter,
+		s.toolSess,
+		buildToolRuntimeCommand,
+		externalagent.SessionSpec{
+			Owner:     s.currentUsername(c),
+			AgentKind: body.AgentKind,
+			Workspace: body.Workspace,
+			Tool:      body.Tool,
+			Title:     body.Title,
+			Command:   body.Command,
+		},
+	)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
-
-	status := http.StatusOK
-	if created {
-		status = http.StatusCreated
-	}
-	return c.JSON(status, map[string]interface{}{
-		"created": created,
-		"session": session,
-	})
+	return c.JSON(result.HTTPStatus(), result.ResponseBody())
 }
 
 func (s *Server) handleUpdateToolSession(c *echo.Context) error {
@@ -4512,6 +4572,7 @@ func (s *Server) handleGetConfig(c *echo.Context) error {
 		"gateway":       s.config.Gateway,
 		"tools":         s.config.Tools,
 		"heartbeat":     s.config.Heartbeat,
+		"webhook":       s.config.Webhook,
 		"redis":         s.config.Redis,
 		"state":         s.config.State,
 		"bus":           s.config.Bus,
@@ -4542,6 +4603,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		Gateway       *config.GatewayConfig       `json:"gateway"`
 		Tools         *config.ToolsConfig         `json:"tools"`
 		Heartbeat     *config.HeartbeatConfig     `json:"heartbeat"`
+		Webhook       *config.WebhookConfig       `json:"webhook"`
 		Redis         *config.RedisConfig         `json:"redis"`
 		State         *config.StateConfig         `json:"state"`
 		Bus           *config.BusConfig           `json:"bus"`
@@ -4576,6 +4638,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.Heartbeat != nil {
 		s.config.Heartbeat = *body.Heartbeat
+	}
+	if body.Webhook != nil {
+		s.config.Webhook = *body.Webhook
 	}
 	if body.Redis != nil {
 		s.config.Redis = *body.Redis
@@ -4639,8 +4704,8 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	restartSections := make([]string, 0, 4)
-	if body.Storage != nil || body.Logger != nil || body.Gateway != nil || body.WebUI != nil {
+	restartSections := make([]string, 0, 5)
+	if body.Storage != nil || body.Logger != nil || body.Gateway != nil || body.WebUI != nil || body.Webhook != nil {
 		if body.Storage != nil {
 			newRuntimeDBPath, err := config.RuntimeDBPath(s.config)
 			if err != nil {
@@ -4668,6 +4733,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 		if body.WebUI != nil {
 			restartSections = append(restartSections, "webui")
 		}
+		if body.Webhook != nil {
+			restartSections = append(restartSections, "webhook")
+		}
 	}
 
 	sections := make([]string, 0, 19)
@@ -4682,6 +4750,9 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 	}
 	if body.Heartbeat != nil {
 		sections = append(sections, "heartbeat")
+	}
+	if body.Webhook != nil {
+		sections = append(sections, "webhook")
 	}
 	if body.Redis != nil {
 		sections = append(sections, "redis")
@@ -4744,6 +4815,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":           "saved",
+		"sections_saved":   len(sections),
 		"restart_required": len(restartSections) > 0,
 		"restart_sections": restartSections,
 	})
@@ -4801,6 +4873,7 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		Gateway       *config.GatewayConfig       `json:"gateway"`
 		Tools         *config.ToolsConfig         `json:"tools"`
 		Heartbeat     *config.HeartbeatConfig     `json:"heartbeat"`
+		Webhook       *config.WebhookConfig       `json:"webhook"`
 		Redis         *config.RedisConfig         `json:"redis"`
 		State         *config.StateConfig         `json:"state"`
 		Bus           *config.BusConfig           `json:"bus"`
@@ -4836,6 +4909,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 	if body.Heartbeat != nil {
 		s.config.Heartbeat = *body.Heartbeat
+	}
+	if body.Webhook != nil {
+		s.config.Webhook = *body.Webhook
 	}
 	if body.Redis != nil {
 		s.config.Redis = *body.Redis
@@ -4899,8 +4975,8 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	restartSections := make([]string, 0, 4)
-	if body.Storage != nil || body.Logger != nil || body.Gateway != nil || body.WebUI != nil {
+	restartSections := make([]string, 0, 5)
+	if body.Storage != nil || body.Logger != nil || body.Gateway != nil || body.WebUI != nil || body.Webhook != nil {
 		if body.Storage != nil {
 			newRuntimeDBPath, err := config.RuntimeDBPath(s.config)
 			if err != nil {
@@ -4928,6 +5004,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		if body.WebUI != nil {
 			restartSections = append(restartSections, "webui")
 		}
+		if body.Webhook != nil {
+			restartSections = append(restartSections, "webhook")
+		}
 	}
 
 	// Persist runtime sections to database
@@ -4943,6 +5022,9 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 	}
 	if body.Heartbeat != nil {
 		sections = append(sections, "heartbeat")
+	}
+	if body.Webhook != nil {
+		sections = append(sections, "webhook")
 	}
 	if body.Redis != nil {
 		sections = append(sections, "redis")
@@ -5028,6 +5110,49 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 		"providers_imported": importedProviders,
 		"restart_required":   len(restartSections) > 0,
 		"restart_sections":   restartSections,
+	})
+}
+
+func (s *Server) handleTestWebhook(c *echo.Context) error {
+	if !s.config.Webhook.Enabled {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "webhook trigger is disabled"})
+	}
+	if s.agent == nil && s.webhookTestHandler == nil || s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "agent runtime not available"})
+	}
+
+	var body struct {
+		Message string `json:"message"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	messageText := strings.TrimSpace(body.Message)
+	if messageText == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "message is required"})
+	}
+
+	username := strings.TrimSpace(s.currentUsername(c))
+	if username == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+	}
+	sess, err := s.sessionMgr.GetWithSource("webhook:"+username, session.SourceWebUI)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	var reply string
+	if s.webhookTestHandler != nil {
+		reply, err = s.webhookTestHandler(c.Request().Context(), username, messageText)
+	} else {
+		reply, err = s.agent.Chat(c.Request().Context(), sess, messageText)
+	}
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"status":     "ok",
+		"reply":      reply,
+		"session_id": sess.ID,
 	})
 }
 
@@ -7089,10 +7214,30 @@ func (s *Server) handleApproveRequest(c *echo.Context) error {
 	if err := s.approval.Approve(id); err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 	}
+	if req != nil && s.approval != nil && isExternalAgentApprovalRequest(req) {
+		s.approval.SetSessionMode(req.SessionID, approval.ModeAuto)
+		if s.toolSess != nil {
+			sess, err := s.toolSess.GetSession(c.Request().Context(), req.SessionID)
+			if err == nil && sess != nil {
+				if err := s.ensureExternalAgentProcess(c.Request().Context(), sess); err != nil {
+					return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to continue external agent launch: " + err.Error()})
+				}
+			}
+		}
+	}
 	if req != nil && s.taskStore != nil {
 		s.taskStore.ClearSessionPendingAction(req.SessionID)
+		if mode, ok := s.approval.GetSessionMode(req.SessionID); ok {
+			s.taskStore.SetSessionPermissionMode(req.SessionID, string(mode))
+		}
 	}
-	return c.JSON(http.StatusOK, map[string]string{"status": "approved", "id": id})
+	body := map[string]any{"status": "approved", "id": id}
+	if req != nil {
+		if state := s.currentSessionRuntimeState(req.SessionID); state != nil {
+			body["session_runtime_state"] = state
+		}
+	}
+	return c.JSON(http.StatusOK, body)
 }
 
 func (s *Server) handleDenyRequest(c *echo.Context) error {
@@ -7109,7 +7254,70 @@ func (s *Server) handleDenyRequest(c *echo.Context) error {
 	if req != nil && s.taskStore != nil {
 		s.taskStore.ClearSessionPendingAction(req.SessionID)
 	}
-	return c.JSON(http.StatusOK, map[string]string{"status": "denied", "id": id})
+	response := map[string]any{"status": "denied", "id": id}
+	if req != nil {
+		if state := s.currentSessionRuntimeState(req.SessionID); state != nil {
+			response["session_runtime_state"] = state
+		}
+	}
+	return c.JSON(http.StatusOK, response)
+}
+
+func (s *Server) currentSessionRuntimeState(sessionID string) *tasks.SessionState {
+	if s == nil || s.taskStore == nil {
+		return nil
+	}
+	state, ok := s.taskStore.GetSessionState(sessionID)
+	if !ok {
+		return nil
+	}
+	return &state
+}
+
+func isExternalAgentApprovalRequest(req *approval.Request) bool {
+	if req == nil {
+		return false
+	}
+	if strings.TrimSpace(req.ToolName) == "" {
+		return false
+	}
+	toolName, _ := req.Arguments["tool_name"].(string)
+	sessionID, _ := req.Arguments["session_id"].(string)
+	return strings.TrimSpace(toolName) == strings.TrimSpace(req.ToolName) &&
+		strings.TrimSpace(sessionID) == strings.TrimSpace(req.SessionID)
+}
+
+func (s *Server) ensureExternalAgentProcess(ctx context.Context, sess *toolsessions.Session) error {
+	if s == nil {
+		return nil
+	}
+	var probe externalAgentProcessProbe
+	var starter externalagent.ProcessStarter
+	if s.processMgr != nil {
+		probe.mgr = s.processMgr
+		starter = s.processMgr
+	}
+	return externalagent.EnsureProcess(
+		ctx,
+		s.config.WorkspacePath(),
+		probe,
+		starter,
+		s.toolSess,
+		buildToolRuntimeCommand,
+		sess,
+	)
+}
+
+type externalAgentProcessProbe struct {
+	mgr *process.Manager
+}
+
+func (p externalAgentProcessProbe) HasProcess(sessionID string) bool {
+	if p.mgr == nil {
+		return false
+	}
+	_, err := p.mgr.GetStatus(sessionID)
+	return err == nil
 }
 
 func (s *Server) handleGetPermissionRules(c *echo.Context) error {
@@ -7166,6 +7374,21 @@ func (s *Server) handleDeletePermissionRule(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted", "id": id})
+}
+
+func (s *Server) handleGetPolicyPresets(c *echo.Context) error {
+	return c.JSON(http.StatusOK, policy.Presets())
+}
+
+func (s *Server) handleEvaluatePolicy(c *echo.Context) error {
+	var body struct {
+		Policy policy.Policy          `json:"policy"`
+		Input  policy.EvaluationInput `json:"input"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	return c.JSON(http.StatusOK, policy.Evaluate(body.Policy, body.Input))
 }
 
 // --- Helpers ---
