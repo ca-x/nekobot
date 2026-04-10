@@ -1,3 +1,124 @@
+- Completed externalagent foundation phase 10 (shared resolve orchestrator extraction):
+  - extracted shared externalagent resolve/approval policy handling into `pkg/externalagent/orchestrator.go`.
+  - WebUI now uses the shared orchestrator for launch-policy preview and approval gating instead of carrying its own private duplicate logic.
+- Verification run:
+  - `go test -count=1 ./pkg/webui -run 'TestHandleResolveExternalAgentSession(CreatesSession|IncludesMatchedPermissionRulePreview|ReturnsPendingApprovalForAskRule|ReturnsPendingApprovalForManualMode|RejectsDeniedByPermissionRule|StartsProcessWhenApproved)|TestApproveExternalAgentPendingRequest(StartsProcessImmediately|AllowsSubsequentResolveForSameSession)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent foundation phase 13 (gateway shared starter adoption):
+  - gateway externalagent resolve now also uses the shared externalagent process starter path, so approved gateway launches can immediately create a runtime process instead of stopping at session resolution.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'TestResolveExternalAgentSessionEndpoint(CreatesSession|ResolvesRelativeWorkspace|RejectsWorkspaceOutsideConfiguredRoot|IncludesMatchedPermissionRulePreview|StartsProcessWhenApproved)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent foundation phase 12 (shared process starter extraction):
+  - extracted the common externalagent process-start path into `pkg/externalagent/starter.go`.
+  - WebUI now uses the shared starter instead of keeping a private process-start implementation, making the spawn/continue layer align with the shared resolve orchestrator direction.
+- Verification run:
+  - `go test -count=1 ./pkg/externalagent ./pkg/webui -run 'TestHandleResolveExternalAgentSession(CreatesSession|IncludesMatchedPermissionRulePreview|ReturnsPendingApprovalForAskRule|ReturnsPendingApprovalForManualMode|RejectsDeniedByPermissionRule|StartsProcessWhenApproved)|TestApproveExternalAgentPendingRequest(StartsProcessImmediately|AllowsSubsequentResolveForSameSession)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent foundation phase 11 (gateway shared orchestrator adoption):
+  - gateway externalagent resolve now uses the shared `pkg/externalagent/orchestrator.go` preview path instead of keeping a private duplicate of launch-policy evaluation logic.
+  - this is the first cross-consumer adoption of the shared orchestrator layer.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'TestResolveExternalAgentSessionEndpoint(CreatesSession|ResolvesRelativeWorkspace|RejectsWorkspaceOutsideConfiguredRoot|IncludesMatchedPermissionRulePreview)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent foundation phase 9 (approval handler direct continue):
+  - approving an externalagent-origin pending request now immediately calls the same externalagent process-start seam, so approval itself continues launch without waiting for another resolve request.
+- Verification run:
+  - `go test -count=1 ./pkg/webui -run 'Test(ApproveExternalAgentPendingRequestStartsProcessImmediately|ApproveExternalAgentPendingRequestAllowsSubsequentResolveForSameSession|HandleResolveExternalAgentSessionStartsProcessWhenApproved)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent foundation phase 8 (immediate continue-on-approve):
+  - approving an externalagent-origin pending request now immediately continues the launch by starting the session process, instead of waiting for a second resolve call.
+  - this removes the last obvious two-step approval awkwardness from the WebUI externalagent flow.
+- Verification run:
+  - `go test -count=1 ./pkg/webui -run 'Test(ApproveExternalAgentPendingRequestStartsProcessImmediately|ApproveExternalAgentPendingRequestAllowsSubsequentResolveForSameSession|HandleResolveExternalAgentSessionStartsProcessWhenApproved)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent foundation phase 7 (process spawn/continue seam):
+  - WebUI externalagent resolve now attempts to start the session process once the launch is approved or otherwise not blocked by approval.
+  - subsequent resolve on an approved session now reuses the same session and ensures the runtime process is started if it is not already running.
+  - kept the slice intentionally narrow: this is a shared start-attempt seam with launch metadata/event persistence, not a full cross-consumer externalagent orchestrator.
+- Verification run:
+  - `go test -count=1 ./pkg/webui -run 'Test(HandleResolveExternalAgentSessionStartsProcessWhenApproved|ApproveExternalAgentPendingRequestStartsProcessOnSubsequentResolve|HandleResolveExternalAgentSessionReturnsPendingApprovalForAskRule|HandleResolveExternalAgentSessionRejectsDeniedByPermissionRule)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent consumer phase 3 (gateway consumer wiring):
+  - gateway now exposes `/api/v1/external-agents/resolve-session` as the next real externalagent consumer.
+  - this path reuses the same externalagent launch normalization, so canonical launcher allowlist and workspace policy now apply on gateway-owned session resolution too.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'TestResolveExternalAgentSessionEndpoint(CreatesSession|ResolvesRelativeWorkspace|RejectsWorkspaceOutsideConfiguredRoot|RejectsCommandMismatch)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent foundation phase 6 (approve-after-pending resume seam):
+  - approving an externalagent-origin pending request now upgrades that session into `approval.ModeAuto`, so the same session can be resolved again without immediately re-entering the same pending gate.
+  - kept the seam intentionally small: this is a session-level approval override for the externalagent resolve path, not a full process spawn/resume orchestrator.
+- Verification run:
+  - `go test -count=1 ./pkg/webui -run 'TestHandleResolveExternalAgentSession(ApproveExternalAgentPendingRequestAllowsSubsequentResolveForSameSession|ReturnsPendingApprovalForAskRule|ReturnsPendingApprovalForManualMode|RejectsDeniedByPermissionRule)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent consumer phase 2 (WeChat codex consumer wiring):
+  - WeChat `codex` runtime creation now reuses externalagent launch normalization, so workspace policy and launcher allowlist apply on the first non-WebUI consumer path.
+  - this is the first real channel consumer beyond the WebUI resolve endpoint.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+
+- Completed externalagent foundation phase 5 (real pending approval flow):
+  - upgraded WebUI externalagent resolve from a read-only policy preview to a minimal real approval bridge.
+  - permission rule `deny` now rejects the launch with `403`; permission rule `ask` or fallback manual approval mode now return `202` with a pending approval request ID and sync session pending-state into `taskStore`.
+  - kept the slice intentionally narrow: session creation still happens first, and this flow does not yet execute a downstream external-agent process or add approve/deny resume behavior for consumers.
+- Verification run:
+  - `go test -count=1 ./pkg/webui -run 'TestHandleResolveExternalAgentSession(ReturnsPendingApprovalForAskRule|ReturnsPendingApprovalForManualMode|RejectsDeniedByPermissionRule|CreatesSession|IncludesMatchedPermissionRulePreview)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui` passed.
+
+- Completed gateway control-plane hardening phase 21 (member remote_addr redaction):
+  - member-scoped control-plane reads now redact `remote_addr` from connection list/detail payloads, while admin/owner visibility stays unchanged.
+  - kept this as response-level redaction only; no connection metadata model changes.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui` passed.
+
+- Completed externalagent foundation phase 4 (read-only permission/elicitation bridge):
+  - extended `/api/external-agents/resolve-session` with a read-only `launch_policy` preview so callers can see the current externalagent launcher's `approval_mode` and permission-rule match result without starting a real approval flow.
+  - kept the slice intentionally narrow: no real approval request is enqueued yet, and no channel/gateway runtime consumer behavior changed.
+- Verification run:
+  - `go test -count=1 ./pkg/webui -run 'TestHandleResolveExternalAgentSession(CreatesSession|IncludesMatchedPermissionRulePreview|RejectsUnknownAgentKind|RejectsToolMismatchForKnownAgentKind|RejectsCommandThatDoesNotMatchTool)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui` passed.
+
+- Completed gateway control-plane hardening phase 20 (bulk-delete remaining visibility):
+  - refined `DELETE /api/v1/connections` so `remaining` now reports the caller-visible remaining connection count instead of the global live connection count.
+  - this closes a small information leak where `member` users could infer other users' live gateway connections from the bulk-delete response body.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui` passed.
+
+- Completed externalagent foundation phase 3 (launcher allowlist):
+  - locked `/api/external-agents/resolve-session` and `externalagent.Manager` to a fixed launcher identity allowlist instead of treating the entrypoint as a generic shell-command resolver.
+  - supported `agent_kind` launchers are now `codex`, `claude`, `opencode`, and `aider`; blank `tool`/`command` still default from the canonical launcher, while explicit mismatches are rejected with `400`.
+  - kept the slice intentionally narrow: no args policy, no aliases, no channel/gateway consumer wiring yet.
+- Verification run:
+  - `go test -count=1 ./pkg/externalagent ./pkg/webui -run 'Test(ResolveSessionRejectsCommandThatDoesNotMatchTool|ResolveSessionAllowsCommandThatMatchesTool|ResolveSessionRejectsUnknownAgentKind|ResolveSessionRejectsToolMismatchForKnownAgentKind|HandleResolveExternalAgentSessionRejectsCommandThatDoesNotMatchTool|HandleResolveExternalAgentSessionRejectsUnknownAgentKind|HandleResolveExternalAgentSessionRejectsToolMismatchForKnownAgentKind)$'` passed.
+  - `go test -count=1 ./pkg/externalagent ./pkg/webui` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui` passed.
+
+- Completed externalagent foundation phase 2 (workspace policy gate):
+  - made `externalagent.Manager` config-aware so external-agent session resolution can enforce workspace policy instead of trusting arbitrary absolute paths.
+  - blank `workspace` now defaults to `cfg.WorkspacePath()`, and relative `workspace` values now resolve under that configured root before session identity/reuse checks.
+  - when `agents.defaults.restrict_to_workspace=true`, resolved workspaces must stay inside `cfg.WorkspacePath()`; disabling that flag keeps the existing absolute-path behavior.
+  - kept the slice intentionally narrow: no channel/gateway wiring yet, only manager/WebUI policy enforcement and regression coverage.
+- Verification run:
+  - `go test -count=1 ./pkg/externalagent ./pkg/webui -run 'Test(ResolveSessionRejectsWorkspaceOutsideConfiguredRootWhenRestricted|ResolveSessionAllowsWorkspaceOutsideConfiguredRootWhenRestrictionDisabled|HandleResolveExternalAgentSessionRejectsWorkspaceOutsideConfiguredRoot|HandleResolveExternalAgentSessionCreatesSession|HandleResolveExternalAgentSessionReusesExistingSession)$'` passed.
+  - `go test -count=1 ./pkg/externalagent ./pkg/webui` passed.
+
+- Completed gateway control-plane hardening phase 19 (member single-connection delete parity):
+  - aligned `DELETE /api/v1/connections/{id}` with the already-landed bulk-delete member semantics.
+  - `member` can now delete only their own live gateway connection; attempts against other users or missing targets return `404` to avoid leaking existence.
+  - kept admin/owner semantics unchanged and reused the existing gateway auth/IP/rate-limit boundary instead of introducing new pairing or ownership persistence.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(DeleteConnectionEndpoint(RemovesClient|ReturnsNotFoundForUnknownClient|ReturnsNotFoundForMemberWithoutOwnedTarget|RejectsMemberRoleForOtherUsersConnection|RequiresAuth)|DeleteConnectionsEndpoint(RemovesAllClientsForAdmin|AllowsMemberRoleForOwnedClientsOnly|DeletesOwnedClientsWhenMemberHasOnlyOwnedConnections|RequiresAuth))$'` passed.
+  - `go test -count=1 ./pkg/gateway` passed.
+
 - Completed gateway control-plane hardening phase 18 (pairing source breakdown in status):
   - extended `/api/v1/status` with `paired_generated_connections`, `paired_requested_connections`, and `paired_legacy_connections`.
   - kept the slice read-only and derived from existing live connection/session-source classification without introducing new pairing persistence.
@@ -761,4 +882,62 @@
 - Verification run:
   - `go test -count=1 ./pkg/gateway -run 'TestMetricsEndpoint(RequiresAuth|RejectsMemberRole)?$|TestMetricsEndpoint$'` passed.
   - `go test -count=1 ./pkg/gateway` passed.
+- Completed externalagent consumer phase 6 (gateway approval UX closure):
+  - gateway now exposes approval endpoints for the externalagent flow (`GET /api/v1/approvals`, `POST /api/v1/approvals/:id/approve`, `POST /api/v1/approvals/:id/deny`).
+  - pending gateway externalagent launches can now be approved and immediately continued to process start without leaving the gateway control plane.
+- Verification run:
+  - `go test -count=1 ./pkg/gateway -run 'Test(GatewayApproveExternalAgentPendingRequestStartsProcessImmediately|GatewayListApprovalsReturnsPendingRequests|ResolveExternalAgentSessionEndpoint(ReturnsPendingApprovalForAskRule|ReturnsPendingApprovalForManualMode|RejectsDeniedByApprovalMode|StartsProcessWhenApproved))$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
 
+- Completed externalagent consumer phase 5 (WeChat shared starter adoption):
+  - WeChat `codex` runtime creation now uses the shared externalagent process starter instead of its own private process-start path.
+  - this is the first channel-side adoption of the shared starter layer.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/wechat -run 'Test(BuildRuntimePresetCodex.*|ControlServiceCreateCodexRuntime.*)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat` passed.
+- Completed externalagent approval UX phase 2 (shared HTTP response body helper):
+  - added shared `ResolveFlowResult.HTTPStatus()` and `ResolveFlowResult.ResponseBody()` helpers so WebUI and gateway now emit their externalagent resolve responses from the same contract helper instead of hand-assembling maps separately.
+- Verification run:
+  - `go test -count=1 ./pkg/webui ./pkg/gateway -run 'Test(HandleResolveExternalAgentSession(CreatesSession|IncludesMatchedPermissionRulePreview|ReturnsPendingApprovalForAskRule|ReturnsPendingApprovalForManualMode|RejectsDeniedByPermissionRule|StartsProcessWhenApproved)|ApproveExternalAgentPendingRequest(StartsProcessImmediately|AllowsSubsequentResolveForSameSession)|ResolveExternalAgentSessionEndpoint(CreatesSession|ResolvesRelativeWorkspace|RejectsWorkspaceOutsideConfiguredRoot|IncludesMatchedPermissionRulePreview|ReturnsPendingApprovalForAskRule|ReturnsPendingApprovalForManualMode|RejectsDeniedByApprovalMode|StartsProcessWhenApproved)|GatewayApproveExternalAgentPendingRequestStartsProcessImmediately|GatewayListApprovalsReturnsPendingRequests)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat ./pkg/agent` passed.
+
+- Completed externalagent approval UX phase 1 (consumer contract convergence):
+  - aligned the three main consumers around the same externalagent approval concepts: `status`, `request_id`, `reason`, and `launch_policy`.
+  - WeChat now exposes the same pending/denied semantics through a standardized text reply helper instead of ad-hoc phrasing.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/wechat -run 'Test(ControlServiceResolveCodexRuntimeReturnsPendingApproval|ControlServiceResolveCodexRuntimeReturnsDeniedApproval|FormatRuntimeApprovalReply(Pending|Denied)|BuildRuntimePresetCodex.*|ControlServiceCreateCodexRuntime.*)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat ./pkg/agent` passed.
+
+- Completed externalagent consumer phase 7 (WeChat shared resolve orchestrator adoption):
+  - WeChat codex runtime creation now uses the shared externalagent resolve orchestrator for approval/policy gating before process start.
+  - this brings the third consumer into the shared resolve layer instead of only reusing normalization/starter helpers.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/wechat ./pkg/agent ./pkg/externalagent` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat ./pkg/agent` passed.
+- Evaluated `/home/czyt/code/fastclaw` for importable capabilities and added prioritized adoption candidates to `task_plan.md`.
+- Recommended follow-up parallel plan:
+  - Hook Pipeline
+  - Webhook Trigger Server
+  - Policy Engine
+  - Setup Wizard / First-Run
+  - OpenAI-Compatible API Hardening
+- User clarified an additional requirement for all fastclaw-derived work: pair backend implementation with corresponding `nekobot` frontend completion (management, observability, or interaction UI), rather than landing backend-only features.
+- Current fastclaw-derived execution status:
+  - Hook Pipeline landed
+  - Webhook Trigger Server landed
+  - Policy Engine landed
+  - Setup Wizard / First-Run landed
+  - OpenAI-compatible hardening started (first header-hardening slice landed)
+- Completed WeChat approval UX phase 1 (managed externalagent /yes /no closure):
+  - WeChat now resolves pending managed externalagent launches through the existing `/yes`, `/no`, and `/select` interaction surface instead of only showing a pending message.
+  - approving a pending managed launch now immediately continues startup; denying keeps the process stopped.
+- Verification run:
+  - `go test -count=1 ./pkg/channels/wechat -run 'Test(ControlServiceResolvePendingInteraction(ContinuesManagedRuntime|DeniesManagedRuntime)|ResolvePendingInteractionDelegatesToRuntimeApprovals|ResolvePendingInteractionDelegatesNumericSelectToRuntimeApprovals)$'` passed.
+  - `go test -count=1 ./pkg/gateway ./pkg/externalagent ./pkg/webui ./pkg/channels/wechat ./pkg/agent ./pkg/tools ./pkg/approval ./pkg/tasks ./pkg/policy` passed.
+
+- Completed channel trace follow-up phase 2 (shared tool_call trace helper + ServerChan adoption):
+  - extracted the WeChat-only tool trace formatter into shared `pkg/channeltrace` so direct session-based channels can reuse the same `tool_call/tool_result` rendering contract.
+  - ServerChan now prepends the same compact tool trace before the final reply, and WeChat now consumes the shared helper instead of keeping a private implementation.
+  - kept the slice intentionally narrow: only direct `ChatWithPromptContext` channels were touched; bus-driven channels like Telegram still need a separate event-path design to surface tool traces.
+- Verification run:
+  - `go test -count=1 ./pkg/channeltrace ./pkg/channels/wechat ./pkg/channels/serverchan` passed.

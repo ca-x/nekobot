@@ -1822,7 +1822,7 @@
   - 位置：`pkg/memory/*`。
 - [ ] **Gateway 控制面与连接治理增强**
   - 现状：`pkg/gateway/server.go` 原先是开放 `CheckOrigin`、简单 WS/REST 模式；本轮已补第一层 origin allowlist，且把基础连接治理推进到 IP/rate limit，但控制面授权边界此前仍停留在“任何有效 JWT 都可访问”。
-  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；已把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性；已补上已鉴权的 `GET /api/v1/connections/{id}`，让控制面可以查询单连接详情而不必扫全量列表；已新增 `gateway.max_connections` 配置与 server 内硬限制，开始收口最基本的连接数量治理；已完成 `gateway.allowed_ips`，补齐基于远端地址的 allowlist，并同时覆盖 websocket 握手与 REST 控制面入口；已完成 `gateway.rate_limit_per_minute`，以共享入口级的 per-IP 限流同时覆盖 REST 控制面和 websocket 握手；已完成 control-plane role scope 收紧：`status` 继续只允许 `admin/owner`，`member` 只能读取属于自己的连接元数据；已完成首个 pairing 薄切片：websocket 握手支持通过 `session_id` 复用既有 gateway session，并拒绝未知 session 或非 gateway session；已补上 pairing 薄切片的握手时序修正：无效 `session_id` 现在会在 websocket upgrade 前直接返回真实 `400`；已进一步补齐 pairing hardening：兼容 legacy 空 `source` 的旧 gateway session、拒绝同一 paired session 的重复 live attach、串行化并发 attach 窗口，并要求 websocket 入站消息的 `session_id` 与当前 active paired session 保持一致；已补齐控制面细粒度删除边界：`admin/owner` 仍可删除任意连接，`member` 现在仅可删除自己拥有的 live connection，对其他用户或不存在的目标统一返回 `404`，且仍不引入 pairing enrollment / ownership 持久化模型；已补齐 pairing proof：新增 `TestWSChatConcurrentAttachConflictKeepsRequestedExistingSession`，锁住并发 attach 冲突不会破坏既有 paired gateway session；已补当前 websocket handler 的两个稳定性缺口：`session unavailable` 现在会在 upgrade 前返回真实 HTTP 失败，且 router 接管 websocket chat 时不再重复走 inbound bus；当前又补齐连接诊断字段 `session_source/requested_session_id`，让控制面能区分 `generated/requested/legacy` pairing 来源。下一最小切片再转向更细的控制面/配对协议收口。
+  - 进度：已新增 `gateway.allowed_origins` 配置，并把 websocket origin 校验从“全部放行”收口为“配置驱动 allowlist + 空 Origin 兼容非浏览器客户端”；已把 `GET /api/v1/status` 与 `GET /api/v1/connections` 从裸露状态收口为复用现有 JWT 鉴权；已补上已鉴权的 `DELETE /api/v1/connections/{id}`，让控制面可主动断开指定 websocket 连接；已把连接列表收口为稳定排序，并补出 `connected_at` / `remote_addr` / `session_id` 基本元数据，减少控制面返回的隐式不确定性；已补上已鉴权的 `GET /api/v1/connections/{id}`，让控制面可以查询单连接详情而不必扫全量列表；已新增 `gateway.max_connections` 配置与 server 内硬限制，开始收口最基本的连接数量治理；已完成 `gateway.allowed_ips`，补齐基于远端地址的 allowlist，并同时覆盖 websocket 握手与 REST 控制面入口；已完成 `gateway.rate_limit_per_minute`，以共享入口级的 per-IP 限流同时覆盖 REST 控制面和 websocket 握手；已完成 control-plane role scope 收紧：`status` 继续只允许 `admin/owner`，`member` 只能读取属于自己的连接元数据；已完成首个 pairing 薄切片：websocket 握手支持通过 `session_id` 复用既有 gateway session，并拒绝未知 session 或非 gateway session；已补上 pairing 薄切片的握手时序修正：无效 `session_id` 现在会在 websocket upgrade 前直接返回真实 `400`；已进一步补齐 pairing hardening：兼容 legacy 空 `source` 的旧 gateway session、拒绝同一 paired session 的重复 live attach、串行化并发 attach 窗口，并要求 websocket 入站消息的 `session_id` 与当前 active paired session 保持一致；已补齐控制面细粒度删除边界：bulk delete 与 single delete 现在都允许 `member` 删除自己拥有的 live connection，对其他用户或不存在的目标统一返回 `404`，且 bulk-delete 的 `remaining` 只返回调用方可见剩余数，不再泄露全局 remaining；已进一步补 member 可见面收口：连接列表/详情里的 `remote_addr` 已对 member 响应脱敏；已补齐 pairing proof：新增 `TestWSChatConcurrentAttachConflictKeepsRequestedExistingSession`，锁住并发 attach 冲突不会破坏既有 paired gateway session；已补当前 websocket handler 的两个稳定性缺口：`session unavailable` 现在会在 upgrade 前返回真实 HTTP 失败，且 router 接管 websocket chat 时不再重复走 inbound bus；当前又补齐连接诊断字段 `session_source/requested_session_id`，让控制面能区分 `generated/requested/legacy` pairing 来源。下一最小切片再转向更细的控制面/配对协议收口。
   - 目标：补控制面协议与连接策略，避免 gateway 只停留在“聊天 socket”。
   - 来源：`goclaw/gateway/openclaw/*`。
   - 位置：`pkg/gateway/*`。
@@ -1855,12 +1855,12 @@
   - 位置：`pkg/channels/*`。
 - [ ] **按用户隔离的外部 agent runtime**
   - 现状：`nekobot` 有 tool session 和本地 agent，但缺 `gua` 式“每个聊天用户绑定一个长期外部 agent 进程/工作目录/权限回路”的编排层。
-  - 进度：已补最小 foundation：`pkg/externalagent.Manager` 现在能按 `owner + agent_kind + workspace` 解析或创建复用的 detached `tool_session`，为后续真正的 user-scoped external runtime 生命周期编排提供持久会话底座。当前仍未接入 channel/gateway 消费者，也未补权限/工作目录策略层。
+  - 进度：已补最小 foundation：`pkg/externalagent.Manager` 现在能按 `owner + agent_kind + workspace` 解析或创建复用的 detached `tool_session`；空 workspace 会默认到配置根目录，相对 workspace 会解析到该根目录下；已补首个权限/工作目录策略切片：当 `agents.defaults.restrict_to_workspace=true` 时，只允许 external-agent workspace 落在配置的 workspace 根目录内；并已补首个 launcher allowlist：当前只允许 `codex/claude/opencode/aider` 四类 canonical `tool + command` 身份；WebUI `/api/external-agents/resolve-session` 已成为首个真实 consumer，并且已从只读 `launch_policy` 预览推进到首条真实 pending approval 流：deny 直接拒绝，ask/manual 进入 pending approval 并同步 session pending state；approve 后同 session 已具备最小 resume seam，且现在已能在 approve 当下直接继续启动 process；此外 WeChat `codex` create path 已成为首个真实 channel consumer，并复用 externalagent normalization，且现在也已接上 shared starter 与 shared resolve orchestrator；gateway `POST /api/v1/external-agents/resolve-session` 也已成为首个 gateway consumer，并已通过共享 orchestrator 对齐 `launch_policy` explainability，且在批准/放行后也能通过共享 starter 真实启动 process；gateway 现已补齐 externalagent approval list/approve/deny API，形成控制面闭环；同时已抽出共享 `pkg/externalagent/orchestrator.go` 与 `pkg/externalagent/starter.go`，分别统一 resolve 阶段与 process-start 阶段，并开始收敛三条 consumer 的 approval UX contract，其中 WebUI/gateway 已对齐 shared HTTP response helper。当前仍未补更广 consumer 上统一的一体化 approval UX。
   - 目标：为 Claude Code / Codex / 其他外部 agent 准备用户级长期会话底座。
   - 来源：`gua/agent/claude/session.go`、`gua/agent/claude/mcp.go`、`gua/server/server.go`。
   - 位置：新建 `pkg/externalagent/*` 或等价模块。
 - [ ] **WeChat Presenter / 交互协议与附件输出管线**
-  - 现状：附件输出已完成；presenter 输出规则已注入 agent 输入；交互协议方面已补齐技能安装确认的 `/yes` `/no` `/cancel` 闭环，且 presenter 现在会明确要求模型在需要用户选择时输出稳定编号列表并提示可用 `/select N`；技能安装确认提示当前也已显式渲染 `1. 允许安装 / 2. 拒绝安装`，并允许用户直接回复 `1/2`。更广泛的弱交互场景仍待继续接入。
+  - 现状：附件输出已完成；presenter 输出规则已注入 agent 输入；交互协议方面已补齐技能安装确认的 `/yes` `/no` `/cancel` 闭环，且 presenter 现在会明确要求模型在需要用户选择时输出稳定编号列表并提示可用 `/select N`；技能安装确认提示当前也已显式渲染 `1. 允许安装 / 2. 拒绝安装`，并允许用户直接回复 `1/2`。managed externalagent launch 现在也已支持在 WeChat 里直接 `/yes` `/no` 继续或拒绝。更广泛的弱交互场景仍待继续接入。
   - 目标：继续增强弱交互通道上的可操作性。
   - 来源：`gua/channel/wechat/presenter.go`、`gua/server/formatter.go`。
   - 位置：`pkg/channels/wechat/*`、公共 formatter 层。
@@ -1900,7 +1900,7 @@
   - 当前执行顺序：先做通用 service 契约收口，再做 WeChat runtime 消费者验证，最后再决定是否扩到 gateway/external runtime。
 - [x] memory quality pack（MMR / temporal decay / citations / cache）
 - [ ] gateway control plane hardening
-  - 当前已完成切片：`gateway.allowed_ips`、`gateway.rate_limit_per_minute`、控制面读写分离 role scope、pairing 首批 hardening、`member` 仅可删除自有 live connection、paired-session conflict retention proof、upgrade 前 session-unavailable 失败语义修正、router 接管 websocket chat 时停止重复 inbound bus 投递；当前本地继续更细的控制面/配对协议收口，不扩到 enrollment / ownership 持久化。
+  - 当前已完成切片：`gateway.allowed_ips`、`gateway.rate_limit_per_minute`、控制面读写分离 role scope、pairing 首批 hardening、`member` 单/批量删除都仅可作用于自有 live connection、paired-session conflict retention proof、upgrade 前 session-unavailable 失败语义修正、router 接管 websocket chat 时停止重复 inbound bus 投递；当前本地继续更细的控制面/配对协议收口，不扩到 enrollment / ownership 持久化。
 - [ ] browser session dual-mode / advanced extraction
 - 当前已完成切片：`auto/direct/relay`、`print_pdf`、`extract_structured_data`、`get_text`、custom `debug_port/debug_endpoint`、`get_metrics`、`emulate_device`、`set_viewport`、`list_pages`、`new_page`、`activate_page`、`close_page`、`get_storage`、`set_storage`、`remove_storage`、`clear_storage`、`get_console`、`get_network`。
 - 当前下一切片：继续补更完整 relay/CDP 高级动作与会话控制（network 等），而不是重复做 attach endpoint/port 接入。
@@ -1908,12 +1908,103 @@
 
 ### Batch E（gua 高价值迁移）
 - [ ] user-scoped external agent runtime foundation
-- 当前已完成切片：`pkg/externalagent.Manager` 的 session resolve/create foundation；后续继续补 channel/gateway 接线与权限/工作目录策略。
+- 当前已完成切片：`pkg/externalagent.Manager` 的 session resolve/create foundation、`restrict_to_workspace` 驱动的 workspace policy gate、canonical launcher allowlist、共享 resolve orchestrator 首刀、共享 process starter 首刀、共享 resolve-flow 执行链、WebUI resolve-session consumer + 首条真实 pending approval 流、approve 后的最小 resume seam、approve 当下直接 continue 启动、WebUI consumer 上的 process spawn/continue seam、WeChat codex consumer 接线，以及 gateway resolve-session consumer 接线；其中 WebUI/gateway/WeChat(codex) 已开始共享 resolve orchestrator 与 process starter，WebUI/gateway 已开始共享 resolve-flow 执行链与 shared HTTP response helper，gateway 已补齐自身 approval UX 闭环，三条 consumer 的 approval UX contract 也已开始收敛。后续继续补更统一的跨 consumer approval UX。
 - [ ] permission / elicitation bridge
 - [ ] presenter + attachment pipeline
 - [ ] runtime prompt detection / tmux control
   - 当前新增进度：已补 tmux transport metadata persistence seam、restore 后 attach metadata persistence，并在 `process/status` 透出只读 observation 视图；后续继续往更细的 prompt/menu detection 与自动确认控制扩展。
 - **验收**: 每项独立 smoke test + channel flow 验证通过，按功能独立提交与推送。
+
+## 2026-04-08 FastClaw 可引入能力评估（后续并行开发候选）
+
+### 前端补全原则
+- 参考 `fastclaw` 引入的新能力，默认都要在 `nekobot` 同步补齐对应前端，不只做后台。
+- 至少满足三类前端交付之一：
+  1. **管理面**：配置/开关/策略编辑
+  2. **观测面**：状态、日志、结果、错误、待处理项
+  3. **交互面**：必要的 approve/deny、测试触发、wizard/引导
+- 若某一能力暂时不适合完整 UI，也至少要补：
+  - API shape
+  - 前端 hook
+  - 最小只读状态面
+- 后续所有 `fastclaw` 来源切片都按“backend + frontend paired slice”规划，不接受长期纯后端悬空。
+
+### P1 候选：共享 Hook Pipeline
+- 来源：`/home/czyt/code/fastclaw/internal/agent/hooks.go`
+- 价值：
+  - `nekobot` 计划里已经多次提到 `pre/post/failure hooks`
+  - 当前 permission / approval / tool execution 已有基础，适合再补统一 hook surface
+- 建议最小切片：
+  1. 先定义 hook point 与最小上下文结构
+  2. 先只接 `before_tool_call / after_tool_call / post_turn`
+  3. 后续再扩 model/prompt hooks
+  4. 前端至少补一个只读 hook observability 面（例如最近 hook 事件/启用状态）
+
+### P1 候选：通用 Webhook Trigger Server
+- 来源：`/home/czyt/code/fastclaw/internal/webhook/server.go`
+- 价值：
+  - 当前 `nekobot` 缺统一“外部系统 -> agent/message bus”触发入口
+  - 这类入口适合与现有 gateway/webui/runtime control 并列，而不是塞进 channel 逻辑
+- 建议最小切片：
+  1. `POST /api/webhooks/agent` 或等价 endpoint
+  2. bearer token 鉴权
+  3. 最小 payload：agent/runtime/session/message
+  4. 前端补一个最小 webhook 配置/测试面
+
+### P1 候选：Filesystem/Network/Tool Policy Engine
+- 来源：`/home/czyt/code/fastclaw/internal/policy/*`
+- 价值：
+  - `nekobot` 现在已有 permission rules，但主要还是 tool/action 级
+  - 对外部 agent/runtime、sandbox、exec 进一步收口时，需要更底层的 fs/network/tool policy
+- 建议最小切片：
+  1. 先只引入只读 policy model 与 evaluator
+  2. 首批只接 `tools.exec` / externalagent workspace & network
+  3. 暂不做完整 YAML policy productization
+  4. 前端至少补 policy inspector，再逐步补编辑面
+
+### P2 候选：Guided Setup Wizard / First-Run Flow
+- 来源：`/home/czyt/code/fastclaw/internal/setup/*`
+- 价值：
+  - `fastclaw` 的 setup wizard 对首次配置 provider/agent/web UI 很友好
+  - `nekobot` 已有大量 config 页面，但首次启动路径仍可优化
+- 建议最小切片：
+  1. 只做 first-run detection
+  2. 只引导 admin/provider/workspace 三项
+  3. 不在同批次里接完整 cron/plugins/channels 配置
+  4. 这是天然 backend+frontend paired slice，优先按全链路交付
+
+### P2 候选：OpenAI-Compatible API Hardening
+- 来源：`/home/czyt/code/fastclaw/internal/api/openai.go`
+- 价值：
+  - `fastclaw` 在 chat completions / SSE 上有一条更清晰的对外 API 线
+  - 可作为 `nekobot` 对外 API 兼容层的参考
+- 建议最小切片：
+  1. 先审计现有对外 chat API 形状
+  2. 只补最小 compat/sse/headers gap
+  3. 不混入完整 public API 产品化
+  4. 前端补最小 API smoke/debug 面即可，不强求重 UI
+
+### P3 候选：Plugin Runtime（暂缓）
+- 来源：`/home/czyt/code/fastclaw/internal/plugin/*`
+- 备注：
+  - 有价值，但当前 `task_plan.md` 已明确“不新增独立 plugin system 主线”
+  - 先作为后续候选，不进入当前主执行线
+
+### 推荐执行顺序
+1. Hook Pipeline
+2. Webhook Trigger Server
+3. Policy Engine
+4. Setup Wizard / First-Run
+5. OpenAI-Compatible API Hardening
+6. Plugin Runtime（暂缓）
+
+### 当前执行进度
+- [x] Hook Pipeline：`pkg/tools/Registry` 已形成最小 before/after hook pipeline
+- [x] Webhook Trigger Server：已补 backend + frontend 最小成套（config + test UI）
+- [x] Policy Engine：已补 presets + evaluator + frontend inspector
+- [x] Setup Wizard / First-Run：已补 workspace bootstrap 可视化 + repair 动作
+- [~] OpenAI-Compatible API Hardening：已落一个 headers hardening 小切片，后续继续补下一个 compat/smoke slice
+- [~] Channel-visible tool trace：WeChat + ServerChan 已接入共享 `tool_call/tool_result` 文本 trace；其余经 bus 异步回包的 channel 还需单独补事件链路
 
 ## Phase 状态（聚合）
 - [x] Phase 1-8（前端主链路）

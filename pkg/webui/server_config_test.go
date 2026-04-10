@@ -213,6 +213,68 @@ func TestHandleSaveConfigPersistsStartupSections(t *testing.T) {
 	}
 }
 
+func TestHandleSaveConfigMarksWebhookAsRestartRequired(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Fatalf("close provider manager: %v", err)
+		}
+	})
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		providers: providers,
+	}
+
+	body := `{"webhook":{"enabled":true,"path":"/api/webhooks/custom"}}`
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleSaveConfig(c); err != nil {
+		t.Fatalf("handleSaveConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Status          string   `json:"status"`
+		SectionsSaved   int      `json:"sections_saved"`
+		RestartRequired bool     `json:"restart_required"`
+		RestartSections []string `json:"restart_sections"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if payload.Status != "saved" || payload.SectionsSaved != 1 {
+		t.Fatalf("unexpected response payload: %+v", payload)
+	}
+	if !payload.RestartRequired {
+		t.Fatalf("expected restart_required=true, got %+v", payload)
+	}
+	if !containsString(payload.RestartSections, "webhook") {
+		t.Fatalf("expected webhook restart section, got %+v", payload.RestartSections)
+	}
+}
+
 func TestHandleSaveConfigPersistsMemorySection(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
@@ -950,6 +1012,69 @@ func TestHandleImportConfigMigratesRuntimeDBWhenStorageChanges(t *testing.T) {
 	}
 	if reloaded.Memory.Semantic.SearchPolicy != "hybrid" || reloaded.Memory.ShortTerm.RawHistoryLimit != 64 {
 		t.Fatalf("expected migrated runtime sections, got %+v", reloaded.Memory)
+	}
+}
+
+func TestHandleImportConfigMarksWebhookAsRestartRequired(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := providers.Close(); err != nil {
+			t.Fatalf("close provider manager: %v", err)
+		}
+	})
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		providers: providers,
+	}
+
+	body := `{"webhook":{"enabled":true,"path":"/api/webhooks/custom"}}`
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/config/import", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleImportConfig(c); err != nil {
+		t.Fatalf("handleImportConfig failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Status            string   `json:"status"`
+		SectionsSaved     int      `json:"sections_saved"`
+		RestartRequired   bool     `json:"restart_required"`
+		RestartSections   []string `json:"restart_sections"`
+		ProvidersImported int      `json:"providers_imported"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+	if payload.Status != "imported" || payload.SectionsSaved != 1 || payload.ProvidersImported != 0 {
+		t.Fatalf("unexpected response payload: %+v", payload)
+	}
+	if !payload.RestartRequired {
+		t.Fatalf("expected restart_required=true, got %+v", payload)
+	}
+	if !containsString(payload.RestartSections, "webhook") {
+		t.Fatalf("expected webhook restart section, got %+v", payload.RestartSections)
 	}
 }
 
