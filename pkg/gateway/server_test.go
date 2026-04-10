@@ -961,12 +961,14 @@ func TestGatewayConnectionsEndpointAllowsMemberRoleForOwnedConnectionsOnly(t *te
 		remoteAddr:  "10.0.0.2:1234",
 	}
 	s.clients["client-a"] = &Client{
-		id:          "client-a",
-		send:        make(chan []byte, 1),
-		userID:      "viewer-id",
-		username:    "viewer",
-		connectedAt: time.Unix(1_700_000_000, 0).UTC(),
-		remoteAddr:  "10.0.0.1:1234",
+		id:                 "client-a",
+		send:               make(chan []byte, 1),
+		userID:             "viewer-id",
+		username:           "viewer",
+		connectedAt:        time.Unix(1_700_000_000, 0).UTC(),
+		remoteAddr:         "10.0.0.1:1234",
+		sessionSource:      "requested",
+		requestedSessionID: "sess-1",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil)
@@ -993,6 +995,12 @@ func TestGatewayConnectionsEndpointAllowsMemberRoleForOwnedConnectionsOnly(t *te
 	}
 	if got := body[0]["remote_addr"]; got != "" {
 		t.Fatalf("expected member remote_addr redacted, got %v", got)
+	}
+	if got := body[0]["session_source"]; got != nil {
+		t.Fatalf("expected member session_source redacted, got %v", got)
+	}
+	if got := body[0]["requested_session_id"]; got != nil {
+		t.Fatalf("expected member requested_session_id redacted, got %v", got)
 	}
 }
 
@@ -1413,10 +1421,12 @@ func TestGetConnectionEndpointAllowsMemberRoleForOwnedConnection(t *testing.T) {
 		"role": "member",
 	})
 	s.clients["client-a"] = &Client{
-		id:       "client-a",
-		send:     make(chan []byte, 1),
-		userID:   "viewer-id",
-		username: "viewer",
+		id:                 "client-a",
+		send:               make(chan []byte, 1),
+		userID:             "viewer-id",
+		username:           "viewer",
+		sessionSource:      "requested",
+		requestedSessionID: "sess-1",
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/connections/client-a", nil)
@@ -1434,6 +1444,12 @@ func TestGetConnectionEndpointAllowsMemberRoleForOwnedConnection(t *testing.T) {
 	}
 	if got := body["remote_addr"]; got != "" {
 		t.Fatalf("expected member remote_addr redacted, got %v", got)
+	}
+	if got := body["session_source"]; got != nil {
+		t.Fatalf("expected member session_source redacted, got %v", got)
+	}
+	if got := body["requested_session_id"]; got != nil {
+		t.Fatalf("expected member requested_session_id redacted, got %v", got)
 	}
 }
 

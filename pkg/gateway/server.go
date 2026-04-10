@@ -1207,6 +1207,8 @@ func describeConnectionForAuth(authCtx *authContext, client *Client) connectionS
 	}
 	if strings.EqualFold(strings.TrimSpace(authCtx.role), "member") {
 		conn.RemoteAddr = ""
+		conn.SessionSource = nil
+		conn.RequestedSessionID = nil
 	}
 	return conn
 }
