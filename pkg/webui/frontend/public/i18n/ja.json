@@ -128,6 +128,8 @@
   "chatPlaceholder": "メッセージを入力...",
   "chatEmptyHint": "メッセージを送信してチャットを開始",
   "chatEmptyDescription": "左側でルートを整えてから、このワークスペースでプロンプトとモデル切り替えを素早く試せます。",
+  "chatInitHandoffTitle": "セットアップ完了",
+  "chatInitHandoffDescription": "最初の管理者アカウントは正常に作成されました。今すぐチャットを始められます。新しい起動設定を反映したい場合は、あとでサービスを再起動してください。",
   "chatComposerHint": "Enter で送信、Shift+Enter で改行。",
   "chatConnecting": "接続中",
   "chatWaitingReply": "応答を待機中...",

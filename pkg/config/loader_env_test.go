@@ -11,7 +11,12 @@ func TestLoad_UsesConfigPathEnvWhenPathEmpty(t *testing.T) {
 	cfgPath := filepath.Join(tmpDir, "from-env.json")
 
 	seed := DefaultConfig()
+	seed.Storage.DBDir = filepath.Join(tmpDir, "db")
+	seed.Gateway.Host = "127.0.0.1"
 	seed.Gateway.Port = 29999
+	seed.WebUI.Enabled = true
+	seed.WebUI.Port = 30000
+	seed.WebUI.PublicBaseURL = "http://127.0.0.1:30000"
 
 	loader := NewLoader()
 	if err := loader.Save(cfgPath, seed); err != nil {
@@ -26,6 +31,15 @@ func TestLoad_UsesConfigPathEnvWhenPathEmpty(t *testing.T) {
 	}
 	if got.Gateway.Port != 29999 {
 		t.Fatalf("expected gateway port 29999, got %d", got.Gateway.Port)
+	}
+	if got.Gateway.Host != "127.0.0.1" {
+		t.Fatalf("expected gateway host 127.0.0.1, got %q", got.Gateway.Host)
+	}
+	if got.Storage.DBDir != seed.Storage.DBDir {
+		t.Fatalf("expected db dir %q, got %q", seed.Storage.DBDir, got.Storage.DBDir)
+	}
+	if got.WebUI.Port != 30000 || got.WebUI.PublicBaseURL != "http://127.0.0.1:30000" {
+		t.Fatalf("expected webui settings preserved, got %+v", got.WebUI)
 	}
 }
 

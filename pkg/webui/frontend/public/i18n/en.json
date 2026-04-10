@@ -128,6 +128,8 @@
   "chatPlaceholder": "Type a message...",
   "chatEmptyHint": "Send a message to start chatting",
   "chatEmptyDescription": "Pick a route on the left, then use this workspace for faster iteration and clearer replies.",
+  "chatInitHandoffTitle": "Setup complete",
+  "chatInitHandoffDescription": "Your first admin account was created successfully. You can start chatting now, and restart the service later if you want the updated startup settings to take effect.",
   "chatComposerHint": "Enter to send, Shift+Enter for a new line.",
   "chatConnecting": "Connecting",
   "chatWaitingReply": "Waiting for reply...",

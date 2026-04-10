@@ -128,6 +128,8 @@
   "chatPlaceholder": "输入消息...",
   "chatEmptyHint": "发送消息开始聊天",
   "chatEmptyDescription": "先在左侧设定路由，再在这里连续测试提示词、供应商和模型，反馈会更清晰。",
+  "chatInitHandoffTitle": "初始化已完成",
+  "chatInitHandoffDescription": "首个管理员账户已经创建成功。你现在可以直接开始聊天，如果想让新的启动设置生效，稍后再重启服务即可。",
   "chatComposerHint": "Enter 发送，Shift+Enter 换行。",
   "chatConnecting": "连接中",
   "chatWaitingReply": "等待回复中...",

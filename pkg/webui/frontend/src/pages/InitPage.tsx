@@ -137,8 +137,10 @@ export default function InitPage() {
         setRestartSections(data.restart_sections ?? []);
         setSubmitStatus('restart_required');
         toast.info(t('initRestartRequired', sections));
+        sessionStorage.setItem('nekobot_init_handoff', JSON.stringify({ restartSections: data.restart_sections ?? [] }));
       } else {
         setSubmitStatus('idle');
+        sessionStorage.setItem('nekobot_init_handoff', JSON.stringify({ restartSections: [] }));
       }
       navigate('/chat', { replace: true });
     } catch (err) {

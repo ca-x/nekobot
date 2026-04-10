@@ -149,6 +149,18 @@ function contextBudgetTone(status: 'ok' | 'warning' | 'critical') {
 }
 
 export default function ChatPage() {
+  const [initHandoff, setInitHandoff] = useState<string[] | null>(() => {
+    const raw = sessionStorage.getItem('nekobot_init_handoff');
+    if (!raw) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(raw) as { restartSections?: string[] };
+      return parsed.restartSections ?? [];
+    } catch {
+      return [];
+    }
+  });
   const providersQuery = useProviders();
   const configQuery = useAppConfig();
   const promptsQuery = usePrompts();
@@ -247,6 +259,12 @@ export default function ChatPage() {
     setCustomModel(routeSettings.model);
     setSelectedFallbackTargets(routeSettings.fallback);
   }, [routeSettings]);
+
+  useEffect(() => {
+    if (initHandoff !== null) {
+      sessionStorage.removeItem('nekobot_init_handoff');
+    }
+  }, [initHandoff]);
 
   useEffect(() => {
     if (!selectedProvider) {
@@ -469,6 +487,34 @@ export default function ChatPage() {
   return (
     <div className="chat-page flex min-h-0 flex-1 flex-col overflow-hidden">
       <Header title={t('tabChat')} className="mb-3 md:mb-4" />
+
+      {initHandoff !== null && (
+        <div className="mb-4 rounded-[1.4rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.92),rgba(252,241,245,0.8))] p-4 text-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="eyebrow-label text-[hsl(var(--brand-700))]">
+                {t('chatInitHandoffTitle')}
+              </div>
+              <div className="mt-2 text-sm font-medium text-[hsl(var(--gray-900))]">
+                {t('chatInitHandoffDescription')}
+              </div>
+              {initHandoff.length > 0 && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  {t('initRestartRequired', initHandoff.join(', '))}
+                </div>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-9 rounded-full px-3"
+              onClick={() => setInitHandoff(null)}
+            >
+              {t('dismiss')}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="relative flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-5">
         <div className="absolute inset-x-0 top-0 -z-10 h-48 rounded-[2rem] bg-[radial-gradient(circle_at_top_left,rgba(198,104,140,0.22),transparent_48%),radial-gradient(circle_at_top_right,rgba(229,183,107,0.22),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,247,243,0.55))]" />
