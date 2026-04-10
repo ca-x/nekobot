@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"strings"
 
+	"nekobot/pkg/config"
 	"nekobot/pkg/execenv"
+	"nekobot/pkg/externalagent"
 	"nekobot/pkg/process"
 	"nekobot/pkg/toolsessions"
 )
@@ -16,15 +18,23 @@ import (
 type ToolSessionTool struct {
 	processMgr     *process.Manager
 	toolSessionMgr *toolsessions.Manager
-	workspace      string
+	cfg            *config.Config
+	processProbe   externalagent.ProcessProbe
+	processStarter externalagent.ProcessStarter
+	sessionUpdater externalagent.SessionUpdater
+	runtimeCommand externalagent.StartRuntimeCommandFunc
 }
 
 // NewToolSessionTool creates a new ToolSessionTool.
-func NewToolSessionTool(processMgr *process.Manager, toolSessionMgr *toolsessions.Manager, workspace string) *ToolSessionTool {
+func NewToolSessionTool(processMgr *process.Manager, toolSessionMgr *toolsessions.Manager, cfg *config.Config) *ToolSessionTool {
 	return &ToolSessionTool{
 		processMgr:     processMgr,
 		toolSessionMgr: toolSessionMgr,
-		workspace:      workspace,
+		cfg:            cfg,
+		processProbe:   processManagerProbe{manager: processMgr},
+		processStarter: processMgr,
+		sessionUpdater: toolSessionMgr,
+		runtimeCommand: buildRuntimeCommand,
 	}
 }
 
@@ -99,19 +109,16 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 	}
 
 	command, _ := args["command"].(string)
-	command = t.resolveCommand(toolName, strings.TrimSpace(command))
-	if command == "" {
-		return "", fmt.Errorf("could not resolve command for tool: %s", toolName)
-	}
-
 	workdir, _ := args["workdir"].(string)
-	workdir = strings.TrimSpace(workdir)
-	if workdir == "" {
-		workdir = t.workspace
-	}
-
 	title, _ := args["title"].(string)
-	title = strings.TrimSpace(title)
+	resolved, err := t.resolveSpawnSpec(toolName, strings.TrimSpace(command), strings.TrimSpace(workdir), strings.TrimSpace(title))
+	if err != nil {
+		return "", err
+	}
+	toolName = resolved.Tool
+	command = resolved.Command
+	workdir = resolved.Workspace
+	title = resolved.Title
 
 	metadata := map[string]interface{}{
 		"user_command": command,
@@ -145,6 +152,34 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist task metadata: "+err.Error())
 			return "", fmt.Errorf("failed to persist tool session metadata: %w", err)
 		}
+	}
+	sess.Metadata = metadata
+
+	if t.isSupportedExternalAgentKind(toolName) {
+		if err := externalagent.EnsureProcess(
+			ctx,
+			t.workspace(),
+			t.processProbe,
+			t.processStarter,
+			t.sessionUpdater,
+			t.runtimeCommand,
+			sess,
+		); err != nil {
+			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
+			return "", fmt.Errorf("failed to start tool process: %w", err)
+		}
+		refreshed, err := t.toolSessionMgr.GetSession(ctx, sess.ID)
+		if err == nil && refreshed != nil {
+			sess = refreshed
+			toolName = sess.Tool
+			command = sess.Command
+			workdir = sess.Workdir
+		}
+		result := fmt.Sprintf("Tool session created successfully.\nSession ID: %s\nTool: %s\nCommand: %s\nWorkdir: %s", sess.ID, toolName, command, workdir)
+		if got, _ := sess.Metadata["tmux_session"].(string); strings.TrimSpace(got) != "" {
+			result += fmt.Sprintf("\nTmux session: %s", got)
+		}
+		return result, nil
 	}
 
 	launchCommand := command
@@ -213,6 +248,51 @@ func (t *ToolSessionTool) handleTerminate(ctx context.Context, args map[string]i
 	}
 
 	return fmt.Sprintf("Session %s terminated.", sessionID), nil
+}
+
+func (t *ToolSessionTool) resolveSpawnSpec(toolName, command, workdir, title string) (externalagent.SessionSpec, error) {
+	spec := externalagent.SessionSpec{
+		Owner:     "agent",
+		AgentKind: toolName,
+		Workspace: workdir,
+		Tool:      toolName,
+		Title:     title,
+		Command:   command,
+	}
+	if t.isSupportedExternalAgentKind(toolName) {
+		return externalagent.NormalizeLaunchSpec(t.cfg, spec)
+	}
+
+	command = t.resolveCommand(toolName, command)
+	if command == "" {
+		return externalagent.SessionSpec{}, fmt.Errorf("could not resolve command for tool: %s", toolName)
+	}
+	if strings.TrimSpace(workdir) == "" {
+		workdir = t.workspace()
+	}
+	if strings.TrimSpace(workdir) == "" {
+		return externalagent.SessionSpec{}, fmt.Errorf("workdir is required")
+	}
+	spec.Workspace = workdir
+	spec.Command = command
+	spec.Title = title
+	return spec, nil
+}
+
+func (t *ToolSessionTool) isSupportedExternalAgentKind(toolName string) bool {
+	_, err := externalagent.NormalizeLaunchSpec(t.cfg, externalagent.SessionSpec{
+		Owner:     "agent",
+		AgentKind: strings.TrimSpace(toolName),
+		Workspace: t.workspace(),
+	})
+	return err == nil
+}
+
+func (t *ToolSessionTool) workspace() string {
+	if t == nil || t.cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(t.cfg.WorkspacePath())
 }
 
 // resolveCommand maps a tool name to its default command, or uses the provided command.
@@ -288,4 +368,16 @@ func buildTmuxSessionName(sessionID string) string {
 		name = name[:50]
 	}
 	return name
+}
+
+type processManagerProbe struct {
+	manager *process.Manager
+}
+
+func (p processManagerProbe) HasProcess(sessionID string) bool {
+	if p.manager == nil {
+		return false
+	}
+	_, err := p.manager.GetStatus(strings.TrimSpace(sessionID))
+	return err == nil
 }

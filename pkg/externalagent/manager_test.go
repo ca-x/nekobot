@@ -2,6 +2,8 @@ package externalagent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -74,7 +76,7 @@ func TestResolveSessionCreatesNewSessionWhenExistingCommandOrToolDiffers(t *test
 		AgentKind: "claude",
 		Workspace: "/tmp/ws-a",
 		Tool:      "claude",
-		Command:   "claude --new",
+		Command:   "claude",
 	})
 	if err != nil {
 		t.Fatalf("ResolveSession failed: %v", err)
@@ -110,6 +112,75 @@ func TestResolveSessionCreatesNewDetachedSession(t *testing.T) {
 	}
 	if got, _ := resolved.Metadata[metadataWorkspace].(string); got != "/tmp/ws-b" {
 		t.Fatalf("expected workspace /tmp/ws-b, got %q", got)
+	}
+}
+
+func TestResolveSessionDefaultsBlankWorkspaceToConfiguredRoot(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	mgr, _ := newTestManagerWithConfig(t, cfg)
+	ctx := context.Background()
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected new session creation")
+	}
+	if resolved.Workdir != cfg.WorkspacePath() {
+		t.Fatalf("expected workdir %q, got %q", cfg.WorkspacePath(), resolved.Workdir)
+	}
+}
+
+func TestResolveSessionResolvesRelativeWorkspaceWithinConfiguredRoot(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	mgr, _ := newTestManagerWithConfig(t, cfg)
+	ctx := context.Background()
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+		Workspace: "projects/demo",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected new session creation")
+	}
+	want := filepath.Join(cfg.WorkspacePath(), "projects", "demo")
+	if resolved.Workdir != want {
+		t.Fatalf("expected workdir %q, got %q", want, resolved.Workdir)
+	}
+}
+
+func TestResolveSessionRejectsRelativeWorkspaceTraversalEscapeWhenRestricted(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	mgr, _ := newTestManagerWithConfig(t, cfg)
+	ctx := context.Background()
+
+	_, _, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+		Workspace: "../outside",
+	})
+	if err == nil {
+		t.Fatal("expected workspace restriction error")
+	}
+	if !strings.Contains(err.Error(), "workspace must stay within configured workspace") {
+		t.Fatalf("expected workspace restriction error, got %v", err)
 	}
 }
 
@@ -177,7 +248,7 @@ func TestNormalizeSpecRejectsWorkspaceTraversalEscape(t *testing.T) {
 	}
 }
 
-func TestResolveSessionDoesNotReuseDifferentTool(t *testing.T) {
+func TestResolveSessionRejectsDifferentToolForSameAgentKind(t *testing.T) {
 	mgr, sessionMgr := newTestManager(t)
 	ctx := context.Background()
 
@@ -203,14 +274,14 @@ func TestResolveSessionDoesNotReuseDifferentTool(t *testing.T) {
 		Workspace: "/tmp/ws-a",
 		Tool:      "codex",
 	})
-	if err != nil {
-		t.Fatalf("ResolveSession failed: %v", err)
+	if err == nil {
+		t.Fatal("expected tool mismatch error")
 	}
-	if !created {
-		t.Fatal("expected different tool to require a new session")
+	if resolved != nil || created {
+		t.Fatalf("expected no resolved session on tool mismatch, got %+v created=%v", resolved, created)
 	}
-	if resolved.Tool != "codex" {
-		t.Fatalf("expected created tool codex, got %q", resolved.Tool)
+	if !strings.Contains(err.Error(), "tool must match agent_kind launcher") {
+		t.Fatalf("expected tool mismatch error, got %v", err)
 	}
 }
 
@@ -280,12 +351,142 @@ func TestNormalizeSpecFillsDefaults(t *testing.T) {
 	}
 }
 
+func TestResolveSessionRejectsWorkspaceOutsideConfiguredRootWhenRestricted(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	mgr, _ := newTestManagerWithConfig(t, cfg)
+	ctx := context.Background()
+	outside := filepath.Join(t.TempDir(), "outside")
+
+	_, _, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+		Workspace: outside,
+	})
+	if err == nil {
+		t.Fatal("expected workspace restriction error")
+	}
+	if !strings.Contains(err.Error(), "workspace must stay within configured workspace") {
+		t.Fatalf("expected workspace restriction error, got %v", err)
+	}
+}
+
+func TestResolveSessionAllowsWorkspaceOutsideConfiguredRootWhenRestrictionDisabled(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+	cfg.Agents.Defaults.RestrictToWorkspace = false
+
+	mgr, _ := newTestManagerWithConfig(t, cfg)
+	ctx := context.Background()
+	outside := filepath.Join(t.TempDir(), "outside")
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+		Workspace: outside,
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected new session creation")
+	}
+	if resolved.Workdir != outside {
+		t.Fatalf("expected workdir %q, got %q", outside, resolved.Workdir)
+	}
+}
+
+func TestResolveSessionRejectsCommandThatDoesNotMatchTool(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	ctx := context.Background()
+
+	_, _, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+		Workspace: "/tmp/ws-command-policy",
+		Tool:      "codex",
+		Command:   "claude --print",
+	})
+	if err == nil {
+		t.Fatal("expected command policy error")
+	}
+	if !strings.Contains(err.Error(), "command must launch the selected tool") {
+		t.Fatalf("expected command policy error, got %v", err)
+	}
+}
+
+func TestResolveSessionAllowsCommandThatMatchesTool(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	ctx := context.Background()
+
+	resolved, created, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+		Workspace: "/tmp/ws-command-policy",
+		Tool:      "codex",
+		Command:   "codex",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSession failed: %v", err)
+	}
+	if !created {
+		t.Fatal("expected new session creation")
+	}
+	if resolved.Command != "codex" {
+		t.Fatalf("expected command preserved, got %q", resolved.Command)
+	}
+}
+
+func TestResolveSessionRejectsUnknownAgentKind(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	ctx := context.Background()
+
+	_, _, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "unknown",
+		Workspace: "/tmp/ws-unknown",
+	})
+	if err == nil {
+		t.Fatal("expected unsupported agent kind error")
+	}
+	if !strings.Contains(err.Error(), "unsupported agent_kind") {
+		t.Fatalf("expected unsupported agent kind error, got %v", err)
+	}
+}
+
+func TestResolveSessionRejectsToolMismatchForKnownAgentKind(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	ctx := context.Background()
+
+	_, _, err := mgr.ResolveSession(ctx, SessionSpec{
+		Owner:     "alice",
+		AgentKind: "codex",
+		Workspace: "/tmp/ws-tool-mismatch",
+		Tool:      "claude",
+	})
+	if err == nil {
+		t.Fatal("expected tool mismatch error")
+	}
+	if !strings.Contains(err.Error(), "tool must match agent_kind launcher") {
+		t.Fatalf("expected tool mismatch error, got %v", err)
+	}
+}
+
 func newTestManager(t *testing.T) (*Manager, *toolsessions.Manager) {
 	t.Helper()
 
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
-	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Clean(os.TempDir())
+
+	return newTestManagerWithConfig(t, cfg)
+}
+
+func newTestManagerWithConfig(t *testing.T, cfg *config.Config) (*Manager, *toolsessions.Manager) {
+	t.Helper()
 
 	log := newTestLogger(t)
 	client := newTestEntClient(t, cfg)
@@ -295,7 +496,7 @@ func newTestManager(t *testing.T) (*Manager, *toolsessions.Manager) {
 	if err != nil {
 		t.Fatalf("new tool session manager: %v", err)
 	}
-	manager, err := NewManager(sessionMgr)
+	manager, err := NewManager(cfg, sessionMgr)
 	if err != nil {
 		t.Fatalf("new external agent manager: %v", err)
 	}
@@ -446,7 +647,7 @@ func TestResolveSessionPersistsLaunchIdentityMetadata(t *testing.T) {
 		AgentKind: "codex",
 		Workspace: "/tmp/ws-metadata",
 		Tool:      "codex",
-		Command:   "codex --profile fast",
+		Command:   "codex",
 	})
 	if err != nil {
 		t.Fatalf("ResolveSession failed: %v", err)
@@ -457,7 +658,7 @@ func TestResolveSessionPersistsLaunchIdentityMetadata(t *testing.T) {
 	if got, _ := resolved.Metadata[metadataTool].(string); got != "codex" {
 		t.Fatalf("expected metadata tool codex, got %q", got)
 	}
-	if got, _ := resolved.Metadata[metadataCommand].(string); got != "codex --profile fast" {
+	if got, _ := resolved.Metadata[metadataCommand].(string); got != "codex" {
 		t.Fatalf("expected metadata command persisted, got %q", got)
 	}
 }

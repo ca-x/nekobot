@@ -12,6 +12,7 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channelaccounts"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
@@ -256,6 +257,7 @@ func (r *Router) handleLegacyInbound(ctx context.Context, msg *bus.Message) erro
 	if err != nil {
 		return fmt.Errorf("legacy channel %s chat: %w", msg.ChannelID, err)
 	}
+	trace := channeltrace.FormatToolCallTrace(sess.GetMessages())
 
 	outbound := &bus.Message{
 		ChannelID: msg.ChannelID,
@@ -264,7 +266,7 @@ func (r *Router) handleLegacyInbound(ctx context.Context, msg *bus.Message) erro
 		Username:  msg.Username,
 		Type:      bus.MessageTypeText,
 		Content:   response,
-		Data:      cloneMessageData(msg.Data),
+		Data:      mergeMessageData(msg.Data, map[string]any{"tool_call_trace": trace}),
 		ReplyTo:   msg.ReplyTo,
 	}
 	if err := r.bus.SendOutbound(outbound); err != nil {
@@ -411,6 +413,7 @@ func (r *Router) chatWithRuntime(
 	if err != nil {
 		return "", nil, fmt.Errorf("runtime %s chat: %w", runtimeItem.ID, err)
 	}
+	trace := channeltrace.FormatToolCallTrace(sess.GetMessages())
 
 	replyContent := response
 	if strings.TrimSpace(binding.ReplyLabel) != "" {
@@ -420,10 +423,11 @@ func (r *Router) chatWithRuntime(
 	}
 
 	return replyContent, map[string]any{
-		"runtime_id":   runtimeItem.ID,
-		"runtime_name": firstNonEmpty(runtimeItem.DisplayName, runtimeItem.Name, runtimeItem.ID),
-		"binding_id":   binding.ID,
-		"account_id":   account.ID,
+		"runtime_id":      runtimeItem.ID,
+		"runtime_name":    firstNonEmpty(runtimeItem.DisplayName, runtimeItem.Name, runtimeItem.ID),
+		"binding_id":      binding.ID,
+		"account_id":      account.ID,
+		"tool_call_trace": trace,
 	}, nil
 }
 

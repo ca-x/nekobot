@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,11 +18,17 @@ import (
 	"github.com/gorilla/websocket"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
+	"nekobot/pkg/externalagent"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/permissionrules"
+	"nekobot/pkg/process"
 	"nekobot/pkg/session"
 	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/tasks"
+	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/version"
 )
 
@@ -131,6 +138,19 @@ func newAuthedTestServer(t *testing.T) (*Server, string) {
 	}
 
 	s.entClient = client
+	s.config = cfg
+	toolMgr, err := toolsessions.NewManager(cfg, s.logger, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	extMgr, err := externalagent.NewManager(cfg, toolMgr)
+	if err != nil {
+		t.Fatalf("new external agent manager: %v", err)
+	}
+	s.externalAgent = extMgr
+	s.toolSess = toolMgr
+	s.processMgr = process.NewManager(s.logger)
+	s.setupRoutes()
 	return s, tokenString
 }
 
@@ -227,6 +247,505 @@ func TestMetricsEndpointReportsPairingSourceBreakdown(t *testing.T) {
 	}
 	if got := body["gateway_connections_paired_legacy"]; got != float64(1) {
 		t.Fatalf("expected 1 legacy paired metric, got %v", got)
+	}
+}
+
+func TestResolveExternalAgentSessionEndpointCreatesSession(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	toolMgr, err := toolsessions.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	extMgr, err := externalagent.NewManager(s.config, toolMgr)
+	if err != nil {
+		t.Fatalf("new external agent manager: %v", err)
+	}
+	s.externalAgent = extMgr
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+s.config.WorkspacePath()+`"}`,
+	))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Created bool                 `json:"created"`
+		Session toolsessions.Session `json:"session"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !payload.Created {
+		t.Fatal("expected created=true")
+	}
+	if payload.Session.Owner != "admin" {
+		t.Fatalf("expected owner admin, got %q", payload.Session.Owner)
+	}
+	if payload.Session.Tool != "codex" || payload.Session.Command != "codex" {
+		t.Fatalf("expected codex launch identity, got tool=%q command=%q", payload.Session.Tool, payload.Session.Command)
+	}
+}
+
+func TestResolveExternalAgentSessionEndpointResolvesRelativeWorkspace(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.config.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	toolMgr, err := toolsessions.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	extMgr, err := externalagent.NewManager(s.config, toolMgr)
+	if err != nil {
+		t.Fatalf("new external agent manager: %v", err)
+	}
+	s.externalAgent = extMgr
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"projects/demo"}`,
+	))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Session      toolsessions.Session `json:"session"`
+		LaunchPolicy map[string]any       `json:"launch_policy"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	want := filepath.Join(s.config.WorkspacePath(), "projects", "demo")
+	if payload.Session.Workdir != want {
+		t.Fatalf("expected workdir %q, got %q", want, payload.Session.Workdir)
+	}
+	if payload.LaunchPolicy["tool_name"] != "codex" {
+		t.Fatalf("expected launch_policy tool_name codex, got %+v", payload.LaunchPolicy)
+	}
+}
+
+func TestResolveExternalAgentSessionEndpointRejectsWorkspaceOutsideConfiguredRoot(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.config.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	toolMgr, err := toolsessions.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	extMgr, err := externalagent.NewManager(s.config, toolMgr)
+	if err != nil {
+		t.Fatalf("new external agent manager: %v", err)
+	}
+	s.externalAgent = extMgr
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+filepath.Join(t.TempDir(), "outside")+`"}`,
+	))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "workspace must stay within configured workspace") {
+		t.Fatalf("expected workspace restriction error, got %s", rec.Body.String())
+	}
+}
+
+func TestResolveExternalAgentSessionEndpointIncludesMatchedPermissionRulePreview(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	rules, err := permissionrules.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		t.Fatalf("new permission rule manager: %v", err)
+	}
+	if _, err := rules.Create(context.Background(), permissionrules.Rule{
+		ToolName: "codex",
+		Action:   permissionrules.ActionAllow,
+		Priority: 50,
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("seed permission rule failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+s.config.WorkspacePath()+`"}`,
+	))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		LaunchPolicy map[string]any `json:"launch_policy"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.LaunchPolicy["tool_name"] != "codex" {
+		t.Fatalf("expected launch_policy tool_name codex, got %+v", payload.LaunchPolicy)
+	}
+	permissionRule, ok := payload.LaunchPolicy["permission_rule"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permission_rule map, got %+v", payload.LaunchPolicy["permission_rule"])
+	}
+	if matched, _ := permissionRule["matched"].(bool); !matched {
+		t.Fatalf("expected matched permission rule, got %+v", permissionRule)
+	}
+	if action, _ := permissionRule["action"].(string); action != "allow" {
+		t.Fatalf("expected action allow, got %+v", permissionRule)
+	}
+}
+
+func TestResolveExternalAgentSessionEndpointReturnsPendingApprovalForAskRule(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	rules, err := permissionrules.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		t.Fatalf("new permission rule manager: %v", err)
+	}
+	if _, err := rules.Create(context.Background(), permissionrules.Rule{
+		ToolName: "codex",
+		Action:   permissionrules.ActionAsk,
+		Priority: 50,
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("seed permission rule failed: %v", err)
+	}
+
+	s.approval = approval.NewManager(approval.Config{Mode: approval.ModeAuto})
+	s.taskStore = tasks.NewStore()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+s.config.WorkspacePath()+`"}`,
+	))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Session  toolsessions.Session `json:"session"`
+		Approval struct {
+			Status    string `json:"status"`
+			RequestID string `json:"request_id"`
+		} `json:"approval"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Approval.Status != "pending" || payload.Approval.RequestID == "" {
+		t.Fatalf("expected pending approval payload, got %+v", payload.Approval)
+	}
+	states := s.taskStore.ListSessionStates()
+	if len(states) != 1 || states[0].SessionID != payload.Session.ID || states[0].PendingRequestID != payload.Approval.RequestID {
+		t.Fatalf("expected pending task state for session %q, got %+v", payload.Session.ID, states)
+	}
+	if _, err := s.processMgr.GetStatus(payload.Session.ID); err == nil {
+		t.Fatalf("expected process to stay stopped while approval is pending")
+	}
+}
+
+func TestResolveExternalAgentSessionEndpointReturnsPendingApprovalForManualMode(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.approval = approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	s.taskStore = tasks.NewStore()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+s.config.WorkspacePath()+`"}`,
+	))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Session  toolsessions.Session `json:"session"`
+		Approval struct {
+			Status    string `json:"status"`
+			RequestID string `json:"request_id"`
+		} `json:"approval"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Approval.Status != "pending" || payload.Approval.RequestID == "" {
+		t.Fatalf("expected pending approval payload, got %+v", payload.Approval)
+	}
+	states := s.taskStore.ListSessionStates()
+	if len(states) != 1 || states[0].SessionID != payload.Session.ID || states[0].PendingRequestID != payload.Approval.RequestID {
+		t.Fatalf("expected pending task state for session %q, got %+v", payload.Session.ID, states)
+	}
+	if _, err := s.processMgr.GetStatus(payload.Session.ID); err == nil {
+		t.Fatalf("expected process to stay stopped while approval is pending")
+	}
+}
+
+func TestResolveExternalAgentSessionEndpointRejectsDeniedByApprovalMode(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	approvalMgr := approval.NewManager(approval.Config{Mode: approval.ModePrompt})
+	approvalMgr.PromptFunc = func(req *approval.Request) (bool, error) {
+		return false, nil
+	}
+	s.approval = approvalMgr
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+s.config.WorkspacePath()+`"}`,
+	))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.TrimSpace(rec.Body.String()) == "" || !strings.Contains(rec.Body.String(), `"status":"denied"`) {
+		t.Fatalf("expected denied approval payload, got %s", rec.Body.String())
+	}
+}
+
+func TestResolveExternalAgentSessionEndpointStartsProcessWhenApproved(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+s.config.WorkspacePath()+`"}`,
+	))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Session toolsessions.Session `json:"session"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	status, err := s.processMgr.GetStatus(payload.Session.ID)
+	if err != nil {
+		t.Fatalf("expected process status, got err: %v", err)
+	}
+	if strings.TrimSpace(status.Command) == "" {
+		t.Fatalf("expected non-empty process command, got %+v", status)
+	}
+	t.Cleanup(func() { _ = s.processMgr.Kill(payload.Session.ID) })
+}
+
+func TestGatewayApproveExternalAgentPendingRequestStartsProcessImmediately(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.approval = approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	s.taskStore = tasks.NewStore()
+
+	resolveReq := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+s.config.WorkspacePath()+`"}`,
+	))
+	resolveReq.Header.Set("Authorization", "Bearer "+token)
+	resolveReq.Header.Set("Content-Type", "application/json")
+	resolveReq.RemoteAddr = "127.0.0.1:4321"
+	resolveRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(resolveRec, resolveReq)
+
+	if resolveRec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", resolveRec.Code, resolveRec.Body.String())
+	}
+	var payload struct {
+		Session  toolsessions.Session `json:"session"`
+		Approval struct {
+			RequestID string `json:"request_id"`
+		} `json:"approval"`
+		SessionRuntimeState tasks.SessionState `json:"session_runtime_state"`
+	}
+	if err := json.NewDecoder(resolveRec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode resolve response: %v", err)
+	}
+	if payload.Approval.RequestID == "" {
+		t.Fatal("expected approval request id")
+	}
+	if payload.SessionRuntimeState.SessionID != payload.Session.ID || payload.SessionRuntimeState.PendingRequestID != payload.Approval.RequestID {
+		t.Fatalf("expected pending session runtime state, got %+v", payload.SessionRuntimeState)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/approvals/"+payload.Approval.RequestID+"/approve", nil)
+	approveReq.Header.Set("Authorization", "Bearer "+token)
+	approveReq.RemoteAddr = "127.0.0.1:4321"
+	approveRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(approveRec, approveReq)
+
+	if approveRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", approveRec.Code, approveRec.Body.String())
+	}
+	var approvePayload struct {
+		Status              string             `json:"status"`
+		ID                  string             `json:"id"`
+		SessionRuntimeState tasks.SessionState `json:"session_runtime_state"`
+	}
+	if err := json.NewDecoder(approveRec.Body).Decode(&approvePayload); err != nil {
+		t.Fatalf("decode approve response: %v", err)
+	}
+	if approvePayload.Status != "approved" || approvePayload.ID != payload.Approval.RequestID {
+		t.Fatalf("expected approved payload for %q, got %+v", payload.Approval.RequestID, approvePayload)
+	}
+	if approvePayload.SessionRuntimeState.SessionID != payload.Session.ID || approvePayload.SessionRuntimeState.PermissionMode != "auto" || approvePayload.SessionRuntimeState.PendingRequestID != "" {
+		t.Fatalf("expected auto cleared session runtime state, got %+v", approvePayload.SessionRuntimeState)
+	}
+	status, err := s.processMgr.GetStatus(payload.Session.ID)
+	if err != nil {
+		t.Fatalf("expected process status after approve, got err: %v", err)
+	}
+	if strings.TrimSpace(status.Command) == "" {
+		t.Fatalf("expected non-empty process command, got %+v", status)
+	}
+	t.Cleanup(func() { _ = s.processMgr.Kill(payload.Session.ID) })
+}
+
+func TestGatewayDenyExternalAgentPendingRequestPersistsReasonAndClearsPendingState(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.approval = approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	s.taskStore = tasks.NewStore()
+
+	resolveReq := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+s.config.WorkspacePath()+`"}`,
+	))
+	resolveReq.Header.Set("Authorization", "Bearer "+token)
+	resolveReq.Header.Set("Content-Type", "application/json")
+	resolveReq.RemoteAddr = "127.0.0.1:4321"
+	resolveRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(resolveRec, resolveReq)
+
+	if resolveRec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", resolveRec.Code, resolveRec.Body.String())
+	}
+	var payload struct {
+		Session  toolsessions.Session `json:"session"`
+		Approval struct {
+			RequestID string `json:"request_id"`
+		} `json:"approval"`
+	}
+	if err := json.NewDecoder(resolveRec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode resolve response: %v", err)
+	}
+	if payload.Approval.RequestID == "" {
+		t.Fatal("expected approval request id")
+	}
+
+	denyReq := httptest.NewRequest(http.MethodPost, "/api/v1/approvals/"+payload.Approval.RequestID+"/deny", strings.NewReader(
+		`{"reason":"operator rejected launch"}`,
+	))
+	denyReq.Header.Set("Authorization", "Bearer "+token)
+	denyReq.Header.Set("Content-Type", "application/json")
+	denyReq.RemoteAddr = "127.0.0.1:4321"
+	denyRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(denyRec, denyReq)
+
+	if denyRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", denyRec.Code, denyRec.Body.String())
+	}
+	req, ok := s.approval.GetRequest(payload.Approval.RequestID)
+	if !ok {
+		t.Fatalf("expected approval request %q to still exist for inspection", payload.Approval.RequestID)
+	}
+	if req.Reason != "operator rejected launch" {
+		t.Fatalf("expected deny reason to persist, got %q", req.Reason)
+	}
+	states := s.taskStore.ListSessionStates()
+	if len(states) != 1 || states[0].SessionID != payload.Session.ID || states[0].PendingRequestID != "" {
+		t.Fatalf("expected cleared pending task state for session %q, got %+v", payload.Session.ID, states)
+	}
+}
+
+func TestGatewayListApprovalsReturnsPendingRequests(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.approval = approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	s.taskStore = tasks.NewStore()
+
+	resolveReq := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex","workspace":"`+s.config.WorkspacePath()+`"}`,
+	))
+	resolveReq.Header.Set("Authorization", "Bearer "+token)
+	resolveReq.Header.Set("Content-Type", "application/json")
+	resolveReq.RemoteAddr = "127.0.0.1:4321"
+	resolveRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(resolveRec, resolveReq)
+	if resolveRec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", resolveRec.Code, resolveRec.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/approvals", nil)
+	listReq.Header.Set("Authorization", "Bearer "+token)
+	listReq.RemoteAddr = "127.0.0.1:4321"
+	listRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(listRec, listReq)
+
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", listRec.Code, listRec.Body.String())
+	}
+	var pending []approval.Request
+	if err := json.NewDecoder(listRec.Body).Decode(&pending); err != nil {
+		t.Fatalf("decode approvals response: %v", err)
+	}
+	if len(pending) != 1 || pending[0].ToolName != "codex" {
+		t.Fatalf("expected one codex approval request, got %+v", pending)
+	}
+}
+
+func TestResolveExternalAgentSessionEndpointRequiresAuth(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	toolMgr, err := toolsessions.NewManager(s.config, s.logger, s.entClient)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	extMgr, err := externalagent.NewManager(s.config, toolMgr)
+	if err != nil {
+		t.Fatalf("new external agent manager: %v", err)
+	}
+	s.externalAgent = extMgr
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/external-agents/resolve-session", strings.NewReader(
+		`{"agent_kind":"codex"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
 	}
 }
 
@@ -472,6 +991,9 @@ func TestGatewayConnectionsEndpointAllowsMemberRoleForOwnedConnectionsOnly(t *te
 	if got := body[0]["user_id"]; got != "viewer-id" {
 		t.Fatalf("expected owned user_id viewer-id, got %v", got)
 	}
+	if got := body[0]["remote_addr"]; got != "" {
+		t.Fatalf("expected member remote_addr redacted, got %v", got)
+	}
 }
 
 func TestGatewayAuthenticateRequestAllowsMemberRoleForWebsocketPath(t *testing.T) {
@@ -604,8 +1126,8 @@ func TestDeleteConnectionsEndpointAllowsMemberRoleForOwnedClientsOnly(t *testing
 	if body["deleted"] != 1 {
 		t.Fatalf("expected deleted=1, got %+v", body)
 	}
-	if body["remaining"] != 1 {
-		t.Fatalf("expected remaining=1, got %+v", body)
+	if body["remaining"] != 0 {
+		t.Fatalf("expected visible remaining=0, got %+v", body)
 	}
 	if len(s.clients) != 1 {
 		t.Fatalf("expected one remaining client, got %d", len(s.clients))
@@ -615,6 +1137,42 @@ func TestDeleteConnectionsEndpointAllowsMemberRoleForOwnedClientsOnly(t *testing
 	}
 	if _, ok := s.clients[owned.id]; ok {
 		t.Fatal("expected owned client to be removed")
+	}
+}
+
+func TestDeleteConnectionsEndpointHidesOtherUsersRemainingCountFromMember(t *testing.T) {
+	s, _ := newAuthedTestServer(t)
+	token := signGatewayTestToken(t, jwt.MapClaims{
+		"sub":  "viewer",
+		"uid":  "viewer-id",
+		"role": "member",
+	})
+
+	s.clients["client-a"] = &Client{id: "client-a", send: make(chan []byte, 1), userID: "viewer-id", username: "viewer"}
+	s.clients["client-b"] = &Client{id: "client-b", send: make(chan []byte, 1), userID: "other-id", username: "other-1"}
+	s.clients["client-c"] = &Client{id: "client-c", send: make(chan []byte, 1), userID: "other-id-2", username: "other-2"}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/connections", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var body map[string]int
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode bulk delete response: %v", err)
+	}
+	if body["deleted"] != 1 {
+		t.Fatalf("expected deleted=1, got %+v", body)
+	}
+	if body["remaining"] != 0 {
+		t.Fatalf("expected visible remaining=0, got %+v", body)
+	}
+	if len(s.clients) != 2 {
+		t.Fatalf("expected two non-owned clients to remain, got %d", len(s.clients))
 	}
 }
 
@@ -675,10 +1233,11 @@ func TestDeleteConnectionEndpointRequiresAuth(t *testing.T) {
 	}
 }
 
-func TestDeleteConnectionEndpointRejectsMemberRoleWithoutManageScope(t *testing.T) {
+func TestDeleteConnectionEndpointReturnsNotFoundForMemberWithoutOwnedTarget(t *testing.T) {
 	s, _ := newAuthedTestServer(t)
 	token := signGatewayTestToken(t, jwt.MapClaims{
 		"sub":  "viewer",
+		"uid":  "viewer-id",
 		"role": "member",
 	})
 
@@ -687,8 +1246,8 @@ func TestDeleteConnectionEndpointRejectsMemberRoleWithoutManageScope(t *testing.
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -713,11 +1272,11 @@ func TestDeleteConnectionEndpointRejectsMemberRoleForOwnedConnection(t *testing.
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
 	}
-	if len(s.clients) != 1 {
-		t.Fatalf("expected client to remain, got %d active clients", len(s.clients))
+	if len(s.clients) != 0 {
+		t.Fatalf("expected client to be removed, got %d active clients", len(s.clients))
 	}
 }
 
@@ -742,8 +1301,8 @@ func TestDeleteConnectionEndpointRejectsMemberRoleForOtherUsersConnection(t *tes
 	rec := httptest.NewRecorder()
 	s.mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 	if len(s.clients) != 1 {
 		t.Fatalf("expected client to remain, got %d active clients", len(s.clients))
@@ -867,6 +1426,14 @@ func TestGetConnectionEndpointAllowsMemberRoleForOwnedConnection(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode connection response: %v", err)
+	}
+	if got := body["remote_addr"]; got != "" {
+		t.Fatalf("expected member remote_addr redacted, got %v", got)
 	}
 }
 

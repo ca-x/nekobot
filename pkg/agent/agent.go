@@ -181,7 +181,7 @@ func New(
 
 	// Register tool session tool (if tool session manager is available)
 	if toolSessionMgr != nil {
-		toolRegistry.MustRegister(tools.NewToolSessionTool(processMgr, toolSessionMgr, workspace))
+		toolRegistry.MustRegister(tools.NewToolSessionTool(processMgr, toolSessionMgr, cfg))
 		log.Info("Tool session tool enabled")
 	}
 
@@ -389,6 +389,22 @@ func (a *Agent) TaskStore() *tasks.Store {
 		return nil
 	}
 	return a.taskStore
+}
+
+// ApprovalManager exposes the shared approval manager for higher-level control planes.
+func (a *Agent) ApprovalManager() *approval.Manager {
+	if a == nil {
+		return nil
+	}
+	return a.approval
+}
+
+// EntClient exposes the shared runtime ent client for higher-level control planes.
+func (a *Agent) EntClient() *ent.Client {
+	if a == nil {
+		return nil
+	}
+	return a.entClient
 }
 
 // TaskService exposes the shared runtime task lifecycle service.

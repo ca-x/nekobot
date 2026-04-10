@@ -71,6 +71,23 @@ func (s *Store) ListSessionStates() []SessionState {
 	return result
 }
 
+// GetSessionState returns one tracked session state by id.
+func (s *Store) GetSessionState(sessionID string) (SessionState, bool) {
+	if s == nil {
+		return SessionState{}, false
+	}
+
+	trimmedID := strings.TrimSpace(sessionID)
+	if trimmedID == "" {
+		return SessionState{}, false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	state, ok := s.sessionStates[trimmedID]
+	return state, ok
+}
+
 func (s *Store) updateSessionState(sessionID string, update func(*SessionState)) {
 	if s == nil || update == nil {
 		return

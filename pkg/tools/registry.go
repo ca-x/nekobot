@@ -11,6 +11,7 @@ import (
 
 // ExecutionHook is called after each tool execution with timing and result info.
 type ExecutionHook func(ctx context.Context, toolName string, args map[string]interface{}, result string, duration time.Duration, err error)
+type BeforeExecutionHook func(ctx context.Context, toolName string, args map[string]interface{})
 
 // Tool represents an action that the agent can perform.
 type Tool interface {
@@ -29,9 +30,10 @@ type Tool interface {
 
 // Registry manages available tools for the agent.
 type Registry struct {
-	mu    sync.RWMutex
-	tools map[string]Tool
-	hook  ExecutionHook // Optional execution hook for auditing/logging
+	mu         sync.RWMutex
+	tools      map[string]Tool
+	beforeHook BeforeExecutionHook
+	hook       ExecutionHook // Optional execution hook for auditing/logging
 }
 
 // NewRegistry creates a new tool registry.
@@ -145,6 +147,9 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]int
 	}
 
 	start := time.Now()
+	if r.beforeHook != nil {
+		r.beforeHook(ctx, name, args)
+	}
 	result, err := tool.Execute(ctx, args)
 	duration := time.Since(start)
 
@@ -162,4 +167,11 @@ func (r *Registry) SetHook(hook ExecutionHook) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.hook = hook
+}
+
+// SetBeforeHook sets a hook that runs immediately before tool execution.
+func (r *Registry) SetBeforeHook(hook BeforeExecutionHook) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.beforeHook = hook
 }

@@ -34,6 +34,19 @@ func (s *stubAgent) ChatWithPromptContextDetailed(
 ) (string, agent.ChatRouteResult, error) {
 	s.lastPrompt = promptCtx
 	s.lastInput = userMessage
+	sess.AddMessage(agent.Message{
+		Role: "assistant",
+		ToolCalls: []agent.ToolCall{{
+			ID:        "call-1",
+			Name:      "read_file",
+			Arguments: map[string]interface{}{"path": "README.md"},
+		}},
+	})
+	sess.AddMessage(agent.Message{
+		Role:       "tool",
+		ToolCallID: "call-1",
+		Content:    "README content",
+	})
 	return s.response, agent.ChatRouteResult{
 		RequestedProvider: promptCtx.RequestedProvider,
 		RequestedModel:    promptCtx.RequestedModel,
@@ -853,6 +866,10 @@ func TestHandleInboundFallsBackForLegacyChannelWithoutTopology(t *testing.T) {
 		}
 		if got, ok := reply.Data["reply_to_message_id"].(int); !ok || got != 7 {
 			t.Fatalf("expected reply_to_message_id=7, got %#v", reply.Data["reply_to_message_id"])
+		}
+		trace, ok := reply.Data["tool_call_trace"].(string)
+		if !ok || !strings.Contains(trace, "Tool call: read_file") {
+			t.Fatalf("expected tool_call_trace in outbound metadata, got %#v", reply.Data["tool_call_trace"])
 		}
 		if agentStub.lastPrompt.SessionID != "telegram:123" {
 			t.Fatalf("unexpected legacy session id: %q", agentStub.lastPrompt.SessionID)

@@ -60,3 +60,27 @@ func TestStoreSessionStatesSortMostRecentFirst(t *testing.T) {
 		t.Fatalf("expected most recent session first, got %q", states[0].SessionID)
 	}
 }
+
+func TestStoreGetSessionState(t *testing.T) {
+	store := NewStore()
+	store.SetSessionPermissionMode("sess-1", "manual")
+	store.SetSessionPendingAction("sess-1", "approve exec", "approval-1")
+
+	state, ok := store.GetSessionState("sess-1")
+	if !ok {
+		t.Fatal("expected session state lookup to succeed")
+	}
+	if state.SessionID != "sess-1" {
+		t.Fatalf("expected session id sess-1, got %q", state.SessionID)
+	}
+	if state.PermissionMode != "manual" {
+		t.Fatalf("expected permission mode manual, got %q", state.PermissionMode)
+	}
+	if state.PendingRequestID != "approval-1" {
+		t.Fatalf("expected pending request id approval-1, got %q", state.PendingRequestID)
+	}
+
+	if _, ok := store.GetSessionState("missing"); ok {
+		t.Fatal("expected missing session state lookup to fail")
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"nekobot/pkg/providers"
@@ -57,7 +58,7 @@ func (a *Adaptor) GetRequestURL(info *providers.RelayInfo) (string, error) {
 	}
 
 	// Generic OpenAI-compatible chat completions endpoint
-	return baseURL + "/chat/completions", nil
+	return strings.TrimRight(baseURL, "/") + "/chat/completions", nil
 }
 
 // SetupRequestHeader sets up HTTP headers for the request.
@@ -69,9 +70,14 @@ func (a *Adaptor) SetupRequestHeader(req *http.Request, info *providers.RelayInf
 		req.Header.Set("Authorization", "Bearer "+info.APIKey)
 	}
 
-	// Add custom headers if provided
+	// Add custom headers if provided, but do not let callers override adaptor-owned headers.
 	for key, value := range info.Headers {
-		req.Header.Set(key, value)
+		switch http.CanonicalHeaderKey(key) {
+		case "Authorization", "Content-Type":
+			continue
+		default:
+			req.Header.Set(key, value)
+		}
 	}
 
 	return nil

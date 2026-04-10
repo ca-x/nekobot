@@ -22,12 +22,17 @@ import (
 	"golang.org/x/time/rate"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
+	"nekobot/pkg/externalagent"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/process"
 	"nekobot/pkg/session"
 	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/tasks"
+	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/version"
 )
 
@@ -74,8 +79,13 @@ type Server struct {
 	agent                     *agent.Agent
 	bus                       bus.Bus
 	router                    websocketRouter
+	externalAgent             *externalagent.Manager
+	approval                  *approval.Manager
+	toolSess                  *toolsessions.Manager
+	processMgr                *process.Manager
 	sessionMgr                *session.Manager
 	entClient                 *ent.Client
+	taskStore                 *tasks.Store
 	mux                       *http.ServeMux
 	server                    *http.Server
 	clients                   map[string]*Client
@@ -119,17 +129,40 @@ func NewServer(
 	ag *agent.Agent,
 	messageBus bus.Bus,
 	router *inboundrouter.Router,
+	approvalMgr *approval.Manager,
+	toolSessionMgr *toolsessions.Manager,
+	processManager *process.Manager,
 	sessionMgr *session.Manager,
 	entClient *ent.Client,
 ) *Server {
 	s := &Server{
-		config:                    cfg,
-		logger:                    log,
-		agent:                     ag,
-		bus:                       messageBus,
-		router:                    router,
-		sessionMgr:                sessionMgr,
-		entClient:                 entClient,
+		config:   cfg,
+		logger:   log,
+		agent:    ag,
+		bus:      messageBus,
+		router:   router,
+		approval: approvalMgr,
+		externalAgent: func() *externalagent.Manager {
+			if toolSessionMgr == nil {
+				return nil
+			}
+			manager, err := externalagent.NewManager(cfg, toolSessionMgr)
+			if err != nil {
+				log.Warn("Failed to initialize external agent manager", zap.Error(err))
+				return nil
+			}
+			return manager
+		}(),
+		toolSess:   toolSessionMgr,
+		processMgr: processManager,
+		sessionMgr: sessionMgr,
+		entClient:  entClient,
+		taskStore: func() *tasks.Store {
+			if ag == nil {
+				return nil
+			}
+			return ag.TaskStore()
+		}(),
 		clients:                   make(map[string]*Client),
 		reservedPairingSessionIDs: make(map[string]struct{}),
 		rateLimiters:              make(map[string]*rate.Limiter),
@@ -151,6 +184,10 @@ func (s *Server) setupRoutes() {
 	mux.HandleFunc("DELETE /api/v1/connections", s.handleDeleteConnections)
 	mux.HandleFunc("GET /api/v1/connections/{id}", s.handleConnection)
 	mux.HandleFunc("DELETE /api/v1/connections/{id}", s.handleDeleteConnection)
+	mux.HandleFunc("POST /api/v1/external-agents/resolve-session", s.handleResolveExternalAgentSession)
+	mux.HandleFunc("GET /api/v1/approvals", s.handleGetApprovals)
+	mux.HandleFunc("POST /api/v1/approvals/{id}/approve", s.handleApproveRequest)
+	mux.HandleFunc("POST /api/v1/approvals/{id}/deny", s.handleDenyRequest)
 
 	// Health check
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -630,7 +667,7 @@ func (s *Server) handleConnections(w http.ResponseWriter, r *http.Request) {
 		if !gatewayControlPlaneCanReadConnection(authCtx, client) {
 			continue
 		}
-		conns = append(conns, describeConnection(client))
+		conns = append(conns, describeConnectionForAuth(authCtx, client))
 	}
 	sort.Slice(conns, func(i, j int) bool {
 		return conns[i].ID < conns[j].ID
@@ -667,14 +704,15 @@ func (s *Server) handleConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(describeConnection(client)); err != nil {
+	if err := json.NewEncoder(w).Encode(describeConnectionForAuth(authCtx, client)); err != nil {
 		s.logger.Warn("Failed to encode gateway connection", zap.Error(err))
 	}
 }
 
 func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) {
-	authCtx, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage)
-	if !ok {
+	authCtx, err := s.authenticateDeleteConnections(r)
+	if err != nil {
+		s.writeDeleteConnectionsAuthError(w, err)
 		return
 	}
 
@@ -692,7 +730,11 @@ func (s *Server) handleDeleteConnection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !gatewayControlPlaneCanManageConnection(authCtx, client) {
-		http.NotFound(w, r)
+		if strings.EqualFold(strings.TrimSpace(authCtx.role), "member") {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
 
@@ -723,7 +765,13 @@ func (s *Server) handleDeleteConnections(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.mu.RLock()
-	remaining := len(s.clients)
+	remaining := 0
+	for _, client := range s.clients {
+		if !gatewayControlPlaneCanReadConnection(authCtx, client) {
+			continue
+		}
+		remaining++
+	}
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -779,6 +827,207 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(metrics); err != nil {
 		s.logger.Warn("Failed to encode gateway metrics", zap.Error(err))
 	}
+}
+
+func (s *Server) handleResolveExternalAgentSession(w http.ResponseWriter, r *http.Request) {
+	if s.externalAgent == nil {
+		http.Error(w, `{"error":"external agent manager not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	authCtx, err := s.authenticateDeleteConnections(r)
+	if err != nil {
+		s.writeDeleteConnectionsAuthError(w, err)
+		return
+	}
+
+	var body struct {
+		AgentKind string `json:"agent_kind"`
+		Workspace string `json:"workspace"`
+		Tool      string `json:"tool"`
+		Title     string `json:"title"`
+		Command   string `json:"command"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	var probe gatewayExternalAgentProcessProbe
+	var starter externalagent.ProcessStarter
+	if s.processMgr != nil {
+		probe.mgr = s.processMgr
+		starter = s.processMgr
+	}
+	result, err := externalagent.ExecuteResolveFlow(
+		r.Context(),
+		s.externalAgent,
+		externalagent.NewResolveOrchestrator(s.config, s.logger, s.entClient, s.approval, s.taskStore),
+		s.config.WorkspacePath(),
+		probe,
+		starter,
+		s.toolSess,
+		nil,
+		externalagent.SessionSpec{
+			Owner:     authCtx.username,
+			AgentKind: body.AgentKind,
+			Workspace: body.Workspace,
+			Tool:      body.Tool,
+			Title:     body.Title,
+			Command:   body.Command,
+		},
+	)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(result.HTTPStatus())
+	if err := json.NewEncoder(w).Encode(result.ResponseBody()); err != nil {
+		s.logger.Warn("Failed to encode external agent session", zap.Error(err))
+	}
+}
+
+func (s *Server) ensureExternalAgentProcess(ctx context.Context, sess *toolsessions.Session) error {
+	if s == nil {
+		return nil
+	}
+	var probe gatewayExternalAgentProcessProbe
+	var starter externalagent.ProcessStarter
+	if s.processMgr != nil {
+		probe.mgr = s.processMgr
+		starter = s.processMgr
+	}
+	return externalagent.EnsureProcess(
+		ctx,
+		s.config.WorkspacePath(),
+		probe,
+		starter,
+		s.toolSess,
+		nil,
+		sess,
+	)
+}
+
+func (s *Server) handleGetApprovals(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage); !ok {
+		return
+	}
+	if s.approval == nil {
+		http.Error(w, `{"error":"approval manager not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(s.approval.GetPending())
+}
+
+func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage); !ok {
+		return
+	}
+	if s.approval == nil {
+		http.Error(w, `{"error":"approval manager not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	req, _ := s.approval.GetRequest(id)
+	if err := s.approval.Approve(id); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+		return
+	}
+	if req != nil && isGatewayExternalAgentApprovalRequest(req) {
+		s.approval.SetSessionMode(req.SessionID, approval.ModeAuto)
+		if s.toolSess != nil {
+			sess, err := s.toolSess.GetSession(r.Context(), req.SessionID)
+			if err == nil && sess != nil {
+				if err := s.ensureExternalAgentProcess(r.Context(), sess); err != nil {
+					http.Error(w, fmt.Sprintf(`{"error":%q}`, "failed to continue external agent launch: "+err.Error()), http.StatusBadRequest)
+					return
+				}
+			}
+		}
+	}
+	if req != nil && s.taskStore != nil {
+		s.taskStore.ClearSessionPendingAction(req.SessionID)
+		if mode, ok := s.approval.GetSessionMode(req.SessionID); ok {
+			s.taskStore.SetSessionPermissionMode(req.SessionID, string(mode))
+		}
+	}
+	body := map[string]any{"status": "approved", "id": id}
+	if req != nil {
+		if state := s.currentSessionRuntimeState(req.SessionID); state != nil {
+			body["session_runtime_state"] = state
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireAuthenticatedAPI(w, r, gatewayControlPlaneScopeManage); !ok {
+		return
+	}
+	if s.approval == nil {
+		http.Error(w, `{"error":"approval manager not available"}`, http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	id := strings.TrimSpace(r.PathValue("id"))
+	req, _ := s.approval.GetRequest(id)
+	if err := s.approval.Deny(id, body.Reason); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+		return
+	}
+	if req != nil && s.taskStore != nil {
+		s.taskStore.ClearSessionPendingAction(req.SessionID)
+	}
+	response := map[string]any{"status": "denied", "id": id}
+	if req != nil {
+		if state := s.currentSessionRuntimeState(req.SessionID); state != nil {
+			response["session_runtime_state"] = state
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) currentSessionRuntimeState(sessionID string) *tasks.SessionState {
+	if s == nil || s.taskStore == nil {
+		return nil
+	}
+	state, ok := s.taskStore.GetSessionState(sessionID)
+	if !ok {
+		return nil
+	}
+	return &state
+}
+
+func isGatewayExternalAgentApprovalRequest(req *approval.Request) bool {
+	if req == nil {
+		return false
+	}
+	if strings.TrimSpace(req.ToolName) == "" {
+		return false
+	}
+	toolName, _ := req.Arguments["tool_name"].(string)
+	sessionID, _ := req.Arguments["session_id"].(string)
+	return strings.TrimSpace(toolName) == strings.TrimSpace(req.ToolName) &&
+		strings.TrimSpace(sessionID) == strings.TrimSpace(req.SessionID)
+}
+
+type gatewayExternalAgentProcessProbe struct {
+	mgr *process.Manager
+}
+
+func (p gatewayExternalAgentProcessProbe) HasProcess(sessionID string) bool {
+	if p.mgr == nil {
+		return false
+	}
+	_, err := p.mgr.GetStatus(sessionID)
+	return err == nil
 }
 
 func (s *Server) authenticateDeleteConnections(r *http.Request) (*authContext, error) {
@@ -949,6 +1198,17 @@ func describeConnection(client *Client) connectionStatus {
 		ConnectedAt:        client.connectedAt.UTC().Format(time.RFC3339),
 		RemoteAddr:         client.remoteAddr,
 	}
+}
+
+func describeConnectionForAuth(authCtx *authContext, client *Client) connectionStatus {
+	conn := describeConnection(client)
+	if authCtx == nil {
+		return conn
+	}
+	if strings.EqualFold(strings.TrimSpace(authCtx.role), "member") {
+		conn.RemoteAddr = ""
+	}
+	return conn
 }
 
 func classifyGatewaySessionSource(sess agent.SessionInterface, requestedSessionID string) string {
