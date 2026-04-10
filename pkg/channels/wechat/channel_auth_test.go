@@ -85,3 +85,18 @@ func TestWeChatMessageContextTokenFromBusData(t *testing.T) {
 		t.Fatalf("expected empty token for non-string data, got %q", got)
 	}
 }
+
+func TestWeChatPrependBusToolTraceUsesOutboundMetadata(t *testing.T) {
+	msg := &bus.Message{
+		Data: map[string]interface{}{
+			"tool_call_trace": "Tool call: read_file {\"path\":\"README.md\"}",
+		},
+	}
+	got := prependBusToolTrace("done", msg)
+	if got == "done" {
+		t.Fatalf("expected tool trace to be prepended, got %q", got)
+	}
+	if got == "" || got[:10] != "Tool call:" {
+		t.Fatalf("expected reply to start with tool trace, got %q", got)
+	}
+}

@@ -11,13 +11,17 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/agent"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
 	"nekobot/pkg/richtext"
+	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/transcription"
 	wechatbot "nekobot/pkg/wechat"
@@ -169,7 +173,15 @@ func newChannel(
 	var runtimeControl *ControlService
 	if toolSessionMgr != nil && processMgr != nil {
 		bindingSvc := NewRuntimeBindingService(toolSessionMgr, rootCfg)
-		runtimeControl = NewControlService(rootCfg, toolSessionMgr, processMgr, bindingSvc)
+		var entClient *ent.Client
+		var approvalMgr *approval.Manager
+		var taskStore *tasks.Store
+		if ag != nil {
+			entClient = ag.EntClient()
+			approvalMgr = ag.ApprovalManager()
+			taskStore = ag.TaskStore()
+		}
+		runtimeControl = NewControlService(rootCfg, log, toolSessionMgr, processMgr, bindingSvc, entClient, approvalMgr, taskStore)
 	}
 
 	return &Channel{
@@ -377,6 +389,7 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 	if strings.TrimSpace(reply) == "" {
 		reply = "（无输出）"
 	}
+	reply = channeltrace.PrependToolCallTrace(reply, sess.GetMessages())
 
 	if err := c.sendReply(ctx, msg.FromUserID, reply, msg.ContextToken); err != nil {
 		c.log.Error("Failed to send WeChat reply", zap.Error(err))
@@ -485,7 +498,7 @@ func (c *Channel) handleControlCommand(msg wxtypes.WeixinMessage, content string
 		if c.runtime == nil {
 			return true, fmt.Errorf("runtime control is unavailable")
 		}
-		created, err := c.runtime.CreateRuntime(ctx, msg.FromUserID, RuntimeCreateRequest{
+		created, approvalResult, err := c.runtime.ResolveRuntime(ctx, msg.FromUserID, RuntimeCreateRequest{
 			Name:    cmd.RuntimeName,
 			Driver:  cmd.Spec.Driver,
 			Tool:    cmd.Spec.Tool,
@@ -494,6 +507,10 @@ func (c *Channel) handleControlCommand(msg wxtypes.WeixinMessage, content string
 		})
 		if err != nil {
 			return true, err
+		}
+		if approvalResult != nil {
+			reply = formatRuntimeApprovalReply(created, approvalResult)
+			break
 		}
 		reply = fmt.Sprintf("Created runtime %s (%s).", strings.TrimSpace(created.Title), created.Tool)
 	case controlCommandStatus:
@@ -714,7 +731,7 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		return fmt.Errorf("wechat session/user id is empty")
 	}
 	contextToken := messageContextToken(msg)
-	return c.sendReply(ctx, userID, msg.Content, contextToken)
+	return c.sendReply(ctx, userID, prependBusToolTrace(msg.Content, msg), contextToken)
 }
 
 func messageContextToken(msg *bus.Message) string {
@@ -726,6 +743,14 @@ func messageContextToken(msg *bus.Message) string {
 		return ""
 	}
 	return strings.TrimSpace(raw)
+}
+
+func messageToolCallTrace(msg *bus.Message) string {
+	return channeltrace.MessageToolCallTrace(msg)
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 func (c *Channel) sendReply(ctx context.Context, toUserID, text, contextToken string) error {
@@ -962,6 +987,44 @@ func defaultWeChatName(displayName string) string {
 		return "WeChat"
 	}
 	return name
+}
+
+func formatToolCallTrace(messages []agent.Message) string {
+	return channeltrace.FormatToolCallTrace(messages)
+}
+
+func formatRuntimeApprovalReply(created *toolsessions.Session, approvalResult *RuntimeApprovalResult) string {
+	title := ""
+	tool := ""
+	if created != nil {
+		title = strings.TrimSpace(created.Title)
+		tool = strings.TrimSpace(created.Tool)
+	}
+	if title == "" {
+		title = tool
+	}
+	switch strings.TrimSpace(approvalResult.Status) {
+	case "pending":
+		return fmt.Sprintf(
+			"Created runtime %s (%s).\nStatus: pending\nApproval request: %s",
+			title,
+			tool,
+			strings.TrimSpace(approvalResult.RequestID),
+		)
+	case "denied":
+		reason := strings.TrimSpace(approvalResult.Reason)
+		if reason == "" {
+			reason = "denied by approval policy"
+		}
+		return fmt.Sprintf(
+			"Created runtime %s (%s).\nStatus: denied\nReason: %s",
+			title,
+			tool,
+			reason,
+		)
+	default:
+		return fmt.Sprintf("Created runtime %s (%s).", title, tool)
+	}
 }
 
 type simpleSession struct {

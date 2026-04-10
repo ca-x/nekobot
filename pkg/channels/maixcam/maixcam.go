@@ -14,6 +14,7 @@ import (
 
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -381,7 +382,7 @@ func (c *Channel) handleCommand(msg MaixCamMessage, conn net.Conn, deviceID, con
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	response := map[string]interface{}{
 		"type":    "message",
-		"content": msg.Content,
+		"content": prependBusToolTrace(msg.Content, msg),
 		"time":    time.Now().Unix(),
 	}
 
@@ -412,6 +413,10 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		zap.String("target_device", targetDeviceID))
 
 	return nil
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 func maixcamDeviceIDFromSession(sessionID string) string {

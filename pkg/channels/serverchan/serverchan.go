@@ -18,6 +18,7 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -356,6 +357,7 @@ func (c *Channel) processUpdate(update Update) {
 	if strings.TrimSpace(reply) == "" {
 		reply = "（无输出）"
 	}
+	reply = channeltrace.PrependToolCallTrace(reply, sess.GetMessages())
 	if err := c.sendMessage(chatID, reply, false); err != nil {
 		c.log.Error("Failed to send ServerChan agent reply", zap.Error(err))
 	}

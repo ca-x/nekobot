@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
 )
@@ -132,7 +133,7 @@ func (c *Channel) Stop(ctx context.Context) error {
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	payload := map[string]any{
 		"title":    c.messageTitle(msg),
-		"message":  msg.Content,
+		"message":  prependBusToolTrace(msg.Content, msg),
 		"priority": c.config.Priority,
 	}
 
@@ -161,6 +162,10 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	}
 
 	return nil
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 func (c *Channel) messageTitle(msg *bus.Message) string {

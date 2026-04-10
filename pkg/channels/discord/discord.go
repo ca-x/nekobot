@@ -16,6 +16,7 @@ import (
 
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -503,7 +504,7 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	}
 
 	// Send message
-	_, err := c.session.ChannelMessageSend(channelID, msg.Content)
+	_, err := c.session.ChannelMessageSend(channelID, prependBusToolTrace(msg.Content, msg))
 	if err != nil {
 		return fmt.Errorf("sending discord message: %w", err)
 	}
@@ -513,6 +514,10 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		zap.Int("length", len(msg.Content)))
 
 	return nil
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 // isAllowed checks if a user is allowed to use the bot.

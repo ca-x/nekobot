@@ -23,6 +23,7 @@ import (
 
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -364,7 +365,11 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		userID = userID[7:]
 	}
 
-	return c.sendMessageToUser(userID, msg.Content)
+	return c.sendMessageToUser(userID, prependBusToolTrace(msg.Content, msg))
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 // sendMessageToUser sends a message to a specific user.

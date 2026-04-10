@@ -18,6 +18,7 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -240,7 +241,8 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	}
 
 	// Create message
-	reply := tgbotapi.NewMessage(chatID, msg.Content)
+	replyText := prependBusToolTrace(msg.Content, msg)
+	reply := tgbotapi.NewMessage(chatID, replyText)
 
 	// Handle reply
 	if msg.ReplyTo != "" {
@@ -256,6 +258,10 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	}
 
 	return nil
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 // handleUpdate processes a Telegram update.

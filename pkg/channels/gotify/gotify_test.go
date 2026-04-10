@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"nekobot/pkg/bus"
@@ -66,7 +67,8 @@ func TestChannelStartAndSendMessage(t *testing.T) {
 		Content:   "hello gotify",
 		Username:  "tester",
 		Data: map[string]any{
-			"title": "Custom Title",
+			"title":           "Custom Title",
+			"tool_call_trace": "Tool call: read_file {\"path\":\"README.md\"}",
 		},
 	})
 	if err != nil {
@@ -76,8 +78,12 @@ func TestChannelStartAndSendMessage(t *testing.T) {
 	if gotPayload["title"] != "Custom Title" {
 		t.Fatalf("expected title Custom Title, got %#v", gotPayload["title"])
 	}
-	if gotPayload["message"] != "hello gotify" {
-		t.Fatalf("expected message hello gotify, got %#v", gotPayload["message"])
+	message, _ := gotPayload["message"].(string)
+	if !strings.Contains(message, "Tool call: read_file") {
+		t.Fatalf("expected tool trace in gotify message, got %#v", gotPayload["message"])
+	}
+	if !strings.Contains(message, "\n\nhello gotify") {
+		t.Fatalf("expected original message after blank line, got %#v", gotPayload["message"])
 	}
 	if gotPayload["priority"] != float64(6) {
 		t.Fatalf("expected priority 6, got %#v", gotPayload["priority"])

@@ -2,6 +2,10 @@ package slack
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -401,6 +405,47 @@ func TestHandleShortcutOpensFindSkillsModal(t *testing.T) {
 	}
 	if api.openViewRequest.PrivateMetadata != "find-skills" {
 		t.Fatalf("unexpected private metadata: %q", api.openViewRequest.PrivateMetadata)
+	}
+}
+
+func TestSendMessagePrependsToolTraceFromBusMetadata(t *testing.T) {
+	ch := newTestChannel(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat.postMessage" {
+			t.Fatalf("unexpected slack api path: %s", r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		values, err := url.ParseQuery(string(body))
+		if err != nil {
+			t.Fatalf("parse form body: %v", err)
+		}
+		text := values.Get("text")
+		if !strings.Contains(text, "Tool call: read_file") {
+			t.Fatalf("expected tool trace in slack text, got %q", text)
+		}
+		if !strings.Contains(text, "\n\ndone") {
+			t.Fatalf("expected original reply after blank line, got %q", text)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"channel":"C123","ts":"1710000000.000100","message":{"text":"ok"}}`))
+	}))
+	defer server.Close()
+
+	ch.api = slackapi.New("test-token", slackapi.OptionAPIURL(server.URL+"/"))
+
+	err := ch.SendMessage(context.Background(), &bus.Message{
+		SessionID: "slack:C123",
+		Content:   "done",
+		Data: map[string]interface{}{
+			"tool_call_trace": "Tool call: read_file {\"path\":\"README.md\"}",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
 	}
 }
 

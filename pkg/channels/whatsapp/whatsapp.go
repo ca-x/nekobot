@@ -14,6 +14,7 @@ import (
 
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -335,7 +336,11 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		chatID = chatID[9:]
 	}
 
-	return c.sendBridgeMessage(chatID, msg.Content)
+	return c.sendBridgeMessage(chatID, prependBusToolTrace(msg.Content, msg))
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 // sendBridgeMessage sends a message through the WebSocket bridge.

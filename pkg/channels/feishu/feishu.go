@@ -17,6 +17,7 @@ import (
 
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -271,7 +272,15 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		chatID = chatID[7:]
 	}
 
-	return c.sendMessage(chatID, msg.Content)
+	return c.sendMessage(chatID, prependBusToolTrace(msg.Content, msg))
+}
+
+func messageToolCallTrace(msg *bus.Message) string {
+	return channeltrace.MessageToolCallTrace(msg)
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 // sendMessage sends a message to a specific chat.

@@ -16,6 +16,7 @@ import (
 
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -288,7 +289,11 @@ func (c *Channel) handleCommand(sessionID string, act activity, content string) 
 
 // SendMessage sends a message to Teams conversation.
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
-	return c.sendActivity(ctx, msg.SessionID, msg.Content, msg.ReplyTo)
+	return c.sendActivity(ctx, msg.SessionID, prependBusToolTrace(msg.Content, msg), msg.ReplyTo)
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 func (c *Channel) sendActivity(ctx context.Context, sessionID, text, replyTo string) error {

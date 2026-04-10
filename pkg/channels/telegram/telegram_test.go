@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
+	"nekobot/pkg/bus"
 	"nekobot/pkg/logger"
 )
 
@@ -127,5 +129,52 @@ func TestSupportsNativeCommandsRespectsDefaultCapabilityScope(t *testing.T) {
 	}
 	if !channel.supportsNativeCommands("supergroup") {
 		t.Fatal("expected native commands enabled for supergroup chats")
+	}
+}
+
+func TestSendMessagePrependsToolTraceFromBusMetadata(t *testing.T) {
+	channel := newTestChannel(t)
+
+	var sentTexts []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/bottest-token/getMe":
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"Test","username":"testbot"}}`))
+		case "/bottest-token/sendMessage":
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			sentTexts = append(sentTexts, r.Form.Get("text"))
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":42}}`))
+		default:
+			t.Fatalf("unexpected telegram API path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	bot, err := tgbotapi.NewBotAPIWithAPIEndpoint("test-token", server.URL+"/bot%s/%s")
+	if err != nil {
+		t.Fatalf("create bot api: %v", err)
+	}
+	channel.bot = bot
+
+	err = channel.SendMessage(context.Background(), &bus.Message{
+		SessionID: "telegram:123",
+		Content:   "done",
+		Data: map[string]interface{}{
+			"tool_call_trace": "Tool call: read_file {\"path\":\"README.md\"}",
+		},
+	})
+	if err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+	if len(sentTexts) != 1 {
+		t.Fatalf("expected exactly one telegram send, got %d", len(sentTexts))
+	}
+	if !strings.Contains(sentTexts[0], "Tool call: read_file") {
+		t.Fatalf("expected tool trace in telegram text, got %q", sentTexts[0])
+	}
+	if !strings.Contains(sentTexts[0], "\n\ndone") {
+		t.Fatalf("expected original reply after blank line, got %q", sentTexts[0])
 	}
 }

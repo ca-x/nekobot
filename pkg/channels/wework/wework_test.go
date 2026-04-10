@@ -2,7 +2,11 @@ package wework
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	"nekobot/pkg/bus"
 	"nekobot/pkg/commands"
@@ -92,6 +96,56 @@ func TestAccountScopedProcessMessageStillTreatsSlashCommandAsPlainTextWhenNative
 	}
 }
 
+func TestSendMessagePrependsToolTraceFromBusMetadata(t *testing.T) {
+	log := newTestLogger(t)
+	channel, err := NewChannel(log, config.WeWorkConfig{
+		Enabled:    true,
+		CorpID:     "corp",
+		AgentID:    "agent",
+		CorpSecret: "secret",
+	}, &stubBus{}, commands.NewRegistry())
+	if err != nil {
+		t.Fatalf("NewChannel failed: %v", err)
+	}
+
+	channel.accessToken = "token"
+	channel.tokenExpiresAt = time.Now().Add(time.Hour).Unix()
+	channel.httpClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if !strings.Contains(req.URL.String(), "message/send?access_token=token") {
+				t.Fatalf("unexpected request url: %s", req.URL.String())
+			}
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Fatalf("read request body: %v", err)
+			}
+			payload := string(body)
+			if !strings.Contains(payload, "Tool call: read_file") {
+				t.Fatalf("expected tool trace in wework payload, got %q", payload)
+			}
+			if !strings.Contains(payload, "\\n\\ndone") {
+				t.Fatalf("expected original reply after blank line, got %q", payload)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"errcode":0,"errmsg":"ok"}`)),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	err = channel.SendMessage(context.Background(), &bus.Message{
+		SessionID: "wework:user-1",
+		Content:   "done",
+		Data: map[string]interface{}{
+			"tool_call_trace": "Tool call: read_file {\"path\":\"README.md\"}",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+}
+
 type stubBus struct {
 	inbound []*bus.Message
 }
@@ -122,4 +176,10 @@ func newTestLogger(t *testing.T) *logger.Logger {
 		t.Fatalf("create logger: %v", err)
 	}
 	return log
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

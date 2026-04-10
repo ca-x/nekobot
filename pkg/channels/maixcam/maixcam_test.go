@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,6 +67,34 @@ func TestSendMessageBroadcastsWithoutTargetSession(t *testing.T) {
 	}
 	if got := secondMsg["content"]; got != "broadcast" {
 		t.Fatalf("expected broadcast content on second device, got %#v", got)
+	}
+}
+
+func TestSendMessagePrependsToolTraceFromBusMetadata(t *testing.T) {
+	ch := newTestChannel(t)
+	targetConn := newStubConn("device-target")
+	ch.clients[targetConn] = true
+
+	err := ch.SendMessage(context.Background(), &bus.Message{
+		ID:        "out-3",
+		ChannelID: "maixcam",
+		SessionID: "maixcam:device-target",
+		Content:   "done",
+		Data: map[string]interface{}{
+			"tool_call_trace": "Tool call: read_file {\"path\":\"README.md\"}",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+
+	targetMsg := decodeStubPayload(t, targetConn)
+	content, _ := targetMsg["content"].(string)
+	if !strings.Contains(content, "Tool call: read_file") {
+		t.Fatalf("expected tool trace in maixcam content, got %#v", targetMsg["content"])
+	}
+	if !strings.Contains(content, "\n\ndone") {
+		t.Fatalf("expected original reply after blank line, got %#v", targetMsg["content"])
 	}
 }
 

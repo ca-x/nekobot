@@ -19,6 +19,7 @@ import (
 
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -290,12 +291,16 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 	c.mu.RUnlock()
 
 	if service != nil {
-		return c.sendViaAPI(spaceName, msg.Content)
+		return c.sendViaAPI(spaceName, prependBusToolTrace(msg.Content, msg))
 	}
 
 	// If no API service, we need a webhook URL
 	// This should be stored in message metadata
 	return fmt.Errorf("google chat service not initialized and no webhook URL provided")
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 // sendViaAPI sends a message using the Google Chat API.

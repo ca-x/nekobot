@@ -20,6 +20,7 @@ import (
 
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -295,10 +296,10 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 
 	payload := map[string]interface{}{
 		"session_id": msg.SessionID,
-		"content":    msg.Content,
+		"content":    prependBusToolTrace(msg.Content, msg),
 	}
 	if strings.TrimSpace(c.config.AESKey) != "" {
-		ciphertext, iv, err := c.encrypt(msg.Content)
+		ciphertext, iv, err := c.encrypt(prependBusToolTrace(msg.Content, msg))
 		if err != nil {
 			return fmt.Errorf("encrypting infoflow payload: %w", err)
 		}
@@ -328,6 +329,10 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		return fmt.Errorf("infoflow webhook status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 func (c *Channel) isAllowed(userID string) bool {

@@ -2,8 +2,12 @@ package feishu
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
+	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"nekobot/pkg/bus"
@@ -82,6 +86,30 @@ func TestHandleMessageReceiveExecutesCommandWhenNativeCommandsEnabled(t *testing
 	}
 }
 
+func TestSendMessagePrependsToolTraceFromBusMetadata(t *testing.T) {
+	ch := &Channel{
+		log:         newFeishuTestLogger(t),
+		channelType: "feishu",
+		client: lark.NewClient(
+			"app-id",
+			"app-secret",
+			lark.WithOpenBaseUrl("https://example.invalid"),
+			lark.WithHttpClient(&feishuHTTPClient{t: t}),
+		),
+	}
+
+	err := ch.SendMessage(context.Background(), &bus.Message{
+		SessionID: "feishu:chat-1",
+		Content:   "done",
+		Data: map[string]interface{}{
+			"tool_call_trace": "Tool call: read_file {\"path\":\"README.md\"}",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+}
+
 type feishuTestBus struct {
 	inbound []*bus.Message
 }
@@ -144,4 +172,34 @@ func newFeishuTestLogger(t *testing.T) *logger.Logger {
 
 func stringPtr(value string) *string {
 	return &value
+}
+
+type feishuHTTPClient struct {
+	t *testing.T
+}
+
+func (c *feishuHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		c.t.Fatalf("read request body: %v", err)
+	}
+	payload := string(body)
+	if strings.Contains(req.URL.Path, "tenant_access_token") {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"code":0,"msg":"success","tenant_access_token":"token","expire":7200}`)),
+			Header:     make(http.Header),
+		}, nil
+	}
+	if !strings.Contains(payload, "Tool call: read_file") {
+		c.t.Fatalf("expected tool trace in feishu payload, got %q", payload)
+	}
+	if !strings.Contains(payload, "\\\\n\\\\ndone") {
+		c.t.Fatalf("expected original reply after blank line, got %q", payload)
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{"code":0,"msg":"success","data":{"message_id":"om_1"}}`)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}, nil
 }

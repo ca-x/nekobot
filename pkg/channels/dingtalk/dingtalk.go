@@ -14,6 +14,7 @@ import (
 
 	"nekobot/pkg/bus"
 	channelcapabilities "nekobot/pkg/channelcapabilities"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -289,7 +290,11 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		return fmt.Errorf("invalid session_webhook type for chat %s", chatID)
 	}
 
-	return c.sendReply(sessionWebhook, msg.Content)
+	return c.sendReply(sessionWebhook, prependBusToolTrace(msg.Content, msg))
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 // sendReply sends a reply using session webhook.

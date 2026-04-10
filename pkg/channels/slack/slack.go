@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channeltrace"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
@@ -1510,7 +1511,7 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 
 	// Build message options
 	opts := []slack.MsgOption{
-		slack.MsgOptionText(msg.Content, false),
+		slack.MsgOptionText(prependBusToolTrace(msg.Content, msg), false),
 	}
 
 	if threadTS != "" {
@@ -1528,6 +1529,10 @@ func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
 		zap.String("thread_ts", threadTS))
 
 	return nil
+}
+
+func prependBusToolTrace(content string, msg *bus.Message) string {
+	return channeltrace.PrependBusToolTrace(content, msg)
 }
 
 // parseSessionID parses session ID into channel ID and optional thread timestamp.

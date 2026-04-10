@@ -2,7 +2,13 @@ package whatsapp
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/gorilla/websocket"
 
 	"nekobot/pkg/bus"
 	"nekobot/pkg/commands"
@@ -97,6 +103,70 @@ func TestAccountScopedHandleInboundStillTreatsSlashCommandAsPlainTextWhenNativeC
 	}
 	if len(messageBus.inbound) != 1 {
 		t.Fatalf("expected one inbound message, got %d", len(messageBus.inbound))
+	}
+}
+
+func TestSendMessagePrependsToolTraceFromBusMetadata(t *testing.T) {
+	log := newTestLogger(t)
+	messageBus := &stubBus{}
+	commandRegistry := commands.NewRegistry()
+
+	channel, err := NewChannel(log, config.WhatsAppConfig{
+		Enabled:   true,
+		BridgeURL: "ws://example.invalid",
+	}, messageBus, commandRegistry)
+	if err != nil {
+		t.Fatalf("NewChannel failed: %v", err)
+	}
+
+	upgrader := websocket.Upgrader{}
+	received := make(chan map[string]interface{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Fatalf("upgrade websocket: %v", err)
+		}
+		defer conn.Close()
+
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("read websocket message: %v", err)
+		}
+		var payload map[string]interface{}
+		if err := json.Unmarshal(data, &payload); err != nil {
+			t.Fatalf("unmarshal payload: %v", err)
+		}
+		received <- payload
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial websocket server: %v", err)
+	}
+	defer conn.Close()
+
+	channel.conn = conn
+
+	err = channel.SendMessage(context.Background(), &bus.Message{
+		SessionID: "whatsapp:chat-1",
+		Content:   "done",
+		Data: map[string]interface{}{
+			"tool_call_trace": "Tool call: read_file {\"path\":\"README.md\"}",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+
+	payload := <-received
+	content, _ := payload["content"].(string)
+	if !strings.Contains(content, "Tool call: read_file") {
+		t.Fatalf("expected tool trace in whatsapp payload, got %q", content)
+	}
+	if !strings.Contains(content, "\n\ndone") {
+		t.Fatalf("expected original reply after blank line, got %q", content)
 	}
 }
 
