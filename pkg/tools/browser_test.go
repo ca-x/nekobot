@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -1563,6 +1564,282 @@ func TestBrowserToolParametersIncludeGetNetwork(t *testing.T) {
 	}
 }
 
+func TestBrowserToolParametersIncludeGetSession(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected properties map, got %#v", params["properties"])
+	}
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected action schema, got %#v", properties["action"])
+	}
+	enumValues, ok := action["enum"].([]string)
+	if !ok {
+		t.Fatalf("expected enum values, got %#v", action["enum"])
+	}
+	found := false
+	for _, value := range enumValues {
+		if value == "get_session" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected get_session action in enum, got %#v", enumValues)
+	}
+}
+
+func TestBrowserToolGetSessionReturnsStatusWhenNotReady(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	session.ready = false
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "get_session",
+	})
+	if err != nil {
+		t.Fatalf("get_session returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("unmarshal get_session response: %v", err)
+	}
+	if ready, _ := payload["ready"].(bool); ready {
+		t.Fatalf("expected ready=false, got %+v", payload)
+	}
+	if got, _ := payload["mode"].(string); got != string(BrowserModeAuto) {
+		t.Fatalf("expected auto mode for not-ready session, got %+v", payload)
+	}
+}
+
+func TestBrowserToolGetSessionReturnsStatusWhenReady(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	session.ready = true
+	session.mode = BrowserModeRelay
+	session.endpoint = "http://chrome.internal:9333"
+	session.debugURL = "ws://chrome.internal/devtools/page/1"
+	session.cmd = &exec.Cmd{}
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "get_session",
+	})
+	if err != nil {
+		t.Fatalf("get_session returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("unmarshal get_session response: %v", err)
+	}
+	if ready, _ := payload["ready"].(bool); !ready {
+		t.Fatalf("expected ready=true, got %+v", payload)
+	}
+	if got, _ := payload["mode"].(string); got != string(BrowserModeRelay) {
+		t.Fatalf("expected relay mode, got %+v", payload)
+	}
+	if got, _ := payload["endpoint"].(string); got != "http://chrome.internal:9333" {
+		t.Fatalf("expected endpoint in payload, got %+v", payload)
+	}
+	if got, _ := payload["debug_url"].(string); got != "ws://chrome.internal/devtools/page/1" {
+		t.Fatalf("expected debug_url in payload, got %+v", payload)
+	}
+	if managed, _ := payload["managed_process"].(bool); !managed {
+		t.Fatalf("expected managed_process=true, got %+v", payload)
+	}
+}
+
+func TestBrowserToolResetSessionStopsAndClearsStatus(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	session.ready = true
+	session.mode = BrowserModeRelay
+	session.endpoint = "http://chrome.internal:9333"
+	session.debugURL = "ws://chrome.internal/devtools/page/1"
+	session.cmd = &exec.Cmd{}
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "reset_session",
+	})
+	if err != nil {
+		t.Fatalf("reset_session returned error: %v", err)
+	}
+	if out != "Browser session reset" {
+		t.Fatalf("unexpected reset_session response: %q", out)
+	}
+
+	statusJSON, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "get_session",
+	})
+	if err != nil {
+		t.Fatalf("get_session after reset returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(statusJSON), &payload); err != nil {
+		t.Fatalf("unmarshal get_session response: %v", err)
+	}
+	if ready, _ := payload["ready"].(bool); ready {
+		t.Fatalf("expected ready=false after reset, got %+v", payload)
+	}
+	if got, _ := payload["mode"].(string); got != string(BrowserModeAuto) {
+		t.Fatalf("expected auto mode after reset, got %+v", payload)
+	}
+	if got, _ := payload["endpoint"].(string); got != "" {
+		t.Fatalf("expected empty endpoint after reset, got %+v", payload)
+	}
+	if got, _ := payload["debug_url"].(string); got != "" {
+		t.Fatalf("expected empty debug_url after reset, got %+v", payload)
+	}
+	if managed, _ := payload["managed_process"].(bool); managed {
+		t.Fatalf("expected managed_process=false after reset, got %+v", payload)
+	}
+}
+
+func TestBrowserToolStartSessionStartsAndReturnsStatus(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	session.connectEndpointFn = func(endpoint string, timeout time.Duration) error {
+		session.ready = true
+		session.mode = BrowserModeDirect
+		session.endpoint = endpoint
+		session.debugURL = "ws://chrome.internal/devtools/page/2"
+		return nil
+	}
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action":         "start_session",
+		"mode":           "direct",
+		"debug_port":     float64(9555),
+		"debug_endpoint": "http://chrome.internal:9555",
+	})
+	if err != nil {
+		t.Fatalf("start_session returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("unmarshal start_session response: %v", err)
+	}
+	if ready, _ := payload["ready"].(bool); !ready {
+		t.Fatalf("expected ready=true after start, got %+v", payload)
+	}
+	if got, _ := payload["mode"].(string); got != string(BrowserModeDirect) {
+		t.Fatalf("expected direct mode after start, got %+v", payload)
+	}
+	if got, _ := payload["endpoint"].(string); got != "http://chrome.internal:9555" {
+		t.Fatalf("expected endpoint in payload, got %+v", payload)
+	}
+	if got, _ := payload["debug_url"].(string); got != "ws://chrome.internal/devtools/page/2" {
+		t.Fatalf("expected debug_url in payload, got %+v", payload)
+	}
+}
+
+func TestBrowserToolRestartSessionRestartsWithRequestedMode(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	session.ready = true
+	session.mode = BrowserModeRelay
+	session.endpoint = "http://chrome.internal:9333"
+	session.debugURL = "ws://chrome.internal/devtools/page/1"
+	session.cmd = &exec.Cmd{}
+	session.connectFn = func(port int, timeout time.Duration) error {
+		session.ready = true
+		session.endpoint = "http://127.0.0.1:9222"
+		session.debugURL = "ws://127.0.0.1/devtools/page/1"
+		return nil
+	}
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "restart_session",
+		"mode":   "direct",
+	})
+	if err != nil {
+		t.Fatalf("restart_session returned error: %v", err)
+	}
+	if out != "Browser session restarted" {
+		t.Fatalf("unexpected restart_session response: %q", out)
+	}
+
+	statusJSON, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "get_session",
+	})
+	if err != nil {
+		t.Fatalf("get_session after restart returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(statusJSON), &payload); err != nil {
+		t.Fatalf("unmarshal get_session response: %v", err)
+	}
+	if ready, _ := payload["ready"].(bool); !ready {
+		t.Fatalf("expected ready=true after restart, got %+v", payload)
+	}
+	if got, _ := payload["mode"].(string); got != string(BrowserModeDirect) {
+		t.Fatalf("expected direct mode after restart, got %+v", payload)
+	}
+	if got, _ := payload["endpoint"].(string); got != "http://127.0.0.1:9222" {
+		t.Fatalf("expected restarted endpoint in payload, got %+v", payload)
+	}
+}
+
+func TestBrowserToolCloseSessionStopsAndClearsStatus(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	session.ready = true
+	session.mode = BrowserModeDirect
+	session.endpoint = "http://127.0.0.1:9222"
+	session.debugURL = "ws://127.0.0.1/devtools/page/1"
+	session.cmd = &exec.Cmd{}
+
+	out, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "close_session",
+	})
+	if err != nil {
+		t.Fatalf("close_session returned error: %v", err)
+	}
+	if out != "Browser session closed" {
+		t.Fatalf("unexpected close_session response: %q", out)
+	}
+
+	statusJSON, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "get_session",
+	})
+	if err != nil {
+		t.Fatalf("get_session after close returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(statusJSON), &payload); err != nil {
+		t.Fatalf("unmarshal get_session response: %v", err)
+	}
+	if ready, _ := payload["ready"].(bool); ready {
+		t.Fatalf("expected ready=false after close, got %+v", payload)
+	}
+	if got, _ := payload["endpoint"].(string); got != "" {
+		t.Fatalf("expected empty endpoint after close, got %+v", payload)
+	}
+}
+
+func TestBrowserToolReloadRejectsWhenSessionNotReady(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+	session := installStubBrowserSession(t)
+	session.ready = false
+
+	_, err := tool.Execute(context.Background(), map[string]interface{}{
+		"action": "reload",
+	})
+	if err == nil {
+		t.Fatal("expected reload to reject when session is not ready")
+	}
+	if !strings.Contains(err.Error(), "browser session not ready") {
+		t.Fatalf("expected not-ready error, got %v", err)
+	}
+}
+
 func TestBrowserNetworkEntryFromRequest(t *testing.T) {
 	entry := browserNetworkEntryFromRequest(&network.RequestWillBeSentReply{
 		RequestID: "req-1",
@@ -1628,6 +1905,38 @@ func TestBrowserToolExecuteDispatchesAdvancedBrowserActions(t *testing.T) {
 		if err == nil {
 			t.Fatalf("expected %s to reach handler and fail on missing runtime inputs", action)
 		}
+	}
+}
+
+func TestBrowserToolBuildStorageScriptReturnsFullMapByDefault(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	script, err := tool.buildStorageScript("get_storage", map[string]interface{}{
+		"storage": "local",
+	})
+	if err != nil {
+		t.Fatalf("buildStorageScript returned error: %v", err)
+	}
+	if !strings.Contains(script, "Object.keys(storage).forEach") {
+		t.Fatalf("expected full storage iteration script, got %q", script)
+	}
+}
+
+func TestBrowserToolBuildStorageScriptReturnsSingleKeyLookupWhenKeyProvided(t *testing.T) {
+	tool := NewBrowserTool(newToolsTestLogger(t), true, 30, t.TempDir())
+
+	script, err := tool.buildStorageScript("get_storage", map[string]interface{}{
+		"storage": "local",
+		"key":     "session_token",
+	})
+	if err != nil {
+		t.Fatalf("buildStorageScript returned error: %v", err)
+	}
+	if !strings.Contains(script, "storage.getItem(\"session_token\")") {
+		t.Fatalf("expected single-key lookup script, got %q", script)
+	}
+	if strings.Contains(script, "Object.keys(storage).forEach") {
+		t.Fatalf("did not expect full storage iteration for keyed lookup, got %q", script)
 	}
 }
 

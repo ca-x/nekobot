@@ -49,6 +49,27 @@ type BrowserSession struct {
 	devtoolsFactory   func(endpoint string) browserDevTools
 }
 
+// Status returns a read-only snapshot of the current browser session state.
+func (s *BrowserSession) Status() browserSessionStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	status := browserSessionStatus{
+		Ready: bool(s != nil && s.ready),
+		Mode:  string(BrowserModeAuto),
+	}
+	if s == nil {
+		return status
+	}
+	if s.mode != "" {
+		status.Mode = string(s.mode)
+	}
+	status.Endpoint = strings.TrimSpace(s.endpoint)
+	status.DebugURL = strings.TrimSpace(s.debugURL)
+	status.ManagedProcess = s.cmd != nil
+	return status
+}
+
 type browserDevTools interface {
 	List(ctx context.Context) ([]*devtool.Target, error)
 	Create(ctx context.Context) (*devtool.Target, error)
@@ -270,6 +291,8 @@ func (s *BrowserSession) Stop() error {
 	s.ready = false
 	s.client = nil
 	s.conn = nil
+	s.cmd = nil
+	s.debugURL = ""
 	s.mode = BrowserModeAuto
 	s.endpoint = ""
 

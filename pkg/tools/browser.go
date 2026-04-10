@@ -76,8 +76,8 @@ func (b *BrowserTool) Parameters() map[string]interface{} {
 			"action": map[string]interface{}{
 				"type": "string",
 				"enum": []string{
-					"navigate", "screenshot", "execute_script",
-					"click", "type", "select", "get_html", "get_console", "get_network",
+				"navigate", "screenshot", "execute_script",
+					"click", "type", "select", "get_html", "get_console", "get_network", "get_session", "start_session", "reset_session", "restart_session", "close_session",
 					"get_text", "get_title", "get_url", "get_links", "get_cookies", "set_cookie", "clear_cookies", "get_meta", "get_images", "get_forms", "get_buttons", "get_tables", "get_lists", "get_inputs", "get_selects", "get_textareas", "get_headings", "wait", "scroll", "go_back", "go_forward",
 					"list_pages", "new_page", "activate_page", "close_page",
 					"get_storage", "set_storage", "remove_storage", "clear_storage",
@@ -225,6 +225,16 @@ func (b *BrowserTool) Execute(ctx context.Context, params map[string]interface{}
 		return b.getConsole(ctx, params)
 	case "get_network":
 		return b.getNetwork(ctx, params)
+	case "get_session":
+		return b.getSession(ctx, params)
+	case "start_session":
+		return b.startSession(params)
+	case "reset_session":
+		return b.resetSession()
+	case "restart_session":
+		return b.restartSession(params)
+	case "close_session":
+		return b.close()
 	case "get_text":
 		return b.getText(ctx, params)
 	case "get_title":
@@ -346,6 +356,14 @@ type browserNetworkEntry struct {
 	EncodedSize *int64 `json:"encoded_size,omitempty"`
 	ErrorText   string `json:"error_text,omitempty"`
 	Timestamp   string `json:"timestamp,omitempty"`
+}
+
+type browserSessionStatus struct {
+	Ready          bool   `json:"ready"`
+	Mode           string `json:"mode"`
+	Endpoint       string `json:"endpoint,omitempty"`
+	DebugURL       string `json:"debug_url,omitempty"`
+	ManagedProcess bool   `json:"managed_process"`
 }
 
 // navigate navigates to a URL.
@@ -1034,6 +1052,59 @@ func (b *BrowserTool) getHTML(ctx context.Context, params map[string]interface{}
 	}
 
 	return html.OuterHTML, nil
+}
+
+func (b *BrowserTool) getSession(ctx context.Context, params map[string]interface{}) (string, error) {
+	sessionMgr := GetBrowserSession(b.log)
+	status := sessionMgr.Status()
+	data, err := json.Marshal(status)
+	if err != nil {
+		return "", fmt.Errorf("marshal browser session status: %w", err)
+	}
+	return string(data), nil
+}
+
+func (b *BrowserTool) startSession(params map[string]interface{}) (string, error) {
+	sessionMgr := GetBrowserSession(b.log)
+	if !sessionMgr.IsReady() {
+		opts, err := b.startOptions(params)
+		if err != nil {
+			return "", err
+		}
+		if err := sessionMgr.StartWithOptions(b.timeout, opts); err != nil {
+			return "", fmt.Errorf("failed to start browser: %w", err)
+		}
+	}
+
+	status := sessionMgr.Status()
+	data, err := json.Marshal(status)
+	if err != nil {
+		return "", fmt.Errorf("marshal browser session status: %w", err)
+	}
+	return string(data), nil
+}
+
+func (b *BrowserTool) resetSession() (string, error) {
+	sessionMgr := GetBrowserSession(b.log)
+	if err := sessionMgr.Stop(); err != nil {
+		return "", err
+	}
+	return "Browser session reset", nil
+}
+
+func (b *BrowserTool) restartSession(params map[string]interface{}) (string, error) {
+	sessionMgr := GetBrowserSession(b.log)
+	if err := sessionMgr.Stop(); err != nil {
+		return "", err
+	}
+	opts, err := b.startOptions(params)
+	if err != nil {
+		return "", err
+	}
+	if err := sessionMgr.StartWithOptions(b.timeout, opts); err != nil {
+		return "", fmt.Errorf("failed to restart browser: %w", err)
+	}
+	return "Browser session restarted", nil
 }
 
 func (b *BrowserTool) getNetwork(ctx context.Context, params map[string]interface{}) (string, error) {
@@ -1911,6 +1982,13 @@ func (b *BrowserTool) buildStorageScript(action string, params map[string]interf
 
 	switch action {
 	case "get_storage":
+		key := stringParam(params, "key")
+		if key != "" {
+			return fmt.Sprintf(`(() => {
+  const storage = %s;
+  return JSON.stringify({key: %q, value: storage.getItem(%q)});
+})()`, storageExpr, key, key), nil
+		}
 		return fmt.Sprintf(`(() => {
   const storage = %s;
   const out = {};
