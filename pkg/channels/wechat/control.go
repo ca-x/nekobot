@@ -14,8 +14,13 @@ import (
 	"time"
 
 	"nekobot/pkg/acpstate"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/config"
+	"nekobot/pkg/externalagent"
+	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
+	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -51,12 +56,24 @@ type RuntimeCreateRequest struct {
 	Workdir string
 }
 
+// RuntimeApprovalResult describes a resolve-orchestrator approval decision.
+type RuntimeApprovalResult struct {
+	Status       string
+	RequestID    string
+	Reason       string
+	LaunchPolicy map[string]any
+}
+
 // ControlService manages WeChat runtime commands on top of tool sessions.
 type ControlService struct {
 	cfg        *config.Config
+	log        *logger.Logger
 	sessions   *toolsessions.Manager
 	process    *process.Manager
 	bindings   *RuntimeBindingService
+	entClient  *ent.Client
+	approval   *approval.Manager
+	taskStore  *tasks.Store
 	acpMu      sync.Mutex
 	acp        map[string]acpConversationClient
 	pendingMu  sync.Mutex
@@ -106,6 +123,8 @@ type acpPendingOption struct {
 type runtimePendingInteraction struct {
 	SessionID string
 	Prompt    *acpPendingPrompt
+	RequestID string
+	Driver    string
 	CreatedAt time.Time
 }
 
@@ -133,17 +152,25 @@ type ConversationRuntime struct {
 // NewControlService creates a WeChat runtime control service.
 func NewControlService(
 	cfg *config.Config,
+	log *logger.Logger,
 	sessionMgr *toolsessions.Manager,
 	processMgr *process.Manager,
 	bindingSvc *RuntimeBindingService,
+	entClient *ent.Client,
+	approvalMgr *approval.Manager,
+	taskStore *tasks.Store,
 ) *ControlService {
 	return &ControlService{
-		cfg:      cfg,
-		sessions: sessionMgr,
-		process:  processMgr,
-		bindings: bindingSvc,
-		acp:      map[string]acpConversationClient{},
-		pending:  map[string]*runtimePendingInteraction{},
+		cfg:       cfg,
+		log:       log,
+		sessions:  sessionMgr,
+		process:   processMgr,
+		bindings:  bindingSvc,
+		entClient: entClient,
+		approval:  approvalMgr,
+		taskStore: taskStore,
+		acp:       map[string]acpConversationClient{},
+		pending:   map[string]*runtimePendingInteraction{},
 	}
 }
 
@@ -212,7 +239,7 @@ func parseNewControlCommand(input string) (controlCommand, error) {
 	parts := strings.SplitN(strings.TrimSpace(input), " -- ", 2)
 	left := strings.Fields(parts[0])
 	if len(left) < 2 {
-		return controlCommand{}, fmt.Errorf("usage: /new <name> [--driver <acp|codex|process>] [--cwd <dir>] -- <command>")
+		return controlCommand{}, fmt.Errorf("usage: /new <name> [--driver <acp|codex|claude|opencode|aider|process>] [--cwd <dir>] -- <command>")
 	}
 
 	cmd := controlCommand{
@@ -221,14 +248,19 @@ func parseNewControlCommand(input string) (controlCommand, error) {
 	}
 
 	spec := RuntimeSpec{Driver: "process"}
+	requestedManagedTool := ""
 	for i := 2; i < len(left); i++ {
 		switch left[i] {
 		case "--driver":
 			i++
 			if i >= len(left) {
-				return controlCommand{}, fmt.Errorf("usage: --driver <acp|codex|process>")
+				return controlCommand{}, fmt.Errorf("usage: --driver <acp|codex|claude|opencode|aider|process>")
 			}
-			spec.Driver = strings.TrimSpace(left[i])
+			rawDriver := strings.TrimSpace(left[i])
+			if rawDriver != "" && normalizeManagedDriver(rawDriver) == "codex" && strings.ToLower(rawDriver) != "codex" {
+				requestedManagedTool = strings.ToLower(rawDriver)
+			}
+			spec.Driver = normalizeManagedDriver(rawDriver)
 		case "--cwd":
 			i++
 			if i >= len(left) {
@@ -243,37 +275,44 @@ func parseNewControlCommand(input string) (controlCommand, error) {
 	if len(parts) == 2 {
 		spec.Command = strings.TrimSpace(parts[1])
 	}
-	if spec.Command == "" && strings.EqualFold(spec.Driver, "codex") {
-		spec.Command = "codex"
+	if spec.Tool == "" && requestedManagedTool != "" {
+		spec.Tool = requestedManagedTool
+	}
+	if spec.Command == "" && isManagedExternalAgentDriver(spec.Driver) {
+		if strings.TrimSpace(spec.Tool) != "" {
+			spec.Command = strings.TrimSpace(spec.Tool)
+		} else {
+			spec.Command = defaultManagedDriverTool(spec.Driver)
+		}
 	}
 	if spec.Command == "" && strings.EqualFold(spec.Driver, "acp") {
 		spec.Command = cmd.RuntimeName
 	}
 	spec.Tool = strings.TrimSpace(spec.Command)
-	if spec.Tool == "" && strings.EqualFold(spec.Driver, "codex") {
-		spec.Tool = "codex"
+	if spec.Tool == "" && isManagedExternalAgentDriver(spec.Driver) {
+		spec.Tool = defaultManagedDriverTool(spec.Driver)
 	}
 	cmd.Spec = spec
 	return cmd, nil
 }
 
-// CreateRuntime creates a tool session, launches its process, and binds it to the WeChat chat.
-func (s *ControlService) CreateRuntime(
+// ResolveRuntime creates or validates a WeChat runtime session without always starting it.
+func (s *ControlService) ResolveRuntime(
 	ctx context.Context,
 	chatID string,
 	req RuntimeCreateRequest,
-) (*toolsessions.Session, error) {
+) (*toolsessions.Session, *RuntimeApprovalResult, error) {
 	if s == nil || s.sessions == nil || s.process == nil || s.bindings == nil {
-		return nil, fmt.Errorf("wechat runtime control is not available")
+		return nil, nil, fmt.Errorf("wechat runtime control is not available")
 	}
 	chatID = strings.TrimSpace(chatID)
 	if chatID == "" {
-		return nil, fmt.Errorf("chat id is required")
+		return nil, nil, fmt.Errorf("chat id is required")
 	}
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, fmt.Errorf("runtime name is required")
+		return nil, nil, fmt.Errorf("runtime name is required")
 	}
 
 	preset, err := BuildRuntimePreset(s.cfg, RuntimeSpec{
@@ -283,12 +322,12 @@ func (s *ControlService) CreateRuntime(
 		Workdir: req.Workdir,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	title := name
 	sessionState := toolsessions.StateRunning
-	if preset.Driver == "acp" {
+	if preset.Driver == "acp" || isManagedExternalAgentDriver(preset.Driver) {
 		sessionState = toolsessions.StateDetached
 	}
 	sess, err := s.sessions.CreateSession(ctx, toolsessions.CreateSessionInput{
@@ -304,27 +343,56 @@ func (s *ControlService) CreateRuntime(
 		Metadata:        preset.Metadata,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	metadata := cloneSessionMetadata(sess.Metadata)
+	metadata["chat_id"] = strings.TrimSpace(chatID)
+	if err := s.sessions.UpdateSessionMetadata(ctx, sess.ID, metadata); err != nil {
+		return nil, nil, err
+	}
+	sess.Metadata = metadata
+
+	if err := s.bindings.BindConversation(ctx, chatID, sess.ID); err != nil {
+		return nil, nil, err
 	}
 
+	approvalResult := (*RuntimeApprovalResult)(nil)
 	switch preset.Driver {
 	case "acp":
 		if _, err := s.getACPClient(ctx, sess); err != nil {
 			_ = s.sessions.TerminateSession(context.Background(), sess.ID, "failed to start acp runtime: "+err.Error())
-			return nil, fmt.Errorf("start acp runtime: %w", err)
+			return nil, nil, fmt.Errorf("start acp runtime: %w", err)
 		}
 		if err := s.sessions.TouchSession(ctx, sess.ID, toolsessions.StateRunning); err != nil {
-			return nil, fmt.Errorf("touch acp runtime session: %w", err)
+			return nil, nil, fmt.Errorf("touch acp runtime session: %w", err)
+		}
+	case "codex", "claude", "opencode", "aider":
+		agentKind := runtimeManagedAgentKind(sess)
+		approvalResult, err = s.applyManagedResolveOrchestrator(ctx, sess, agentKind, req.Tool)
+		if err != nil {
+			_ = s.sessions.TerminateSession(context.Background(), sess.ID, "failed to resolve managed runtime: "+err.Error())
+			return nil, nil, fmt.Errorf("resolve managed runtime: %w", err)
+		}
+		if approvalResult != nil {
+			break
+		}
+		if err := externalagent.EnsureProcess(
+			ctx,
+			s.cfg.WorkspacePath(),
+			wechatProcessProbe{s.process},
+			s.process,
+			s.sessions,
+			nil,
+			sess,
+		); err != nil {
+			_ = s.sessions.TerminateSession(context.Background(), sess.ID, "failed to start managed runtime: "+err.Error())
+			return nil, nil, fmt.Errorf("start managed runtime: %w", err)
 		}
 	default:
 		if err := s.process.Start(context.Background(), sess.ID, preset.Command, preset.Workdir); err != nil {
 			_ = s.sessions.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
-			return nil, fmt.Errorf("start runtime process: %w", err)
+			return nil, nil, fmt.Errorf("start runtime process: %w", err)
 		}
-	}
-
-	if err := s.bindings.BindConversation(ctx, chatID, sess.ID); err != nil {
-		return nil, err
 	}
 
 	_ = s.sessions.AppendEvent(ctx, sess.ID, "wechat_runtime_created", map[string]interface{}{
@@ -332,7 +400,156 @@ func (s *ControlService) CreateRuntime(
 		"tool":    preset.Tool,
 		"chat_id": strings.TrimSpace(chatID),
 	})
-	return s.sessions.GetSession(ctx, sess.ID)
+	session, err := s.sessions.GetSession(ctx, sess.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return session, approvalResult, nil
+}
+
+// CreateRuntime creates a tool session, launches its process, and binds it to the WeChat chat.
+func (s *ControlService) CreateRuntime(
+	ctx context.Context,
+	chatID string,
+	req RuntimeCreateRequest,
+) (*toolsessions.Session, error) {
+	session, approvalResult, err := s.ResolveRuntime(ctx, chatID, req)
+	if err != nil {
+		return nil, err
+	}
+	if approvalResult != nil {
+		toolLabel := runtimeApprovalToolLabel(session)
+		switch approvalResult.Status {
+		case "pending":
+			return nil, fmt.Errorf("%s runtime approval pending", toolLabel)
+		case "denied":
+			if approvalResult.Reason != "" {
+				return nil, fmt.Errorf("%s runtime denied: %s", toolLabel, approvalResult.Reason)
+			}
+			return nil, fmt.Errorf("%s runtime denied", toolLabel)
+		default:
+			return nil, fmt.Errorf("%s runtime approval unresolved", toolLabel)
+		}
+	}
+	return session, nil
+}
+
+type wechatProcessProbe struct {
+	mgr *process.Manager
+}
+
+func (p wechatProcessProbe) HasProcess(sessionID string) bool {
+	if p.mgr == nil {
+		return false
+	}
+	_, err := p.mgr.GetStatus(sessionID)
+	return err == nil
+}
+
+func (s *ControlService) applyManagedResolveOrchestrator(
+	ctx context.Context,
+	sess *toolsessions.Session,
+	agentKind string,
+	requestedTool string,
+) (*RuntimeApprovalResult, error) {
+	orchestrator := externalagent.NewResolveOrchestrator(s.cfg, s.log, s.entClient, s.approval, s.taskStore)
+	launchPolicy, err := orchestrator.PreviewLaunchPolicy(ctx, sess, agentKind, requestedTool)
+	if err != nil {
+		return nil, err
+	}
+	approvalResult, handled, err := orchestrator.HandleLaunchApproval(sess, launchPolicy)
+	if err != nil {
+		return nil, err
+	}
+	if !handled {
+		return nil, nil
+	}
+
+	summary := externalagent.ApprovalSummaryFromResult(approvalResult, launchPolicy)
+	result := &RuntimeApprovalResult{
+		Status:       summary.Status,
+		RequestID:    summary.RequestID,
+		Reason:       summary.Reason,
+		LaunchPolicy: summary.LaunchPolicy,
+	}
+	if result.Status == "pending" {
+		metadata := cloneSessionMetadata(sess.Metadata)
+		metadata["launch_policy"] = launchPolicy
+		if err := s.sessions.UpdateSessionMetadata(ctx, sess.ID, metadata); err != nil {
+			return nil, fmt.Errorf("persist managed launch policy metadata: %w", err)
+		}
+		sess.Metadata = metadata
+		s.setPendingInteraction(strings.TrimSpace(metadataStringValue(metadata, "chat_id")), &runtimePendingInteraction{
+			SessionID: sess.ID,
+			RequestID: result.RequestID,
+			Driver:    agentKind,
+			CreatedAt: time.Now(),
+		})
+		return result, nil
+	}
+	if result.Status == "denied" {
+		return result, nil
+	}
+	return result, nil
+}
+
+func runtimeManagedAgentKind(session *toolsessions.Session) string {
+	if session == nil {
+		return "codex"
+	}
+	agentKind := strings.TrimSpace(strings.ToLower(session.Tool))
+	if agentKind == "" {
+		agentKind = "codex"
+	}
+	return agentKind
+}
+
+func isManagedExternalAgentDriver(driver string) bool {
+	switch strings.TrimSpace(strings.ToLower(driver)) {
+	case "codex", "claude", "opencode", "aider":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeManagedDriver(driver string) string {
+	switch strings.TrimSpace(strings.ToLower(driver)) {
+	case "claude", "opencode", "aider":
+		return "codex"
+	default:
+		return strings.TrimSpace(strings.ToLower(driver))
+	}
+}
+
+func defaultManagedDriverTool(driver string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(driver))
+	if trimmed == "codex" {
+		return "codex"
+	}
+	return trimmed
+}
+
+func runtimeApprovalToolLabel(session *toolsessions.Session) string {
+	if session == nil {
+		return "runtime"
+	}
+	tool := strings.TrimSpace(session.Tool)
+	if tool == "" {
+		return "runtime"
+	}
+	return tool
+}
+
+func cloneSessionMetadata(src map[string]interface{}) map[string]interface{} {
+	if len(src) == 0 {
+		return map[string]interface{}{}
+	}
+	dst := make(map[string]interface{}, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
 }
 
 // GetRuntimeStatus returns the current status snapshot for a named runtime.
@@ -776,9 +993,12 @@ func (s *ControlService) ResolvePendingInteraction(
 	if err != nil {
 		return "", true, err
 	}
-	if target == nil || target.ID != pending.SessionID || runtimeDriver(target) != "acp" {
+	if target == nil || target.ID != pending.SessionID {
 		s.clearPendingInteraction(chatID)
 		return "", false, nil
+	}
+	if runtimeDriver(target) != "acp" {
+		return s.resolveManagedPendingInteraction(ctx, chatID, target, pending, action)
 	}
 
 	client, err := s.getACPClient(ctx, target)
@@ -825,6 +1045,64 @@ func (s *ControlService) ResolvePendingInteraction(
 		"reply":   reply,
 	})
 	return reply, true, nil
+}
+
+func (s *ControlService) resolveManagedPendingInteraction(
+	ctx context.Context,
+	chatID string,
+	target *toolsessions.Session,
+	pending *runtimePendingInteraction,
+	action *interactionAction,
+) (string, bool, error) {
+	if pending == nil || strings.TrimSpace(pending.RequestID) == "" || s.approval == nil {
+		s.clearPendingInteraction(chatID)
+		return "", false, nil
+	}
+
+	switch action.Type {
+	case interactionActionConfirm:
+		if err := s.approval.Approve(pending.RequestID); err != nil {
+			return "", true, err
+		}
+		s.approval.SetSessionMode(target.ID, approval.ModeAuto)
+		if s.taskStore != nil {
+			s.taskStore.ClearSessionPendingAction(target.ID)
+			s.taskStore.SetSessionPermissionMode(target.ID, string(approval.ModeAuto))
+		}
+		if err := externalagent.EnsureProcess(ctx, s.cfg.WorkspacePath(), wechatProcessProbe{s.process}, s.process, s.sessions, nil, target); err != nil {
+			return "", true, err
+		}
+		s.clearPendingInteraction(chatID)
+		return "已允许，继续启动中。", true, nil
+	case interactionActionDeny:
+		if err := s.approval.Deny(pending.RequestID, "denied from wechat interaction"); err != nil {
+			return "", true, err
+		}
+		if s.taskStore != nil {
+			s.taskStore.ClearSessionPendingAction(target.ID)
+		}
+		s.clearPendingInteraction(chatID)
+		return "已拒绝。", true, nil
+	case interactionActionSelect:
+		switch strings.TrimSpace(action.Value) {
+		case "1":
+			return s.resolveManagedPendingInteraction(ctx, chatID, target, pending, &interactionAction{Type: interactionActionConfirm})
+		case "2":
+			return s.resolveManagedPendingInteraction(ctx, chatID, target, pending, &interactionAction{Type: interactionActionDeny})
+		default:
+			return "当前操作仅支持 /select 1 允许，或 /select 2 拒绝。", true, nil
+		}
+	default:
+		return "", false, nil
+	}
+}
+
+func metadataStringValue(metadata map[string]interface{}, key string) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	value, _ := metadata[key].(string)
+	return strings.TrimSpace(value)
 }
 
 func (s *ControlService) renderACPLogs(ctx context.Context, sessionID string, limit int) (string, error) {

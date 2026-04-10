@@ -68,6 +68,12 @@ func TestHandleInitStatusIncludesBootstrapSummary(t *testing.T) {
 			Logger     config.LoggerConfig  `json:"logger"`
 			Gateway    config.GatewayConfig `json:"gateway"`
 			WebUI      config.WebUIConfig   `json:"webui"`
+			Webhook    config.WebhookConfig `json:"webhook"`
+			WorkspaceStatus struct {
+				Path             string   `json:"path"`
+				Bootstrapped     bool     `json:"bootstrapped"`
+				MissingBootstrap []string `json:"missing_bootstrap"`
+			} `json:"workspace_status"`
 		} `json:"bootstrap"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
@@ -94,6 +100,18 @@ func TestHandleInitStatusIncludesBootstrapSummary(t *testing.T) {
 	}
 	if payload.Bootstrap.WebUI.Port != 19191 || payload.Bootstrap.WebUI.PublicBaseURL != "https://bot.example.com" {
 		t.Fatalf("unexpected webui: %+v", payload.Bootstrap.WebUI)
+	}
+	if payload.Bootstrap.Webhook.Path != cfg.Webhook.Path {
+		t.Fatalf("unexpected webhook config: %+v", payload.Bootstrap.Webhook)
+	}
+	if payload.Bootstrap.WorkspaceStatus.Path != cfg.Agents.Defaults.Workspace {
+		t.Fatalf("unexpected workspace status path: %+v", payload.Bootstrap.WorkspaceStatus)
+	}
+	if payload.Bootstrap.WorkspaceStatus.Bootstrapped {
+		t.Fatalf("expected workspace to start unbootstrapped in init status, got %+v", payload.Bootstrap.WorkspaceStatus)
+	}
+	if len(payload.Bootstrap.WorkspaceStatus.MissingBootstrap) == 0 {
+		t.Fatalf("expected missing bootstrap files, got %+v", payload.Bootstrap.WorkspaceStatus)
 	}
 }
 
@@ -208,6 +226,45 @@ func TestHandleInitPasswordPersistsBootstrapSectionsAndReturnsRestartHint(t *tes
 	}
 	if reloaded.WebUI.Port != 19191 || reloaded.WebUI.PublicBaseURL != "https://bot.example.com" {
 		t.Fatalf("webui not persisted: %+v", reloaded.WebUI)
+	}
+}
+
+func TestHandleInitRepairWorkspaceBootstrapsMissingFiles(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
+
+	s := &Server{
+		config: cfg,
+		logger: newTestLogger(t),
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/init/repair-workspace", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleInitRepairWorkspace(ctx); err != nil {
+		t.Fatalf("handleInitRepairWorkspace failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Status string `json:"status"`
+		WorkspaceStatus struct {
+			Bootstrapped bool `json:"bootstrapped"`
+		} `json:"workspace_status"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload failed: %v", err)
+	}
+	if payload.Status != "repaired" {
+		t.Fatalf("expected repaired status, got %+v", payload)
+	}
+	if !payload.WorkspaceStatus.Bootstrapped {
+		t.Fatalf("expected workspace to be bootstrapped, got %+v", payload.WorkspaceStatus)
 	}
 }
 

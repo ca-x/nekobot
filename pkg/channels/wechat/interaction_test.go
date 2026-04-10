@@ -319,7 +319,7 @@ func TestResolvePendingInteractionDelegatesToRuntimeApprovals(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
 		return &fakeACPInteractiveClient{
 			prompt: "Claude 需要确认:\n\n是否允许执行 ReadFile？\n\n/yes 允许，/no 拒绝。",
@@ -375,7 +375,7 @@ func TestResolvePendingInteractionDelegatesNumericSelectToRuntimeApprovals(t *te
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	fake := &fakeACPInteractiveClient{
 		prompt: "运行时需要确认: WriteFile\n\n1. 允许一次\n2. 总是允许\n3. 拒绝\n\n回复 /select N 选择对应选项。",
 		reply:  "runtime resumed",

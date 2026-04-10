@@ -2,12 +2,16 @@ package wechat
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"nekobot/pkg/approval"
 	"nekobot/pkg/config"
+	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
+	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -62,6 +66,17 @@ func TestParseControlCommandParsesUseAndNew(t *testing.T) {
 	if cmd.Spec.Command != "codex-acp" {
 		t.Fatalf("expected command codex-acp, got %q", cmd.Spec.Command)
 	}
+
+	cmd, err = parseControlCommand("/new claude1 --driver claude")
+	if err != nil {
+		t.Fatalf("parseControlCommand(managed claude) failed: %v", err)
+	}
+	if cmd.Spec.Driver != "codex" {
+		t.Fatalf("expected managed driver codex, got %q", cmd.Spec.Driver)
+	}
+	if cmd.Spec.Tool != "claude" || cmd.Spec.Command != "claude" {
+		t.Fatalf("expected managed claude tool/command, got tool=%q command=%q", cmd.Spec.Tool, cmd.Spec.Command)
+	}
 }
 
 func TestControlServiceCreateBindAndList(t *testing.T) {
@@ -84,7 +99,7 @@ func TestControlServiceCreateBindAndList(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	ctx := context.Background()
 
 	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
@@ -170,7 +185,7 @@ func TestControlServiceDescribeBindingsListsEachChatBinding(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	ctx := context.Background()
 
 	if _, err := controlSvc.CreateRuntime(ctx, "chat-a", RuntimeCreateRequest{
@@ -217,7 +232,7 @@ func TestControlServiceCreateRuntimeRejectsEmptyChatIDBeforeCreatingSession(t *t
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	ctx := context.Background()
 
 	created, err := controlSvc.CreateRuntime(ctx, "   ", RuntimeCreateRequest{
@@ -261,7 +276,7 @@ func TestControlServiceBindRuntimeRejectsEmptyChatIDBeforeBinding(t *testing.T) 
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	ctx := context.Background()
 
 	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
@@ -310,7 +325,7 @@ func TestControlServiceSendToRuntimeRejectsEmptyChatIDBeforeExplicitRouting(t *t
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	ctx := context.Background()
 
 	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
@@ -358,7 +373,7 @@ func TestControlServiceCreateACPRuntimeDoesNotStartPTYAndCanStop(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
 		return &fakeACPClient{reply: "ready"}, nil
 	}
@@ -428,7 +443,7 @@ func TestControlServiceRouteMessageToBoundRuntime(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	ctx := context.Background()
 
 	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
@@ -483,7 +498,7 @@ func TestControlServiceReadRuntimeOutputReturnsOnlyNewChunks(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	ctx := context.Background()
 
 	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
@@ -568,7 +583,7 @@ func TestControlServiceGetRuntimeLogsReturnsRecentOutput(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	ctx := context.Background()
 
 	_, err = controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
@@ -618,7 +633,7 @@ func TestControlServiceGetRuntimeLogsReturnsACPEvents(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	fake := &fakeACPInteractiveClient{
 		prompt: "Claude 需要确认:\n\n是否允许执行 ReadFile？\n\n/yes 允许，/no 拒绝。",
 		reply:  "继续执行后的最终回复",
@@ -677,7 +692,7 @@ func TestControlServiceReadRuntimeOutputReturnsACPEventsIncrementally(t *testing
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	fake := &fakeACPInteractiveClient{
 		prompt: "Claude 需要确认:\n\n是否允许执行 ReadFile？\n\n/yes 允许，/no 拒绝。",
 		reply:  "继续执行后的最终回复",
@@ -775,7 +790,7 @@ func TestControlServiceRestartAndDeleteRuntime(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	ctx := context.Background()
 
 	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
@@ -828,6 +843,368 @@ func TestControlServiceRestartAndDeleteRuntime(t *testing.T) {
 	}
 	if resolved != nil {
 		t.Fatalf("expected chat-2 binding to be cleared after delete, got %+v", resolved)
+	}
+}
+
+func TestControlServiceCreateCodexRuntimeAppliesExternalAgentPolicy(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:    "code1",
+		Driver:  "codex",
+		Workdir: "projects/demo",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+	if created.Tool != "codex" {
+		t.Fatalf("expected tool codex, got %q", created.Tool)
+	}
+	if created.Command != "codex" {
+		t.Fatalf("expected command codex, got %q", created.Command)
+	}
+	want := filepath.Join(cfg.WorkspacePath(), "projects", "demo")
+	if created.Workdir != want {
+		t.Fatalf("expected workdir %q, got %q", want, created.Workdir)
+	}
+}
+
+func TestControlServiceCreateManagedClaudeRuntimeUsesExternalAgentPolicy(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:    "claude1",
+		Driver:  "codex",
+		Tool:    "claude",
+		Workdir: "agents/claude",
+	})
+	if err != nil {
+		t.Fatalf("CreateRuntime failed: %v", err)
+	}
+	if created.Tool != "claude" {
+		t.Fatalf("expected tool claude, got %q", created.Tool)
+	}
+	if created.Command != "claude" {
+		t.Fatalf("expected command claude, got %q", created.Command)
+	}
+	want := filepath.Join(cfg.WorkspacePath(), "agents", "claude")
+	if created.Workdir != want {
+		t.Fatalf("expected workdir %q, got %q", want, created.Workdir)
+	}
+	if runtimeDriver(created) != "codex" {
+		t.Fatalf("expected managed runtime driver codex, got %q", runtimeDriver(created))
+	}
+}
+
+func TestControlServiceCreateCodexRuntimeRejectsWorkspaceOutsideConfiguredRoot(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
+	ctx := context.Background()
+
+	created, err := controlSvc.CreateRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:    "code1",
+		Driver:  "codex",
+		Workdir: filepath.Join(t.TempDir(), "outside"),
+	})
+	if err == nil {
+		t.Fatalf("expected workspace restriction error, got session %+v", created)
+	}
+	if !strings.Contains(err.Error(), "workspace must stay within configured workspace") {
+		t.Fatalf("expected workspace restriction error, got %v", err)
+	}
+}
+
+func TestControlServiceResolveCodexRuntimeReturnsPendingApprovalWithoutStartingProcess(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+	cfg.Approval.Mode = "manual"
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, approval.NewManager(approval.Config{Mode: approval.ModeManual}), tasks.NewStore())
+	ctx := context.Background()
+
+	created, approvalResult, err := controlSvc.ResolveRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "code1",
+		Driver: "codex",
+	})
+	if err != nil {
+		t.Fatalf("ResolveRuntime failed: %v", err)
+	}
+	if approvalResult == nil {
+		t.Fatal("expected pending approval result")
+	}
+	if approvalResult.Status != "pending" || approvalResult.RequestID == "" {
+		t.Fatalf("expected pending approval with request id, got %+v", approvalResult)
+	}
+	if created == nil {
+		t.Fatal("expected resolved session")
+	}
+	if created.State != toolsessions.StateDetached {
+		t.Fatalf("expected detached session while pending, got %q", created.State)
+	}
+	if _, err := processMgr.GetStatus(created.ID); err == nil {
+		t.Fatalf("expected process to stay stopped while approval is pending")
+	}
+}
+
+func TestControlServiceResolveCodexRuntimeReturnsDeniedApproval(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+	cfg.Approval.Mode = "auto"
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	rules, err := permissionrules.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new permission rule manager: %v", err)
+	}
+	if _, err := rules.Create(context.Background(), permissionrules.Rule{
+		ToolName: "codex",
+		Action:   permissionrules.ActionDeny,
+		Priority: 50,
+		Enabled:  true,
+	}); err != nil {
+		t.Fatalf("seed permission rule failed: %v", err)
+	}
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), tasks.NewStore())
+	ctx := context.Background()
+
+	created, approvalResult, err := controlSvc.ResolveRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "code1",
+		Driver: "codex",
+	})
+	if err != nil {
+		t.Fatalf("ResolveRuntime failed: %v", err)
+	}
+	if approvalResult == nil {
+		t.Fatal("expected denied approval result")
+	}
+	if approvalResult.Status != "denied" {
+		t.Fatalf("expected denied approval, got %+v", approvalResult)
+	}
+	if created == nil {
+		t.Fatal("expected resolved session")
+	}
+	if _, err := processMgr.GetStatus(created.ID); err == nil {
+		t.Fatalf("expected process to stay stopped when denied")
+	}
+}
+
+func TestControlServiceResolvePendingInteractionContinuesManagedRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+	cfg.Approval.Mode = "manual"
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, approval.NewManager(approval.Config{Mode: approval.ModeManual}), tasks.NewStore())
+	ctx := context.Background()
+
+	created, approvalResult, err := controlSvc.ResolveRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "code1",
+		Driver: "codex",
+	})
+	if err != nil {
+		t.Fatalf("ResolveRuntime failed: %v", err)
+	}
+	if approvalResult == nil || approvalResult.RequestID == "" {
+		t.Fatalf("expected pending approval, got %+v", approvalResult)
+	}
+
+	reply, handled, err := controlSvc.ResolvePendingInteraction(ctx, "chat-1", &interactionAction{Type: interactionActionConfirm})
+	if err != nil {
+		t.Fatalf("ResolvePendingInteraction failed: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected pending managed interaction to be handled")
+	}
+	if !strings.Contains(reply, "继续启动") {
+		t.Fatalf("unexpected confirm reply: %q", reply)
+	}
+	if _, err := processMgr.GetStatus(created.ID); err != nil {
+		t.Fatalf("expected process status after confirm, got %v", err)
+	}
+}
+
+func TestControlServiceResolvePendingInteractionDeniesManagedRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+	cfg.Approval.Mode = "manual"
+
+	log := newRuntimeTestLogger(t)
+	client := newRuntimeTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	sessionMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	processMgr := process.NewManager(log)
+	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, approval.NewManager(approval.Config{Mode: approval.ModeManual}), tasks.NewStore())
+	ctx := context.Background()
+
+	created, approvalResult, err := controlSvc.ResolveRuntime(ctx, "chat-1", RuntimeCreateRequest{
+		Name:   "code1",
+		Driver: "codex",
+	})
+	if err != nil {
+		t.Fatalf("ResolveRuntime failed: %v", err)
+	}
+	if approvalResult == nil || approvalResult.RequestID == "" {
+		t.Fatalf("expected pending approval, got %+v", approvalResult)
+	}
+
+	reply, handled, err := controlSvc.ResolvePendingInteraction(ctx, "chat-1", &interactionAction{Type: interactionActionDeny})
+	if err != nil {
+		t.Fatalf("ResolvePendingInteraction failed: %v", err)
+	}
+	if !handled {
+		t.Fatal("expected pending managed interaction to be handled")
+	}
+	if !strings.Contains(reply, "已拒绝") {
+		t.Fatalf("unexpected deny reply: %q", reply)
+	}
+	if _, err := processMgr.GetStatus(created.ID); err == nil {
+		t.Fatalf("expected process to stay stopped after deny")
+	}
+}
+
+func TestFormatRuntimeApprovalReplyPending(t *testing.T) {
+	reply := formatRuntimeApprovalReply(&toolsessions.Session{
+		Title: "code1",
+		Tool:  "codex",
+	}, &RuntimeApprovalResult{
+		Status:    "pending",
+		RequestID: "approval-1",
+	})
+	if !strings.Contains(reply, "Status: pending") {
+		t.Fatalf("expected pending status in reply, got %q", reply)
+	}
+	if !strings.Contains(reply, "Approval request: approval-1") {
+		t.Fatalf("expected approval request id in reply, got %q", reply)
+	}
+}
+
+func TestFormatRuntimeApprovalReplyDenied(t *testing.T) {
+	reply := formatRuntimeApprovalReply(&toolsessions.Session{
+		Title: "code1",
+		Tool:  "codex",
+	}, &RuntimeApprovalResult{
+		Status: "denied",
+		Reason: "denied by approval policy",
+	})
+	if !strings.Contains(reply, "Status: denied") {
+		t.Fatalf("expected denied status in reply, got %q", reply)
+	}
+	if !strings.Contains(reply, "Reason: denied by approval policy") {
+		t.Fatalf("expected denied reason in reply, got %q", reply)
 	}
 }
 
@@ -936,7 +1313,7 @@ func TestControlServiceSendToACPRuntimeReturnsDirectReply(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
 		return &fakeACPClient{reply: "acp reply"}, nil
 	}
@@ -995,7 +1372,7 @@ func TestControlServiceSendToACPRuntimeReturnsPendingPrompt(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	fake := &fakeACPInteractiveClient{
 		prompt: "Claude 需要确认:\n\n是否允许执行 ReadFile？\n\n/yes 允许，/no 拒绝。",
 		reply:  "done",
@@ -1042,7 +1419,7 @@ func TestControlServiceResolvePendingInteractionContinuesACPRuntime(t *testing.T
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	fake := &fakeACPInteractiveClient{
 		prompt: "Claude 需要确认:\n\n是否允许执行 ReadFile？\n\n/yes 允许，/no 拒绝。",
 		reply:  "继续执行后的最终回复",
@@ -1098,7 +1475,7 @@ func TestControlServiceResolvePendingInteractionSelectsACPOption(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	fake := &fakeACPInteractiveClient{
 		prompt: "运行时需要确认: WriteFile\n\n1. 允许一次\n2. 总是允许\n3. 拒绝\n\n回复 /select N 选择对应选项。",
 		reply:  "已按选择继续执行",
@@ -1223,7 +1600,7 @@ func TestControlServiceRestoresPersistedACPSessions(t *testing.T) {
 	processMgr := process.NewManager(log)
 
 	bindingSvc := NewRuntimeBindingService(sessionMgr, cfg)
-	controlSvc := NewControlService(cfg, sessionMgr, processMgr, bindingSvc)
+	controlSvc := NewControlService(cfg, log, sessionMgr, processMgr, bindingSvc, client, nil, nil)
 	fake := &fakeACPClient{reply: "restored"}
 	controlSvc.acpFactory = func(p RuntimePreset) (acpConversationClient, error) {
 		return fake, nil

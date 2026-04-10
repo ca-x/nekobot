@@ -7,6 +7,7 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/conversationbindings"
+	"nekobot/pkg/externalagent"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -124,15 +125,24 @@ func BuildRuntimePreset(cfg *config.Config, spec RuntimeSpec) (RuntimePreset, er
 		if tool == "" {
 			tool = logicalToolNameForCommand(command)
 		}
-	case "codex":
-		if tool == "" || strings.EqualFold(tool, "codex") {
-			tool = "codex"
-		} else {
-			tool = "codex"
+	case "codex", "claude", "opencode", "aider":
+		agentKind := strings.TrimSpace(strings.ToLower(tool))
+		if agentKind == "" {
+			agentKind = driver
 		}
-		if command == "" {
-			command = "codex"
+		normalized, err := externalagent.NormalizeLaunchSpec(cfg, externalagent.SessionSpec{
+			Owner:     "wechat",
+			AgentKind: agentKind,
+			Workspace: workdir,
+			Tool:      tool,
+			Command:   command,
+		})
+		if err != nil {
+			return RuntimePreset{}, err
 		}
+		tool = normalized.Tool
+		command = normalized.Command
+		workdir = normalized.Workspace
 	case "process":
 		if command == "" {
 			command = tool

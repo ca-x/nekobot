@@ -2,6 +2,8 @@ package wechat
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"nekobot/pkg/config"
@@ -164,7 +166,7 @@ func newRuntimeTestEntClient(t *testing.T, cfg *config.Config) *ent.Client {
 	return client
 }
 
-func TestBuildRuntimePresetSupportsACPAndCodex(t *testing.T) {
+func TestBuildRuntimePresetSupportsACPAndManagedExternalAgentRuntimes(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.Workspace = "/workspace/project"
 
@@ -204,13 +206,24 @@ func TestBuildRuntimePresetSupportsACPAndCodex(t *testing.T) {
 		{
 			name:       "codex native preset",
 			driver:     "codex",
-			tool:       "code2",
+			tool:       "",
 			command:    "",
-			workdir:    "/tmp/run",
+			workdir:    "/workspace/project/tmp/run",
 			wantTool:   "codex",
 			wantCmd:    "codex",
 			wantDriver: "codex",
-			wantWD:     "/tmp/run",
+			wantWD:     "/workspace/project/tmp/run",
+		},
+		{
+			name:       "managed claude preset",
+			driver:     "codex",
+			tool:       "claude",
+			command:    "",
+			workdir:    "agents/claude",
+			wantTool:   "claude",
+			wantCmd:    "claude",
+			wantDriver: "codex",
+			wantWD:     "/workspace/project/agents/claude",
 		},
 	}
 
@@ -238,5 +251,76 @@ func TestBuildRuntimePresetSupportsACPAndCodex(t *testing.T) {
 				t.Fatalf("expected workdir %q, got %q", tt.wantWD, preset.Workdir)
 			}
 		})
+	}
+}
+
+func TestBuildRuntimePresetCodexDefaultsWorkspaceToConfiguredRoot(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	preset, err := BuildRuntimePreset(cfg, RuntimeSpec{
+		Driver: "codex",
+	})
+	if err != nil {
+		t.Fatalf("BuildRuntimePreset failed: %v", err)
+	}
+	if preset.Tool != "codex" {
+		t.Fatalf("expected codex tool, got %q", preset.Tool)
+	}
+	if preset.Command != "codex" {
+		t.Fatalf("expected codex command, got %q", preset.Command)
+	}
+	if preset.Workdir != cfg.WorkspacePath() {
+		t.Fatalf("expected workspace %q, got %q", cfg.WorkspacePath(), preset.Workdir)
+	}
+}
+
+func TestBuildRuntimePresetCodexResolvesRelativeWorkspaceWithinConfiguredRoot(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	preset, err := BuildRuntimePreset(cfg, RuntimeSpec{
+		Driver:  "codex",
+		Workdir: "projects/demo",
+	})
+	if err != nil {
+		t.Fatalf("BuildRuntimePreset failed: %v", err)
+	}
+	want := filepath.Join(cfg.WorkspacePath(), "projects", "demo")
+	if preset.Workdir != want {
+		t.Fatalf("expected workspace %q, got %q", want, preset.Workdir)
+	}
+}
+
+func TestBuildRuntimePresetCodexRejectsWorkspaceOutsideConfiguredRoot(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace-root")
+
+	_, err := BuildRuntimePreset(cfg, RuntimeSpec{
+		Driver:  "codex",
+		Workdir: filepath.Join(t.TempDir(), "outside"),
+	})
+	if err == nil {
+		t.Fatal("expected workspace restriction error")
+	}
+	if !strings.Contains(err.Error(), "workspace must stay within configured workspace") {
+		t.Fatalf("expected workspace restriction error, got %v", err)
+	}
+}
+
+func TestBuildRuntimePresetCodexRejectsCommandThatDoesNotMatchLauncher(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	_, err := BuildRuntimePreset(cfg, RuntimeSpec{
+		Driver:  "codex",
+		Tool:    "codex",
+		Command: "claude --print",
+	})
+	if err == nil {
+		t.Fatal("expected command policy error")
+	}
+	if !strings.Contains(err.Error(), "command must launch the selected tool") {
+		t.Fatalf("expected command policy error, got %v", err)
 	}
 }
