@@ -101,16 +101,16 @@ export interface AgentDefinitionStatus {
   orchestrator: string;
   permissionMode: string;
   maxToolIterations: number;
-  route: {
+  route?: {
     provider: string;
     model: string;
     fallback: string[];
   };
-  toolPolicy: {
+  toolPolicy?: {
     allowlist: string[];
     denylist: string[];
   };
-  promptSections: {
+  promptSections?: {
     static: string[];
     dynamic: string[];
   };
