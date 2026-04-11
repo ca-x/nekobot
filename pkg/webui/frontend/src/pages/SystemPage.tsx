@@ -23,6 +23,9 @@ export default function SystemPage() {
   const runtimeStates = status?.runtime_states ?? [];
   const sessionStates = status?.session_runtime_states ?? [];
   const agentDefinition = status?.agent_definition ?? null;
+  const agentRoute = agentDefinition?.route ?? null;
+  const agentToolPolicy = agentDefinition?.toolPolicy ?? null;
+  const agentPromptSections = agentDefinition?.promptSections ?? null;
 
   return (
     <div className="system-page flex h-full flex-col">
@@ -214,33 +217,33 @@ export default function SystemPage() {
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2">
-                  <StatusMetric label={t('defaultProvider')} value={agentDefinition.route.provider || '-'} />
-                  <StatusMetric label={t('defaultModel')} value={agentDefinition.route.model || '-'} />
+                  <StatusMetric label={t('defaultProvider')} value={agentRoute?.provider || '-'} />
+                  <StatusMetric label={t('defaultModel')} value={agentRoute?.model || '-'} />
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-3">
                   <StatusMetric
                     label={t('fallbackProviders')}
-                    value={agentDefinition.route.fallback?.length ? agentDefinition.route.fallback.join(', ') : t('none')}
+                    value={agentRoute?.fallback?.length ? agentRoute.fallback.join(', ') : t('none')}
                   />
                   <StatusMetric
                     label={t('systemAgentDefinitionStaticSections')}
-                    value={agentDefinition.promptSections?.static?.length ? agentDefinition.promptSections.static.join(', ') : t('none')}
+                    value={agentPromptSections?.static?.length ? agentPromptSections.static.join(', ') : t('none')}
                   />
                   <StatusMetric
                     label={t('systemAgentDefinitionDynamicSections')}
-                    value={agentDefinition.promptSections?.dynamic?.length ? agentDefinition.promptSections.dynamic.join(', ') : t('none')}
+                    value={agentPromptSections?.dynamic?.length ? agentPromptSections.dynamic.join(', ') : t('none')}
                   />
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2">
                   <StatusMetric
                     label={t('systemAgentDefinitionAllowlist')}
-                    value={agentDefinition.toolPolicy?.allowlist?.length ? agentDefinition.toolPolicy.allowlist.join(', ') : t('none')}
+                    value={agentToolPolicy?.allowlist?.length ? agentToolPolicy.allowlist.join(', ') : t('none')}
                   />
                   <StatusMetric
                     label={t('systemAgentDefinitionDenylist')}
-                    value={agentDefinition.toolPolicy?.denylist?.length ? agentDefinition.toolPolicy.denylist.join(', ') : t('none')}
+                    value={agentToolPolicy?.denylist?.length ? agentToolPolicy.denylist.join(', ') : t('none')}
                   />
                 </div>
               </div>
