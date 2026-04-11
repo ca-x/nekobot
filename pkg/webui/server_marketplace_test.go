@@ -466,6 +466,44 @@ Use this skill for detail and content route tests.
 	}
 }
 
+func TestMarketplaceHandlers_BuiltinSkillContentFlow(t *testing.T) {
+	log := newTestLogger(t)
+	mgr := skills.NewManager(log, t.TempDir(), false)
+	if err := mgr.Discover(); err != nil {
+		t.Fatalf("discover skills: %v", err)
+	}
+
+	s := &Server{skillsMgr: mgr, logger: log}
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/marketplace/skills/items/actionbook/content", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	ctx.SetPath("/api/marketplace/skills/items/:id/content")
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: "actionbook"}})
+
+	if err := s.handleGetMarketplaceSkillContent(ctx); err != nil {
+		t.Fatalf("content handler failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d with body %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if got, _ := payload["id"].(string); got != "actionbook" {
+		t.Fatalf("expected id actionbook, got %q", got)
+	}
+	if raw, _ := payload["raw"].(string); !strings.Contains(raw, "name: actionbook") {
+		t.Fatalf("expected builtin raw skill content, got %q", raw)
+	}
+	if bodyRaw, _ := payload["body_raw"].(string); !strings.Contains(bodyRaw, "Actionbook supports two browser control modes") {
+		t.Fatalf("expected builtin body content, got %q", bodyRaw)
+	}
+}
+
 func TestMarketplaceHandlers_SearchAndInstallRemoteSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillsDir := filepath.Join(tmpDir, "skills")

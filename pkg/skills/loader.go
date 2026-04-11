@@ -258,6 +258,25 @@ func (l *MultiPathLoader) loadBuiltinSkills() (map[string]*Skill, error) {
 	return skills, nil
 }
 
+// ReadBuiltinSkillContent returns the embedded SKILL.md content for a builtin:// skill path.
+func ReadBuiltinSkillContent(filePath string) (string, error) {
+	if !strings.HasPrefix(strings.TrimSpace(filePath), "builtin://") {
+		return "", fmt.Errorf("not a builtin skill path: %s", filePath)
+	}
+
+	skillName := strings.TrimPrefix(strings.TrimSpace(filePath), "builtin://")
+	skillName = strings.TrimSpace(skillName)
+	if skillName == "" {
+		return "", fmt.Errorf("builtin skill path missing skill name")
+	}
+
+	data, err := builtinSkillsFS.ReadFile(filepath.Join("builtin", skillName, "SKILL.md"))
+	if err != nil {
+		return "", fmt.Errorf("read builtin skill %s: %w", skillName, err)
+	}
+	return string(data), nil
+}
+
 // GetSources returns all configured skill sources.
 func (l *MultiPathLoader) GetSources() []SkillSource {
 	return l.sources

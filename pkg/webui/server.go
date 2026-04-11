@@ -3642,12 +3642,22 @@ func marketplaceInstallSpecs(skill *skills.Skill) []map[string]interface{} {
 }
 
 func readMarketplaceSkillContent(skill *skills.Skill) (string, string, error) {
-	rawBytes, err := os.ReadFile(skill.FilePath)
-	if err != nil {
-		return "", "", fmt.Errorf("read skill file %s: %w", skill.FilePath, err)
+	filePath := strings.TrimSpace(skill.FilePath)
+	var raw string
+	if strings.HasPrefix(filePath, "builtin://") {
+		builtinRaw, err := skills.ReadBuiltinSkillContent(filePath)
+		if err != nil {
+			return "", "", err
+		}
+		raw = builtinRaw
+	} else {
+		rawBytes, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", "", fmt.Errorf("read skill file %s: %w", filePath, err)
+		}
+		raw = string(rawBytes)
 	}
 
-	raw := string(rawBytes)
 	bodyRaw := strings.TrimSpace(raw)
 	if strings.HasPrefix(raw, "---\n") {
 		parts := strings.SplitN(raw[4:], "\n---\n", 2)
