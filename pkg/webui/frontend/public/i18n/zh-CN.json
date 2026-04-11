@@ -1214,5 +1214,6 @@
   "invalidFormat": "格式无效",
   "passwordShow": "显示密码",
   "passwordHide": "隐藏密码",
-  "fieldRequired": "必填"
+  "fieldRequired": "必填",
+  "chatComposerBlockedNoProviders": "请先添加 provider，聊天发送功能才会启用。"
 }

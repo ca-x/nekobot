@@ -354,6 +354,8 @@ export default function ChatPage() {
   const hasProviders = providers.length > 0;
   const hasModels = modelOptions.length > 0;
   const hasEnabledPrompts = systemPrompts.length + userPrompts.length > 0;
+  const composerBlockedByMissingProvider = !hasProviders && !runtimeControlsRoute;
+  const composerDisabled = connectionStatus !== 'connected' || composerBlockedByMissingProvider;
   const selectedSystemPromptIDs = sessionPromptBindings?.system_prompt_ids ?? [];
   const selectedUserPromptIDs = sessionPromptBindings?.user_prompt_ids ?? [];
   const runtimeLoadError =
@@ -435,7 +437,7 @@ export default function ChatPage() {
 
   function handleSend() {
     const content = chatInput.trim();
-    if (!content || connectionStatus !== 'connected') {
+    if (!content || composerDisabled) {
       return;
     }
 
@@ -1193,11 +1195,14 @@ export default function ChatPage() {
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
                   onKeyDown={handleInputKeyDown}
-                  disabled={connectionStatus !== 'connected'}
+                  disabled={composerDisabled}
                 />
                 <div className="mt-3 flex flex-col gap-3 border-t border-[hsl(var(--gray-200))]/80 px-2 pt-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-1 text-xs text-muted-foreground">
                     <div>{t('chatComposerHint')}</div>
+                    {composerBlockedByMissingProvider && (
+                      <div>{t('chatComposerBlockedNoProviders')}</div>
+                    )}
                     {watchStatus?.last_command && (
                       <div>
                         {t('chatWatchHint', watchStatus.last_command)}
@@ -1217,7 +1222,7 @@ export default function ChatPage() {
                     <Button
                       className="h-11 rounded-full px-5"
                       onClick={handleSend}
-                      disabled={connectionStatus !== 'connected' || !chatInput.trim()}
+                      disabled={composerDisabled || !chatInput.trim()}
                     >
                       <Send className="mr-2 h-4 w-4" />
                       {t('send')}

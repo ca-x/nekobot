@@ -1214,5 +1214,6 @@
   "invalidFormat": "Invalid format",
   "passwordShow": "Show password",
   "passwordHide": "Hide password",
-  "fieldRequired": "Required"
+  "fieldRequired": "Required",
+  "chatComposerBlockedNoProviders": "Add a provider first to enable chat sending."
 }

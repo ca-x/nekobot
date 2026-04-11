@@ -1214,5 +1214,6 @@
   "invalidFormat": "形式が正しくありません",
   "passwordShow": "パスワードを表示",
   "passwordHide": "パスワードを非表示",
-  "fieldRequired": "必須"
+  "fieldRequired": "必須",
+  "chatComposerBlockedNoProviders": "チャット送信を有効にするには、先に provider を追加してください。"
 }
