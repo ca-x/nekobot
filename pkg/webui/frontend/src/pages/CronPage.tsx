@@ -97,8 +97,13 @@ function renderSchedule(job: CronJob): string {
   return job.schedule || '-';
 }
 
+function isUnsetTimestamp(value?: string): boolean {
+  const trimmed = value?.trim() || '';
+  return trimmed === '' || trimmed.startsWith('0001-01-01T00:00:00');
+}
+
 function renderLastResult(job: CronJob): string {
-  if (!job.last_run) {
+  if (isUnsetTimestamp(job.last_run)) {
     return t('cronNeverRun');
   }
   return job.last_success ? t('cronLastRunOk') : (job.last_error || t('cronLastRunFailed'));
@@ -557,7 +562,7 @@ export default function CronPage() {
                     </div>
                     <div className="rounded-md bg-muted/40 px-3 py-2">
                       <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronLastRun')}</div>
-                      <div className="mt-1 break-all text-foreground">{job.last_run || '-'}</div>
+                      <div className="mt-1 break-all text-foreground">{isUnsetTimestamp(job.last_run) ? '-' : job.last_run}</div>
                     </div>
                     <div className="rounded-md bg-muted/40 px-3 py-2">
                       <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronRunCount')}</div>

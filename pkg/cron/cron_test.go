@@ -38,6 +38,9 @@ func TestManagerPersistsJobsInDatabase(t *testing.T) {
 	if stored.Schedule != "0 0 * * *" {
 		t.Fatalf("expected schedule to persist, got %q", stored.Schedule)
 	}
+	if stored.NextRun == nil || stored.NextRun.IsZero() {
+		t.Fatalf("expected persisted next run to be populated for cron job")
+	}
 
 	if err := manager.DisableJob(job.ID); err != nil {
 		t.Fatalf("disable job: %v", err)

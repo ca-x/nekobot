@@ -473,6 +473,11 @@ func (m *Manager) scheduleCronJob(job *Job) error {
 		m.scheduler.Remove(entryID)
 	}
 
+	schedule, err := cron.ParseStandard(job.Schedule)
+	if err != nil {
+		return err
+	}
+
 	entryID, err := m.scheduler.AddFunc(job.Schedule, func() {
 		m.executeJob(job.ID)
 	})
@@ -481,7 +486,7 @@ func (m *Manager) scheduleCronJob(job *Job) error {
 	}
 
 	m.entries[job.ID] = entryID
-	job.NextRun = m.scheduler.Entry(entryID).Next
+	job.NextRun = schedule.Next(time.Now())
 	return nil
 }
 
