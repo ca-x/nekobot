@@ -105,6 +105,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
   }, [open, provider, reset]);
 
   const selectedKind = watch('provider_kind');
+  const draftName = watch('name');
   const selectedType = useMemo(
     () => providerTypes.find((item) => item.id === selectedKind) ?? providerTypes[0] ?? null,
     [providerTypes, selectedKind],
@@ -122,6 +123,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
 
   const close = () => onOpenChange(false);
   const isSaving = createProvider.isPending || updateProvider.isPending;
+  const saveDisabled = isSaving || (!isEdit && !draftName.trim());
   const logo = getProviderLogo(selectedType?.icon ?? selectedKind);
 
   const applyDiscover = () => {
@@ -426,7 +428,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
               <Button type="button" variant="outline" onClick={close}>
                 {t('cancel')}
               </Button>
-              <Button type="submit" disabled={isSaving}>
+              <Button type="submit" disabled={saveDisabled}>
                 {isSaving ? (
                   <>
                     <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
