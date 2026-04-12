@@ -179,6 +179,21 @@ export default function CronPage() {
     () => routeTargets.filter((target) => target.name !== form.provider),
     [form.provider, routeTargets],
   );
+  const createDisabled = useMemo(() => {
+    if (createJob.isPending) {
+      return true;
+    }
+    if (!form.name.trim() || !form.prompt.trim()) {
+      return true;
+    }
+    if (form.schedule_kind === 'cron') {
+      return !form.schedule.trim();
+    }
+    if (form.schedule_kind === 'at') {
+      return !form.at_time.trim();
+    }
+    return !form.every_duration.trim();
+  }, [createJob.isPending, form]);
 
   const setField = <K extends keyof CronFormState>(key: K, value: CronFormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -438,7 +453,7 @@ export default function CronPage() {
           </div>
 
           <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
-            <Button className="h-11 sm:min-w-[140px]" onClick={handleCreate} disabled={createJob.isPending}>
+            <Button className="h-11 sm:min-w-[140px]" onClick={handleCreate} disabled={createDisabled}>
               <Plus className="h-4 w-4 mr-1" />
               {t('cronCreate')}
             </Button>
