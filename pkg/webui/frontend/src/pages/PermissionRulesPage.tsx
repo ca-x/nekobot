@@ -121,6 +121,7 @@ export default function PermissionRulesPage() {
   const askCount = rules.filter((rule) => rule.action === 'ask').length;
 
   const saving = createRule.isPending || updateRule.isPending;
+  const saveDisabled = saving || !form.tool_name.trim();
 
   const handleCreateNew = () => {
     setSelectedRuleID('new');
@@ -429,7 +430,7 @@ export default function PermissionRulesPage() {
               <Button type="button" variant="outline" className="rounded-2xl" onClick={handleCreateNew}>
                 {t('permissionRulesReset')}
               </Button>
-              <Button type="button" className="rounded-2xl" onClick={handleSave} disabled={saving}>
+              <Button type="button" className="rounded-2xl" onClick={handleSave} disabled={saveDisabled}>
                 {selectedRule ? t('permissionRulesSaveChanges') : t('permissionRulesCreate')}
               </Button>
             </div>
