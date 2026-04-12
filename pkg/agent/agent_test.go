@@ -15,6 +15,7 @@ import (
 	"github.com/go-kratos/blades"
 	bladestools "github.com/go-kratos/blades/tools"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxtest"
 	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
@@ -77,6 +78,41 @@ func TestBuildProviderOrder_UsesConfigDefaultsWhenRequestFallbackEmpty(t *testin
 	want := []string{"anthropic", "openai"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected provider order %v, got %v", want, got)
+	}
+}
+
+func TestProvideAgent_AllowsStartupWhenDefaultProviderConfigIsInvalid(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "openai-main"
+	cfg.Agents.Defaults.Model = "gpt-4o-mini"
+	cfg.Providers = []config.ProviderProfile{
+		{
+			Name:         "openai-main",
+			ProviderKind: "openai",
+			APIKey:       "",
+			APIBase:      "https://api.openai.com/v1",
+			Timeout:      30,
+		},
+	}
+
+	log := testLogger(t)
+	ag, err := ProvideAgent(provideAgentDeps{
+		Cfg:         cfg,
+		Log:         log,
+		SkillsMgr:   skills.NewManager(log, filepath.Join(t.TempDir(), "skills"), false),
+		ProcessMgr:  process.NewManager(log),
+		ApprovalMgr: approval.NewManager(approval.Config{}),
+		Bus:         bus.NewLocalBus(log, 16),
+		LC:          fxtest.NewLifecycle(t),
+	})
+	if err != nil {
+		t.Fatalf("ProvideAgent should not fail startup on invalid default provider config: %v", err)
+	}
+	if ag == nil {
+		t.Fatalf("expected agent instance")
+	}
+	if ag.client != nil {
+		t.Fatalf("expected nil provider client when default provider config is invalid")
 	}
 }
 

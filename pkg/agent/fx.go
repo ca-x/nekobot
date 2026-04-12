@@ -122,7 +122,12 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 			Timeout:      providerCfg.GetTimeout(),
 		})
 		if err != nil {
-			return nil, err
+			log.Warn("Default provider configuration is invalid; starting agent without a provider client",
+				zap.String("provider", providerName),
+				zap.String("provider_kind", providerKind),
+				zap.Error(err),
+			)
+			client = nil
 		}
 	}
 
