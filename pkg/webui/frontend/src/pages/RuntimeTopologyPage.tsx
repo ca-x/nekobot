@@ -207,6 +207,8 @@ export default function RuntimeTopologyPage() {
   const bindingTargetsValid =
     !bindingState.enabled ||
     (selectedRuntime !== null && selectedRuntime.enabled && selectedAccount !== null && selectedAccount.enabled);
+  const runtimeFormValid = runtimeState.name.trim() !== '';
+  const accountFormValid = accountState.channel_type.trim() !== '' && accountState.account_key.trim() !== '';
   const bindingCountByRuntimeID = new Map<string, number>();
   const bindingCountByAccountID = new Map<string, number>();
   for (const binding of bindings) {
@@ -819,7 +821,7 @@ export default function RuntimeTopologyPage() {
             <Button variant="outline" onClick={() => setRuntimeDialogOpen(false)} disabled={isMutating}>
               {t('cancel')}
             </Button>
-            <Button onClick={() => guardedSubmit(submitRuntimeForm)} disabled={isMutating}>
+            <Button onClick={() => guardedSubmit(submitRuntimeForm)} disabled={isMutating || !runtimeFormValid}>
               {t('save')}
             </Button>
           </DialogFooter>
@@ -924,7 +926,7 @@ export default function RuntimeTopologyPage() {
             <Button variant="outline" onClick={() => setAccountDialogOpen(false)} disabled={isMutating}>
               {t('cancel')}
             </Button>
-            <Button onClick={() => guardedSubmit(submitChannelAccountForm)} disabled={isMutating}>
+            <Button onClick={() => guardedSubmit(submitChannelAccountForm)} disabled={isMutating || !accountFormValid}>
               {t('save')}
             </Button>
           </DialogFooter>
