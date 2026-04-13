@@ -923,6 +923,7 @@ func (s *Server) handleGetProviderRuntime(c *echo.Context) error {
 	snapshots := s.agent.GetFailoverSnapshots(names)
 	items := make([]map[string]interface{}, 0, len(names))
 	for _, name := range names {
+		profile := s.config.GetProviderConfig(name)
 		snapshot := snapshots[name]
 		failureCounts := make(map[string]int, len(snapshot.FailureCounts))
 		for reason, count := range snapshot.FailureCounts {
@@ -949,6 +950,10 @@ func (s *Server) handleGetProviderRuntime(c *echo.Context) error {
 		}
 		if !snapshot.DisabledUntil.IsZero() {
 			item["disabled_until_unix"] = snapshot.DisabledUntil.Unix()
+		}
+		if !providerProfileUsableForExecution(profile) {
+			item["available"] = false
+			item["disabled_reason"] = "invalid_config"
 		}
 
 		items = append(items, item)
@@ -1037,6 +1042,30 @@ func (s *Server) providerProfileToView(p config.ProviderProfile) map[string]inte
 		"summary":            summarizeProviderProfile(p),
 		"timeout":            p.Timeout,
 	}
+}
+
+func providerProfileUsableForExecution(p *config.ProviderProfile) bool {
+	if p == nil {
+		return false
+	}
+	kind := strings.TrimSpace(strings.ToLower(p.ProviderKind))
+	if kind == "" {
+		return false
+	}
+	if meta, ok := providerregistry.Get(kind); ok {
+		for _, field := range meta.AuthFields {
+			if !field.Required {
+				continue
+			}
+			switch field.Key {
+			case "api_key":
+				if strings.TrimSpace(p.APIKey) == "" {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func providerKindSupportsDiscovery(kind string) bool {
