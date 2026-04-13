@@ -478,6 +478,114 @@ func TestHandleStatus_IncludesRuntimeStates(t *testing.T) {
 	}
 }
 
+func TestHandleStatus_OmitsZeroRuntimeLastSeenTimestamp(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	runtimeItem, err := runtimeMgr.Create(t.Context(), runtimeagents.AgentRuntime{
+		Name:        "zero-runtime",
+		DisplayName: "Zero Runtime",
+		Enabled:     true,
+		Provider:    "openai",
+		Model:       "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	accountItem, err := accountMgr.Create(t.Context(), channelaccounts.ChannelAccount{
+		ChannelType: "websocket",
+		AccountKey:  "zero",
+		DisplayName: "Zero Account",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+	if _, err := bindingMgr.Create(t.Context(), accountbindings.AccountBinding{
+		ChannelAccountID: accountItem.ID,
+		AgentRuntimeID:   runtimeItem.ID,
+		BindingMode:      accountbindings.ModeSingleAgent,
+		Enabled:          true,
+		Priority:         100,
+	}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	store := tasks.NewStore()
+	store.SetSource("runtime-zero", func() []tasks.Task {
+		return []tasks.Task{{
+			ID:        "task-zero",
+			Type:      tasks.TypeRuntimeWorker,
+			State:     tasks.StateRunning,
+			RuntimeID: runtimeItem.ID,
+			Summary:   "runtime task without timestamps",
+		}}
+	})
+
+	s := &Server{
+		config:     cfg,
+		startedAt:  time.Now().Add(-5 * time.Second),
+		taskStore:  store,
+		runtimeMgr: runtimeMgr,
+		accountMgr: accountMgr,
+		bindingMgr: bindingMgr,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleStatus(ctx); err != nil {
+		t.Fatalf("handleStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal status payload failed: %v", err)
+	}
+	runtimeStates, ok := payload["runtime_states"].([]any)
+	if !ok || len(runtimeStates) != 1 {
+		t.Fatalf("expected one runtime state, got %+v", payload["runtime_states"])
+	}
+	runtimeState, ok := runtimeStates[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected runtime state object, got %+v", runtimeStates[0])
+	}
+	statusPayload, ok := runtimeState["status"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected runtime status object, got %+v", runtimeState["status"])
+	}
+	if _, exists := statusPayload["last_seen_at"]; exists {
+		t.Fatalf("expected zero last_seen_at to be omitted, got %+v", statusPayload["last_seen_at"])
+	}
+}
+
 func TestHandleStatus_IncludesSessionRuntimeStates(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()

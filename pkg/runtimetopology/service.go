@@ -178,7 +178,7 @@ func (s *Service) Snapshot(ctx context.Context) (*Snapshot, error) {
 			BoundAccountCount:   runtimeCountByID[item.ID],
 			EnabledBindingCount: countEffectiveBindings(edges, item.ID),
 			CurrentTaskCount:    taskCountByRuntimeID[item.ID],
-			LastSeenAt:          lastSeenByRuntimeID[item.ID],
+			LastSeenAt:          runtimeagents.NormalizeTimestamp(lastSeenByRuntimeID[item.ID]),
 		}
 		item.Status = status
 		runtimes = append(runtimes, RuntimeNode{

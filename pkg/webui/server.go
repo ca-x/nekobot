@@ -5658,7 +5658,7 @@ func (s *Server) attachRuntimeStatuses(ctx context.Context, items []runtimeagent
 			BoundAccountCount:   bindingsByRuntimeID[item.ID],
 			EnabledBindingCount: enabledBindingsByRuntimeID[item.ID],
 			CurrentTaskCount:    tasksByRuntimeID[item.ID],
-			LastSeenAt:          lastSeenByRuntimeID[item.ID],
+			LastSeenAt:          runtimeagents.NormalizeTimestamp(lastSeenByRuntimeID[item.ID]),
 		}
 		switch {
 		case !item.Enabled:
