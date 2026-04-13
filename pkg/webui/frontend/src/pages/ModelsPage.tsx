@@ -11,6 +11,7 @@ import { t } from '@/lib/i18n';
 import {
   buildModelOptions,
   normalizeRouteMetadataProviderModelID,
+  useCreateModel,
   useModelRoutesForModels,
   useModels,
   useUpdateModelRoute,
@@ -36,9 +37,12 @@ function parseListInput(value: string): string[] {
 export default function ModelsPage() {
   const { data: modelCatalog = [], isLoading } = useModels();
   const { data: providers = [] } = useProviders();
+  const createModel = useCreateModel();
   const updateRoute = useUpdateModelRoute();
   const [query, setQuery] = useState('');
   const [expandedModelID, setExpandedModelID] = useState('');
+  const [newModelID, setNewModelID] = useState('');
+  const [newDisplayName, setNewDisplayName] = useState('');
 
   const routesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
   const routesByModel = useMemo(
@@ -77,6 +81,24 @@ export default function ModelsPage() {
     () => new Set(providers.map((provider) => provider.name.trim()).filter(Boolean)),
     [providers],
   );
+  const createDisabled = createModel.isPending || !newModelID.trim() || !newDisplayName.trim();
+
+  const handleCreateModel = () => {
+    createModel.mutate(
+      {
+        model_id: newModelID.trim(),
+        display_name: newDisplayName.trim(),
+        catalog_source: 'manual',
+        enabled: true,
+      },
+      {
+        onSuccess: () => {
+          setNewModelID('');
+          setNewDisplayName('');
+        },
+      },
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -129,6 +151,36 @@ export default function ModelsPage() {
           </div>
         </div>
       </section>
+
+      <Card className="rounded-[28px] border-border/70 bg-card/92 shadow-sm">
+        <CardContent className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <div className="space-y-2">
+            <Label htmlFor="new-model-id">Model ID</Label>
+            <Input
+              id="new-model-id"
+              value={newModelID}
+              onChange={(event) => setNewModelID(event.target.value)}
+              placeholder="gpt-4.1"
+              className="h-11 rounded-2xl bg-card/90"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="new-model-display-name">Display name</Label>
+            <Input
+              id="new-model-display-name"
+              value={newDisplayName}
+              onChange={(event) => setNewDisplayName(event.target.value)}
+              placeholder="GPT-4.1"
+              className="h-11 rounded-2xl bg-card/90"
+            />
+          </div>
+          <div className="flex items-end">
+            <Button type="button" className="h-11 rounded-full px-5" onClick={handleCreateModel} disabled={createDisabled}>
+              Create model
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {isLoading && (
         <div className="grid grid-cols-1 gap-4">
