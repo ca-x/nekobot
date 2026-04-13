@@ -8,8 +8,32 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/providerregistry"
 	"nekobot/pkg/providers"
 )
+
+func providerConfigUsable(profile *config.ProviderProfile) bool {
+	if profile == nil {
+		return false
+	}
+	if strings.TrimSpace(profile.Name) == "" || strings.TrimSpace(profile.ProviderKind) == "" {
+		return false
+	}
+	if meta, ok := providerregistry.Get(strings.TrimSpace(profile.ProviderKind)); ok {
+		for _, field := range meta.AuthFields {
+			if !field.Required {
+				continue
+			}
+			switch field.Key {
+			case "api_key":
+				if strings.TrimSpace(profile.APIKey) == "" {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
 
 type providerGroupPlanner struct {
 	mu       sync.Mutex

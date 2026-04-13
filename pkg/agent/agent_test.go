@@ -64,8 +64,8 @@ func TestBuildProviderOrder_UsesConfigDefaultsWhenRequestFallbackEmpty(t *testin
 	cfg.Agents.Defaults.Provider = "anthropic"
 	cfg.Agents.Defaults.Fallback = []string{"openai"}
 	cfg.Providers = []config.ProviderProfile{
-		{Name: "anthropic", ProviderKind: "anthropic"},
-		{Name: "openai", ProviderKind: "openai"},
+		{Name: "anthropic", ProviderKind: "anthropic", APIKey: "anthropic-key"},
+		{Name: "openai", ProviderKind: "openai", APIKey: "openai-key"},
 	}
 
 	ag := &Agent{config: cfg}
@@ -76,6 +76,32 @@ func TestBuildProviderOrder_UsesConfigDefaultsWhenRequestFallbackEmpty(t *testin
 	}
 
 	want := []string{"anthropic", "openai"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected provider order %v, got %v", want, got)
+	}
+}
+
+func TestBuildProviderOrder_SkipsProvidersMissingRequiredCredentials(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Provider = "openai-bad"
+	cfg.Agents.Defaults.Fallback = []string{"anthropic-good"}
+	cfg.Providers = []config.ProviderProfile{
+		{Name: "openai-bad", ProviderKind: "openai", APIKey: ""},
+		{Name: "anthropic-good", ProviderKind: "anthropic", APIKey: "anthropic-key"},
+	}
+
+	ag := &Agent{
+		config:         cfg,
+		logger:         testLogger(t),
+		providerGroups: newProviderGroupPlanner(),
+	}
+
+	got, err := ag.buildProviderOrder("", nil)
+	if err != nil {
+		t.Fatalf("buildProviderOrder failed: %v", err)
+	}
+
+	want := []string{"anthropic-good"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected provider order %v, got %v", want, got)
 	}

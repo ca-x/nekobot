@@ -990,6 +990,19 @@ func (a *Agent) newClientForProvider(providerName, model string) (*providers.Cli
 }
 
 func (a *Agent) buildProviderOrder(provider string, fallback []string) ([]string, error) {
+	if a.providerGroups == nil {
+		a.providerGroups = newProviderGroupPlanner()
+	}
+	if a.logger == nil {
+		logCfg := logger.DefaultConfig()
+		logCfg.OutputPath = ""
+		logCfg.EnableCaller = false
+		logCfg.EnableStacktrace = false
+		if fallbackLogger, err := logger.New(logCfg); err == nil {
+			a.logger = fallbackLogger
+		}
+	}
+
 	primary := strings.TrimSpace(provider)
 	if primary == "" {
 		primary = strings.TrimSpace(a.config.Agents.Defaults.Provider)
@@ -1005,8 +1018,28 @@ func (a *Agent) buildProviderOrder(provider string, fallback []string) ([]string
 		return nil, err
 	}
 
+	filteredOrder := make([]string, 0, len(order))
+	for _, name := range order {
+		profile := a.config.GetProviderConfig(name)
+		if !providerConfigUsable(profile) {
+			a.logger.Warn("Skipping unusable provider from routing order",
+				zap.String("provider", strings.TrimSpace(name)),
+			)
+			continue
+		}
+		filteredOrder = append(filteredOrder, name)
+	}
+	order = filteredOrder
+
 	if len(order) == 0 && len(a.config.Providers) > 0 {
-		order = append(order, a.config.Providers[0].Name)
+		for _, provider := range a.config.Providers {
+			profile := a.config.GetProviderConfig(provider.Name)
+			if !providerConfigUsable(profile) {
+				continue
+			}
+			order = append(order, provider.Name)
+			break
+		}
 	}
 
 	if len(order) == 0 {
