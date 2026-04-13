@@ -88,6 +88,7 @@ export function useChat(): UseChatReturn {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSessionKeyRef = useRef<string | null>(null);
+  const activeSessionKeyRef = useRef(activeSessionKey);
 
   const cleanup = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -103,6 +104,10 @@ export function useChat(): UseChatReturn {
       wsRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    activeSessionKeyRef.current = activeSessionKey;
+  }, [activeSessionKey]);
 
   const connect = useCallback(() => {
     const token = getToken();
@@ -134,7 +139,7 @@ export function useChat(): UseChatReturn {
       setConnectionStatus('disconnected');
       setAwaitingReplyBySession((prev) => ({
         ...prev,
-        [pendingSessionKeyRef.current ?? activeSessionKey]: false,
+        [pendingSessionKeyRef.current ?? activeSessionKeyRef.current]: false,
       }));
       wsRef.current = null;
     };
@@ -143,7 +148,7 @@ export function useChat(): UseChatReturn {
       setConnectionStatus('disconnected');
       setAwaitingReplyBySession((prev) => ({
         ...prev,
-        [pendingSessionKeyRef.current ?? activeSessionKey]: false,
+        [pendingSessionKeyRef.current ?? activeSessionKeyRef.current]: false,
       }));
     };
 
@@ -163,7 +168,7 @@ export function useChat(): UseChatReturn {
 
       const now = Date.now();
       const explicitSessionKey = msg.session_id?.trim() || '';
-      const targetSessionKey = explicitSessionKey || pendingSessionKeyRef.current || activeSessionKey;
+      const targetSessionKey = explicitSessionKey || pendingSessionKeyRef.current || activeSessionKeyRef.current;
 
       if (msg.type === 'routing') {
         try {
@@ -248,7 +253,7 @@ export function useChat(): UseChatReturn {
         }));
       }
     };
-  }, [activeSessionKey, cleanup]);
+  }, [cleanup]);
 
   const reconnect = useCallback(() => {
     connect();
