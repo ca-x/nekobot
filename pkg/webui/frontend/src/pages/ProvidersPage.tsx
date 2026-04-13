@@ -170,7 +170,7 @@ export default function ProvidersPage() {
 
   const readyCount = (providers ?? []).filter((provider) => provider.api_key_set && provider.enabled).length;
   const routingDefault = (providers ?? []).find((provider) => provider.is_routing_default) ?? null;
-  const discoveryCount = (providers ?? []).filter((provider) => provider.supports_discovery).length;
+  const discoveryCount = (providers ?? []).filter((provider) => provider.supports_discovery && provider.api_key_set && provider.enabled).length;
 
   useEffect(() => {
     const agents = runtimeConfig?.agents;
@@ -686,6 +686,8 @@ function ProviderPanel({
   const logo = getProviderLogo(typeMeta?.icon || provider.provider_kind);
   const tint = getKindTint(provider.provider_kind);
   const endpoint = provider.api_base?.trim() || typeMeta?.default_api_base?.trim() || t('providerPanelDefaultEndpoint');
+  const credentialsReady = provider.api_key_set;
+  const discoveryReady = provider.supports_discovery && credentialsReady;
 
   return (
     <Card
@@ -736,13 +738,31 @@ function ProviderPanel({
             icon={<KeyRound className="h-4 w-4" />}
             label={t('providerPanelCredentials')}
             value={provider.api_key_set ? t('providerPanelConfigured') : t('providerPanelMissing')}
-            detail={provider.enabled ? 'Stored connection can be used by routing.' : 'Connection is present but disabled.'}
+            detail={
+              provider.enabled
+                ? credentialsReady
+                  ? t('providerPanelCredentialsReadyDetail')
+                  : t('providerPanelCredentialsMissingDetail')
+                : t('providerPanelDisabledDetail')
+            }
           />
           <InfoTile
             icon={<Waypoints className="h-4 w-4" />}
             label="Discovery"
-            value={provider.supports_discovery ? 'Probe & sync' : 'Manual sync'}
-            detail={provider.supports_discovery ? 'Can sync models from this endpoint.' : 'Use manual Models entries for this provider.'}
+            value={
+              provider.supports_discovery
+                ? discoveryReady
+                  ? t('providerPanelDiscoveryReady')
+                  : t('providerPanelDiscoveryBlocked')
+                : t('providerPanelDiscoveryManual')
+            }
+            detail={
+              provider.supports_discovery
+                ? discoveryReady
+                  ? t('providerPanelDiscoveryReadyDetail')
+                  : t('providerPanelDiscoveryBlockedDetail')
+                : t('providerPanelDiscoveryManualDetail')
+            }
           />
           <InfoTile
             icon={<BadgeCheck className="h-4 w-4" />}
