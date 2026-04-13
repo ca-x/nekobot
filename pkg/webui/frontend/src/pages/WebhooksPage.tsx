@@ -18,6 +18,7 @@ export default function WebhooksPage() {
   const [enabled, setEnabled] = useState(Boolean(current.enabled));
   const [path, setPath] = useState(current.path ?? '/api/webhooks/agent');
   const [message, setMessage] = useState('hello from webhook test');
+  const canSendTest = message.trim() !== '';
 
   useEffect(() => {
     setEnabled(Boolean(current.enabled));
@@ -69,7 +70,14 @@ export default function WebhooksPage() {
             <Label>{t('message')}</Label>
             <Input value={message} onChange={(e) => setMessage(e.target.value)} />
           </div>
-          <Button onClick={() => testWebhook.mutate(message)} disabled={testWebhook.isPending}>
+          <Button
+            onClick={() => {
+              const trimmed = message.trim();
+              if (!trimmed) return;
+              testWebhook.mutate(trimmed);
+            }}
+            disabled={testWebhook.isPending || !canSendTest}
+          >
             {t('webhooksSendTest')}
           </Button>
           <p className="text-xs text-muted-foreground">
