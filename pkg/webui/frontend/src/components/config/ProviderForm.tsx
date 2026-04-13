@@ -63,6 +63,13 @@ interface ProviderFormProps {
   provider: Provider | null;
 }
 
+const PROVIDER_KINDS_REQUIRING_API_KEY = new Set([
+  'openai',
+  'anthropic',
+  'gemini',
+  'openrouter',
+]);
+
 function toFormData(provider: Provider | null): ProviderFormData {
   return {
     name: provider?.name ?? '',
@@ -125,14 +132,18 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
   const close = () => onOpenChange(false);
   const isSaving = createProvider.isPending || updateProvider.isPending;
   const requiredAuthFields = selectedType?.auth_fields ?? [];
-  const apiKeyRequired = requiredAuthFields.some((field) => field.key === 'api_key' && field.required);
+  const apiKeyRequired =
+    requiredAuthFields.some((field) => field.key === 'api_key' && field.required) ||
+    PROVIDER_KINDS_REQUIRING_API_KEY.has(selectedKind);
+  const hasExistingRequiredApiKey = Boolean(isEdit && provider?.api_key_set);
+  const hasSatisfiedRequiredApiKey = !apiKeyRequired || hasExistingRequiredApiKey || Boolean(draftAPIKey.trim());
   const saveDisabled =
     isSaving ||
     (!isEdit && !draftName.trim()) ||
-    (!isEdit && apiKeyRequired && !draftAPIKey.trim());
+    !hasSatisfiedRequiredApiKey;
   const discoverDisabled =
     discoverModels.isPending ||
-    (apiKeyRequired && !draftAPIKey.trim());
+    !hasSatisfiedRequiredApiKey;
   const logo = getProviderLogo(selectedType?.icon ?? selectedKind);
 
   const applyDiscover = () => {
