@@ -311,6 +311,7 @@ export default function ChatPage() {
     routeResult?.preflight?.compaction?.strategy?.trim() ||
     routeResult?.compaction_strategy?.trim() ||
     '';
+  const hasActualRouteResult = routeResult !== null;
   const enabledRuntimes = useMemo(
     () => runtimes.filter((runtime) => runtime.enabled),
     [runtimes],
@@ -695,6 +696,10 @@ export default function ChatPage() {
                       </span>
                     ) : null}
                   </>
+                ) : hasActualRouteResult ? (
+                  <span className="rounded-full bg-[hsl(var(--gray-100))] px-3 py-1.5 text-xs font-medium text-muted-foreground dark:bg-[hsl(var(--gray-200))]">
+                    {t('chatActualRouteNoResult')}
+                  </span>
                 ) : (
                   <span className="rounded-full bg-[hsl(var(--gray-100))] px-3 py-1.5 text-xs font-medium text-muted-foreground dark:bg-[hsl(var(--gray-200))]">
                     {t('chatActualRoutePending')}

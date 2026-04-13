@@ -108,6 +108,10 @@ func (p *bladesModelProvider) Generate(ctx context.Context, req *blades.ModelReq
 			return p.toModelResponse(resp), nil
 		}
 
+		if strings.TrimSpace(providerUsed) != "" || strings.TrimSpace(modelUsed) != "" {
+			p.recordRoute(providerUsed, modelUsed)
+		}
+
 		if isContextLimitError(err) && retry < maxContextRetries {
 			p.agent.logger.Warn("Context window error in blades model call, compressing and retrying",
 				zap.Error(err),
@@ -664,6 +668,10 @@ func (a *Agent) chatWithBladesOrchestrator(
 		blades.WithSession(bladesSession),
 	)
 	if err != nil {
+		if snapshot, ok := latestBladesRouteSnapshot(modelProvider); ok {
+			routeResult.ActualProvider = snapshot.Provider
+			routeResult.ActualModel = snapshot.Model
+		}
 		return "", routeResult, fmt.Errorf("blades runner run: %w", err)
 	}
 

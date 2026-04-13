@@ -817,6 +817,12 @@ func (a *Agent) chatWithLegacyOrchestrator(
 			break
 		}
 		if err != nil {
+			if routeResult.ActualProvider == "" {
+				routeResult.ActualProvider = providerUsed
+			}
+			if routeResult.ActualModel == "" {
+				routeResult.ActualModel = modelUsed
+			}
 			return "", routeResult, fmt.Errorf("LLM call failed: %w", err)
 		}
 		if routeResult.ActualProvider == "" {
@@ -1059,6 +1065,8 @@ func (a *Agent) callLLMWithFallback(
 ) (*providers.UnifiedResponse, string, string, error) {
 	tracker := a.getFailoverCooldown()
 	var lastErr error
+	var lastProviderUsed string
+	var lastModelUsed string
 
 	for _, providerName := range providerOrder {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -1085,6 +1093,8 @@ func (a *Agent) callLLMWithFallback(
 			)
 			continue
 		}
+		lastProviderUsed = providerName
+		lastModelUsed = model
 
 		client, err := a.getProviderClient(providerName, model, clientCache)
 		if err != nil {
@@ -1126,7 +1136,7 @@ func (a *Agent) callLLMWithFallback(
 			)
 
 			if !retriable {
-				return nil, "", "", loggedErr
+				return nil, lastProviderUsed, lastModelUsed, loggedErr
 			}
 
 			tracker.MarkFailure(providerName, reason)
@@ -1146,7 +1156,7 @@ func (a *Agent) callLLMWithFallback(
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no provider attempt made")
 	}
-	return nil, "", "", lastErr
+	return nil, lastProviderUsed, lastModelUsed, lastErr
 }
 
 func (a *Agent) getFailoverCooldown() *providers.CooldownTracker {

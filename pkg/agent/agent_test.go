@@ -1710,7 +1710,7 @@ func TestCallLLMWithFallback_NonRetriableErrorStopsFallback(t *testing.T) {
 	}
 
 	ag := newFailoverTestAgent(t, cfg)
-	_, _, _, err := ag.callLLMWithFallback(
+	_, providerUsed, modelUsed, err := ag.callLLMWithFallback(
 		context.Background(),
 		&providers.UnifiedRequest{Model: "primary-model"},
 		"primary",
@@ -1720,6 +1720,12 @@ func TestCallLLMWithFallback_NonRetriableErrorStopsFallback(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatalf("expected callLLMWithFallback error")
+	}
+	if providerUsed != "primary" {
+		t.Fatalf("expected failed provider to still be reported, got %q", providerUsed)
+	}
+	if modelUsed != "primary-model" {
+		t.Fatalf("expected failed model to still be reported, got %q", modelUsed)
 	}
 
 	failoverErr, ok := errors.AsType[*providers.FailoverError](err)
@@ -1803,6 +1809,82 @@ func TestCallLLMWithFallback_SkipsProviderInCooldownOnSubsequentAttempt(t *testi
 	}
 	if fallbackCalls != 2 {
 		t.Fatalf("expected fallback to be called twice, got %d", fallbackCalls)
+	}
+}
+
+func TestChatWithProviderModelDetailed_ReturnsActualRouteOnFailure(t *testing.T) {
+	primaryKind := failoverTestProviderKind(t, "primary")
+	registerFailoverTestProvider(t, primaryKind, new(int), "", errors.New("status 400: invalid request format"))
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Orchestrator = orchestratorLegacy
+	cfg.Agents.Defaults.Provider = "primary"
+	cfg.Agents.Defaults.Model = "primary-model"
+	cfg.Providers = []config.ProviderProfile{
+		{
+			Name:         "primary",
+			ProviderKind: primaryKind,
+			Models:       []string{"primary-model"},
+			DefaultModel: "primary-model",
+		},
+	}
+
+	ag := newFailoverTestAgent(t, cfg)
+	_, routeResult, err := ag.chatWithProviderModelDetailed(
+		context.Background(),
+		&testSession{},
+		"hello",
+		"primary",
+		"primary-model",
+		nil,
+		PromptContext{},
+	)
+	if err == nil {
+		t.Fatal("expected chatWithProviderModelDetailed error")
+	}
+	if routeResult.ActualProvider != "primary" {
+		t.Fatalf("expected actual provider on failure, got %+v", routeResult)
+	}
+	if routeResult.ActualModel != "primary-model" {
+		t.Fatalf("expected actual model on failure, got %+v", routeResult)
+	}
+}
+
+func TestChatWithPromptContextDetailed_BladesReturnsActualRouteOnFailure(t *testing.T) {
+	primaryKind := failoverTestProviderKind(t, "blades-primary")
+	registerFailoverTestProvider(t, primaryKind, new(int), "", errors.New("status 400: invalid request format"))
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Orchestrator = orchestratorBlades
+	cfg.Agents.Defaults.Provider = "primary"
+	cfg.Agents.Defaults.Model = "primary-model"
+	cfg.Providers = []config.ProviderProfile{
+		{
+			Name:         "primary",
+			ProviderKind: primaryKind,
+			Models:       []string{"primary-model"},
+			DefaultModel: "primary-model",
+		},
+	}
+
+	ag := newFailoverTestAgent(t, cfg)
+	_, routeResult, err := ag.ChatWithPromptContextDetailed(
+		context.Background(),
+		&testSession{},
+		"hello",
+		PromptContext{
+			RequestedProvider: "primary",
+			RequestedModel:    "primary-model",
+		},
+	)
+	if err == nil {
+		t.Fatal("expected blades ChatWithPromptContextDetailed error")
+	}
+	if routeResult.ActualProvider != "primary" {
+		t.Fatalf("expected actual provider on blades failure, got %+v", routeResult)
+	}
+	if routeResult.ActualModel != "primary-model" {
+		t.Fatalf("expected actual model on blades failure, got %+v", routeResult)
 	}
 }
 

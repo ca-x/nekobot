@@ -5945,6 +5945,39 @@ type chatRouteCompactionState struct {
 	EstimatedCharsSaved int      `json:"estimated_chars_saved,omitempty"`
 }
 
+func buildChatRouteWSResponse(sessionID, runtimeID string, routeResult agent.ChatRouteResult) chatWSResponse {
+	return chatWSResponse{
+		Type:      "route_result",
+		Timestamp: time.Now().Unix(),
+		SessionID: strings.TrimSpace(sessionID),
+		Route: &chatRouteState{
+			RequestedProvider: routeResult.RequestedProvider,
+			RequestedModel:    routeResult.RequestedModel,
+			RequestedFallback: append([]string(nil), routeResult.RequestedFallback...),
+			ResolvedOrder:     append([]string(nil), routeResult.ResolvedOrder...),
+			ActualProvider:    routeResult.ActualProvider,
+			ActualModel:       routeResult.ActualModel,
+			Preflight: &chatRoutePreflightState{
+				Action:        routeResult.Preflight.Action,
+				Applied:       routeResult.Preflight.Applied,
+				BudgetStatus:  routeResult.Preflight.BudgetStatus,
+				BudgetReasons: append([]string(nil), routeResult.Preflight.BudgetReasons...),
+				Compaction: chatRouteCompactionState{
+					Recommended:         routeResult.Preflight.Compaction.Recommended,
+					Strategy:            routeResult.Preflight.Compaction.Strategy,
+					Reasons:             append([]string(nil), routeResult.Preflight.Compaction.Reasons...),
+					EstimatedCharsSaved: routeResult.Preflight.Compaction.EstimatedCharsSaved,
+				},
+			},
+			ContextBudgetStatus:   routeResult.ContextBudgetStatus,
+			ContextBudgetReasons:  append([]string(nil), routeResult.ContextBudgetReasons...),
+			CompactionRecommended: routeResult.CompactionRecommended,
+			CompactionStrategy:    routeResult.CompactionStrategy,
+			RuntimeID:             runtimeID,
+		},
+	}
+}
+
 type toolWSMessage struct {
 	Type string `json:"type"` // "input", "ping", "kill", "resize"
 	Data string `json:"data,omitempty"`
@@ -6314,6 +6347,15 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				buildWebUIChatPromptContext(sessionID, username, provider, model, fallback, explicitPromptIDs, runtimeID),
 			)
 			if err != nil {
+				routeResp := buildChatRouteWSResponse(clientSessionID, runtimeID, routeResult)
+				if data, marshalErr := json.Marshal(routeResp); marshalErr == nil {
+					if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+						s.logger.Warn("Failed to set chat route deadline", zap.Error(err))
+					}
+					if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+						s.logger.Warn("Failed to send chat route result", zap.Error(err))
+					}
+				}
 				sendWSError(conn, fmt.Sprintf("agent error: %v", err), clientSessionID)
 				continue
 			}
@@ -6339,36 +6381,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				}
 			}
 
-			routeResp := chatWSResponse{
-				Type:      "route_result",
-				Timestamp: time.Now().Unix(),
-				SessionID: clientSessionID,
-				Route: &chatRouteState{
-					RequestedProvider: routeResult.RequestedProvider,
-					RequestedModel:    routeResult.RequestedModel,
-					RequestedFallback: append([]string(nil), routeResult.RequestedFallback...),
-					ResolvedOrder:     append([]string(nil), routeResult.ResolvedOrder...),
-					ActualProvider:    routeResult.ActualProvider,
-					ActualModel:       routeResult.ActualModel,
-					Preflight: &chatRoutePreflightState{
-						Action:        routeResult.Preflight.Action,
-						Applied:       routeResult.Preflight.Applied,
-						BudgetStatus:  routeResult.Preflight.BudgetStatus,
-						BudgetReasons: append([]string(nil), routeResult.Preflight.BudgetReasons...),
-						Compaction: chatRouteCompactionState{
-							Recommended:         routeResult.Preflight.Compaction.Recommended,
-							Strategy:            routeResult.Preflight.Compaction.Strategy,
-							Reasons:             append([]string(nil), routeResult.Preflight.Compaction.Reasons...),
-							EstimatedCharsSaved: routeResult.Preflight.Compaction.EstimatedCharsSaved,
-						},
-					},
-					ContextBudgetStatus:   routeResult.ContextBudgetStatus,
-					ContextBudgetReasons:  append([]string(nil), routeResult.ContextBudgetReasons...),
-					CompactionRecommended: routeResult.CompactionRecommended,
-					CompactionStrategy:    routeResult.CompactionStrategy,
-					RuntimeID:             runtimeID,
-				},
-			}
+			routeResp := buildChatRouteWSResponse(clientSessionID, runtimeID, routeResult)
 			if data, err := json.Marshal(routeResp); err == nil {
 				if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
 					s.logger.Warn("Failed to set chat route deadline", zap.Error(err))
