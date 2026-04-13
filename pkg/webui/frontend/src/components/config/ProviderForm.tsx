@@ -106,6 +106,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
 
   const selectedKind = watch('provider_kind');
   const draftName = watch('name');
+  const draftAPIKey = watch('api_key');
   const selectedType = useMemo(
     () => providerTypes.find((item) => item.id === selectedKind) ?? providerTypes[0] ?? null,
     [providerTypes, selectedKind],
@@ -128,7 +129,10 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
   const saveDisabled =
     isSaving ||
     (!isEdit && !draftName.trim()) ||
-    (!isEdit && apiKeyRequired && !watch('api_key').trim());
+    (!isEdit && apiKeyRequired && !draftAPIKey.trim());
+  const discoverDisabled =
+    discoverModels.isPending ||
+    (apiKeyRequired && !draftAPIKey.trim());
   const logo = getProviderLogo(selectedType?.icon ?? selectedKind);
 
   const applyDiscover = () => {
@@ -393,7 +397,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                         variant="outline"
                         className="rounded-full"
                         onClick={applyDiscover}
-                        disabled={discoverModels.isPending}
+                        disabled={discoverDisabled}
                       >
                         {discoverModels.isPending ? (
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />

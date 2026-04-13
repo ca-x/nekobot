@@ -6553,11 +6553,30 @@ func normalizeProviderNames(names []string) []string {
 
 func (s *Server) hasProvider(name string) bool {
 	for _, p := range s.config.Providers {
-		if strings.TrimSpace(p.Name) == name {
+		if strings.TrimSpace(p.Name) == name && providerHasRequiredAuthFields(p) {
 			return true
 		}
 	}
 	return false
+}
+
+func providerHasRequiredAuthFields(profile config.ProviderProfile) bool {
+	meta, ok := providerregistry.Get(strings.ToLower(strings.TrimSpace(profile.ProviderKind)))
+	if !ok {
+		return true
+	}
+	for _, field := range meta.AuthFields {
+		if !field.Required {
+			continue
+		}
+		switch field.Key {
+		case "api_key":
+			if strings.TrimSpace(profile.APIKey) == "" {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *Server) hasProviderGroup(name string) bool {

@@ -74,7 +74,7 @@ function formatQueryErrorMessage(error: unknown, fallbackKey: string): string {
 }
 
 function buildModelList(
-  providers: Array<{ name: string }>,
+  providers: Array<{ name: string; api_key_set?: boolean }>,
   modelOptions: Array<{ value: string; label: string; providers: string[] }>,
   config: ConfigData | undefined,
 ): {
@@ -116,6 +116,9 @@ function buildModelList(
   }
 
   for (const provider of providers) {
+    if (provider.api_key_set === false) {
+      continue;
+    }
     addRouteTarget({ name: provider.name, type: 'provider' });
   }
 

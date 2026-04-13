@@ -494,6 +494,9 @@ function AgentsSectionForm({
     const seen = new Set<string>();
 
     for (const provider of providers) {
+      if (!provider.api_key_set) {
+        continue;
+      }
       const name = provider.name.trim();
       if (!name || seen.has(name)) {
         continue;
