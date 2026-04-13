@@ -630,6 +630,9 @@ function formatTaskTimestamp(value?: string) {
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
+  if (parsed.getUTCFullYear() <= 1) {
+    return '-';
+  }
   return parsed.toLocaleString();
 }
 
