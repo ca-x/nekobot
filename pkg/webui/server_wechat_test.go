@@ -61,6 +61,32 @@ func TestHandleGetWechatBindingStatus_NoBinding(t *testing.T) {
 	}
 }
 
+func TestHandleDeleteWechatBinding_NoBindingReturnsNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+
+	store, err := ilinkauth.NewStore(cfg)
+	if err != nil {
+		t.Fatalf("NewStore failed: %v", err)
+	}
+
+	s := &Server{config: cfg, ilinkAuth: ilinkauth.NewService(store, nil)}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodDelete, "/api/channels/wechat/binding", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/api/channels/wechat/binding")
+	setWechatTestUser(c, "alice", "user-1")
+
+	if err := s.handleDeleteWechatBinding(c); err != nil {
+		t.Fatalf("handleDeleteWechatBinding failed: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusNotFound, rec.Code, rec.Body.String())
+	}
+}
+
 func TestHandleWechatBindingLifecycle_UsesSharedIlinkAuth(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()

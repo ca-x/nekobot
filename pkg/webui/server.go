@@ -4224,6 +4224,13 @@ func (s *Server) handleDeleteWechatBinding(c *echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": err.Error()})
 	}
 
+	if _, err := authSvc.GetBinding(profile.UserID); err != nil {
+		if errors.Is(err, ilinkauth.ErrBindingNotFound) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "no active wechat binding"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
 	if err := authSvc.DeleteBinding(profile.UserID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}

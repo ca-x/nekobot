@@ -369,6 +369,7 @@ function WechatBindingCard({
   const status = binding?.binding?.status ?? 'idle';
   const qrImage = binding?.binding?.qr_png_data_url;
   const canPoll = status === 'pending' || status === 'scanned';
+  const canDeleteBinding = Boolean(binding?.bound || binding?.active_account_id);
   const accounts = binding?.accounts ?? [];
 
   return (
@@ -488,7 +489,7 @@ function WechatBindingCard({
             <Button variant="outline" onClick={onPoll} disabled={!canPoll || polling}>
               {polling ? t('wechatPollingBind') : t('wechatRefreshBind')}
             </Button>
-            <Button variant="ghost" onClick={onDelete} disabled={deleting}>
+            <Button variant="ghost" onClick={onDelete} disabled={!canDeleteBinding || deleting}>
               {deleting ? t('wechatDeletingBind') : t('wechatDeleteBind')}
             </Button>
           </div>
