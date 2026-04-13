@@ -34,6 +34,28 @@ function parseListInput(value: string): string[] {
     .filter(Boolean);
 }
 
+function defaultRouteDraft(modelID: string, providerName: string): ModelRoute {
+  return {
+    model_id: modelID,
+    provider_name: providerName,
+    enabled: true,
+    is_default: true,
+    weight_override: 0,
+    aliases: [],
+    regex_rules: [],
+    metadata: {},
+  };
+}
+
+function normalizeRoute(route: ModelRoute): ModelRoute {
+  return {
+    ...route,
+    aliases: Array.isArray(route.aliases) ? route.aliases : [],
+    regex_rules: Array.isArray(route.regex_rules) ? route.regex_rules : [],
+    metadata: route.metadata ?? {},
+  };
+}
+
 export default function ModelsPage() {
   const { data: modelCatalog = [], isLoading } = useModels();
   const { data: providers = [] } = useProviders();
@@ -43,6 +65,7 @@ export default function ModelsPage() {
   const [expandedModelID, setExpandedModelID] = useState('');
   const [newModelID, setNewModelID] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
+  const [newRouteProviderByModel, setNewRouteProviderByModel] = useState<Record<string, string>>({});
 
   const routesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
   const routesByModel = useMemo(
@@ -262,8 +285,46 @@ export default function ModelsPage() {
                 {expanded && (
                   <CardContent className="space-y-4 p-5">
                     {routes.length === 0 ? (
-                      <div className="rounded-[22px] border border-dashed border-border/70 bg-card/70 px-4 py-8 text-center">
-                        <p className="text-sm text-muted-foreground">No routes are configured for this model yet.</p>
+                      <div className="rounded-[22px] border border-dashed border-border/70 bg-card/70 px-4 py-8">
+                        <div className="space-y-4 text-center">
+                          <p className="text-sm text-muted-foreground">No routes are configured for this model yet.</p>
+                          <div className="mx-auto grid max-w-xl gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+                            <Input
+                              value={newRouteProviderByModel[model.model_id] ?? ''}
+                              onChange={(event) =>
+                                setNewRouteProviderByModel((prev) => ({
+                                  ...prev,
+                                  [model.model_id]: event.target.value,
+                                }))
+                              }
+                              placeholder="Provider name (e.g. demo-openai)"
+                              className="h-11 rounded-2xl bg-card/90"
+                              list={`providers-${model.model_id}`}
+                            />
+                            <datalist id={`providers-${model.model_id}`}>
+                              {providers.map((provider) => (
+                                <option key={provider.name} value={provider.name} />
+                              ))}
+                            </datalist>
+                            <Button
+                              type="button"
+                              className="h-11 rounded-full px-5"
+                              disabled={
+                                updateRoute.isPending ||
+                                !(newRouteProviderByModel[model.model_id] ?? '').trim()
+                              }
+                              onClick={() =>
+                                updateRoute.mutate({
+                                  modelID: model.model_id,
+                                  providerName: (newRouteProviderByModel[model.model_id] ?? '').trim(),
+                                  data: defaultRouteDraft(model.model_id, (newRouteProviderByModel[model.model_id] ?? '').trim()),
+                                })
+                              }
+                            >
+                              Add route
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <ScrollArea className="max-h-[520px] pr-3">
@@ -271,7 +332,7 @@ export default function ModelsPage() {
                           {routes.map((route) => (
                             <RouteEditor
                               key={`${route.model_id}-${route.provider_name}`}
-                              route={route}
+                              route={normalizeRoute(route)}
                               providerExists={providerNames.has(route.provider_name)}
                               onSave={(next) =>
                                 updateRoute.mutate({

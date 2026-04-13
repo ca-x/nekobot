@@ -1244,6 +1244,11 @@ func (s *Server) handleUpdateModelRoute(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	item, err := manager.Update(c.Request().Context(), modelID, providerName, input)
+	if errors.Is(err, modelroute.ErrRouteNotFound) {
+		input.ModelID = modelID
+		input.ProviderName = providerName
+		item, err = manager.Create(c.Request().Context(), input)
+	}
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}

@@ -1,0 +1,1 @@
+import{r}from"./index-BOqMTZhL.js";function a(e){const t=r.useRef(e);return r.useEffect(()=>{t.current=e}),r.useMemo(()=>(...n)=>{var o;return(o=t.current)==null?void 0:o.call(t,...n)},[])}var u=r.createContext(void 0);function c(e){const t=r.useContext(u);return e||t||"ltr"}function i(e,[t,n]){return Math.min(n,Math.max(t,e))}export{a,i as c,c as u};

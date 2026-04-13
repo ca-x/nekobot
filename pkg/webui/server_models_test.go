@@ -96,6 +96,7 @@ func TestHandleUpdateModelRouteAndGetModelRoutes(t *testing.T) {
 	if _, err := providers.Create(context.Background(), config.ProviderProfile{
 		Name:          "openai-main",
 		ProviderKind:  "openai",
+		APIKey:        "secret-key",
 		DefaultWeight: 6,
 		Enabled:       true,
 	}); err != nil {
@@ -168,6 +169,79 @@ func TestHandleUpdateModelRouteAndGetModelRoutes(t *testing.T) {
 	}
 	if got, _ := listed[0]["weight_override"].(float64); got != 12 {
 		t.Fatalf("expected weight override 12, got %+v", listed[0]["weight_override"])
+	}
+}
+
+func TestHandleUpdateModelRouteCreatesMissingRoute(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	if _, err := providers.Create(context.Background(), config.ProviderProfile{
+		Name:          "openai-main",
+		ProviderKind:  "openai",
+		APIKey:        "secret-key",
+		DefaultWeight: 6,
+		Enabled:       true,
+	}); err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	models, err := modelstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new model manager: %v", err)
+	}
+	if _, err := models.Create(context.Background(), modelstore.ModelCatalog{
+		ModelID:       "gpt-4.1",
+		DisplayName:   "GPT-4.1",
+		CatalogSource: "builtin",
+		Enabled:       true,
+	}); err != nil {
+		t.Fatalf("seed model failed: %v", err)
+	}
+
+	s := &Server{config: cfg, logger: log, providers: providers, entClient: client}
+	e := echo.New()
+	body := `{"model_id":"gpt-4.1","provider_name":"openai-main","enabled":true,"is_default":true,"weight_override":12,"aliases":["gpt-4.1-latest"],"regex_rules":["^gpt-4\\.1-mini$"],"metadata":{"provider_model_id":"gpt-4.1-mini"}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/model-routes/gpt-4.1/openai-main", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/api/model-routes/:modelID/:providerName")
+	c.SetPathValues(echo.PathValues{
+		{Name: "modelID", Value: "gpt-4.1"},
+		{Name: "providerName", Value: "openai-main"},
+	})
+
+	if err := s.handleUpdateModelRoute(c); err != nil {
+		t.Fatalf("handleUpdateModelRoute failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	routes, err := modelroute.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new route manager: %v", err)
+	}
+	listedRoutes, err := routes.ListByModel(context.Background(), "gpt-4.1")
+	if err != nil {
+		t.Fatalf("list routes failed: %v", err)
+	}
+	if len(listedRoutes) != 1 {
+		t.Fatalf("expected 1 route after create-via-update, got %d", len(listedRoutes))
+	}
+	if listedRoutes[0].ProviderName != "openai-main" {
+		t.Fatalf("unexpected route: %+v", listedRoutes[0])
 	}
 }
 
