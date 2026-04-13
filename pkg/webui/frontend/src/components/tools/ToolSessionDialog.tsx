@@ -246,6 +246,11 @@ export default function ToolSessionDialog({
   }
 
   const isPending = createMutation.isPending || updateMutation.isPending;
+  const createDisabled =
+    isPending ||
+    !getEffectiveTool() ||
+    (!isEdit && (!title.trim() || !workdir.trim())) ||
+    (proxyMode === 'custom' && !proxyUrl.trim());
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -387,7 +392,7 @@ export default function ToolSessionDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending || !getEffectiveTool()}>
+          <Button onClick={handleSubmit} disabled={createDisabled}>
             {isEdit ? t('save') : t('createSession')}
           </Button>
         </DialogFooter>

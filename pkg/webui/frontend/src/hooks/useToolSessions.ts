@@ -99,7 +99,7 @@ export function useProcessStatus(sessionId: string | null) {
 export function useCreateToolSession() {
   const qc = useQueryClient();
   return useMutation<CreateSessionResponse, Error, CreateToolSessionPayload>({
-    mutationFn: (payload) => api.post('/api/tool-sessions', payload),
+    mutationFn: (payload) => api.post('/api/tool-sessions/spawn', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: toolSessionKeys.list() });
     },
