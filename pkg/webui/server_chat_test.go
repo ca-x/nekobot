@@ -261,6 +261,15 @@ func TestBuildWebUIChatPromptContextIncludesExplicitRuntimeID(t *testing.T) {
 	}
 }
 
+func TestWebUIClientChatSessionIDHidesInternalUsernameSuffix(t *testing.T) {
+	if got := webUIClientChatSessionID(""); got != "webui-chat" {
+		t.Fatalf("unexpected base client session id: %q", got)
+	}
+	if got := webUIClientChatSessionID("runtime-ops"); got != "route:runtime-ops:webui-chat" {
+		t.Fatalf("unexpected runtime client session id: %q", got)
+	}
+}
+
 func TestResolveWebUIRuntimeSelectionUsesRuntimeDefaults(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()

@@ -5981,6 +5981,14 @@ func webUIRuntimeChatSessionID(username, runtimeID string) string {
 	return inboundrouter.SessionPrefix + ":" + runtimeID + ":" + baseSessionID
 }
 
+func webUIClientChatSessionID(runtimeID string) string {
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return "webui-chat"
+	}
+	return inboundrouter.SessionPrefix + ":" + runtimeID + ":webui-chat"
+}
+
 func buildWebUIChatPromptContext(
 	sessionID string,
 	username string,
@@ -6084,9 +6092,10 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 	}()
 
 	baseSessionID := webUIChatSessionID(username)
+	baseClientSessionID := webUIClientChatSessionID("")
 	sess, err := s.getOrCreateChatSession(baseSessionID)
 	if err != nil {
-		sendWSError(conn, fmt.Sprintf("session error: %v", err), baseSessionID)
+		sendWSError(conn, fmt.Sprintf("session error: %v", err), baseClientSessionID)
 		return nil
 	}
 
@@ -6095,7 +6104,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		Type:      "system",
 		Content:   "Connected to chat playground",
 		Timestamp: time.Now().Unix(),
-		SessionID: baseSessionID,
+		SessionID: baseClientSessionID,
 	}
 	if data, err := json.Marshal(welcome); err == nil {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -6111,7 +6120,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 		Type:      "routing",
 		Content:   mustMarshalChatRouting(routing),
 		Timestamp: time.Now().Unix(),
-		SessionID: baseSessionID,
+		SessionID: baseClientSessionID,
 	}); err == nil {
 		if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 			s.logger.Warn("Failed to send chat routing", zap.Error(err))
@@ -6162,7 +6171,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 
 		var msg chatWSMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
-			sendWSError(conn, "invalid message format", baseSessionID)
+			sendWSError(conn, "invalid message format", baseClientSessionID)
 			continue
 		}
 
@@ -6171,7 +6180,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			resp := chatWSResponse{
 				Type:      "pong",
 				Timestamp: time.Now().Unix(),
-				SessionID: baseSessionID,
+				SessionID: baseClientSessionID,
 			}
 			if data, err := json.Marshal(resp); err == nil {
 				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -6181,20 +6190,21 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 
 		case "clear":
 			clearSessionID := webUIRuntimeChatSessionID(username, msg.RuntimeID)
+			clearClientSessionID := webUIClientChatSessionID(msg.RuntimeID)
 			if err := s.clearChatSession(clearSessionID); err != nil {
-				sendWSError(conn, fmt.Sprintf("session reset failed: %v", err), clearSessionID)
+				sendWSError(conn, fmt.Sprintf("session reset failed: %v", err), clearClientSessionID)
 				continue
 			}
 			sess, err = s.sessionMgr.GetExisting(clearSessionID)
 			if err != nil {
-				sendWSError(conn, fmt.Sprintf("session error: %v", err), clearSessionID)
+				sendWSError(conn, fmt.Sprintf("session error: %v", err), clearClientSessionID)
 				continue
 			}
 			resp := chatWSResponse{
 				Type:      "system",
 				Content:   "Session cleared",
 				Timestamp: time.Now().Unix(),
-				SessionID: clearSessionID,
+				SessionID: clearClientSessionID,
 			}
 			if data, err := json.Marshal(resp); err == nil {
 				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -6209,6 +6219,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 			runtimeID := strings.TrimSpace(msg.RuntimeID)
 			sessionID := webUIRuntimeChatSessionID(username, runtimeID)
+			clientSessionID := webUIClientChatSessionID(runtimeID)
 			requestedModel := strings.TrimSpace(msg.Model)
 			requestedProvider := strings.TrimSpace(msg.Provider)
 			requestedFallback := normalizeProviderNames(msg.Fallback)
@@ -6216,7 +6227,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			if runtimeID == "" {
 				// Keep provider/fallback choices in sync with the saved config so restarts preserve them.
 				if err := s.persistChatRouting(requestedProvider, requestedModel, requestedFallback); err != nil {
-					sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err), sessionID)
+					sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err), clientSessionID)
 					continue
 				}
 			}
@@ -6229,7 +6240,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				requestedFallback,
 			)
 			if err != nil {
-				sendWSError(conn, fmt.Sprintf("runtime selection failed: %v", err), sessionID)
+				sendWSError(conn, fmt.Sprintf("runtime selection failed: %v", err), clientSessionID)
 				continue
 			}
 			if s.prompts != nil {
@@ -6239,13 +6250,13 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 					msg.SystemPromptIDs,
 					msg.UserPromptIDs,
 				); err != nil {
-					sendWSError(conn, fmt.Sprintf("save session prompts failed: %v", err), sessionID)
+					sendWSError(conn, fmt.Sprintf("save session prompts failed: %v", err), clientSessionID)
 					continue
 				}
 			}
 			sess, err = s.getOrCreateChatSession(sessionID)
 			if err != nil {
-				sendWSError(conn, fmt.Sprintf("session error: %v", err), sessionID)
+				sendWSError(conn, fmt.Sprintf("session error: %v", err), clientSessionID)
 				continue
 			}
 
@@ -6276,7 +6287,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 						Type:      "system",
 						Content:   systemText,
 						Timestamp: time.Now().Unix(),
-						SessionID: sessionID,
+						SessionID: clientSessionID,
 						Meta: map[string]interface{}{
 							"kind": "file_mentions",
 							"data": feedback,
@@ -6303,7 +6314,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				buildWebUIChatPromptContext(sessionID, username, provider, model, fallback, explicitPromptIDs, runtimeID),
 			)
 			if err != nil {
-				sendWSError(conn, fmt.Sprintf("agent error: %v", err), sessionID)
+				sendWSError(conn, fmt.Sprintf("agent error: %v", err), clientSessionID)
 				continue
 			}
 
@@ -6317,7 +6328,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Type:      "message",
 				Content:   response,
 				Timestamp: time.Now().Unix(),
-				SessionID: sessionID,
+				SessionID: clientSessionID,
 			}
 			if data, err := json.Marshal(resp); err == nil {
 				if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
@@ -6331,7 +6342,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			routeResp := chatWSResponse{
 				Type:      "route_result",
 				Timestamp: time.Now().Unix(),
-				SessionID: sessionID,
+				SessionID: clientSessionID,
 				Route: &chatRouteState{
 					RequestedProvider: routeResult.RequestedProvider,
 					RequestedModel:    routeResult.RequestedModel,
