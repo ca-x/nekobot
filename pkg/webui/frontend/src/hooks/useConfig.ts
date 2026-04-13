@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { t } from '@/lib/i18n';
 import type { RuntimeAgent } from '@/hooks/useTopology';
+import type { CronJob } from '@/hooks/useCron';
 
 export interface ConfigData {
   [section: string]: Record<string, unknown>;
@@ -136,6 +137,7 @@ export interface StatusData {
   task_count: number;
   task_state_counts: Record<string, number>;
   recent_tasks: StatusTask[];
+  recent_cron_jobs: CronJob[];
   runtime_states: RuntimeAgent[];
   session_runtime_states: SessionRuntimeState[];
   agent_definition?: AgentDefinitionStatus | null;

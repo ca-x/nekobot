@@ -265,6 +265,7 @@
   "systemTasksRunning": "実行中",
   "systemTasksPending": "待機中",
   "systemTasksFailed": "失敗",
+  "systemRecentCronJobs": "最近の Cron アクティビティ",
   "systemTasksEmpty": "まだバックグラウンドタスクは記録されていません。",
   "systemTasksStateRunning": "実行中",
   "systemTasksStatePending": "待機中",

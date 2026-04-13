@@ -18,6 +18,7 @@ import (
 	"nekobot/pkg/approval"
 	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/config"
+	"nekobot/pkg/cron"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/tasks"
@@ -119,6 +120,7 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 		"task_count",
 		"task_state_counts",
 		"recent_tasks",
+		"recent_cron_jobs",
 		"agent_definition",
 		"gateway_host",
 		"gateway_port",
@@ -145,6 +147,9 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 	}
 	if recentTasks, ok := payload["recent_tasks"].([]interface{}); !ok || len(recentTasks) != 0 {
 		t.Fatalf("expected empty recent_tasks, got %+v", payload["recent_tasks"])
+	}
+	if recentCronJobs, ok := payload["recent_cron_jobs"].([]interface{}); !ok || len(recentCronJobs) != 0 {
+		t.Fatalf("expected empty recent_cron_jobs, got %+v", payload["recent_cron_jobs"])
 	}
 	if runtimeStates, ok := payload["runtime_states"].([]interface{}); !ok || len(runtimeStates) != 0 {
 		t.Fatalf("expected empty runtime_states, got %+v", payload["runtime_states"])
@@ -235,6 +240,74 @@ func TestHandleStatus_IncludesRecentTasks(t *testing.T) {
 	}
 	if payload.RecentTasks[1].ID != "task-running" {
 		t.Fatalf("expected second task to be task-running, got %q", payload.RecentTasks[1].ID)
+	}
+}
+
+func TestHandleStatus_IncludesRecentCronJobsWithoutTaskSnapshots(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	cronMgr := cron.New(log, nil, client)
+	job, err := cronMgr.AddCronJob("nightly-check", "*/5 * * * *", "hello cron")
+	if err != nil {
+		t.Fatalf("add cron job: %v", err)
+	}
+	job.LastRun = time.Now().Add(-2 * time.Minute)
+	job.NextRun = time.Now().Add(3 * time.Minute)
+	job.RunCount = 2
+	job.LastSuccess = false
+	job.LastError = "provider timeout"
+
+	s := &Server{
+		config:    cfg,
+		startedAt: time.Now().Add(-5 * time.Second),
+		taskStore: tasks.NewStore(),
+		cronMgr:   cronMgr,
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleStatus(ctx); err != nil {
+		t.Fatalf("handleStatus failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var payload struct {
+		TaskCount      int          `json:"task_count"`
+		RecentTasks    []tasks.Task `json:"recent_tasks"`
+		RecentCronJobs []cron.Job   `json:"recent_cron_jobs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal status payload failed: %v", err)
+	}
+	if payload.TaskCount != 0 {
+		t.Fatalf("expected task_count 0, got %d", payload.TaskCount)
+	}
+	if len(payload.RecentTasks) != 0 {
+		t.Fatalf("expected no recent tasks, got %d", len(payload.RecentTasks))
+	}
+	if len(payload.RecentCronJobs) != 1 {
+		t.Fatalf("expected one recent cron job, got %d", len(payload.RecentCronJobs))
+	}
+	if payload.RecentCronJobs[0].ID != job.ID {
+		t.Fatalf("expected recent cron job %q, got %q", job.ID, payload.RecentCronJobs[0].ID)
+	}
+	if payload.RecentCronJobs[0].LastError != "provider timeout" {
+		t.Fatalf("expected recent cron error to be preserved, got %q", payload.RecentCronJobs[0].LastError)
 	}
 }
 

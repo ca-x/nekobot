@@ -265,6 +265,7 @@
   "systemTasksRunning": "运行中",
   "systemTasksPending": "等待中",
   "systemTasksFailed": "失败",
+  "systemRecentCronJobs": "最近 Cron 活动",
   "systemTasksEmpty": "当前还没有记录任何后台任务。",
   "systemTasksStateRunning": "运行中",
   "systemTasksStatePending": "等待中",

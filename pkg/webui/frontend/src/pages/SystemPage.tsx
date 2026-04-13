@@ -1,6 +1,7 @@
 import { t } from '@/lib/i18n';
 import { SessionRuntimeState, StatusTask, useReloadService, useRestartService, useServiceStatus, useStatus } from '@/hooks/useConfig';
 import { useInstallQMD, useQMDStatus, useUpdateQMD } from '@/hooks/useQMD';
+import type { CronJob } from '@/hooks/useCron';
 import Header from '@/components/layout/Header';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ export default function SystemPage() {
   const serviceStatus = service?.status ?? 'unknown';
   const taskCounts = status?.task_state_counts ?? {};
   const recentTasks = status?.recent_tasks ?? [];
+  const recentCronJobs = status?.recent_cron_jobs ?? [];
   const runtimeStates = status?.runtime_states ?? [];
   const sessionStates = status?.session_runtime_states ?? [];
   const agentDefinition = status?.agent_definition ?? null;
@@ -108,6 +110,15 @@ export default function SystemPage() {
                   <div className="space-y-3">
                     {recentTasks.map((task) => (
                       <TaskCard key={task.id} task={task} />
+                    ))}
+                  </div>
+                ) : recentCronJobs.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      {t('systemRecentCronJobs')}
+                    </div>
+                    {recentCronJobs.map((job) => (
+                      <CronJobCard key={job.id} job={job} />
                     ))}
                   </div>
                 ) : (
@@ -529,6 +540,49 @@ function TaskCard({ task }: { task: StatusTask }) {
           ) : null}
         </div>
         <div className="break-all text-xs text-muted-foreground md:max-w-[14rem] md:text-right">{task.id}</div>
+      </div>
+    </div>
+  );
+}
+
+function CronJobCard({ job }: { job: CronJob }) {
+  const state = job.last_success ? 'completed' : 'failed';
+  const detailTime = job.last_run || job.next_run || job.created_at;
+  return (
+    <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground/80">
+              cron
+            </span>
+            <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em]', taskStateClassName(state))}>
+              {formatTaskState(state)}
+            </span>
+            {job.enabled ? (
+              <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-emerald-700 dark:text-emerald-300">
+                {t('enabled')}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-3 text-sm font-semibold text-foreground">{job.name || job.id}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1">
+              <Clock3 className="h-3.5 w-3.5" />
+              {formatTaskTimestamp(detailTime)}
+            </span>
+            <span>{t('cronRunCount')}: {String(job.run_count ?? 0)}</span>
+          </div>
+          {job.last_error ? (
+            <div className="mt-3 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{job.last_error}</span>
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="break-all text-xs text-muted-foreground md:max-w-[14rem] md:text-right">{job.id}</div>
       </div>
     </div>
   );

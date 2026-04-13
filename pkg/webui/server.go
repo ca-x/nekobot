@@ -5491,6 +5491,7 @@ func (s *Server) handleStatus(c *echo.Context) error {
 	}
 	taskSnapshots := s.listTaskSnapshots()
 	recentTasks, stateCounts := summarizeTasks(taskSnapshots, 5)
+	recentCronJobs := s.listRecentCronJobs(5)
 	runtimeStates, err := s.deriveRuntimeStatuses(c.Request().Context())
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -5518,6 +5519,7 @@ func (s *Server) handleStatus(c *echo.Context) error {
 		"task_count":             len(taskSnapshots),
 		"task_state_counts":      stateCounts,
 		"recent_tasks":           recentTasks,
+		"recent_cron_jobs":       recentCronJobs,
 		"runtime_states":         runtimeStates,
 		"session_runtime_states": sessionStates,
 		"agent_definition": func() interface{} {
@@ -5540,6 +5542,36 @@ func (s *Server) listTaskSnapshots() []tasks.Task {
 		return nil
 	}
 	return s.taskStore.List()
+}
+
+func (s *Server) listRecentCronJobs(limit int) []cron.Job {
+	if s == nil || s.cronMgr == nil {
+		return []cron.Job{}
+	}
+
+	jobs := s.cronMgr.ListJobs()
+	if len(jobs) == 0 {
+		return []cron.Job{}
+	}
+
+	filtered := make([]cron.Job, 0, len(jobs))
+	for _, job := range jobs {
+		if job == nil || job.LastRun.IsZero() {
+			continue
+		}
+		filtered = append(filtered, *job)
+	}
+	if len(filtered) == 0 {
+		return []cron.Job{}
+	}
+
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return filtered[i].LastRun.After(filtered[j].LastRun)
+	})
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+	return filtered
 }
 
 func (s *Server) listSessionStates() []tasks.SessionState {

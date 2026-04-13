@@ -265,6 +265,7 @@
   "systemTasksRunning": "Running",
   "systemTasksPending": "Pending",
   "systemTasksFailed": "Failed",
+  "systemRecentCronJobs": "Recent cron activity",
   "systemTasksEmpty": "No background tasks have been recorded yet.",
   "systemTasksStateRunning": "Running",
   "systemTasksStatePending": "Pending",
