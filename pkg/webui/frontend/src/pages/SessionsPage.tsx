@@ -64,6 +64,13 @@ export default function SessionsPage() {
     }
   }, [selectedId, selectedExists]);
 
+  useEffect(() => {
+    if (selectedId || sortedSessions.length === 0) {
+      return;
+    }
+    setSelectedId(sortedSessions[0].id);
+  }, [selectedId, sortedSessions]);
+
   const {
     data: detail,
     isLoading: isDetailLoading,
