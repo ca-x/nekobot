@@ -21,7 +21,17 @@ export function getChannelAccountValidationMessage({
     return null;
   }
 
-  if (channelType.trim().toLowerCase() !== 'wechat') {
+  const normalizedChannelType = channelType.trim().toLowerCase();
+  if (normalizedChannelType === 'gotify') {
+    const serverURL = typeof config.server_url === 'string' ? config.server_url.trim() : '';
+    const appToken = typeof config.app_token === 'string' ? config.app_token.trim() : '';
+    if (serverURL !== '' && appToken !== '') {
+      return null;
+    }
+    return t('runtimeTopologyGotifyCredentialsHint');
+  }
+
+  if (normalizedChannelType !== 'wechat') {
     return null;
   }
 

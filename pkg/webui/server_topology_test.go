@@ -222,6 +222,54 @@ func TestHandleCreateChannelAccountRejectsEnabledWechatAccountWithoutCredentials
 	}
 }
 
+func TestHandleCreateChannelAccountRejectsEnabledGotifyAccountWithoutCredentials(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+
+	s := &Server{
+		config:     cfg,
+		logger:     log,
+		entClient:  client,
+		accountMgr: accountMgr,
+	}
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/channel-accounts", strings.NewReader(`{
+		"channel_type":"gotify",
+		"account_key":"alerts",
+		"display_name":"Alerts",
+		"enabled":true,
+		"config":{"priority":5}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleCreateChannelAccount(ctx); err != nil {
+		t.Fatalf("handleCreateChannelAccount failed: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "config.server_url") {
+		t.Fatalf("expected gotify credentials validation error, got %s", rec.Body.String())
+	}
+}
+
 func TestHandleCreateAccountBindingRejectsDisabledTargetsWhenEnabled(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()

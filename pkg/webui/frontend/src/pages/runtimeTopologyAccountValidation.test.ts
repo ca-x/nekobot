@@ -35,7 +35,39 @@ test('enabled wechat accounts require bot token and iLink bot id', () => {
   );
 });
 
-test('disabled wechat accounts and other channel types stay valid without wechat credentials', () => {
+test('enabled gotify accounts require server url and app token', () => {
+  assert.equal(
+    getChannelAccountValidationMessage({
+      channelType: 'gotify',
+      enabled: true,
+      config: {},
+      t: (key: string) => key,
+    }),
+    'runtimeTopologyGotifyCredentialsHint',
+  );
+
+  assert.equal(
+    getChannelAccountValidationMessage({
+      channelType: 'gotify',
+      enabled: true,
+      config: { server_url: 'https://gotify.example.com' },
+      t: (key: string) => key,
+    }),
+    'runtimeTopologyGotifyCredentialsHint',
+  );
+
+  assert.equal(
+    getChannelAccountValidationMessage({
+      channelType: 'gotify',
+      enabled: true,
+      config: { server_url: 'https://gotify.example.com', app_token: 'token' },
+      t: (key: string) => key,
+    }),
+    null,
+  );
+});
+
+test('disabled wechat/gotify accounts and unrelated channel types stay valid without credentials', () => {
   assert.equal(
     getChannelAccountValidationMessage({
       channelType: 'wechat',
@@ -49,6 +81,16 @@ test('disabled wechat accounts and other channel types stay valid without wechat
   assert.equal(
     getChannelAccountValidationMessage({
       channelType: 'gotify',
+      enabled: false,
+      config: {},
+      t: (key: string) => key,
+    }),
+    null,
+  );
+
+  assert.equal(
+    getChannelAccountValidationMessage({
+      channelType: 'discord',
       enabled: true,
       config: {},
       t: (key: string) => key,

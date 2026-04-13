@@ -1193,6 +1193,7 @@
   "runtimeTopologyListFieldHint": "每行一项。",
   "runtimeTopologyJsonFieldHint": "这里只接受 JSON 对象。高级路由或 runtime 专属字段放在这里。",
   "runtimeTopologyInvalidJsonHint": "请先修复无效的 JSON，再保存。",
+  "runtimeTopologyGotifyCredentialsHint": "启用中的 Gotify 账户必须提供 config.server_url 和 config.app_token。",
   "runtimeTopologyWechatCredentialsHint": "启用中的微信账户必须提供 config.bot_token 和 config.ilink_bot_id。请补齐这两个字段，或先禁用账户再保存为草稿。",
   "runtimeTopologyJsonObjectRequired": "该字段必须是 JSON 对象。",
   "runtimeTopologyPriorityInvalid": "优先级必须是正整数。",

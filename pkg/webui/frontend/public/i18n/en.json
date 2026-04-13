@@ -1193,6 +1193,7 @@
   "runtimeTopologyListFieldHint": "One item per line.",
   "runtimeTopologyJsonFieldHint": "JSON object only. Keep advanced routing or runtime-specific fields here.",
   "runtimeTopologyInvalidJsonHint": "Fix invalid JSON before saving.",
+  "runtimeTopologyGotifyCredentialsHint": "Enabled Gotify accounts must include config.server_url and config.app_token.",
   "runtimeTopologyWechatCredentialsHint": "Enabled WeChat accounts must include config.bot_token and config.ilink_bot_id. Add both fields or disable the account to save it as a draft.",
   "runtimeTopologyJsonObjectRequired": "This field must be a JSON object.",
   "runtimeTopologyPriorityInvalid": "Priority must be a positive integer.",

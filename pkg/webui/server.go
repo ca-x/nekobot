@@ -7121,6 +7121,12 @@ func validateChannelAccountInput(item channelaccounts.ChannelAccount) error {
 		if strings.TrimSpace(botToken) == "" || strings.TrimSpace(botID) == "" {
 			return fmt.Errorf("enabled wechat account requires config.bot_token and config.ilink_bot_id")
 		}
+	case "gotify":
+		serverURL, _ := item.Config["server_url"].(string)
+		appToken, _ := item.Config["app_token"].(string)
+		if strings.TrimSpace(serverURL) == "" || strings.TrimSpace(appToken) == "" {
+			return fmt.Errorf("enabled gotify account requires config.server_url and config.app_token")
+		}
 	}
 
 	return nil
