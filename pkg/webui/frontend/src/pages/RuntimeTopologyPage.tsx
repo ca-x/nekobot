@@ -582,7 +582,7 @@ export default function RuntimeTopologyPage() {
                               runtime.status?.availability_reason,
                             ),
                             `${t('systemTasksRunning')}: ${String(runtime.status?.current_task_count ?? 0)}`,
-                            runtime.status?.last_seen_at ? `${t('systemSessionUpdatedAt', new Date(runtime.status.last_seen_at).toLocaleString())}` : '',
+                            runtime.status?.last_seen_at ? `${t('systemSessionUpdatedAt', formatOptionalTimestamp(runtime.status.last_seen_at))}` : '',
                             runtime.prompt_id
                               ? t('runtimeTopologyPrompt', runtime.prompt_id)
                               : t('runtimeTopologyPromptUnset'),
@@ -1147,6 +1147,20 @@ function formatRuntimeAvailabilityChip(effectiveAvailable: boolean, reason?: str
     return `${t('systemAvailable')}: ${t('systemNo')}`;
   }
   return `${t('systemAvailable')}: ${t(`runtimeTopologyAvailabilityReason_${reason}`)}`;
+}
+
+function formatOptionalTimestamp(value?: string): string {
+  if (!value) {
+    return '-';
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  if (parsed.getUTCFullYear() <= 1) {
+    return '-';
+  }
+  return parsed.toLocaleString();
 }
 
 function SectionHeading({ title, description }: { title: string; description: string }) {
