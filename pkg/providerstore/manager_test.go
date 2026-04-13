@@ -69,7 +69,7 @@ func TestManagerCRUDAndConfigSync(t *testing.T) {
 		t.Fatalf("expected connection-only provider shape, got %+v", created)
 	}
 
-	if _, err := mgr.Create(ctx, config.ProviderProfile{Name: "openai", ProviderKind: "openai"}); !errors.Is(err, ErrProviderExists) {
+	if _, err := mgr.Create(ctx, config.ProviderProfile{Name: "openai", ProviderKind: "openai", APIKey: "k3"}); !errors.Is(err, ErrProviderExists) {
 		t.Fatalf("expected ErrProviderExists, got: %v", err)
 	}
 
@@ -135,10 +135,10 @@ func TestManagerPrefersExistingDatabaseProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager first failed: %v", err)
 	}
-	if _, err := mgr1.Create(ctx, config.ProviderProfile{Name: "anthropic", ProviderKind: "anthropic"}); err != nil {
+	if _, err := mgr1.Create(ctx, config.ProviderProfile{Name: "anthropic", ProviderKind: "anthropic", APIKey: "anthropic-key"}); err != nil {
 		t.Fatalf("create anthropic in first manager failed: %v", err)
 	}
-	if _, err := mgr1.Create(ctx, config.ProviderProfile{Name: "openai", ProviderKind: "openai"}); err != nil {
+	if _, err := mgr1.Create(ctx, config.ProviderProfile{Name: "openai", ProviderKind: "openai", APIKey: "openai-key"}); err != nil {
 		t.Fatalf("create in first manager failed: %v", err)
 	}
 	_ = mgr1.Close()
@@ -178,6 +178,41 @@ func TestManagerPrefersExistingDatabaseProviders(t *testing.T) {
 
 	if len(cfg2.Providers) != 2 {
 		t.Fatalf("expected config to sync database providers, got %+v", cfg2.Providers)
+	}
+}
+
+func TestManagerRejectsProviderMissingRequiredAPIKey(t *testing.T) {
+	ctx := context.Background()
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	mgr, err := NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	_, err = mgr.Create(ctx, config.ProviderProfile{
+		Name:         "openai-empty",
+		ProviderKind: "openai",
+		APIBase:      "https://api.openai.com/v1",
+		Enabled:      true,
+	})
+	if err == nil {
+		t.Fatalf("expected create to fail for missing required api key")
+	}
+	if !errors.Is(err, ErrInvalidProvider) {
+		t.Fatalf("expected ErrInvalidProvider, got %v", err)
+	}
+	if got := len(cfg.Providers); got != 0 {
+		t.Fatalf("expected invalid provider to not sync into config, got %d entries", got)
 	}
 }
 

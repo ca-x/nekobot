@@ -11,6 +11,7 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/providerregistry"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/storage/ent/provider"
 )
@@ -20,6 +21,8 @@ var (
 	ErrProviderExists = errors.New("provider already exists")
 	// ErrProviderNotFound indicates the requested provider does not exist.
 	ErrProviderNotFound = errors.New("provider not found")
+	// ErrInvalidProvider indicates the supplied provider profile is invalid.
+	ErrInvalidProvider = errors.New("invalid provider")
 )
 
 // Manager persists provider profiles in SQLite and keeps runtime config in sync.
@@ -132,15 +135,41 @@ func (m *Manager) Update(ctx context.Context, name string, profile config.Provid
 		return nil, err
 	}
 
-	normalized, err := normalizeProvider(profile)
+	merged := config.ProviderProfile{
+		Name:          strings.TrimSpace(profile.Name),
+		ProviderKind:  strings.TrimSpace(profile.ProviderKind),
+		APIKey:        strings.TrimSpace(profile.APIKey),
+		APIBase:       strings.TrimSpace(profile.APIBase),
+		Proxy:         strings.TrimSpace(profile.Proxy),
+		DefaultWeight: profile.DefaultWeight,
+		Enabled:       profile.Enabled,
+		Timeout:       profile.Timeout,
+	}
+	if merged.Name == "" {
+		merged.Name = current.Name
+	}
+	if merged.ProviderKind == "" {
+		merged.ProviderKind = current.ProviderKind
+	}
+	if merged.APIKey == "" {
+		merged.APIKey = current.APIKey
+	}
+	if merged.APIBase == "" {
+		merged.APIBase = current.APIBase
+	}
+	if merged.Proxy == "" {
+		merged.Proxy = current.Proxy
+	}
+	if merged.DefaultWeight == 0 {
+		merged.DefaultWeight = current.DefaultWeight
+	}
+	if merged.Timeout == 0 {
+		merged.Timeout = current.Timeout
+	}
+
+	normalized, err := normalizeProvider(merged)
 	if err != nil {
 		return nil, err
-	}
-	if normalized.APIKey == "" {
-		normalized.APIKey = current.APIKey
-	}
-	if normalized.Name == "" {
-		normalized.Name = current.Name
 	}
 
 	if normalized.Name != name {
@@ -277,7 +306,7 @@ func toConfigProvider(rec *ent.Provider) (config.ProviderProfile, error) {
 	if rec == nil {
 		return config.ProviderProfile{}, fmt.Errorf("provider record is nil")
 	}
-	profile := config.ProviderProfile{
+	return config.ProviderProfile{
 		Name:          rec.Name,
 		ProviderKind:  rec.ProviderKind,
 		APIKey:        rec.APIKey,
@@ -286,23 +315,18 @@ func toConfigProvider(rec *ent.Provider) (config.ProviderProfile, error) {
 		DefaultWeight: rec.DefaultWeight,
 		Enabled:       rec.Enabled,
 		Timeout:       rec.Timeout,
-	}
-	normalized, err := normalizeProvider(profile)
-	if err != nil {
-		return config.ProviderProfile{}, err
-	}
-	return normalized, nil
+	}, nil
 }
 
 func normalizeProvider(profile config.ProviderProfile) (config.ProviderProfile, error) {
 	profile.Name = strings.TrimSpace(profile.Name)
 	if profile.Name == "" {
-		return config.ProviderProfile{}, fmt.Errorf("provider name is required")
+		return config.ProviderProfile{}, fmt.Errorf("%w: provider name is required", ErrInvalidProvider)
 	}
 
 	profile.ProviderKind = strings.ToLower(strings.TrimSpace(profile.ProviderKind))
 	if profile.ProviderKind == "" {
-		return config.ProviderProfile{}, fmt.Errorf("provider_kind is required")
+		return config.ProviderProfile{}, fmt.Errorf("%w: provider_kind is required", ErrInvalidProvider)
 	}
 
 	profile.APIKey = strings.TrimSpace(profile.APIKey)
@@ -319,6 +343,20 @@ func normalizeProvider(profile config.ProviderProfile) (config.ProviderProfile, 
 
 	if profile.Timeout <= 0 {
 		profile.Timeout = 60
+	}
+
+	if meta, ok := providerregistry.Get(profile.ProviderKind); ok {
+		for _, field := range meta.AuthFields {
+			if !field.Required {
+				continue
+			}
+			switch field.Key {
+			case "api_key":
+				if profile.APIKey == "" {
+					return config.ProviderProfile{}, fmt.Errorf("%w: api key is required for %s", ErrInvalidProvider, profile.ProviderKind)
+				}
+			}
+		}
 	}
 	return profile, nil
 }

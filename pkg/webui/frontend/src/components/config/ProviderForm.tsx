@@ -123,7 +123,12 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
 
   const close = () => onOpenChange(false);
   const isSaving = createProvider.isPending || updateProvider.isPending;
-  const saveDisabled = isSaving || (!isEdit && !draftName.trim());
+  const requiredAuthFields = selectedType?.auth_fields ?? [];
+  const apiKeyRequired = requiredAuthFields.some((field) => field.key === 'api_key' && field.required);
+  const saveDisabled =
+    isSaving ||
+    (!isEdit && !draftName.trim()) ||
+    (!isEdit && apiKeyRequired && !watch('api_key').trim());
   const logo = getProviderLogo(selectedType?.icon ?? selectedKind);
 
   const applyDiscover = () => {
