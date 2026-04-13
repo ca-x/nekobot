@@ -279,6 +279,7 @@ export default function ToolSessionsPage() {
 
                   {sessions.map((item) => {
                     const running = (item.state || '').toLowerCase() === 'running';
+                    const terminated = (item.state || '').toLowerCase() === 'terminated';
                     const isOpen = item.id === validActiveTab || item.id === validSplitTab;
                     const accessEnabled = (item.access_mode || '').trim().toLowerCase() !== 'none';
 
@@ -312,7 +313,13 @@ export default function ToolSessionsPage() {
                         </button>
 
                         <div className="mt-3 flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
-                          <Button variant="ghost" size="sm" className="h-8 px-3 text-[11px]" onClick={() => openTab(item.id)}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-3 text-[11px]"
+                            onClick={() => openTab(item.id)}
+                            disabled={terminated}
+                          >
                             <Terminal className="mr-1 h-3 w-3" />
                             {t('open')}
                           </Button>
@@ -321,6 +328,7 @@ export default function ToolSessionsPage() {
                             size="sm"
                             className="h-8 px-3 text-[11px]"
                             onClick={() => openTab(item.id, true)}
+                            disabled={terminated}
                           >
                             <Columns2 className="mr-1 h-3 w-3" />
                             {t('openSplit')}
