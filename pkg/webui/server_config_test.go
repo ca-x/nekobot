@@ -1541,6 +1541,93 @@ func TestHandleGetProviderRuntimeMarksInvalidConfigUnavailable(t *testing.T) {
 	}
 }
 
+func TestHandleGetProviderRuntimeRecoversAfterProviderRepair(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	providerMgr, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := providerMgr.Close(); err != nil {
+			t.Fatalf("close provider manager: %v", err)
+		}
+	})
+
+	if _, err := client.Provider.Create().
+		SetName("broken-openai").
+		SetProviderKind("openai").
+		SetAPIKey("").
+		SetAPIBase("https://api.openai.com/v1").
+		SetDefaultWeight(1).
+		SetEnabled(true).
+		SetTimeout(60).
+		Save(context.Background()); err != nil {
+		t.Fatalf("seed broken provider failed: %v", err)
+	}
+	cfg.Providers = []config.ProviderProfile{{
+		Name:          "broken-openai",
+		ProviderKind:  "openai",
+		APIKey:        "",
+		APIBase:       "https://api.openai.com/v1",
+		DefaultWeight: 1,
+		Enabled:       true,
+		Timeout:       60,
+	}}
+
+	if _, err := providerMgr.Update(context.Background(), "broken-openai", config.ProviderProfile{
+		Name:          "broken-openai",
+		ProviderKind:  "openai",
+		APIKey:        "recovered-key",
+		APIBase:       "https://api.openai.com/v1",
+		DefaultWeight: 1,
+		Enabled:       true,
+		Timeout:       60,
+	}); err != nil {
+		t.Fatalf("repair provider failed: %v", err)
+	}
+
+	s := &Server{
+		config:    cfg,
+		logger:    log,
+		providers: providerMgr,
+		agent:     &agent.Agent{},
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/providers/runtime", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleGetProviderRuntime(c); err != nil {
+		t.Fatalf("handleGetProviderRuntime failed: %v", err)
+	}
+
+	var payload []map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal provider runtime payload failed: %v", err)
+	}
+	if len(payload) != 1 {
+		t.Fatalf("expected 1 runtime item, got %d", len(payload))
+	}
+	if available, ok := payload[0]["available"].(bool); !ok || !available {
+		t.Fatalf("expected repaired provider to be available, got %+v", payload[0]["available"])
+	}
+	if reason, _ := payload[0]["disabled_reason"].(string); reason != "" {
+		t.Fatalf("expected no disabled_reason after repair, got %q", reason)
+	}
+}
+
 func newTestLogger(t *testing.T) *logger.Logger {
 	t.Helper()
 	cfg := logger.DefaultConfig()
