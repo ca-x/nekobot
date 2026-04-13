@@ -408,6 +408,31 @@ func TestAgentRegistersMemoryToolWhenSemanticMemoryEnabled(t *testing.T) {
 	}
 }
 
+func TestAgentRegistersWikiQueryTool(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	tool, ok := ag.tools.Get("wiki_query")
+	if !ok {
+		t.Fatal("expected wiki_query tool to be registered")
+	}
+	if _, ok := tool.(*tools.WikiQueryTool); !ok {
+		t.Fatalf("expected *tools.WikiQueryTool, got %T", tool)
+	}
+}
+
 func createRouteFixtures(
 	t *testing.T,
 	cfg *config.Config,

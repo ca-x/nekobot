@@ -206,6 +206,7 @@ func New(
 
 	// Message tool (will be configured later by gateway)
 	toolRegistry.MustRegister(tools.NewMessageTool(nil))
+	toolRegistry.MustRegister(tools.NewWikiQueryTool(workspace))
 
 	var semanticMemory memory.SearchManager
 	if cfg.Memory.Enabled && cfg.Memory.Semantic.Enabled {

@@ -72,6 +72,10 @@ func (m *Manager) Ensure() error {
 		}
 	}
 
+	if err := m.ensureWikiScaffold(); err != nil {
+		return fmt.Errorf("ensuring wiki scaffold: %w", err)
+	}
+
 	// Create today's log if it doesn't exist
 	if err := m.ensureTodayLog(); err != nil {
 		return fmt.Errorf("creating today's log: %w", err)

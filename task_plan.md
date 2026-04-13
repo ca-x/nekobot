@@ -98,6 +98,8 @@
     - `gateway` / `external agent runtime` / 更完整控制面接入留到后续批次
 
 ### P1 次级收尾
+- [ ] 基于 `docs/LLM_WIKI_MEMORY_SPEC.md` 创建并推进 `LLM Wiki memory` 改造任务入口（参考 `docs/superpowers/plans/2026-04-13-llm-wiki-memory.md`）。
+  - 当前已完成：任务入口创建 + 第一轮 brownfield audit 记录（见 `notes.md` 与任务文档）。
 - `closure_task_plan.md` 中遗留的 `Phase 5: Verify, commit, and deliver` 仍未在主计划中正式关闭。
 - 这条不阻塞当前 runtime/task 主线，但后续需要单独清账。
 - 新增 `codeany` 调研吸收项：
