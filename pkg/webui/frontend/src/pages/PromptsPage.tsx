@@ -206,6 +206,15 @@ export default function PromptsPage() {
   const previewBudgetStatus = previewData?.preflight.budget_status ?? previewData?.budget_status ?? 'ok';
   const previewBudgetReasons = previewData?.preflight.budget_reasons ?? previewData?.budget_reasons ?? [];
   const previewCompaction = previewData?.preflight.compaction ?? previewData?.compaction;
+  const savePromptDisabled =
+    createPrompt.isPending ||
+    updatePrompt.isPending ||
+    (!selectedPromptID &&
+      (!draft.key.trim() || !draft.name.trim() || !draft.template.trim()));
+  const saveBindingDisabled =
+    createBinding.isPending ||
+    !bindingDraft.prompt_id.trim() ||
+    (bindingDraft.scope !== 'global' && !bindingDraft.target.trim());
 
   return (
     <>
@@ -573,7 +582,7 @@ export default function PromptsPage() {
                   <Button
                     className="h-11 rounded-full px-5"
                     onClick={() => void handleSavePrompt()}
-                    disabled={createPrompt.isPending || updatePrompt.isPending}
+                    disabled={savePromptDisabled}
                   >
                     {selectedPrompt ? t('save') : t('promptCreateAction')}
                   </Button>
@@ -697,7 +706,7 @@ export default function PromptsPage() {
                   </div>
                 </div>
 
-                <Button className="h-11 w-full rounded-full" onClick={() => void handleCreateBindingRecord()} disabled={createBinding.isPending}>
+                <Button className="h-11 w-full rounded-full" onClick={() => void handleCreateBindingRecord()} disabled={saveBindingDisabled}>
                   <Plus className="mr-2 h-4 w-4" />
                   {t('promptBindingAdd')}
                 </Button>
