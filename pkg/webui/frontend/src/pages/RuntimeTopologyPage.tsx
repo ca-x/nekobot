@@ -45,6 +45,7 @@ import {
 } from '@/hooks/useTopology';
 import { t } from '@/lib/i18n';
 import { ApiError } from '@/api/client';
+import { getChannelAccountValidationMessage } from './runtimeTopologyAccountValidation';
 import { AlertTriangle, Bot, Link2, Pencil, Plus, RadioTower, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -209,6 +210,16 @@ export default function RuntimeTopologyPage() {
     (selectedRuntime !== null && selectedRuntime.enabled && selectedAccount !== null && selectedAccount.enabled);
   const runtimeFormValid = runtimeState.name.trim() !== '';
   const accountFormValid = accountState.channel_type.trim() !== '' && accountState.account_key.trim() !== '';
+  const parsedAccountConfig = tryParseJSONObject(accountState.config_text);
+  const parsedAccountMetadata = tryParseJSONObject(accountState.metadata_text);
+  const accountValidationMessage =
+    getChannelAccountValidationMessage({
+      channelType: accountState.channel_type,
+      enabled: accountState.enabled,
+      config: parsedAccountConfig,
+      t,
+    }) ??
+    (parsedAccountMetadata ? null : t('runtimeTopologyInvalidJsonHint'));
   const bindingCountByRuntimeID = new Map<string, number>();
   const bindingCountByAccountID = new Map<string, number>();
   for (const binding of bindings) {
@@ -926,10 +937,16 @@ export default function RuntimeTopologyPage() {
             <Button variant="outline" onClick={() => setAccountDialogOpen(false)} disabled={isMutating}>
               {t('cancel')}
             </Button>
-            <Button onClick={() => guardedSubmit(submitChannelAccountForm)} disabled={isMutating || !accountFormValid}>
+            <Button
+              onClick={() => guardedSubmit(submitChannelAccountForm)}
+              disabled={isMutating || !accountFormValid || Boolean(accountValidationMessage)}
+            >
               {t('save')}
             </Button>
           </DialogFooter>
+          {accountValidationMessage ? (
+            <p className="text-sm text-amber-600">{accountValidationMessage}</p>
+          ) : null}
         </DialogContent>
       </Dialog>
 
@@ -1305,6 +1322,22 @@ function parseJSONObject(value: string): Record<string, unknown> {
     throw new Error(t('runtimeTopologyJsonObjectRequired'));
   }
   return parsed as Record<string, unknown>;
+}
+
+function tryParseJSONObject(value: string): Record<string, unknown> | null {
+  const trimmed = value.trim();
+  if (trimmed === '') {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 function parsePositiveInteger(value: string): number {

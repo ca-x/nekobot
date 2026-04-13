@@ -1192,6 +1192,8 @@
   "runtimeTopologyAllowPublicReplyHint": "开启后，这条绑定可以在共享或公开渠道上下文中发回响应。",
   "runtimeTopologyListFieldHint": "每行一项。",
   "runtimeTopologyJsonFieldHint": "这里只接受 JSON 对象。高级路由或 runtime 专属字段放在这里。",
+  "runtimeTopologyInvalidJsonHint": "请先修复无效的 JSON，再保存。",
+  "runtimeTopologyWechatCredentialsHint": "启用中的微信账户必须提供 config.bot_token 和 config.ilink_bot_id。请补齐这两个字段，或先禁用账户再保存为草稿。",
   "runtimeTopologyJsonObjectRequired": "该字段必须是 JSON 对象。",
   "runtimeTopologyPriorityInvalid": "优先级必须是正整数。",
   "runtimeTopologySelectAccount": "选择账户",

@@ -1192,6 +1192,8 @@
   "runtimeTopologyAllowPublicReplyHint": "有効にすると、この binding は共有または公開チャネル文脈で返信できます。",
   "runtimeTopologyListFieldHint": "1 行に 1 項目。",
   "runtimeTopologyJsonFieldHint": "JSON object のみ使用できます。高度な routing や runtime 固有項目はここに入れます。",
+  "runtimeTopologyInvalidJsonHint": "保存する前に無効な JSON を修正してください。",
+  "runtimeTopologyWechatCredentialsHint": "有効な WeChat account には config.bot_token と config.ilink_bot_id が必要です。両方を追加するか、account を無効化して下書きとして保存してください。",
   "runtimeTopologyJsonObjectRequired": "この項目は JSON object である必要があります。",
   "runtimeTopologyPriorityInvalid": "Priority は正の整数である必要があります。",
   "runtimeTopologySelectAccount": "account を選択",
