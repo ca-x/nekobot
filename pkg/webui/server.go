@@ -5422,6 +5422,9 @@ func (s *Server) handleTestWebhook(c *echo.Context) error {
 		reply, err = s.agent.Chat(c.Request().Context(), sess, messageText)
 	}
 	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "no providers configured") {
+			return c.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]any{

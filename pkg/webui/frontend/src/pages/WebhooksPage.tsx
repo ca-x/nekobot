@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Header from '@/components/layout/Header';
 import { useConfig } from '@/hooks/useConfig';
+import { useProviders } from '@/hooks/useProviders';
 import { useSaveWebhookConfig, useTestWebhook } from '@/hooks/useWebhook';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +13,7 @@ import { t } from '@/lib/i18n';
 
 export default function WebhooksPage() {
   const { data: config } = useConfig();
+  const { data: providers = [] } = useProviders();
   const saveWebhook = useSaveWebhookConfig();
   const testWebhook = useTestWebhook();
 
@@ -18,7 +21,8 @@ export default function WebhooksPage() {
   const [enabled, setEnabled] = useState(Boolean(current.enabled));
   const [path, setPath] = useState(current.path ?? '/api/webhooks/agent');
   const [message, setMessage] = useState('hello from webhook test');
-  const canSendTest = enabled && message.trim() !== '';
+  const hasProviders = providers.length > 0;
+  const canSendTest = enabled && hasProviders && message.trim() !== '';
 
   useEffect(() => {
     setEnabled(Boolean(current.enabled));
@@ -73,7 +77,7 @@ export default function WebhooksPage() {
           <Button
             onClick={() => {
               const trimmed = message.trim();
-              if (!enabled || !trimmed) return;
+              if (!enabled || !hasProviders || !trimmed) return;
               testWebhook.mutate(trimmed);
             }}
             disabled={testWebhook.isPending || !canSendTest}
@@ -83,6 +87,14 @@ export default function WebhooksPage() {
           <p className="text-xs text-muted-foreground">
             {t('webhooksTestHint')}
           </p>
+          {!hasProviders ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+              <span>{t('chatNoProvidersDescription')}</span>{' '}
+              <Link to="/providers" className="font-medium underline underline-offset-4">
+                {t('chatGoToProviders')}
+              </Link>
+            </div>
+          ) : null}
           {testWebhook.data ? (
             <pre className="rounded-2xl border border-border/70 bg-muted/40 p-4 text-xs whitespace-pre-wrap">
               {JSON.stringify(testWebhook.data, null, 2)}

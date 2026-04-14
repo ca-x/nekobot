@@ -3,6 +3,7 @@ package webui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,7 +44,7 @@ func TestConfiguredWebhookPathIsRegisteredAndRoutesToHandler(t *testing.T) {
 
 	sessMgr := session.NewManager(t.TempDir(), cfg.Sessions)
 	server := &Server{
-		config: cfg,
+		config:     cfg,
 		sessionMgr: sessMgr,
 		webhookTestHandler: func(ctx context.Context, username, message string) (string, error) {
 			return "echo: " + username + ": " + message, nil
@@ -88,8 +89,8 @@ func TestHandleTestWebhookRoutesMessageToAgent(t *testing.T) {
 	sessMgr := session.NewManager(t.TempDir(), cfg.Sessions)
 
 	server := &Server{
-		config:            cfg,
-		sessionMgr:        sessMgr,
+		config:     cfg,
+		sessionMgr: sessMgr,
 		webhookTestHandler: func(ctx context.Context, username, message string) (string, error) {
 			return "echo: " + username + ": " + message, nil
 		},
@@ -135,5 +136,35 @@ func TestHandleTestWebhookRejectsWhenDisabled(t *testing.T) {
 	}
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleTestWebhookReturnsConflictWhenNoProvidersConfigured(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Webhook.Enabled = true
+
+	sessMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+	server := &Server{
+		config:     cfg,
+		sessionMgr: sessMgr,
+		webhookTestHandler: func(ctx context.Context, username, message string) (string, error) {
+			return "", fmt.Errorf("no providers configured")
+		},
+	}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/test", strings.NewReader(`{"message":"hello webhook"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/webhooks/test")
+
+	if err := server.handleTestWebhook(ctx); err != nil {
+		t.Fatalf("handleTestWebhook failed: %v", err)
+	}
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "no providers configured") {
+		t.Fatalf("expected no providers configured error, got %s", rec.Body.String())
 	}
 }
