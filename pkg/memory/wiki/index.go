@@ -95,7 +95,7 @@ func (m *IndexManager) Rebuild() ([]IndexEntry, error) {
 			Title:   page.Title,
 			Path:    path,
 			Type:    page.Type,
-			Summary: summarizeBody(page.Body),
+			Summary: summarizePage(page),
 			Updated: chooseTimestamp(page.Updated, info.ModTime()),
 		})
 		return nil
@@ -122,6 +122,19 @@ func summarizeBody(body string) string {
 		return trimmed
 	}
 	return ""
+}
+
+func summarizePage(page *Page) string {
+	if page == nil {
+		return ""
+	}
+	if summary := strings.TrimSpace(page.Summary); summary != "" {
+		if len(summary) > 120 {
+			return summary[:117] + "..."
+		}
+		return summary
+	}
+	return summarizeBody(page.Body)
 }
 
 func chooseTimestamp(primary, fallback time.Time) time.Time {

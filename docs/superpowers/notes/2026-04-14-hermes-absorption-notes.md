@@ -49,3 +49,12 @@ Compare Hermes Agent with Nekobot, focused on:
   - derived index / stale-check / lint protocol ideas
   - stronger wiki query behavior patterns
 - `llm-wiki` is primarily a docs/protocol architecture, so it should influence Nekobot's wiki rules and tools rather than be ported literally.
+
+
+## Additional requested reference
+- `../hermes-agent/gateway/platforms` for platform/channel capability comparison
+
+## Weixin protocol sync conclusion
+- Compared Hermes `gateway/platforms/weixin.py` against Nekobot `pkg/wechat` and `pkg/channels/wechat`.
+- Nekobot already covers the core protocol surfaces currently visible in Hermes: QR login, context_token, getconfig, sendtyping, getuploadurl, CDN media handling, and typing keepalive.
+- No concrete protocol delta was identified that required a code change in this wave; future sync should continue to watch Hermes for newly introduced request/response fields or media item shapes.

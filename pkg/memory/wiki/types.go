@@ -21,6 +21,9 @@ type Page struct {
 	Type           PageType  `yaml:"type"`
 	Tags           []string  `yaml:"tags"`
 	Sources        []string  `yaml:"sources"`
+	Aliases        []string  `yaml:"aliases,omitempty"`
+	Confidence     string    `yaml:"confidence,omitempty"`
+	Summary        string    `yaml:"summary,omitempty"`
 	Contradictions []string  `yaml:"contradictions,omitempty"`
 
 	Body string `yaml:"-"`
@@ -51,4 +54,10 @@ type SearchResult struct {
 	Page    Page
 	Summary string
 	Score   int
+}
+
+// QueryOptions narrows wiki search.
+type QueryOptions struct {
+	Type PageType
+	Tag  string
 }

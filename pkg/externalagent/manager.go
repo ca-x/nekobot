@@ -22,13 +22,6 @@ type launcherSpec struct {
 	command string
 }
 
-var supportedLaunchers = map[string]launcherSpec{
-	"codex":    {tool: "codex", command: "codex"},
-	"claude":   {tool: "claude", command: "claude"},
-	"opencode": {tool: "opencode", command: "opencode"},
-	"aider":    {tool: "aider", command: "aider"},
-}
-
 // SessionSpec describes the external-agent session identity and launch contract.
 type SessionSpec struct {
 	Owner     string
@@ -170,10 +163,11 @@ func normalizeSpec(spec SessionSpec) (SessionSpec, error) {
 	if !filepath.IsAbs(spec.Workspace) {
 		return SessionSpec{}, fmt.Errorf("absolute workspace path is required")
 	}
-	launcher, ok := supportedLaunchers[spec.AgentKind]
+	adapter, ok := NewRegistry().Get(spec.AgentKind)
 	if !ok {
 		return SessionSpec{}, fmt.Errorf("unsupported agent_kind: %s", spec.AgentKind)
 	}
+	launcher := launcherSpec{tool: adapter.Tool(), command: adapter.Command()}
 	if spec.Tool == "" {
 		spec.Tool = launcher.tool
 	} else if spec.Tool != launcher.tool {

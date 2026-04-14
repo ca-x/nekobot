@@ -43,6 +43,14 @@ func (t *WikiQueryTool) Parameters() map[string]interface{} {
 				"type":        "integer",
 				"description": "Maximum number of results to return.",
 			},
+			"type": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional page type filter (concept, topic, reference, thesis, etc.).",
+			},
+			"tag": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional tag filter.",
+			},
 		},
 		"required": []string{"query"},
 	}
@@ -63,7 +71,14 @@ func (t *WikiQueryTool) Execute(ctx context.Context, args map[string]interface{}
 	if raw, ok := args["limit"].(float64); ok {
 		limit = int(raw)
 	}
-	results, err := t.manager.Search(query, limit)
+	var opts wiki.QueryOptions
+	if rawType, ok := args["type"].(string); ok {
+		opts.Type = wiki.PageType(strings.TrimSpace(strings.ToLower(rawType)))
+	}
+	if rawTag, ok := args["tag"].(string); ok {
+		opts.Tag = strings.TrimSpace(rawTag)
+	}
+	results, err := t.manager.SearchWithOptions(query, limit, opts)
 	if err != nil {
 		return "", fmt.Errorf("wiki query: %w", err)
 	}

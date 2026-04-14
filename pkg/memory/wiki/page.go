@@ -20,6 +20,9 @@ type pageFrontmatter struct {
 	Type           PageType  `yaml:"type"`
 	Tags           []string  `yaml:"tags"`
 	Sources        []string  `yaml:"sources"`
+	Aliases        []string  `yaml:"aliases,omitempty"`
+	Confidence     string    `yaml:"confidence,omitempty"`
+	Summary        string    `yaml:"summary,omitempty"`
 	Contradictions []string  `yaml:"contradictions,omitempty"`
 }
 
@@ -54,6 +57,9 @@ func ParsePage(path string, data []byte) (*Page, error) {
 		Type:           frontmatter.Type,
 		Tags:           append([]string(nil), frontmatter.Tags...),
 		Sources:        append([]string(nil), frontmatter.Sources...),
+		Aliases:        append([]string(nil), frontmatter.Aliases...),
+		Confidence:     strings.TrimSpace(frontmatter.Confidence),
+		Summary:        strings.TrimSpace(frontmatter.Summary),
 		Contradictions: append([]string(nil), frontmatter.Contradictions...),
 		Body:           body,
 		FilePath:       path,
@@ -114,6 +120,9 @@ func RenderPage(page *Page) (string, error) {
 		Type:           page.Type,
 		Tags:           append([]string(nil), page.Tags...),
 		Sources:        append([]string(nil), page.Sources...),
+		Aliases:        append([]string(nil), page.Aliases...),
+		Confidence:     strings.TrimSpace(page.Confidence),
+		Summary:        strings.TrimSpace(page.Summary),
 		Contradictions: append([]string(nil), page.Contradictions...),
 	}
 	yamlBytes, err := yaml.Marshal(frontmatter)

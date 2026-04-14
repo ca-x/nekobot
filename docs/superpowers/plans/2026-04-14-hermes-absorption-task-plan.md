@@ -18,3 +18,17 @@ Compare ~/code/hermes-agent against nekobot, identify the highest-value capabili
 ## Verification Status
 - Targeted Go tests for new/changed slices are green.
 - Frontend build currently blocked by missing local `node_modules` / `tsc` in this worktree; environment fix pending.
+
+
+## Scope expansion
+- Additional requested comparison: `/home/czyt/code/hermes-agent/gateway/platforms`
+- New objective: absorb worthwhile platform/channel capability improvements into Nekobot where the fit is clear and the slice stays reviewable.
+
+## Updated implementation wave
+- gentle-ai-inspired external-agent adapter/discovery/install-hint
+- llm-wiki-inspired wiki schema/query improvements
+- hermes gateway/platforms-inspired platform capability improvements
+
+
+## Design constraint update
+- Nekobot has no historical data burden for this wave. Prefer cleaner model/protocol design over compatibility scaffolding, as long as frontend/backend remain usable.
