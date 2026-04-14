@@ -433,6 +433,31 @@ func TestAgentRegistersWikiQueryTool(t *testing.T) {
 	}
 }
 
+func TestAgentRegistersWikiLintTool(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	logCfg.Development = true
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+
+	ag, err := New(cfg, log, nil, nil, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+
+	tool, ok := ag.tools.Get("wiki_lint")
+	if !ok {
+		t.Fatal("expected wiki_lint tool to be registered")
+	}
+	if _, ok := tool.(*tools.WikiLintTool); !ok {
+		t.Fatalf("expected *tools.WikiLintTool, got %T", tool)
+	}
+}
+
 func createRouteFixtures(
 	t *testing.T,
 	cfg *config.Config,

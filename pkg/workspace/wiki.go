@@ -14,17 +14,23 @@ var wikiBootstrapFiles = map[string]string{
 - project: Nekobot
 - purpose: Structured LLM-facing knowledge base
 
-## Rules
+## Conventions
 - Every wiki page starts with YAML frontmatter.
 - Every durable page should be listed in [[index]].
 - Every mutation should append an entry to [[log]].
+- Use [[wikilinks]] between related pages (minimum 2 outbound links per page when possible).
 
-## Suggested directories
-- raw/
-- entities/
-- concepts/
-- comparisons/
-- queries/
+## Tag Taxonomy
+- memory
+- research
+- project
+- decision
+- people
+- company
+
+## Page Thresholds
+- Split page: exceeds ~200 lines
+- Archive page: content fully superseded
 `,
 	filepath.Join("wiki", "index.md"): `# Wiki Index
 

@@ -61,3 +61,34 @@ type QueryOptions struct {
 	Type PageType
 	Tag  string
 }
+
+// WikiConfig stores schema conventions loaded from SCHEMA.md.
+type WikiConfig struct {
+	Domain        string
+	TagTaxonomy   []string
+	MinOutLinks   int
+	SplitLines    int
+	ArchivePolicy string
+}
+
+// LintResult summarizes wiki health issues.
+type LintResult struct {
+	BrokenLinks    []LinkIssue
+	MissingIndex   []string
+	OversizedPages []string
+	OrphanPages    []string
+	TagViolations  []TagViolation
+	TotalIssues    int
+}
+
+// LinkIssue records a broken wikilink.
+type LinkIssue struct {
+	SourcePage string
+	TargetLink string
+}
+
+// TagViolation records invalid page tags.
+type TagViolation struct {
+	Page string
+	Tags []string
+}
