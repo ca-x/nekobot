@@ -2,6 +2,7 @@ package daemonhost
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -371,15 +372,29 @@ func runClaudeTask(ctx context.Context, prompt string, workspace *daemonv1.Works
 }
 
 func runOpenCodeTask(ctx context.Context, prompt string, workspace *daemonv1.Workspace) (string, error) {
+	tempHome, err := os.MkdirTemp("", "nekobot-daemon-opencode-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tempHome)
+
 	args := []string{
+		"--pure",
 		"run",
 		"--format", "json",
 		"--dir", workspaceDir(workspace),
 		prompt,
 	}
 	cmd := exec.CommandContext(ctx, "opencode", args...)
+	cmd.Env = append(os.Environ(),
+		"HOME="+tempHome,
+		"XDG_CONFIG_HOME="+tempHome,
+	)
 	output, err := cmd.CombinedOutput()
 	trimmed := strings.TrimSpace(string(output))
+	if extracted := extractOpenCodeMessage(trimmed); extracted != "" {
+		return extracted, nil
+	}
 	if err != nil {
 		if trimmed != "" {
 			return trimmed, fmt.Errorf("opencode run: %w", err)
@@ -390,6 +405,35 @@ func runOpenCodeTask(ctx context.Context, prompt string, workspace *daemonv1.Wor
 		return "", fmt.Errorf("opencode run returned no output")
 	}
 	return trimmed, nil
+}
+
+func extractOpenCodeMessage(output string) string {
+	if strings.TrimSpace(output) == "" {
+		return ""
+	}
+	type textPart struct {
+		Text string `json:"text"`
+	}
+	type event struct {
+		Type string   `json:"type"`
+		Part textPart `json:"part"`
+	}
+	lines := strings.Split(output, "\n")
+	var last string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var item event
+		if err := json.Unmarshal([]byte(line), &item); err != nil {
+			continue
+		}
+		if item.Type == "text" && strings.TrimSpace(item.Part.Text) != "" {
+			last = strings.TrimSpace(item.Part.Text)
+		}
+	}
+	return last
 }
 
 func workspaceDir(workspace *daemonv1.Workspace) string {

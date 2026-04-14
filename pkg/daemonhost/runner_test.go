@@ -197,7 +197,7 @@ func TestRunOpenCodeTaskUsesWorkspace(t *testing.T) {
 	binDir := t.TempDir()
 	logFile := filepath.Join(workspace, "opencode-call.txt")
 	scriptPath := filepath.Join(binDir, "opencode")
-	script := "#!/usr/bin/env bash\nprintf '%s' \"$*\" > " + logFile + "\nprintf '{\"message\":\"daemon-ok\"}\\n'\n"
+	script := "#!/usr/bin/env bash\nprintf '%s' \"$*\" > " + logFile + "\nprintf '%s' \"$HOME|$XDG_CONFIG_HOME\" > " + filepath.Join(workspace, "opencode-env.txt") + "\nprintf '{\"type\":\"text\",\"part\":{\"text\":\"daemon-ok\"}}\\n'\n"
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake opencode: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestRunOpenCodeTaskUsesWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runOpenCodeTask failed: %v", err)
 	}
-	if result != "{\"message\":\"daemon-ok\"}" {
+	if result != "daemon-ok" {
 		t.Fatalf("unexpected opencode result: %q", result)
 	}
 	callBytes, err := os.ReadFile(logFile)
@@ -215,8 +215,16 @@ func TestRunOpenCodeTaskUsesWorkspace(t *testing.T) {
 		t.Fatalf("read fake opencode log: %v", err)
 	}
 	call := string(callBytes)
-	if !strings.Contains(call, "--dir "+workspace) {
+	if !strings.Contains(call, "--dir "+workspace) || !strings.Contains(call, "--pure") {
 		t.Fatalf("expected workspace flag in call, got %q", call)
+	}
+	envBytes, err := os.ReadFile(filepath.Join(workspace, "opencode-env.txt"))
+	if err != nil {
+		t.Fatalf("read fake opencode env: %v", err)
+	}
+	parts := strings.Split(string(envBytes), "|")
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" || strings.TrimSpace(parts[0]) != strings.TrimSpace(parts[1]) {
+		t.Fatalf("expected isolated HOME/XDG config, got %q", string(envBytes))
 	}
 }
 
@@ -247,5 +255,14 @@ hook: UserPromptSubmit Completed
 `
 	if got := extractCodexMessage(output); got != "" {
 		t.Fatalf("expected empty extracted message, got %q", got)
+	}
+}
+
+func TestExtractOpenCodeMessageReadsLastTextEvent(t *testing.T) {
+	output := `{"type":"step_start","part":{"text":""}}
+{"type":"text","part":{"text":"daemon-ok"}}
+{"type":"step_finish","part":{"text":""}}`
+	if got := extractOpenCodeMessage(output); got != "daemon-ok" {
+		t.Fatalf("unexpected opencode extracted text: %q", got)
 	}
 }
