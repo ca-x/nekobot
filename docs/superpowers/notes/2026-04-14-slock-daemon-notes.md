@@ -33,3 +33,4 @@
 - Fresh verification evidence: session-level runtime binding now persists through the sessions API and is reused by WebUI runtime selection when no explicit runtime_id is provided.
 - Fresh verification evidence: WebUI session runtime bindings now persist through backend API tests and the Sessions page frontend build after exposing the binding UI.
 - Fresh verification evidence: Chat page frontend build passed after wiring session runtime bindings directly into the runtime selector UX.
+- Fresh verification evidence: Chat page now reuses and updates persisted session runtime bindings, with targeted webui tests and a passing frontend production build.
