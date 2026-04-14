@@ -1228,5 +1228,12 @@
   "providerPanelDiscoveryManual": "手动同步",
   "providerPanelDiscoveryReadyDetail": "可以从该端点同步模型。",
   "providerPanelDiscoveryBlockedDetail": "请先补齐必填凭据，再从该 provider 探测模型。",
-  "providerPanelDiscoveryManualDetail": "请在 Models 页面手动维护该 provider 的模型。"
+  "providerPanelDiscoveryManualDetail": "请在 Models 页面手动维护该 provider 的模型。",
+  "systemDaemonTitle": "Daemon 主机",
+  "systemDaemonHeadline": "已连接主机 daemon 与 runtime 清单。",
+  "systemDaemonDescription": "这是面向 slock 风格 machine/runtime 可视化的第一批控制面。",
+  "systemDaemonEmpty": "当前还没有 daemon 主机注册。",
+  "systemDaemonWorkspaces": "工作区：{0}",
+  "systemDaemonRuntimes": "运行时：{0}",
+  "systemDaemonInstalledRuntimes": "已安装运行时：{0}"
 }

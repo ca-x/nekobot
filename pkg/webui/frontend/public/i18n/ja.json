@@ -1228,5 +1228,12 @@
   "providerPanelDiscoveryManual": "手動同期",
   "providerPanelDiscoveryReadyDetail": "このエンドポイントからモデルを同期できます。",
   "providerPanelDiscoveryBlockedDetail": "この provider からモデルを検出する前に、必須認証情報を入力してください。",
-  "providerPanelDiscoveryManualDetail": "この provider のモデルは Models 画面で手動管理してください。"
+  "providerPanelDiscoveryManualDetail": "この provider のモデルは Models 画面で手動管理してください。",
+  "systemDaemonTitle": "Daemon ホスト",
+  "systemDaemonHeadline": "接続されたホスト daemon と runtime 在庫。",
+  "systemDaemonDescription": "これは slock 風の machine/runtime 可視化に向けた最初の control-plane slice です。",
+  "systemDaemonEmpty": "まだ daemon ホストは登録されていません。",
+  "systemDaemonWorkspaces": "ワークスペース: {0}",
+  "systemDaemonRuntimes": "ランタイム: {0}",
+  "systemDaemonInstalledRuntimes": "インストール済みランタイム: {0}"
 }

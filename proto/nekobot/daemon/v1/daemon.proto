@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package nekobot.daemon.v1;
+
+option go_package = "nekobot/gen/go/nekobot/daemon/v1;daemonv1";
+
+message Workspace {
+  string workspace_id = 1;
+  string machine_id = 2;
+  string path = 3;
+  string display_name = 4;
+  repeated string aliases = 5;
+  bool is_default = 6;
+}
+
+message Runtime {
+  string runtime_id = 1;
+  string machine_id = 2;
+  string workspace_id = 3;
+  string kind = 4;
+  string display_name = 5;
+  repeated string aliases = 6;
+  string tool = 7;
+  string command = 8;
+  bool installed = 9;
+  bool healthy = 10;
+  bool supports_auto_install = 11;
+  repeated string install_hint = 12;
+  string config_dir = 13;
+  uint32 current_task_count = 14;
+  uint32 pending_task_count = 15;
+}
+
+message RuntimeInventory {
+  repeated Workspace workspaces = 1;
+  repeated Runtime runtimes = 2;
+}
+
+message DaemonInfo {
+  string daemon_id = 1;
+  string machine_id = 2;
+  string machine_name = 3;
+  string hostname = 4;
+  string os = 5;
+  string arch = 6;
+  string version = 7;
+  string status = 8;
+  int64 last_seen_unix = 9;
+}
+
+message RegisterMachineRequest {
+  DaemonInfo info = 1;
+  RuntimeInventory inventory = 2;
+}
+
+message RegisterMachineResponse {
+  bool accepted = 1;
+  int64 server_time_unix = 2;
+}
+
+message HeartbeatMachineRequest {
+  DaemonInfo info = 1;
+  RuntimeInventory inventory = 2;
+}
+
+message HeartbeatMachineResponse {
+  bool accepted = 1;
+  int64 server_time_unix = 2;
+  uint32 next_heartbeat_after_seconds = 3;
+}
+
+message Task {
+  string task_id = 1;
+  string summary = 2;
+  string state = 3;
+  string runtime_id = 4;
+  string thread_id = 5;
+  string workspace_id = 6;
+  string machine_id = 7;
+  string created_by_user_id = 8;
+  string blocked_reason = 9;
+}
+
+message FetchAssignedTasksRequest {
+  string machine_id = 1;
+  repeated string runtime_ids = 2;
+  uint32 limit = 3;
+}
+
+message FetchAssignedTasksResponse {
+  repeated Task tasks = 1;
+}
+
+message UpdateTaskStatusRequest {
+  string task_id = 1;
+  string runtime_id = 2;
+  string state = 3;
+  string summary = 4;
+  string error = 5;
+  string blocked_reason = 6;
+  string result_message = 7;
+}
+
+message UpdateTaskStatusResponse {
+  bool accepted = 1;
+}

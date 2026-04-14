@@ -1,0 +1,6 @@
+version: v2
+plugins:
+  - local: /home/czyt/.local/share/mise/installs/protoc-gen-go/1.36.11/protoc-gen-go
+    out: gen/go
+    opt:
+      - paths=source_relative

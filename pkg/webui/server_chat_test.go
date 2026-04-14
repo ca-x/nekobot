@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,10 +12,13 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"nekobot/pkg/accountbindings"
+	"nekobot/pkg/agent"
+	"nekobot/pkg/approval"
 	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/config"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
+	"nekobot/pkg/tasks"
 )
 
 func TestChatRouteStateJSONIncludesContextPressureFields(t *testing.T) {
@@ -427,5 +431,54 @@ func TestResolveWebUIRuntimeSelectionFallsBackToRequestedRoute(t *testing.T) {
 	}
 	if len(explicitPromptIDs) != 0 {
 		t.Fatalf("expected no explicit prompt ids, got %#v", explicitPromptIDs)
+	}
+}
+
+func TestHandleChatWSQueuesDaemonTaskForDaemonBackedRuntime(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	defer func() { _ = client.Close() }()
+
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	runtimeItem, err := runtimeMgr.Create(t.Context(), runtimeagents.AgentRuntime{
+		Name:        "daemon-codex",
+		DisplayName: "Daemon Codex",
+		Enabled:     true,
+		Provider:    "daemon",
+		Model:       "daemon-runtime",
+		Policy: map[string]interface{}{
+			"daemon_enabled":      true,
+			"daemon_machine_id":   "machine-a",
+			"daemon_workspace_id": "workspace-a",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, client, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	s := &Server{config: cfg, logger: log, runtimeMgr: runtimeMgr, agent: ag, sessionMgr: session.NewManager(t.TempDir(), cfg.Sessions)}
+	ctx := context.Background()
+	_, reply, err := s.handleDaemonRuntimeChatMessage(ctx, "alice", runtimeItem.ID, "route:"+runtimeItem.ID+":webui-chat", "run tests")
+	if err != nil {
+		t.Fatalf("handleDaemonRuntimeChatMessage failed: %v", err)
+	}
+	if !strings.Contains(reply, "Daemon task queued") {
+		t.Fatalf("unexpected daemon reply: %q", reply)
+	}
+	items := ag.TaskService().List()
+	if len(items) != 1 || items[0].Type != tasks.TypeRemoteAgent {
+		t.Fatalf("expected one remote-agent task, got %+v", items)
+	}
+	if items[0].Metadata["machine_id"] != "machine-a" {
+		t.Fatalf("expected machine-a metadata, got %+v", items[0].Metadata)
 	}
 }

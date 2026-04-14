@@ -13,14 +13,18 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/accountbindings"
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
 	"nekobot/pkg/channelaccounts"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
+	"nekobot/pkg/daemonhost"
 	"nekobot/pkg/runtimeagents"
+	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/state"
 	"nekobot/pkg/tasks"
 	"nekobot/pkg/watch"
 	"nekobot/pkg/workspace"
@@ -663,6 +667,7 @@ func TestNewServer_AllowsNilLoader(t *testing.T) {
 			nil,
 			nil,
 			nil,
+			nil,
 		)
 		if server == nil {
 			t.Fatalf("expected server")
@@ -1069,5 +1074,260 @@ func TestHandleCleanupQMDSessionExports(t *testing.T) {
 	}
 	if _, err := os.Stat(newFile); err != nil {
 		t.Fatalf("expected new export to remain: %v", err)
+	}
+}
+
+func TestHandleGetDaemonRegistryReturnsMachineStatuses(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{
+		FilePath: filepath.Join(t.TempDir(), "daemon-state.json"),
+	})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	registry := daemonhost.NewRegistry(store)
+	_, err = registry.Register(t.Context(), &daemonv1.RegisterMachineRequest{
+		Info: &daemonv1.DaemonInfo{
+			DaemonId:    "daemon-a",
+			MachineId:   "machine-a",
+			MachineName: "machine-a",
+			Hostname:    "host-a",
+			Os:          "linux",
+			Arch:        "arm64",
+			Version:     "v1alpha1",
+			Status:      "online",
+		},
+		Inventory: &daemonv1.RuntimeInventory{
+			Workspaces: []*daemonv1.Workspace{{
+				WorkspaceId: "machine-a:default",
+				MachineId:   "machine-a",
+				Path:        "/tmp/workspace",
+				DisplayName: "default",
+				IsDefault:   true,
+			}},
+			Runtimes: []*daemonv1.Runtime{{
+				RuntimeId:   "machine-a:default:codex",
+				MachineId:   "machine-a",
+				WorkspaceId: "machine-a:default",
+				Kind:        "codex",
+				Installed:   true,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("register daemon machine: %v", err)
+	}
+
+	s := &Server{config: cfg, kvStore: store}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/daemon/registry", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleGetDaemonRegistry(ctx); err != nil {
+		t.Fatalf("handleGetDaemonRegistry failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Machines []struct {
+			WorkspaceCount        int `json:"workspace_count"`
+			RuntimeCount          int `json:"runtime_count"`
+			InstalledRuntimeCount int `json:"installed_runtime_count"`
+			Info                  struct {
+				MachineId string `json:"machine_id"`
+				Status    string `json:"status"`
+			} `json:"info"`
+		} `json:"machines"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal daemon registry payload failed: %v", err)
+	}
+	if len(payload.Machines) != 1 {
+		t.Fatalf("expected 1 machine, got %+v", payload.Machines)
+	}
+	if payload.Machines[0].Info.MachineId != "machine-a" || payload.Machines[0].Info.Status != "online" {
+		t.Fatalf("unexpected machine payload: %+v", payload.Machines[0])
+	}
+	if payload.Machines[0].WorkspaceCount != 1 || payload.Machines[0].RuntimeCount != 1 || payload.Machines[0].InstalledRuntimeCount != 1 {
+		t.Fatalf("unexpected daemon counts: %+v", payload.Machines[0])
+	}
+}
+
+func TestHandleRegisterDaemonRequiresToken(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	s := &Server{config: cfg, kvStore: store}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/daemon/register", strings.NewReader(`{"info":{"machine_id":"m1"}}`))
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	if err := s.handleRegisterDaemon(ctx); err != nil {
+		t.Fatalf("handleRegisterDaemon failed: %v", err)
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusUnauthorized, rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleFetchDaemonTasksAndUpdateStatus(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Sessions.Sources.WebUI = true
+	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, store, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	_, err = ag.TaskService().Enqueue(tasks.Task{
+		ID:        "task-1",
+		Type:      tasks.TypeRemoteAgent,
+		Summary:   "daemon work",
+		SessionID: "webui-chat:alice",
+		RuntimeID: "runtime-a",
+		Metadata: map[string]any{
+			"machine_id": "machine-a",
+		},
+	})
+	if err != nil {
+		t.Fatalf("enqueue task: %v", err)
+	}
+	token := (&Server{kvStore: store}).getDaemonToken()
+	s := &Server{config: cfg, kvStore: store, agent: ag, sessionMgr: sessionMgr}
+	e := echo.New()
+
+	fetchReq := httptest.NewRequest(http.MethodPost, "/api/daemon/tasks/fetch", strings.NewReader(`{"machine_id":"machine-a","runtime_ids":["runtime-a"],"limit":10}`))
+	fetchReq.Header.Set("Authorization", "Bearer "+token)
+	fetchRec := httptest.NewRecorder()
+	fetchCtx := e.NewContext(fetchReq, fetchRec)
+	if err := s.handleFetchDaemonTasks(fetchCtx); err != nil {
+		t.Fatalf("handleFetchDaemonTasks failed: %v", err)
+	}
+	if fetchRec.Code != http.StatusOK {
+		t.Fatalf("expected fetch status %d, got %d: %s", http.StatusOK, fetchRec.Code, fetchRec.Body.String())
+	}
+	var fetchPayload struct {
+		Tasks []struct {
+			TaskId string `json:"task_id"`
+			State  string `json:"state"`
+		} `json:"tasks"`
+	}
+	if err := json.Unmarshal(fetchRec.Body.Bytes(), &fetchPayload); err != nil {
+		t.Fatalf("unmarshal fetch payload failed: %v", err)
+	}
+	if len(fetchPayload.Tasks) != 1 || fetchPayload.Tasks[0].TaskId != "task-1" {
+		t.Fatalf("unexpected fetch payload: %+v", fetchPayload.Tasks)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPost, "/api/daemon/tasks/update", strings.NewReader(`{"task_id":"task-1","runtime_id":"runtime-a","state":"claimed"}`))
+	updateReq.Header.Set("Authorization", "Bearer "+token)
+	updateRec := httptest.NewRecorder()
+	updateCtx := e.NewContext(updateReq, updateRec)
+	if err := s.handleUpdateDaemonTaskStatus(updateCtx); err != nil {
+		t.Fatalf("handleUpdateDaemonTaskStatus failed: %v", err)
+	}
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("expected update status %d, got %d: %s", http.StatusOK, updateRec.Code, updateRec.Body.String())
+	}
+	items := ag.TaskService().List()
+	if len(items) != 1 || items[0].State != tasks.StateClaimed {
+		t.Fatalf("unexpected task state after daemon update: %+v", items)
+	}
+
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/daemon/tasks/update", strings.NewReader(`{"task_id":"task-1","runtime_id":"runtime-a","state":"running"}`))
+	completeReq.Header.Set("Authorization", "Bearer "+token)
+	completeRec := httptest.NewRecorder()
+	completeCtx := e.NewContext(completeReq, completeRec)
+	if err := s.handleUpdateDaemonTaskStatus(completeCtx); err != nil {
+		t.Fatalf("handleUpdateDaemonTaskStatus running failed: %v", err)
+	}
+	if completeRec.Code != http.StatusOK {
+		t.Fatalf("expected running status %d, got %d: %s", http.StatusOK, completeRec.Code, completeRec.Body.String())
+	}
+
+	resultReq := httptest.NewRequest(http.MethodPost, "/api/daemon/tasks/update", strings.NewReader(`{"task_id":"task-1","runtime_id":"runtime-a","state":"completed","result_message":"remote execution done"}`))
+	resultReq.Header.Set("Authorization", "Bearer "+token)
+	resultRec := httptest.NewRecorder()
+	resultCtx := e.NewContext(resultReq, resultRec)
+	if err := s.handleUpdateDaemonTaskStatus(resultCtx); err != nil {
+		t.Fatalf("handleUpdateDaemonTaskStatus completed failed: %v", err)
+	}
+	if resultRec.Code != http.StatusOK {
+		t.Fatalf("expected completed status %d, got %d: %s", http.StatusOK, resultRec.Code, resultRec.Body.String())
+	}
+	items = ag.TaskService().List()
+	if len(items) != 1 || items[0].State != tasks.StateCompleted {
+		t.Fatalf("unexpected task state after completion update: %+v", items)
+	}
+	sess, err := sessionMgr.GetExisting("webui-chat:alice")
+	if err != nil {
+		t.Fatalf("get existing session failed: %v", err)
+	}
+	messages := sess.GetMessages()
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 daemon session messages, got %+v", messages)
+	}
+	if messages[0].Role != "system" || !strings.Contains(messages[0].Content, "Daemon task started") {
+		t.Fatalf("unexpected running session message: %+v", messages[0])
+	}
+	if messages[1].Role != "assistant" || messages[1].Content != "remote execution done" {
+		t.Fatalf("unexpected completion session message: %+v", messages[1])
+	}
+}
+
+func TestHandleGetDaemonBootstrapReturnsCommand(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.WebUI.PublicBaseURL = "https://app.example.com"
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	s := &Server{config: cfg, kvStore: store}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/daemon/bootstrap", nil)
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	if err := s.handleGetDaemonBootstrap(ctx); err != nil {
+		t.Fatalf("handleGetDaemonBootstrap failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		ServerURL string `json:"server_url"`
+		Token     string `json:"daemon_token"`
+		Command   string `json:"command"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal bootstrap payload failed: %v", err)
+	}
+	if payload.ServerURL != "https://app.example.com" {
+		t.Fatalf("unexpected server_url: %+v", payload.ServerURL)
+	}
+	if payload.Token == "" || payload.Command == "" {
+		t.Fatalf("expected bootstrap token and command, got %+v", payload)
+	}
+	if !strings.Contains(payload.Command, "nekobot daemon run") || !strings.Contains(payload.Command, payload.Token) {
+		t.Fatalf("unexpected bootstrap command: %q", payload.Command)
 	}
 }

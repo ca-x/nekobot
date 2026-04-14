@@ -26,12 +26,14 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	echojwt "github.com/labstack/echo-jwt/v5"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 	"go.uber.org/zap"
 
+	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/accountbindings"
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
@@ -43,6 +45,7 @@ import (
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
+	"nekobot/pkg/daemonhost"
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/gateway"
@@ -64,6 +67,7 @@ import (
 	"nekobot/pkg/servicecontrol"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
@@ -109,6 +113,7 @@ type Server struct {
 	ilinkAuth          *ilinkauth.Service
 	serviceCtrl        serviceController
 	taskStore          *tasks.Store
+	kvStore            state.KV
 	watcher            *watch.Watcher
 	webhookTestHandler func(ctx context.Context, username, message string) (string, error)
 	port               int
@@ -177,6 +182,7 @@ func NewServer(
 	cronManager *cron.Manager,
 	skillsManager *skills.Manager,
 	workspaceManager *workspace.Manager,
+	kvStore state.KV,
 	entClient *ent.Client,
 	auditLogger *audit.Logger,
 	watcher *watch.Watcher,
@@ -220,6 +226,7 @@ func NewServer(
 		cronMgr:     cronManager,
 		skillsMgr:   skillsManager,
 		workspace:   workspaceManager,
+		kvStore:     kvStore,
 		entClient:   entClient,
 		auditLogger: auditLogger,
 		snapshotMgr: func() *session.SnapshotManager {
@@ -462,6 +469,13 @@ func (s *Server) setup() {
 	api.POST("/tool-sessions/consume-token", s.handleConsumeToolSessionAttachToken)
 	api.POST("/tool-sessions/spawn", s.handleSpawnToolSession)
 	api.POST("/external-agents/resolve-session", s.handleResolveExternalAgentSession)
+	api.GET("/external-agents/catalog", s.handleGetExternalAgentCatalog)
+	api.GET("/daemon/registry", s.handleGetDaemonRegistry)
+	api.GET("/daemon/bootstrap", s.handleGetDaemonBootstrap)
+	api.POST("/daemon/register", s.handleRegisterDaemon)
+	api.POST("/daemon/heartbeat", s.handleHeartbeatDaemon)
+	api.POST("/daemon/tasks/fetch", s.handleFetchDaemonTasks)
+	api.POST("/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
 	api.GET("/tool-sessions/:id/process/status", s.handleToolSessionProcessStatus)
 	api.GET("/tool-sessions/:id/process/output", s.handleToolSessionProcessOutput)
 	api.POST("/tool-sessions/:id/process/input", s.handleToolSessionProcessInput)
@@ -1939,6 +1953,208 @@ func (s *Server) handleResolveExternalAgentSession(c *echo.Context) error {
 	return c.JSON(result.HTTPStatus(), result.ResponseBody())
 }
 
+func (s *Server) handleGetExternalAgentCatalog(c *echo.Context) error {
+	registry := externalagent.NewRegistry()
+	type adapterPayload struct {
+		Kind            string   `json:"kind"`
+		Tool            string   `json:"tool"`
+		Command         string   `json:"command"`
+		SupportsInstall bool     `json:"supports_install"`
+		InstallHint     []string `json:"install_hint,omitempty"`
+	}
+	items := make([]adapterPayload, 0, len(registry.List()))
+	for _, adapter := range registry.List() {
+		payload := adapterPayload{
+			Kind:            adapter.Kind(),
+			Tool:            adapter.Tool(),
+			Command:         adapter.Command(),
+			SupportsInstall: adapter.SupportsAutoInstall(),
+		}
+		if adapter.SupportsAutoInstall() {
+			payload.InstallHint = adapter.InstallCommand(runtime.GOOS)
+		}
+		items = append(items, payload)
+	}
+	installed, err := externalagent.DetectInstalled("")
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"adapters":  items,
+		"installed": installed,
+	})
+}
+
+func (s *Server) handleGetDaemonRegistry(c *echo.Context) error {
+	if s.kvStore == nil {
+		return c.JSON(http.StatusOK, map[string]any{
+			"machines": []daemonhost.MachineStatus{},
+		})
+	}
+	snapshot, err := daemonhost.NewRegistry(s.kvStore).Snapshot(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"machines": daemonhost.MachineStatuses(snapshot),
+	})
+}
+
+func (s *Server) handleGetDaemonBootstrap(c *echo.Context) error {
+	serverURL := strings.TrimSpace(s.config.WebUI.PublicBaseURL)
+	if serverURL == "" {
+		scheme := "http"
+		if c.Scheme() != "" {
+			scheme = c.Scheme()
+		}
+		serverURL = fmt.Sprintf("%s://%s", scheme, c.Request().Host)
+	}
+	token := s.getDaemonToken()
+	machineName := strings.TrimSpace(s.currentUsername(c))
+	command := fmt.Sprintf("nekobot daemon run --server-url %s --token %s --machine-name %s", serverURL, token, machineName)
+	return c.JSON(http.StatusOK, map[string]any{
+		"server_url":   serverURL,
+		"daemon_token": token,
+		"command":      command,
+	})
+}
+
+func (s *Server) handleRegisterDaemon(c *echo.Context) error {
+	if !s.authorizeDaemonRequest(c) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid daemon token"})
+	}
+	if s.kvStore == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "daemon registry unavailable"})
+	}
+	var req daemonv1.RegisterMachineRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	resp, err := daemonhost.NewRegistry(s.kvStore).Register(c.Request().Context(), &req)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleHeartbeatDaemon(c *echo.Context) error {
+	if !s.authorizeDaemonRequest(c) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid daemon token"})
+	}
+	if s.kvStore == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "daemon registry unavailable"})
+	}
+	var req daemonv1.HeartbeatMachineRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	resp, err := daemonhost.NewRegistry(s.kvStore).Heartbeat(c.Request().Context(), &req)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleFetchDaemonTasks(c *echo.Context) error {
+	if !s.authorizeDaemonRequest(c) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid daemon token"})
+	}
+	if s.agent == nil || s.agent.TaskService() == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "task service unavailable"})
+	}
+	var req daemonv1.FetchAssignedTasksRequest
+	if err := daemonhost.DecodeProtoJSON(c.Request(), &req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	resp := daemonhost.BuildAssignedTasks(s.agent.TaskService(), req.MachineId, req.RuntimeIds, int(req.Limit))
+	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleUpdateDaemonTaskStatus(c *echo.Context) error {
+	if !s.authorizeDaemonRequest(c) {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid daemon token"})
+	}
+	if s.agent == nil || s.agent.TaskService() == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "task service unavailable"})
+	}
+	var req daemonv1.UpdateTaskStatusRequest
+	if err := daemonhost.DecodeProtoJSON(c.Request(), &req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	resp, task, err := daemonhost.ApplyTaskStatusUpdate(s.agent.TaskService(), &req)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	if err := s.appendDaemonTaskSessionUpdate(c.Request().Context(), task, &req); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.Task, req *daemonv1.UpdateTaskStatusRequest) error {
+	if s == nil || s.sessionMgr == nil || req == nil {
+		return nil
+	}
+	sessionID := strings.TrimSpace(task.SessionID)
+	if sessionID == "" {
+		return nil
+	}
+
+	state := strings.TrimSpace(req.State)
+	messageRole := "system"
+	messageContent := ""
+	switch state {
+	case string(tasks.StateRunning):
+		messageContent = fmt.Sprintf("Daemon task started.\nTask ID: %s", strings.TrimSpace(task.ID))
+	case string(tasks.StateRequiresAction):
+		reason := strings.TrimSpace(req.BlockedReason)
+		if reason == "" {
+			reason = strings.TrimSpace(task.PendingAction)
+		}
+		if reason == "" {
+			reason = "Daemon task requires action."
+		}
+		messageContent = reason
+	case string(tasks.StateCompleted):
+		messageRole = "assistant"
+		messageContent = strings.TrimSpace(req.ResultMessage)
+		if messageContent == "" {
+			messageContent = fmt.Sprintf("Daemon task completed.\nTask ID: %s", strings.TrimSpace(task.ID))
+		}
+	case string(tasks.StateFailed):
+		reason := strings.TrimSpace(req.Error)
+		if reason == "" {
+			reason = strings.TrimSpace(task.LastError)
+		}
+		messageContent = strings.TrimSpace(req.ResultMessage)
+		if messageContent == "" {
+			messageContent = "Daemon task failed."
+		}
+		if reason != "" {
+			messageContent = fmt.Sprintf("%s\nError: %s", messageContent, reason)
+		}
+	case string(tasks.StateCanceled):
+		messageContent = fmt.Sprintf("Daemon task canceled.\nTask ID: %s", strings.TrimSpace(task.ID))
+	default:
+		return nil
+	}
+	if strings.TrimSpace(messageContent) == "" {
+		return nil
+	}
+
+	sess, err := s.sessionMgr.GetWithSource(sessionID, session.SourceWebUI)
+	if err != nil {
+		return fmt.Errorf("load daemon task session %s: %w", sessionID, err)
+	}
+	sess.AddMessage(agent.Message{
+		Role:    messageRole,
+		Content: messageContent,
+	})
+	if err := s.sessionMgr.Save(sess); err != nil {
+		return fmt.Errorf("save daemon task session %s: %w", sessionID, err)
+	}
+	return nil
+}
 func (s *Server) handleUpdateToolSession(c *echo.Context) error {
 	if s.toolSess == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
@@ -5512,27 +5728,37 @@ func (s *Server) handleStatus(c *echo.Context) error {
 	sessionStates := s.listSessionStates()
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"version":                version.GetVersion(),
-		"commit":                 version.GitCommit,
-		"build_time":             version.BuildTime,
-		"os":                     runtime.GOOS,
-		"arch":                   runtime.GOARCH,
-		"go_version":             runtime.Version(),
-		"pid":                    os.Getpid(),
-		"uptime":                 uptime.Round(time.Second).String(),
-		"uptime_seconds":         int64(uptime.Seconds()),
-		"memory_alloc_bytes":     mem.Alloc,
-		"memory_sys_bytes":       mem.Sys,
-		"provider_count":         len(s.config.Providers),
-		"config_path":            configPath,
-		"database_dir":           s.config.Storage.DBDir,
-		"runtime_db_path":        runtimeDBPath,
-		"workspace_path":         s.config.Agents.Defaults.Workspace,
-		"task_count":             len(taskSnapshots),
-		"task_state_counts":      stateCounts,
-		"recent_tasks":           recentTasks,
-		"recent_cron_jobs":       recentCronJobs,
-		"runtime_states":         runtimeStates,
+		"version":            version.GetVersion(),
+		"commit":             version.GitCommit,
+		"build_time":         version.BuildTime,
+		"os":                 runtime.GOOS,
+		"arch":               runtime.GOARCH,
+		"go_version":         runtime.Version(),
+		"pid":                os.Getpid(),
+		"uptime":             uptime.Round(time.Second).String(),
+		"uptime_seconds":     int64(uptime.Seconds()),
+		"memory_alloc_bytes": mem.Alloc,
+		"memory_sys_bytes":   mem.Sys,
+		"provider_count":     len(s.config.Providers),
+		"config_path":        configPath,
+		"database_dir":       s.config.Storage.DBDir,
+		"runtime_db_path":    runtimeDBPath,
+		"workspace_path":     s.config.Agents.Defaults.Workspace,
+		"task_count":         len(taskSnapshots),
+		"task_state_counts":  stateCounts,
+		"recent_tasks":       recentTasks,
+		"recent_cron_jobs":   recentCronJobs,
+		"runtime_states":     runtimeStates,
+		"daemon_machines": func() interface{} {
+			if s.kvStore == nil {
+				return []daemonhost.MachineStatus{}
+			}
+			snapshot, err := daemonhost.NewRegistry(s.kvStore).Snapshot(c.Request().Context())
+			if err != nil || snapshot == nil {
+				return []daemonhost.MachineStatus{}
+			}
+			return daemonhost.MachineStatuses(snapshot)
+		}(),
 		"session_runtime_states": sessionStates,
 		"agent_definition": func() interface{} {
 			if s.agent == nil {
@@ -6344,6 +6570,38 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Content: content,
 			})
 
+			if daemonHandled, daemonReply, daemonErr := s.handleDaemonRuntimeChatMessage(
+				context.Background(),
+				username,
+				runtimeID,
+				sessionID,
+				content,
+			); daemonHandled {
+				if daemonErr != nil {
+					sendWSError(conn, fmt.Sprintf("daemon task error: %v", daemonErr), clientSessionID)
+					continue
+				}
+				sess.AddMessage(agent.Message{
+					Role:    "assistant",
+					Content: daemonReply,
+				})
+				resp := chatWSResponse{
+					Type:      "message",
+					Content:   daemonReply,
+					Timestamp: time.Now().Unix(),
+					SessionID: clientSessionID,
+				}
+				if data, err := json.Marshal(resp); err == nil {
+					if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+						s.logger.Warn("Failed to set daemon chat response deadline", zap.Error(err))
+					}
+					if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
+						s.logger.Warn("Failed to send daemon chat response", zap.Error(err))
+					}
+				}
+				continue
+			}
+
 			// Process with agent.
 			response, routeResult, err := s.agent.ChatWithPromptContextDetailed(
 				context.Background(),
@@ -6397,6 +6655,60 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 		}
 	}
+}
+
+func (s *Server) handleDaemonRuntimeChatMessage(
+	ctx context.Context,
+	username, runtimeID, sessionID, content string,
+) (bool, string, error) {
+	if s == nil || s.runtimeMgr == nil || s.agent == nil || s.agent.TaskService() == nil {
+		return false, "", nil
+	}
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return false, "", nil
+	}
+	runtimeItem, err := s.runtimeMgr.Get(ctx, runtimeID)
+	if err != nil || runtimeItem == nil {
+		return false, "", nil
+	}
+	if !runtimeIsDaemonBacked(runtimeItem) {
+		return false, "", nil
+	}
+	machineID, _ := runtimeItem.Policy["daemon_machine_id"].(string)
+	workspaceID, _ := runtimeItem.Policy["daemon_workspace_id"].(string)
+	if strings.TrimSpace(machineID) == "" {
+		return false, "", fmt.Errorf("daemon-backed runtime %s is missing daemon_machine_id policy", runtimeID)
+	}
+	taskID := "daemon-task-" + uuid.NewString()
+	_, err = s.agent.TaskService().Enqueue(tasks.Task{
+		ID:        taskID,
+		Type:      tasks.TypeRemoteAgent,
+		Summary:   content,
+		SessionID: sessionID,
+		RuntimeID: runtimeID,
+		Metadata: map[string]any{
+			"machine_id":         strings.TrimSpace(machineID),
+			"workspace_id":       strings.TrimSpace(workspaceID),
+			"created_by_user_id": strings.TrimSpace(username),
+			"delivery":           "daemon",
+		},
+	})
+	if err != nil {
+		return true, "", err
+	}
+	return true, fmt.Sprintf("Daemon task queued.\nTask ID: %s\nRuntime: %s\nMachine: %s", taskID, runtimeID, machineID), nil
+}
+
+func runtimeIsDaemonBacked(item *runtimeagents.AgentRuntime) bool {
+	if item == nil {
+		return false
+	}
+	if item.Policy == nil {
+		return false
+	}
+	value, _ := item.Policy["daemon_enabled"].(bool)
+	return value
 }
 
 func (s *Server) getOrCreateChatSession(sessionID string) (agent.SessionInterface, error) {
@@ -7622,6 +7934,31 @@ func (s *Server) getJWTSecret() string {
 	// No credential stored yet — generate an ephemeral secret.
 	// It will be replaced once the admin initializes their password.
 	return "nekobot-ephemeral-secret"
+}
+
+func (s *Server) getDaemonToken() string {
+	if s == nil || s.kvStore == nil {
+		return "nekobot-daemon-ephemeral-token"
+	}
+	ctx := context.Background()
+	if value, ok, err := s.kvStore.GetString(ctx, "daemonhost.auth.token"); err == nil && ok && strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value)
+	}
+	token := "daemon-" + config.GenerateJWTSecret()
+	_ = s.kvStore.Set(ctx, "daemonhost.auth.token", token)
+	return token
+}
+
+func (s *Server) authorizeDaemonRequest(c *echo.Context) bool {
+	authHeader := strings.TrimSpace(c.Request().Header.Get("Authorization"))
+	if authHeader == "" {
+		return false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer"))
+	if token == "" {
+		return false
+	}
+	return token == s.getDaemonToken()
 }
 
 func (s *Server) generateToken(profile *config.AuthProfile) (string, error) {

@@ -117,6 +117,23 @@ export interface AgentDefinitionStatus {
   };
 }
 
+export interface DaemonMachineStatus {
+  info: {
+    daemon_id: string;
+    machine_id: string;
+    machine_name: string;
+    hostname: string;
+    os: string;
+    arch: string;
+    version: string;
+    status: string;
+    last_seen_unix: number;
+  };
+  workspace_count: number;
+  runtime_count: number;
+  installed_runtime_count: number;
+}
+
 export interface StatusData {
   version: string;
   commit: string;
@@ -139,6 +156,7 @@ export interface StatusData {
   recent_tasks: StatusTask[];
   recent_cron_jobs: CronJob[];
   runtime_states: RuntimeAgent[];
+  daemon_machines: DaemonMachineStatus[];
   session_runtime_states: SessionRuntimeState[];
   agent_definition?: AgentDefinitionStatus | null;
   gateway_host: string;

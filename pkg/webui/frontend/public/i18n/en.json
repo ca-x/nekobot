@@ -1228,5 +1228,12 @@
   "providerPanelDiscoveryManual": "Manual sync",
   "providerPanelDiscoveryReadyDetail": "Can sync models from this endpoint.",
   "providerPanelDiscoveryBlockedDetail": "Add the required credentials before probing models from this provider.",
-  "providerPanelDiscoveryManualDetail": "Use manual Models entries for this provider."
+  "providerPanelDiscoveryManualDetail": "Use manual Models entries for this provider.",
+  "systemDaemonTitle": "Daemon hosts",
+  "systemDaemonHeadline": "Connected host daemons and runtime inventory.",
+  "systemDaemonDescription": "This is the first control-plane slice for slock-style machine/runtime visibility.",
+  "systemDaemonEmpty": "No daemon hosts have registered yet.",
+  "systemDaemonWorkspaces": "Workspaces: {0}",
+  "systemDaemonRuntimes": "Runtimes: {0}",
+  "systemDaemonInstalledRuntimes": "Installed runtimes: {0}"
 }

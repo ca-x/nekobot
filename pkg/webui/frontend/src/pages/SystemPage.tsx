@@ -23,6 +23,7 @@ export default function SystemPage() {
   const recentTasks = status?.recent_tasks ?? [];
   const recentCronJobs = status?.recent_cron_jobs ?? [];
   const runtimeStates = status?.runtime_states ?? [];
+  const daemonMachines = status?.daemon_machines ?? [];
   const sessionStates = status?.session_runtime_states ?? [];
   const agentDefinition = status?.agent_definition ?? null;
   const agentRoute = agentDefinition?.route ?? null;
@@ -175,6 +176,52 @@ export default function SystemPage() {
             ) : (
               <div className="mt-4 rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                 {t('runtimeTopologyNoRuntimes')}
+              </div>
+            )}
+          </Card>
+
+          <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{t('systemDaemonTitle')}</div>
+              <h3 className="mt-2 text-lg font-semibold text-foreground">
+                {t('systemDaemonHeadline')}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {t('systemDaemonDescription')}
+              </p>
+            </div>
+
+            {isLoading ? (
+              <div className="text-muted-foreground py-8 text-center animate-pulse">{t('systemLoading')}</div>
+            ) : daemonMachines.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {daemonMachines.map((machine) => (
+                  <div key={machine.info.machine_id} className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={cn('rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em]', machine.info.status === 'online' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/15 text-amber-700 dark:text-amber-300')}>
+                            {machine.info.status || '-'}
+                          </span>
+                          <span className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground/80">
+                            {machine.info.os}/{machine.info.arch}
+                          </span>
+                        </div>
+                        <div className="mt-3 text-sm font-semibold text-foreground">{machine.info.machine_name || machine.info.hostname}</div>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <span>{t('systemDaemonWorkspaces', String(machine.workspace_count))}</span>
+                          <span>{t('systemDaemonRuntimes', String(machine.runtime_count))}</span>
+                          <span>{t('systemDaemonInstalledRuntimes', String(machine.installed_runtime_count))}</span>
+                        </div>
+                      </div>
+                      <div className="break-all text-xs text-muted-foreground md:max-w-[14rem] md:text-right">{machine.info.machine_id}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                {t('systemDaemonEmpty')}
               </div>
             )}
           </Card>
