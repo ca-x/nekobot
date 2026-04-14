@@ -8,7 +8,7 @@ Design and implement a Buf/protobuf-based Nekobot host daemon protocol and minim
 - [x] Phase 2: Analyze slock.ai daemon protocol and map it onto Nekobot
 - [x] Phase 3: Design Buf/protobuf contract and integration boundaries
 - [x] Phase 4: Implement minimum viable daemon + server/control-plane support
-- [ ] Phase 5: Verify, commit, and push
+- [x] Phase 5: Verify, commit, and push
 
 ## Key Questions
 1. What slock.ai concepts are architectural versus transport-specific?
@@ -26,7 +26,7 @@ Design and implement a Buf/protobuf-based Nekobot host daemon protocol and minim
 - `printf` shells with leading `---` text needed safer quoting while inspecting files.
 
 ## Status
-**Currently in Phase 5** - Finishing daemon usability polish: offline status derivation and WebUI bootstrap/install guidance.
+**Completed** - Daemon protocol wave implemented, verified with targeted Go tests and frontend build, and pushed to `origin/main`.
 
 ## Modeling decision
 - Reuse existing Nekobot meaning of `channel` as the user-facing entry surface.

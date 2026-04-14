@@ -18,3 +18,6 @@
 - Keep `channel` as ingress only; session/thread remains the writeback surface for daemon task lifecycle.
 - Added offline derivation from heartbeat age so stale machines degrade to `offline` in the control plane.
 - Added WebUI bootstrap visibility so operators can copy the generated daemon command/token from System page.
+- Fresh verification evidence: targeted daemon/webui/cmd Go tests passed after the second polish wave.
+- Fresh verification evidence: frontend production build passed after bootstrap UX changes.
+- Main branch push confirmed at commit `79dc8f6`.
