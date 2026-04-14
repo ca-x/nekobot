@@ -1235,5 +1235,13 @@
   "systemDaemonEmpty": "まだ daemon ホストは登録されていません。",
   "systemDaemonWorkspaces": "ワークスペース: {0}",
   "systemDaemonRuntimes": "ランタイム: {0}",
-  "systemDaemonInstalledRuntimes": "インストール済みランタイム: {0}"
+  "systemDaemonInstalledRuntimes": "インストール済みランタイム: {0}",
+  "systemDaemonBootstrapRefresh": "daemon ブートストラップを更新",
+  "systemDaemonBootstrapTitle": "ブートストラップコマンド",
+  "systemDaemonBootstrapDescription": "ここで生成されたコマンドを使ってホスト daemon をインストールまたは起動し、この Nekobot サーバーへ接続します。",
+  "systemDaemonServerUrl": "サーバー URL",
+  "systemDaemonCommand": "インストール / 起動コマンド",
+  "systemDaemonToken": "Daemon トークン",
+  "systemDaemonBootstrapEmpty": "まだ利用可能なブートストラップ情報はありません。",
+  "copyFailed": "コピーに失敗しました"
 }

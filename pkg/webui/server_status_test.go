@@ -1159,6 +1159,67 @@ func TestHandleGetDaemonRegistryReturnsMachineStatuses(t *testing.T) {
 	}
 }
 
+func TestHandleGetDaemonRegistryDerivesOfflineStatus(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{
+		FilePath: filepath.Join(t.TempDir(), "daemon-state.json"),
+	})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	err = store.Set(t.Context(), "daemonhost.registry.v1", map[string]any{
+		"machines": map[string]any{
+			"machine-a": map[string]any{
+				"daemon_id":      "daemon-a",
+				"machine_id":     "machine-a",
+				"machine_name":   "machine-a",
+				"hostname":       "host-a",
+				"os":             "linux",
+				"arch":           "arm64",
+				"version":        "v1alpha1",
+				"status":         "online",
+				"last_seen_unix": time.Now().Add(-(daemonhost.OfflineThreshold + time.Second)).Unix(),
+			},
+		},
+		"inventories": map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("seed daemon registry: %v", err)
+	}
+
+	s := &Server{config: cfg, kvStore: store}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/daemon/registry", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+
+	if err := s.handleGetDaemonRegistry(ctx); err != nil {
+		t.Fatalf("handleGetDaemonRegistry failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Machines []struct {
+			Info struct {
+				MachineId string `json:"machine_id"`
+				Status    string `json:"status"`
+			} `json:"info"`
+		} `json:"machines"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal daemon registry payload failed: %v", err)
+	}
+	if len(payload.Machines) != 1 || payload.Machines[0].Info.Status != "offline" {
+		t.Fatalf("expected derived offline status, got %+v", payload.Machines)
+	}
+}
+
 func TestHandleRegisterDaemonRequiresToken(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()

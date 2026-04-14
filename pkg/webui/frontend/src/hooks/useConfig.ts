@@ -1,9 +1,9 @@
-import { api } from '@/api/client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { t } from '@/lib/i18n';
-import type { RuntimeAgent } from '@/hooks/useTopology';
-import type { CronJob } from '@/hooks/useCron';
+import { api } from "@/api/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { t } from "@/lib/i18n";
+import type { RuntimeAgent } from "@/hooks/useTopology";
+import type { CronJob } from "@/hooks/useCron";
 
 export interface ConfigData {
   [section: string]: Record<string, unknown>;
@@ -134,6 +134,12 @@ export interface DaemonMachineStatus {
   installed_runtime_count: number;
 }
 
+export interface DaemonBootstrapData {
+  server_url: string;
+  daemon_token: string;
+  command: string;
+}
+
 export interface StatusData {
   version: string;
   commit: string;
@@ -168,16 +174,20 @@ export interface StatusData {
 }
 
 function formatRestartNotice(result: ConfigMutationResult): string | null {
-  if (!result.restart_required || !result.restart_sections || result.restart_sections.length === 0) {
+  if (
+    !result.restart_required ||
+    !result.restart_sections ||
+    result.restart_sections.length === 0
+  ) {
     return null;
   }
-  return t('configRestartRequired', result.restart_sections.join(', '));
+  return t("configRestartRequired", result.restart_sections.join(", "));
 }
 
 export function useConfig() {
   return useQuery<ConfigData>({
-    queryKey: ['config'],
-    queryFn: () => api.get('/api/config'),
+    queryKey: ["config"],
+    queryFn: () => api.get("/api/config"),
     staleTime: 30_000,
   });
 }
@@ -185,11 +195,12 @@ export function useConfig() {
 export function useSaveConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: ConfigData) => api.put<ConfigMutationResult>('/api/config', data),
+    mutationFn: (data: ConfigData) =>
+      api.put<ConfigMutationResult>("/api/config", data),
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ['config'] });
-      qc.invalidateQueries({ queryKey: ['watch-status'] });
-      toast.success(t('configSaved'));
+      qc.invalidateQueries({ queryKey: ["config"] });
+      qc.invalidateQueries({ queryKey: ["watch-status"] });
+      toast.success(t("configSaved"));
       const restartNotice = formatRestartNotice(result ?? {});
       if (restartNotice) {
         toast.info(restartNotice);
@@ -202,16 +213,18 @@ export function useSaveConfig() {
 export function useExportConfig() {
   return useMutation({
     mutationFn: async () => {
-      const data = await api.get<ConfigData>('/api/config/export');
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const data = await api.get<ConfigData>("/api/config/export");
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `nekobot-config-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
     },
-    onSuccess: () => toast.success(t('exported')),
+    onSuccess: () => toast.success(t("exported")),
     onError: (err: Error) => toast.error(err.message),
   });
 }
@@ -219,42 +232,57 @@ export function useExportConfig() {
 export function useImportConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: ConfigData) => api.post<ConfigMutationResult>('/api/config/import', data),
+    mutationFn: (data: ConfigData) =>
+      api.post<ConfigMutationResult>("/api/config/import", data),
     onSuccess: (result) => {
-      qc.invalidateQueries({ queryKey: ['config'] });
-      qc.invalidateQueries({ queryKey: ['watch-status'] });
+      qc.invalidateQueries({ queryKey: ["config"] });
+      qc.invalidateQueries({ queryKey: ["watch-status"] });
       if (result) {
-        toast.success(t('imported', String(result.sections_saved ?? 0), String(result.providers_imported ?? 0)));
+        toast.success(
+          t(
+            "imported",
+            String(result.sections_saved ?? 0),
+            String(result.providers_imported ?? 0),
+          ),
+        );
         const restartNotice = formatRestartNotice(result);
         if (restartNotice) {
           toast.info(restartNotice);
         }
       }
     },
-    onError: () => toast.error(t('importFailed')),
+    onError: () => toast.error(t("importFailed")),
   });
 }
 
 export function useStatus() {
   return useQuery<StatusData>({
-    queryKey: ['status'],
-    queryFn: () => api.get('/api/status'),
+    queryKey: ["status"],
+    queryFn: () => api.get("/api/status"),
     staleTime: 10_000,
   });
 }
 
 export function useServiceStatus() {
   return useQuery<ServiceStatusData>({
-    queryKey: ['service-status'],
-    queryFn: () => api.get('/api/service'),
+    queryKey: ["service-status"],
+    queryFn: () => api.get("/api/service"),
     staleTime: 10_000,
+  });
+}
+
+export function useDaemonBootstrap() {
+  return useQuery<DaemonBootstrapData>({
+    queryKey: ["daemon-bootstrap"],
+    queryFn: () => api.get("/api/daemon/bootstrap"),
+    staleTime: 30_000,
   });
 }
 
 export function useWatchStatus() {
   return useQuery<WatchStatusData>({
-    queryKey: ['watch-status'],
-    queryFn: () => api.get('/api/harness/watch'),
+    queryKey: ["watch-status"],
+    queryFn: () => api.get("/api/harness/watch"),
     staleTime: 10_000,
   });
 }
@@ -262,11 +290,12 @@ export function useWatchStatus() {
 export function useUpdateWatchStatus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: Partial<WatchStatusData>) => api.post('/api/harness/watch', payload),
+    mutationFn: (payload: Partial<WatchStatusData>) =>
+      api.post("/api/harness/watch", payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['watch-status'] });
-      qc.invalidateQueries({ queryKey: ['config'] });
-      toast.success(t('configSaved'));
+      qc.invalidateQueries({ queryKey: ["watch-status"] });
+      qc.invalidateQueries({ queryKey: ["config"] });
+      toast.success(t("configSaved"));
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -274,7 +303,7 @@ export function useUpdateWatchStatus() {
 
 export function useHarnessAudit(limit = 100) {
   return useQuery<HarnessAuditData>({
-    queryKey: ['harness-audit', limit],
+    queryKey: ["harness-audit", limit],
     queryFn: () => api.get(`/api/harness/audit?limit=${limit}`),
     staleTime: 5_000,
     refetchInterval: 10_000,
@@ -284,10 +313,14 @@ export function useHarnessAudit(limit = 100) {
 export function useClearHarnessAudit() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<{ status: string; stats: AuditStatsData }>('/api/harness/audit/clear', {}),
+    mutationFn: () =>
+      api.post<{ status: string; stats: AuditStatsData }>(
+        "/api/harness/audit/clear",
+        {},
+      ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['harness-audit'] });
-      toast.success(t('harnessAuditCleared'));
+      qc.invalidateQueries({ queryKey: ["harness-audit"] });
+      toast.success(t("harnessAuditCleared"));
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -296,11 +329,11 @@ export function useClearHarnessAudit() {
 export function useRestartService() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<{ status: string }>('/api/service/restart', {}),
+    mutationFn: () => api.post<{ status: string }>("/api/service/restart", {}),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['service-status'] });
-      qc.invalidateQueries({ queryKey: ['status'] });
-      toast.success(t('systemServiceRestartQueued'));
+      qc.invalidateQueries({ queryKey: ["service-status"] });
+      qc.invalidateQueries({ queryKey: ["status"] });
+      toast.success(t("systemServiceRestartQueued"));
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -309,12 +342,12 @@ export function useRestartService() {
 export function useReloadService() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<{ status: string }>('/api/service/reload', {}),
+    mutationFn: () => api.post<{ status: string }>("/api/service/reload", {}),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['service-status'] });
-      qc.invalidateQueries({ queryKey: ['status'] });
-      qc.invalidateQueries({ queryKey: ['config'] });
-      toast.success(t('systemServiceReloaded'));
+      qc.invalidateQueries({ queryKey: ["service-status"] });
+      qc.invalidateQueries({ queryKey: ["status"] });
+      qc.invalidateQueries({ queryKey: ["config"] });
+      toast.success(t("systemServiceReloaded"));
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -323,11 +356,11 @@ export function useReloadService() {
 export function useCleanupSessions() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.post<{ status: string }>('/api/sessions/cleanup'),
+    mutationFn: () => api.post<{ status: string }>("/api/sessions/cleanup"),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['config'] });
-      qc.invalidateQueries({ queryKey: ['sessions'] });
-      toast.success(t('sessionsCleanupRan'));
+      qc.invalidateQueries({ queryKey: ["config"] });
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      toast.success(t("sessionsCleanupRan"));
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -335,9 +368,12 @@ export function useCleanupSessions() {
 
 export function useCleanupToolSessionEvents() {
   return useMutation({
-    mutationFn: () => api.post<{ deleted: number }>('/api/tool-sessions/events/cleanup'),
+    mutationFn: () =>
+      api.post<{ deleted: number }>("/api/tool-sessions/events/cleanup"),
     onSuccess: (result) => {
-      toast.success(t('webuiToolSessionEventsCleanupDone', String(result.deleted ?? 0)));
+      toast.success(
+        t("webuiToolSessionEventsCleanupDone", String(result.deleted ?? 0)),
+      );
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -346,16 +382,22 @@ export function useCleanupToolSessionEvents() {
 export function useCleanupSkillVersions() {
   return useMutation({
     mutationFn: () =>
-      api.post<{ deleted: number; max_count: number; enabled: boolean; mode: string }>(
-        '/api/marketplace/skills/versions/cleanup',
-        {},
-      ),
+      api.post<{
+        deleted: number;
+        max_count: number;
+        enabled: boolean;
+        mode: string;
+      }>("/api/marketplace/skills/versions/cleanup", {}),
     onSuccess: (result) => {
-      if (result.mode === 'clear_all') {
-        toast.success(t('webuiSkillVersionsCleanupDone', String(result.deleted ?? 0)));
+      if (result.mode === "clear_all") {
+        toast.success(
+          t("webuiSkillVersionsCleanupDone", String(result.deleted ?? 0)),
+        );
         return;
       }
-      toast.success(t('webuiSkillVersionsPruned', String(result.max_count ?? 0)));
+      toast.success(
+        t("webuiSkillVersionsPruned", String(result.max_count ?? 0)),
+      );
     },
     onError: (err: Error) => toast.error(err.message),
   });

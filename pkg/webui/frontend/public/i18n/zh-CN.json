@@ -1235,5 +1235,13 @@
   "systemDaemonEmpty": "当前还没有 daemon 主机注册。",
   "systemDaemonWorkspaces": "工作区：{0}",
   "systemDaemonRuntimes": "运行时：{0}",
-  "systemDaemonInstalledRuntimes": "已安装运行时：{0}"
+  "systemDaemonInstalledRuntimes": "已安装运行时：{0}",
+  "systemDaemonBootstrapRefresh": "刷新 daemon 引导命令",
+  "systemDaemonBootstrapTitle": "引导命令",
+  "systemDaemonBootstrapDescription": "使用这里生成的命令在主机上安装或启动 daemon，并回连到当前 Nekobot 服务端。",
+  "systemDaemonServerUrl": "服务端地址",
+  "systemDaemonCommand": "安装 / 启动命令",
+  "systemDaemonToken": "Daemon Token",
+  "systemDaemonBootstrapEmpty": "暂时还没有可用的引导信息。",
+  "copyFailed": "复制失败"
 }

@@ -1235,5 +1235,13 @@
   "systemDaemonEmpty": "No daemon hosts have registered yet.",
   "systemDaemonWorkspaces": "Workspaces: {0}",
   "systemDaemonRuntimes": "Runtimes: {0}",
-  "systemDaemonInstalledRuntimes": "Installed runtimes: {0}"
+  "systemDaemonInstalledRuntimes": "Installed runtimes: {0}",
+  "systemDaemonBootstrapRefresh": "Refresh daemon bootstrap",
+  "systemDaemonBootstrapTitle": "Bootstrap command",
+  "systemDaemonBootstrapDescription": "Use this generated command to install or launch a host daemon and connect it back to this Nekobot server.",
+  "systemDaemonServerUrl": "Server URL",
+  "systemDaemonCommand": "Install / run command",
+  "systemDaemonToken": "Daemon token",
+  "systemDaemonBootstrapEmpty": "Bootstrap data is not available yet.",
+  "copyFailed": "Copy failed"
 }

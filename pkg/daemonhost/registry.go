@@ -12,6 +12,7 @@ import (
 )
 
 const daemonRegistryKey = "daemonhost.registry.v1"
+const OfflineThreshold = 45 * time.Second
 
 type Registry struct {
 	kv state.KV
@@ -144,8 +145,15 @@ func MachineStatuses(snapshot *Snapshot) []MachineStatus {
 	}
 	sort.Strings(machineIDs)
 	out := make([]MachineStatus, 0, len(machineIDs))
+	now := time.Now()
 	for _, id := range machineIDs {
-		status := MachineStatus{Info: snapshot.Machines[id]}
+		info := snapshot.Machines[id]
+		if info == nil {
+			continue
+		}
+		cloned := *info
+		cloned.Status = DeriveMachineStatus(info, now)
+		status := MachineStatus{Info: &cloned}
 		if inv, ok := snapshot.Inventories[id]; ok && inv != nil {
 			status.WorkspaceCount = len(inv.Workspaces)
 			status.RuntimeCount = len(inv.Runtimes)
@@ -158,6 +166,28 @@ func MachineStatuses(snapshot *Snapshot) []MachineStatus {
 		out = append(out, status)
 	}
 	return out
+}
+
+func DeriveMachineStatus(info *daemonv1.DaemonInfo, now time.Time) string {
+	if info == nil {
+		return "offline"
+	}
+	current := strings.TrimSpace(info.Status)
+	if current == "" {
+		current = "online"
+	}
+	if current != "online" {
+		return current
+	}
+	lastSeenUnix := info.LastSeenUnix
+	if lastSeenUnix <= 0 {
+		return "offline"
+	}
+	lastSeenAt := time.Unix(lastSeenUnix, 0)
+	if now.Sub(lastSeenAt) > OfflineThreshold {
+		return "offline"
+	}
+	return current
 }
 
 func decodeInventory(raw map[string]interface{}) *daemonv1.RuntimeInventory {

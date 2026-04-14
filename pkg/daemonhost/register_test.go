@@ -3,6 +3,7 @@ package daemonhost
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/logger"
@@ -41,5 +42,27 @@ func TestRegistryRegisterAndHeartbeatPersistMachineState(t *testing.T) {
 	}
 	if len(ss.Machines) != 1 || ss.Machines["machine-a"] == nil {
 		t.Fatalf("expected stored machine state, got %+v", ss.Machines)
+	}
+}
+
+func TestDeriveMachineStatusMarksOldHeartbeatOffline(t *testing.T) {
+	info := &daemonv1.DaemonInfo{
+		MachineId:    "machine-a",
+		Status:       "online",
+		LastSeenUnix: time.Now().Add(-(OfflineThreshold + time.Second)).Unix(),
+	}
+	if got := DeriveMachineStatus(info, time.Now()); got != "offline" {
+		t.Fatalf("expected offline, got %q", got)
+	}
+}
+
+func TestDeriveMachineStatusKeepsRecentHeartbeatOnline(t *testing.T) {
+	info := &daemonv1.DaemonInfo{
+		MachineId:    "machine-a",
+		Status:       "online",
+		LastSeenUnix: time.Now().Unix(),
+	}
+	if got := DeriveMachineStatus(info, time.Now()); got != "online" {
+		t.Fatalf("expected online, got %q", got)
 	}
 }

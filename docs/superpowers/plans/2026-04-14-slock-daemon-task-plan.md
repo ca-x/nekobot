@@ -7,7 +7,7 @@ Design and implement a Buf/protobuf-based Nekobot host daemon protocol and minim
 - [x] Phase 1: Plan and setup
 - [x] Phase 2: Analyze slock.ai daemon protocol and map it onto Nekobot
 - [x] Phase 3: Design Buf/protobuf contract and integration boundaries
-- [ ] Phase 4: Implement minimum viable daemon + server/control-plane support
+- [x] Phase 4: Implement minimum viable daemon + server/control-plane support
 - [ ] Phase 5: Verify, commit, and push
 
 ## Key Questions
@@ -26,7 +26,7 @@ Design and implement a Buf/protobuf-based Nekobot host daemon protocol and minim
 - `printf` shells with leading `---` text needed safer quoting while inspecting files.
 
 ## Status
-**Currently in Phase 4** - Implementing daemon-side task execution loop and session feedback so daemon-backed runtime chats become actually usable.
+**Currently in Phase 5** - Finishing daemon usability polish: offline status derivation and WebUI bootstrap/install guidance.
 
 ## Modeling decision
 - Reuse existing Nekobot meaning of `channel` as the user-facing entry surface.
@@ -45,3 +45,4 @@ The first version is only considered usable if channel-side daemon interaction e
 6. shared channel-to-daemon interaction layer
 7. at least one high-value ingress surface wired through that layer
 8. daemon execution/result loop that writes task outcomes back to owning sessions
+9. derived online/offline machine state and WebUI bootstrap/install hints
