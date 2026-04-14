@@ -42,3 +42,4 @@
 - Fresh verification evidence: independent `threads.Manager` persistence passed dedicated tests and now backs the session/thread read-write path in webui handlers.
 - Fresh verification evidence: daemon chat event SSE plumbing passed backend tests and the Chat frontend build after wiring EventSource-based updates for daemon-backed sessions.
 - Fresh verification evidence: SSE event-stream groundwork remains green after re-running threads/webui backend tests and a fresh frontend production build on the current main-based branch.
+- Fresh verification evidence: daemon-backed chat now builds cleanly with SSE-first event wiring while keeping session-detail polling only as a fallback path.

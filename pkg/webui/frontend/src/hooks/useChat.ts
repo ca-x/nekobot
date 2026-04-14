@@ -69,6 +69,7 @@ interface UseChatReturn {
   routeSettings: ChatRouteSettings;
   routeResult: ChatRouteResult | null;
   isAwaitingReply: boolean;
+  daemonEventStreamStatus: ConnectionStatus;
   fileMentionFeedback: FileMentionFeedback | null;
   clearFileMentionFeedback: () => void;
 }
@@ -82,6 +83,8 @@ export function useChat(): UseChatReturn {
     model: '',
     fallback: [],
   });
+  const [daemonEventStreamStatus, setDaemonEventStreamStatus] =
+    useState<ConnectionStatus>('disconnected');
   const [routeResultsBySession, setRouteResultsBySession] = useState<Record<string, ChatRouteResult | null>>({});
   const [awaitingReplyBySession, setAwaitingReplyBySession] = useState<Record<string, boolean>>({});
   const [fileMentionFeedbackBySession, setFileMentionFeedbackBySession] = useState<Record<string, FileMentionFeedback | null>>({});
@@ -126,6 +129,7 @@ export function useChat(): UseChatReturn {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
+      setDaemonEventStreamStatus('disconnected');
       return;
     }
 
@@ -134,9 +138,14 @@ export function useChat(): UseChatReturn {
       eventSourceRef.current = null;
     }
 
+    setDaemonEventStreamStatus('connecting');
     const url = `/api/chat/events?token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(runtimeSessionKey)}`;
     const source = new EventSource(url);
     eventSourceRef.current = source;
+
+    source.onopen = () => {
+      setDaemonEventStreamStatus('connected');
+    };
 
     source.onmessage = (ev) => {
       try {
@@ -165,6 +174,7 @@ export function useChat(): UseChatReturn {
     };
 
     source.onerror = () => {
+      setDaemonEventStreamStatus('disconnected');
       source.close();
       if (eventSourceRef.current === source) {
         eventSourceRef.current = null;
@@ -172,6 +182,7 @@ export function useChat(): UseChatReturn {
     };
 
     return () => {
+      setDaemonEventStreamStatus('disconnected');
       source.close();
       if (eventSourceRef.current === source) {
         eventSourceRef.current = null;
@@ -437,6 +448,7 @@ export function useChat(): UseChatReturn {
     routeSettings,
     routeResult,
     isAwaitingReply,
+    daemonEventStreamStatus,
     fileMentionFeedback,
     clearFileMentionFeedback,
   };

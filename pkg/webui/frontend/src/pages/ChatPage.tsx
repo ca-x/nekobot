@@ -191,6 +191,7 @@ export default function ChatPage() {
     routeSettings,
     routeResult,
     isAwaitingReply,
+    daemonEventStreamStatus,
     fileMentionFeedback,
     clearFileMentionFeedback,
   } = useChat();
@@ -306,7 +307,7 @@ export default function ChatPage() {
   const baseChatSessionID = 'webui-chat';
   const { data: baseSessionDetail } = useSessionDetail(baseChatSessionID);
   const { data: activeSessionDetail } = useSessionDetailWithOptions(activeSessionBindingID, {
-    refetchInterval: activeRuntimeID ? 1500 : undefined,
+    refetchInterval: activeRuntimeID && daemonEventStreamStatus !== 'connected' ? 1500 : undefined,
     enabled: !!activeRuntimeID,
   });
   const updateSessionRuntime = useUpdateSessionRuntime();
@@ -883,6 +884,13 @@ export default function ChatPage() {
                   {baseSessionDetail?.runtime_id ? (
                     <p className="text-xs leading-5 text-muted-foreground">
                       {t('chatSessionRuntimeBindingHint', baseSessionDetail.runtime_id)}
+                    </p>
+                  ) : null}
+                  {activeRuntimeID ? (
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {daemonEventStreamStatus === 'connected'
+                        ? t('chatDaemonStreamLive')
+                        : t('chatDaemonStreamPolling')}
                     </p>
                   ) : null}
                   {!runtimeControlsRoute && chatRuntimes.length === 0 ? (

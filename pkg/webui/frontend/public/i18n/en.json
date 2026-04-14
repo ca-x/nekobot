@@ -1267,5 +1267,7 @@
   "threadSelectHint": "Select a thread to inspect or edit its metadata.",
   "threadSaved": "Thread saved",
   "threadSaveFailed": "Failed to save thread",
-  "threadsOpenInChat": "Open in Chat"
+  "threadsOpenInChat": "Open in Chat",
+  "chatDaemonStreamLive": "Daemon updates are streaming live.",
+  "chatDaemonStreamPolling": "Daemon updates are using polling fallback."
 }

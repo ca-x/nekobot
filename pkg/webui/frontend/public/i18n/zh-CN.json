@@ -1267,5 +1267,7 @@
   "threadSelectHint": "选择一个 thread 查看或编辑其元数据。",
   "threadSaved": "Thread 已保存",
   "threadSaveFailed": "保存 Thread 失败",
-  "threadsOpenInChat": "在聊天中打开"
+  "threadsOpenInChat": "在聊天中打开",
+  "chatDaemonStreamLive": "Daemon 更新正在实时流式刷新。",
+  "chatDaemonStreamPolling": "Daemon 更新当前使用轮询兜底。"
 }

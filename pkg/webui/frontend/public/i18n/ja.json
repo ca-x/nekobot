@@ -1267,5 +1267,7 @@
   "threadSelectHint": "thread を選択してメタデータを表示または編集します。",
   "threadSaved": "Thread を保存しました",
   "threadSaveFailed": "Thread の保存に失敗しました",
-  "threadsOpenInChat": "チャットで開く"
+  "threadsOpenInChat": "チャットで開く",
+  "chatDaemonStreamLive": "daemon 更新はライブ配信中です。",
+  "chatDaemonStreamPolling": "daemon 更新は現在ポーリングフォールバック中です。"
 }
