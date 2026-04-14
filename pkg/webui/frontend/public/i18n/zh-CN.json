@@ -1243,5 +1243,11 @@
   "systemDaemonCommand": "安装 / 启动命令",
   "systemDaemonToken": "Daemon Token",
   "systemDaemonBootstrapEmpty": "暂时还没有可用的引导信息。",
-  "copyFailed": "复制失败"
+  "copyFailed": "复制失败",
+  "sessionRuntimeLabel": "绑定运行时",
+  "sessionRuntimeSave": "保存运行时",
+  "sessionRuntimeSaved": "会话运行时已保存",
+  "sessionRuntimeSaveFailed": "保存会话运行时失败",
+  "sessionRuntimeNone": "未绑定运行时",
+  "sessionRuntimeDescription": "设置后，聊天消息可自动复用这个运行时，无需每次重新选择。"
 }

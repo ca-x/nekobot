@@ -1243,5 +1243,11 @@
   "systemDaemonCommand": "インストール / 起動コマンド",
   "systemDaemonToken": "Daemon トークン",
   "systemDaemonBootstrapEmpty": "まだ利用可能なブートストラップ情報はありません。",
-  "copyFailed": "コピーに失敗しました"
+  "copyFailed": "コピーに失敗しました",
+  "sessionRuntimeLabel": "バインド済みランタイム",
+  "sessionRuntimeSave": "ランタイムを保存",
+  "sessionRuntimeSaved": "セッションランタイムを保存しました",
+  "sessionRuntimeSaveFailed": "セッションランタイムの保存に失敗しました",
+  "sessionRuntimeNone": "ランタイム未バインド",
+  "sessionRuntimeDescription": "設定すると、チャットメッセージは毎回再選択せずにこのランタイムを再利用できます。"
 }

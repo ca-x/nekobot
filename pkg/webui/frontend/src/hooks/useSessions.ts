@@ -9,6 +9,7 @@ export interface SessionSummary {
   updated_at: string;
   summary: string;
   message_count: number;
+  runtime_id: string;
 }
 
 export interface SessionMessage {
@@ -74,5 +75,20 @@ export function useDeleteSession() {
       toast.success(t('sessionDeleted'));
     },
     onError: (err) => toast.error(err.message || t('sessionDeleteFailed')),
+  });
+}
+
+export function useUpdateSessionRuntime() {
+  const qc = useQueryClient();
+
+  return useMutation<unknown, Error, { id: string; runtime_id: string }>({
+    mutationFn: ({ id, runtime_id }) =>
+      api.put(`/api/sessions/${encodeURIComponent(id)}/runtime`, { runtime_id }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: sessionKeys.list() });
+      qc.invalidateQueries({ queryKey: sessionKeys.detail(vars.id) });
+      toast.success(t('sessionRuntimeSaved'));
+    },
+    onError: (err) => toast.error(err.message || t('sessionRuntimeSaveFailed')),
   });
 }

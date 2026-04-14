@@ -1243,5 +1243,11 @@
   "systemDaemonCommand": "Install / run command",
   "systemDaemonToken": "Daemon token",
   "systemDaemonBootstrapEmpty": "Bootstrap data is not available yet.",
-  "copyFailed": "Copy failed"
+  "copyFailed": "Copy failed",
+  "sessionRuntimeLabel": "Bound Runtime",
+  "sessionRuntimeSave": "Save Runtime",
+  "sessionRuntimeSaved": "Session runtime saved",
+  "sessionRuntimeSaveFailed": "Failed to save session runtime",
+  "sessionRuntimeNone": "No bound runtime",
+  "sessionRuntimeDescription": "When set, chat messages can reuse this runtime without reselecting it each time."
 }

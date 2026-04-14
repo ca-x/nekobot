@@ -16,10 +16,12 @@ import {
   useDeleteSession,
   useSessionDetail,
   useSessions,
+  useUpdateSessionRuntime,
   useUpdateSessionSummary,
 } from '@/hooks/useSessions';
 import { Save, Trash2, Loader2, MessageSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useRuntimeAgents } from '@/hooks/useTopology';
 import {
   Dialog,
   DialogContent,
@@ -42,10 +44,13 @@ export default function SessionsPage() {
   const { data: sessions = [], isLoading } = useSessions();
   const [selectedId, setSelectedId] = useState('');
   const [summaryDraft, setSummaryDraft] = useState('');
+  const [runtimeDraft, setRuntimeDraft] = useState('');
 
   const updateSummary = useUpdateSessionSummary();
+  const updateRuntime = useUpdateSessionRuntime();
   const deleteSession = useDeleteSession();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { data: runtimes = [] } = useRuntimeAgents();
 
   const sortedSessions = useMemo(
     () =>
@@ -80,12 +85,18 @@ export default function SessionsPage() {
   useEffect(() => {
     if (detail) {
       setSummaryDraft(detail.summary || '');
+      setRuntimeDraft(detail.runtime_id || '');
     }
   }, [detail]);
 
   const handleSaveSummary = () => {
     if (!detail) return;
     updateSummary.mutate({ id: detail.id, summary: summaryDraft });
+  };
+
+  const handleSaveRuntime = () => {
+    if (!detail) return;
+    updateRuntime.mutate({ id: detail.id, runtime_id: runtimeDraft });
   };
 
   const handleDeleteSession = () => {
@@ -234,10 +245,16 @@ export default function SessionsPage() {
                     <div>{formatDateTime(detail.created_at)}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground mb-1">
-                      {t('sessionUpdatedAtLabel')}
+                      <div className="text-xs text-muted-foreground mb-1">
+                        {t('sessionUpdatedAtLabel')}
+                      </div>
+                      <div>{formatDateTime(detail.updated_at)}</div>
                     </div>
-                    <div>{formatDateTime(detail.updated_at)}</div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">
+                      {t('sessionRuntimeLabel')}
+                    </div>
+                    <div className="font-mono break-all">{detail.runtime_id || '-'}</div>
                   </div>
                 </div>
 
@@ -265,6 +282,17 @@ export default function SessionsPage() {
                       {t('save')}
                     </Button>
                     <Button
+                      variant="outline"
+                      onClick={handleSaveRuntime}
+                      disabled={
+                        updateRuntime.isPending || runtimeDraft === detail.runtime_id
+                      }
+                      className="h-11 flex-1 sm:flex-initial"
+                    >
+                      <Save className="h-4 w-4 mr-1.5" />
+                      {t('sessionRuntimeSave')}
+                    </Button>
+                    <Button
                       variant="destructive"
                       onClick={handleDeleteSession}
                       disabled={deleteSession.isPending}
@@ -274,6 +302,29 @@ export default function SessionsPage() {
                       {t('delete')}
                     </Button>
                   </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    {t('sessionRuntimeLabel')}
+                  </label>
+                  <select
+                    className="h-11 rounded-md border border-input bg-background px-3 text-sm"
+                    value={runtimeDraft}
+                    onChange={(e) => setRuntimeDraft(e.target.value)}
+                  >
+                    <option value="">{t('sessionRuntimeNone')}</option>
+                    {runtimes
+                      .filter((runtime) => runtime.enabled)
+                      .map((runtime) => (
+                        <option key={runtime.id} value={runtime.id}>
+                          {runtime.display_name || runtime.name} ({runtime.id})
+                        </option>
+                      ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    {t('sessionRuntimeDescription')}
+                  </p>
                 </div>
 
                 <div className="flex-1 min-h-0 rounded-md border">
