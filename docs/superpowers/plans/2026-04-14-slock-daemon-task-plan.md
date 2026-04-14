@@ -46,3 +46,4 @@ The first version is only considered usable if channel-side daemon interaction e
 7. at least one high-value ingress surface wired through that layer
 8. daemon execution/result loop that writes task outcomes back to owning sessions
 9. derived online/offline machine state and WebUI bootstrap/install hints
+10. runtime-aware real CLI execution for installed daemon runtimes

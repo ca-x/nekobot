@@ -3,6 +3,9 @@ package daemonhost
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -36,6 +39,11 @@ type PollOptions struct {
 	BuildInfo        func(string) (*daemonv1.DaemonInfo, error)
 	BuildInventory   func(string) (*daemonv1.RuntimeInventory, error)
 	InventoryHomeDir string
+}
+
+type runtimeContext struct {
+	runtime   *daemonv1.Runtime
+	workspace *daemonv1.Workspace
 }
 
 func RegisterAndPoll(ctx context.Context, client RemoteRegistryClient, opts PollOptions) error {
@@ -96,8 +104,12 @@ func pollOnce(ctx context.Context, client RemoteRegistryClient, opts PollOptions
 	if err != nil {
 		return err
 	}
+	executor := opts.Executor
+	if executor == nil {
+		executor = DefaultCLIExecutor(inventory)
+	}
 	for _, task := range fetchResp.Tasks {
-		if err := executeFetchedTask(ctx, client, opts.Executor, task); err != nil {
+		if err := executeFetchedTask(ctx, client, executor, task); err != nil {
 			return err
 		}
 	}
@@ -191,6 +203,138 @@ func defaultTaskResult(task *daemonv1.Task) string {
 	return strings.Join(parts, "\n")
 }
 
+func DefaultCLIExecutor(inventory *daemonv1.RuntimeInventory) TaskExecutor {
+	contexts := buildRuntimeContexts(inventory)
+	return func(ctx context.Context, task *daemonv1.Task) (string, error) {
+		if task == nil {
+			return "", nil
+		}
+		runtimeID := strings.TrimSpace(task.RuntimeId)
+		rtCtx, ok := contexts[runtimeID]
+		if !ok || rtCtx.runtime == nil {
+			return "", fmt.Errorf("runtime %s is not available on this daemon", runtimeID)
+		}
+		if !rtCtx.runtime.Installed || !rtCtx.runtime.Healthy {
+			return "", fmt.Errorf("runtime %s is not installed or healthy", runtimeID)
+		}
+		prompt := strings.TrimSpace(task.Summary)
+		if prompt == "" {
+			prompt = strings.TrimSpace(task.TaskId)
+		}
+		switch strings.ToLower(strings.TrimSpace(rtCtx.runtime.Kind)) {
+		case "codex":
+			return runCodexTask(ctx, prompt, rtCtx.workspace)
+		case "claude":
+			return runClaudeTask(ctx, prompt, rtCtx.workspace)
+		default:
+			return "", fmt.Errorf("runtime kind %s does not support daemon execution yet", rtCtx.runtime.Kind)
+		}
+	}
+}
+
+func buildRuntimeContexts(inventory *daemonv1.RuntimeInventory) map[string]runtimeContext {
+	result := map[string]runtimeContext{}
+	if inventory == nil {
+		return result
+	}
+	workspaces := map[string]*daemonv1.Workspace{}
+	for _, workspace := range inventory.Workspaces {
+		if workspace == nil {
+			continue
+		}
+		workspaceID := strings.TrimSpace(workspace.WorkspaceId)
+		if workspaceID == "" {
+			continue
+		}
+		workspaces[workspaceID] = workspace
+	}
+	for _, runtime := range inventory.Runtimes {
+		if runtime == nil {
+			continue
+		}
+		runtimeID := strings.TrimSpace(runtime.RuntimeId)
+		if runtimeID == "" {
+			continue
+		}
+		result[runtimeID] = runtimeContext{
+			runtime:   runtime,
+			workspace: workspaces[strings.TrimSpace(runtime.WorkspaceId)],
+		}
+	}
+	return result
+}
+
+func runCodexTask(ctx context.Context, prompt string, workspace *daemonv1.Workspace) (string, error) {
+	outputPath, err := os.CreateTemp("", "nekobot-daemon-codex-*.txt")
+	if err != nil {
+		return "", err
+	}
+	outputPath.Close()
+	defer os.Remove(outputPath.Name())
+
+	args := []string{
+		"exec",
+		"--skip-git-repo-check",
+		"--sandbox", "workspace-write",
+		"-C", workspaceDir(workspace),
+		"-o", outputPath.Name(),
+		prompt,
+	}
+	cmd := exec.CommandContext(ctx, "codex", args...)
+	output, runErr := cmd.CombinedOutput()
+
+	fileOutput, readErr := os.ReadFile(outputPath.Name())
+	if readErr == nil && strings.TrimSpace(string(fileOutput)) != "" {
+		return strings.TrimSpace(string(fileOutput)), nil
+	}
+	if runErr != nil {
+		return strings.TrimSpace(string(output)), fmt.Errorf("codex exec: %w", runErr)
+	}
+	if trimmed := strings.TrimSpace(string(output)); trimmed != "" {
+		return trimmed, nil
+	}
+	return "", fmt.Errorf("codex exec returned no output")
+}
+
+func runClaudeTask(ctx context.Context, prompt string, workspace *daemonv1.Workspace) (string, error) {
+	args := []string{
+		"--bare",
+		"-p",
+		"--permission-mode", "bypassPermissions",
+		prompt,
+	}
+	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd.Dir = workspaceDir(workspace)
+	output, err := cmd.CombinedOutput()
+	trimmed := strings.TrimSpace(string(output))
+	if err != nil {
+		if trimmed != "" {
+			return trimmed, nil
+		}
+		return "", fmt.Errorf("claude print: %w", err)
+	}
+	if trimmed == "" {
+		return "", fmt.Errorf("claude print returned no output")
+	}
+	return trimmed, nil
+}
+
+func workspaceDir(workspace *daemonv1.Workspace) string {
+	if workspace == nil {
+		if cwd, err := os.Getwd(); err == nil && strings.TrimSpace(cwd) != "" {
+			return cwd
+		}
+		return "."
+	}
+	if path := strings.TrimSpace(workspace.Path); path != "" {
+		return filepath.Clean(path)
+	}
+	if cwd, err := os.Getwd(); err == nil && strings.TrimSpace(cwd) != "" {
+		return cwd
+	}
+	return "."
+}
+
 func normalizedTaskLimit(limit uint32) uint32 {
 	if limit == 0 {
 		return 10
@@ -205,6 +349,9 @@ func collectRuntimeIDs(inventory *daemonv1.RuntimeInventory) []string {
 	ids := make([]string, 0, len(inventory.Runtimes))
 	for _, item := range inventory.Runtimes {
 		if item == nil {
+			continue
+		}
+		if !item.Installed || !item.Healthy {
 			continue
 		}
 		runtimeID := strings.TrimSpace(item.RuntimeId)

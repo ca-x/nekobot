@@ -21,3 +21,5 @@
 - Fresh verification evidence: targeted daemon/webui/cmd Go tests passed after the second polish wave.
 - Fresh verification evidence: frontend production build passed after bootstrap UX changes.
 - Main branch push confirmed at commit `79dc8f6`.
+- Replaced the placeholder daemon executor with a runtime-aware CLI executor. Current first-class paths are `codex` and `claude`.
+- Daemon task fetch now filters to installed + healthy runtimes so the server does not assign work to unavailable local runtimes.

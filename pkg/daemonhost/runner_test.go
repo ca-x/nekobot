@@ -3,6 +3,8 @@ package daemonhost
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -106,5 +108,58 @@ func TestExecuteFetchedTaskReportsFailure(t *testing.T) {
 	}
 	if client.updates[2].Error != "boom" || client.updates[2].ResultMessage != "partial output" {
 		t.Fatalf("unexpected failure payload: %+v", client.updates[2])
+	}
+}
+
+func TestCollectRuntimeIDsFiltersUnavailableRuntimes(t *testing.T) {
+	inventory := &daemonv1.RuntimeInventory{
+		Runtimes: []*daemonv1.Runtime{
+			{RuntimeId: "runtime-a", Installed: true, Healthy: true},
+			{RuntimeId: "runtime-b", Installed: false, Healthy: true},
+			{RuntimeId: "runtime-c", Installed: true, Healthy: false},
+		},
+	}
+	ids := collectRuntimeIDs(inventory)
+	if len(ids) != 1 || ids[0] != "runtime-a" {
+		t.Fatalf("unexpected runtime ids: %+v", ids)
+	}
+}
+
+func TestDefaultCLIExecutorRejectsUnavailableRuntime(t *testing.T) {
+	executor := DefaultCLIExecutor(&daemonv1.RuntimeInventory{
+		Runtimes: []*daemonv1.Runtime{
+			{RuntimeId: "runtime-a", Kind: "codex", Installed: false, Healthy: true},
+		},
+	})
+	_, err := executor(context.Background(), &daemonv1.Task{TaskId: "task-1", RuntimeId: "runtime-a", Summary: "hello"})
+	if err == nil {
+		t.Fatalf("expected unavailable runtime error")
+	}
+}
+
+func TestRunClaudeTaskUsesWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := t.TempDir()
+	logFile := filepath.Join(workspace, "claude-call.txt")
+	scriptPath := filepath.Join(binDir, "claude")
+	script := "#!/usr/bin/env bash\npwd > " + logFile + "\nprintf 'daemon-ok\\n'\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake claude: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	result, err := runClaudeTask(context.Background(), "hello", &daemonv1.Workspace{Path: workspace})
+	if err != nil {
+		t.Fatalf("runClaudeTask failed: %v", err)
+	}
+	if result != "daemon-ok" {
+		t.Fatalf("unexpected claude result: %q", result)
+	}
+	pwdBytes, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("read fake claude log: %v", err)
+	}
+	if got := string(pwdBytes); got == "" || filepath.Clean(string(pwdBytes[:len(pwdBytes)-1])) != workspace {
+		t.Fatalf("expected workspace cwd, got %q", got)
 	}
 }
