@@ -287,6 +287,9 @@ func runCodexTask(ctx context.Context, prompt string, workspace *daemonv1.Worksp
 	if readErr == nil && strings.TrimSpace(string(fileOutput)) != "" {
 		return strings.TrimSpace(string(fileOutput)), nil
 	}
+	if extracted := extractCodexMessage(string(output)); extracted != "" {
+		return extracted, nil
+	}
 	if runErr != nil {
 		return strings.TrimSpace(string(output)), fmt.Errorf("codex exec: %w", runErr)
 	}
@@ -333,6 +336,51 @@ func workspaceDir(workspace *daemonv1.Workspace) string {
 		return cwd
 	}
 	return "."
+}
+
+func extractCodexMessage(output string) string {
+	lines := strings.Split(output, "\n")
+	filtered := make([]string, 0, len(lines))
+	inAssistantBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed == "codex" {
+			inAssistantBlock = true
+			filtered = filtered[:0]
+			continue
+		}
+		if trimmed == "user" {
+			inAssistantBlock = false
+			filtered = filtered[:0]
+			continue
+		}
+		if trimmed == "--------" ||
+			strings.HasPrefix(trimmed, "OpenAI Codex") ||
+			strings.HasPrefix(trimmed, "workdir:") ||
+			strings.HasPrefix(trimmed, "model:") ||
+			strings.HasPrefix(trimmed, "provider:") ||
+			strings.HasPrefix(trimmed, "approval:") ||
+			strings.HasPrefix(trimmed, "sandbox:") ||
+			strings.HasPrefix(trimmed, "reasoning effort:") ||
+			strings.HasPrefix(trimmed, "reasoning summaries:") ||
+			strings.HasPrefix(trimmed, "session id:") ||
+			strings.HasPrefix(trimmed, "hook:") ||
+			strings.HasPrefix(trimmed, "warning:") ||
+			strings.HasPrefix(trimmed, "Reading additional input from stdin") {
+			continue
+		}
+		if !inAssistantBlock {
+			continue
+		}
+		filtered = append(filtered, trimmed)
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	return filtered[len(filtered)-1]
 }
 
 func normalizedTaskLimit(limit uint32) uint32 {

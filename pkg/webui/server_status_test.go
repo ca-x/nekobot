@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -1350,6 +1351,122 @@ func TestHandleFetchDaemonTasksAndUpdateStatus(t *testing.T) {
 	}
 	if messages[1].Role != "assistant" || messages[1].Content != "remote execution done" {
 		t.Fatalf("unexpected completion session message: %+v", messages[1])
+	}
+}
+
+func TestDaemonHTTPFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Sessions.Sources.WebUI = true
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, store, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	_, err = ag.TaskService().Enqueue(tasks.Task{
+		ID:        "task-e2e",
+		Type:      tasks.TypeRemoteAgent,
+		Summary:   "daemon e2e work",
+		SessionID: "webui-chat:daemon-e2e",
+		RuntimeID: "runtime-a",
+		Metadata: map[string]any{
+			"machine_id": "machine-a",
+		},
+	})
+	if err != nil {
+		t.Fatalf("enqueue task: %v", err)
+	}
+
+	s := &Server{config: cfg, kvStore: store, agent: ag, sessionMgr: sessionMgr}
+	e := echo.New()
+	e.POST("/api/daemon/register", s.handleRegisterDaemon)
+	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
+	e.POST("/api/daemon/tasks/fetch", s.handleFetchDaemonTasks)
+	e.POST("/api/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+
+	httpServer := httptest.NewServer(e)
+	defer httpServer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := daemonhost.NewAuthedClient(httpServer.URL, s.getDaemonToken())
+
+	go func() {
+		for i := 0; i < 100; i++ {
+			sess, err := sessionMgr.GetExisting("webui-chat:daemon-e2e")
+			if err == nil {
+				messages := sess.GetMessages()
+				if len(messages) >= 2 && messages[len(messages)-1].Content == "daemon-ok" {
+					cancel()
+					return
+				}
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		cancel()
+	}()
+
+	err = daemonhost.RegisterAndPoll(ctx, client, daemonhost.PollOptions{
+		MachineName:  "machine-a",
+		PollInterval: time.Millisecond,
+		BuildInfo: func(string) (*daemonv1.DaemonInfo, error) {
+			return &daemonv1.DaemonInfo{
+				DaemonId:    "daemon-a",
+				MachineId:   "machine-a",
+				MachineName: "machine-a",
+				Status:      "online",
+			}, nil
+		},
+		BuildInventory: func(string) (*daemonv1.RuntimeInventory, error) {
+			return &daemonv1.RuntimeInventory{
+				Workspaces: []*daemonv1.Workspace{{
+					WorkspaceId: "workspace-a",
+					MachineId:   "machine-a",
+					Path:        cfg.WorkspacePath(),
+					DisplayName: "workspace-a",
+					IsDefault:   true,
+				}},
+				Runtimes: []*daemonv1.Runtime{{
+					RuntimeId:   "runtime-a",
+					MachineId:   "machine-a",
+					WorkspaceId: "workspace-a",
+					Kind:        "codex",
+					Installed:   true,
+					Healthy:     true,
+				}},
+			}, nil
+		},
+		Executor: func(context.Context, *daemonv1.Task) (string, error) {
+			return "daemon-ok", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("RegisterAndPoll failed: %v", err)
+	}
+
+	items := ag.TaskService().List()
+	if len(items) != 1 || items[0].State != tasks.StateCompleted {
+		t.Fatalf("unexpected task state after e2e flow: %+v", items)
+	}
+	sess, err := sessionMgr.GetExisting("webui-chat:daemon-e2e")
+	if err != nil {
+		t.Fatalf("get existing session failed: %v", err)
+	}
+	messages := sess.GetMessages()
+	if len(messages) < 2 {
+		t.Fatalf("expected daemon session messages, got %+v", messages)
+	}
+	if messages[len(messages)-1].Role != "assistant" || messages[len(messages)-1].Content != "daemon-ok" {
+		t.Fatalf("unexpected final daemon session message: %+v", messages[len(messages)-1])
 	}
 }
 

@@ -163,3 +163,33 @@ func TestRunClaudeTaskUsesWorkspace(t *testing.T) {
 		t.Fatalf("expected workspace cwd, got %q", got)
 	}
 }
+
+func TestExtractCodexMessageSkipsHookNoise(t *testing.T) {
+	output := `OpenAI Codex v0.118.0
+--------
+workdir: /tmp/demo
+hook: SessionStart
+hook: SessionStart Completed
+codex
+daemon-ok
+hook: Stop
+hook: Stop Blocked
+`
+	if got := extractCodexMessage(output); got != "daemon-ok" {
+		t.Fatalf("unexpected extracted codex message: %q", got)
+	}
+}
+
+func TestExtractCodexMessageIgnoresUserPromptEcho(t *testing.T) {
+	output := `Reading additional input from stdin...
+OpenAI Codex v0.118.0
+--------
+user
+Reply with exactly: daemon-ok
+hook: UserPromptSubmit
+hook: UserPromptSubmit Completed
+`
+	if got := extractCodexMessage(output); got != "" {
+		t.Fatalf("expected empty extracted message, got %q", got)
+	}
+}
