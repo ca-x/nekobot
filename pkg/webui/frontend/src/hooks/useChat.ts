@@ -86,6 +86,7 @@ export function useChat(): UseChatReturn {
   const [awaitingReplyBySession, setAwaitingReplyBySession] = useState<Record<string, boolean>>({});
   const [fileMentionFeedbackBySession, setFileMentionFeedbackBySession] = useState<Record<string, FileMentionFeedback | null>>({});
   const wsRef = useRef<WebSocket | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSessionKeyRef = useRef<string | null>(null);
   const activeSessionKeyRef = useRef(activeSessionKey);
@@ -103,10 +104,79 @@ export function useChat(): UseChatReturn {
       }
       wsRef.current = null;
     }
+    if (eventSourceRef.current) {
+      try {
+        eventSourceRef.current.close();
+      } catch {
+        // ignore close errors
+      }
+      eventSourceRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
     activeSessionKeyRef.current = activeSessionKey;
+  }, [activeSessionKey]);
+
+  useEffect(() => {
+    const token = getToken();
+    const runtimeSessionKey = activeSessionKey.trim();
+    if (!token || !runtimeSessionKey || runtimeSessionKey === 'webui-chat') {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      return;
+    }
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
+    const url = `/api/chat/events?token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(runtimeSessionKey)}`;
+    const source = new EventSource(url);
+    eventSourceRef.current = source;
+
+    source.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data) as {
+          session_id?: string;
+          role?: ChatMessage['role'];
+          content?: string;
+          timestamp?: number;
+        };
+        const targetSessionKey = msg.session_id?.trim() || runtimeSessionKey;
+        setMessagesBySession((prev) => ({
+          ...prev,
+          [targetSessionKey]: [
+            ...(prev[targetSessionKey] ?? []),
+            {
+              role: (msg.role as ChatMessage['role']) || 'system',
+              content: msg.content || '',
+              timestamp: msg.timestamp ? msg.timestamp * 1000 : Date.now(),
+            },
+          ],
+        }));
+        setAwaitingReplyBySession((prev) => ({ ...prev, [targetSessionKey]: false }));
+      } catch {
+        // ignore malformed event payloads
+      }
+    };
+
+    source.onerror = () => {
+      source.close();
+      if (eventSourceRef.current === source) {
+        eventSourceRef.current = null;
+      }
+    };
+
+    return () => {
+      source.close();
+      if (eventSourceRef.current === source) {
+        eventSourceRef.current = null;
+      }
+    };
   }, [activeSessionKey]);
 
   const connect = useCallback(() => {

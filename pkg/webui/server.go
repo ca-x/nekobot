@@ -116,10 +116,19 @@ type Server struct {
 	taskStore          *tasks.Store
 	kvStore            state.KV
 	threads            *threads.Manager
+	chatEventMu        sync.RWMutex
+	chatEventSubs      map[string]map[chan chatEvent]struct{}
 	watcher            *watch.Watcher
 	webhookTestHandler func(ctx context.Context, username, message string) (string, error)
 	port               int
 	startedAt          time.Time
+}
+
+type chatEvent struct {
+	SessionID string `json:"session_id"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 type serviceController interface {
@@ -221,17 +230,18 @@ func NewServer(
 			}
 			return manager
 		}(),
-		sessionMgr:  sessionMgr,
-		processMgr:  processManager,
-		prompts:     promptManager,
-		providers:   providerStore,
-		cronMgr:     cronManager,
-		skillsMgr:   skillsManager,
-		workspace:   workspaceManager,
-		kvStore:     kvStore,
-		threads:     threads.NewManager(kvStore),
-		entClient:   entClient,
-		auditLogger: auditLogger,
+		sessionMgr:    sessionMgr,
+		processMgr:    processManager,
+		prompts:       promptManager,
+		providers:     providerStore,
+		cronMgr:       cronManager,
+		skillsMgr:     skillsManager,
+		workspace:     workspaceManager,
+		kvStore:       kvStore,
+		threads:       threads.NewManager(kvStore),
+		chatEventSubs: map[string]map[chan chatEvent]struct{}{},
+		entClient:     entClient,
+		auditLogger:   auditLogger,
 		snapshotMgr: func() *session.SnapshotManager {
 			if ag == nil {
 				return nil
@@ -320,6 +330,7 @@ func (s *Server) setup() {
 
 	// Chat WebSocket (auth handled inside via token query param)
 	e.GET("/api/chat/ws", s.handleChatWS)
+	e.GET("/api/chat/events", s.handleChatEvents)
 	e.GET("/api/tool-sessions/ws", s.handleToolSessionWS)
 	e.POST("/api/tool-sessions/access-login", s.handleToolSessionAccessLogin)
 
@@ -2163,7 +2174,119 @@ func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.T
 	if err := s.sessionMgr.Save(sess); err != nil {
 		return fmt.Errorf("save daemon task session %s: %w", sessionID, err)
 	}
+	s.publishChatEvent(chatEvent{
+		SessionID: sessionID,
+		Role:      messageRole,
+		Content:   messageContent,
+		Timestamp: time.Now().Unix(),
+	})
 	return nil
+}
+
+func (s *Server) handleChatEvents(c *echo.Context) error {
+	tokenStr := strings.TrimSpace(c.QueryParam("token"))
+	if tokenStr == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
+	}
+	username, err := s.parseJWTSubject(tokenStr)
+	if err != nil || strings.TrimSpace(username) == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+	}
+	sessionID := strings.TrimSpace(c.QueryParam("session_id"))
+	if sessionID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session_id required"})
+	}
+	if runtimeID, isAlias := resolveWebUIChatRuntimeAlias(sessionID); isAlias {
+		sessionID = webUIRuntimeChatSessionID(username, runtimeID)
+	}
+
+	res := c.Response()
+	req := c.Request()
+	res.Header().Set("Content-Type", "text/event-stream")
+	res.Header().Set("Cache-Control", "no-cache")
+	res.Header().Set("Connection", "keep-alive")
+
+	ch := make(chan chatEvent, 16)
+	s.registerChatEventSubscriber(sessionID, ch)
+	defer s.unregisterChatEventSubscriber(sessionID, ch)
+
+	flusher, ok := res.(http.Flusher)
+	if !ok {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "streaming unsupported"})
+	}
+
+	_, _ = res.Write([]byte(": connected\n\n"))
+	flusher.Flush()
+
+	for {
+		select {
+		case <-req.Context().Done():
+			return nil
+		case event := <-ch:
+			payload, _ := json.Marshal(event)
+			_, _ = res.Write([]byte("data: "))
+			_, _ = res.Write(payload)
+			_, _ = res.Write([]byte("\n\n"))
+			flusher.Flush()
+		}
+	}
+}
+
+func (s *Server) registerChatEventSubscriber(sessionID string, ch chan chatEvent) {
+	if s == nil || ch == nil {
+		return
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return
+	}
+	s.chatEventMu.Lock()
+	defer s.chatEventMu.Unlock()
+	if s.chatEventSubs == nil {
+		s.chatEventSubs = map[string]map[chan chatEvent]struct{}{}
+	}
+	if s.chatEventSubs[sessionID] == nil {
+		s.chatEventSubs[sessionID] = map[chan chatEvent]struct{}{}
+	}
+	s.chatEventSubs[sessionID][ch] = struct{}{}
+}
+
+func (s *Server) unregisterChatEventSubscriber(sessionID string, ch chan chatEvent) {
+	if s == nil || ch == nil {
+		return
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return
+	}
+	s.chatEventMu.Lock()
+	defer s.chatEventMu.Unlock()
+	if s.chatEventSubs == nil || s.chatEventSubs[sessionID] == nil {
+		return
+	}
+	delete(s.chatEventSubs[sessionID], ch)
+	if len(s.chatEventSubs[sessionID]) == 0 {
+		delete(s.chatEventSubs, sessionID)
+	}
+	close(ch)
+}
+
+func (s *Server) publishChatEvent(event chatEvent) {
+	if s == nil {
+		return
+	}
+	sessionID := strings.TrimSpace(event.SessionID)
+	if sessionID == "" {
+		return
+	}
+	s.chatEventMu.RLock()
+	defer s.chatEventMu.RUnlock()
+	for ch := range s.chatEventSubs[sessionID] {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
 }
 
 func (s *Server) handleUpdateToolSession(c *echo.Context) error {

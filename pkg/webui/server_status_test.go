@@ -1936,3 +1936,28 @@ func TestHandleGetDaemonBootstrapReturnsCommand(t *testing.T) {
 		t.Fatalf("unexpected bootstrap command: %q", payload.Command)
 	}
 }
+
+func TestChatEventSubscriberReceivesPublishedEvent(t *testing.T) {
+	s := &Server{chatEventSubs: map[string]map[chan chatEvent]struct{}{}}
+	ch := make(chan chatEvent, 1)
+	sessionID := "route:runtime-a:webui-chat"
+	s.registerChatEventSubscriber(sessionID, ch)
+	defer s.unregisterChatEventSubscriber(sessionID, ch)
+
+	expected := chatEvent{
+		SessionID: sessionID,
+		Role:      "assistant",
+		Content:   "daemon-event-ok",
+		Timestamp: time.Now().Unix(),
+	}
+	s.publishChatEvent(expected)
+
+	select {
+	case got := <-ch:
+		if got.SessionID != expected.SessionID || got.Content != expected.Content || got.Role != expected.Role {
+			t.Fatalf("unexpected event payload: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for chat event")
+	}
+}

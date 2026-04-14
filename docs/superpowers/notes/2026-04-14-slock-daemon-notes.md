@@ -40,3 +40,4 @@
 - Fresh verification evidence: lightweight Threads page and Chat/Session surfaces all build successfully after introducing thread topic/runtime first-class UI.
 - Fresh verification evidence: Threads-to-Chat handoff UI shipped cleanly, with Chat rehydrating the selected runtime from thread handoff state after frontend production build.
 - Fresh verification evidence: independent `threads.Manager` persistence passed dedicated tests and now backs the session/thread read-write path in webui handlers.
+- Fresh verification evidence: daemon chat event SSE plumbing passed backend tests and the Chat frontend build after wiring EventSource-based updates for daemon-backed sessions.
