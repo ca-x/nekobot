@@ -40,12 +40,23 @@ export function useSessions() {
 }
 
 export function useSessionDetail(id?: string | null) {
+  return useSessionDetailWithOptions(id, {});
+}
+
+export function useSessionDetailWithOptions(
+  id?: string | null,
+  options?: {
+    refetchInterval?: number;
+    enabled?: boolean;
+  },
+) {
   return useQuery<SessionDetail>({
     queryKey: sessionKeys.detail(id ?? ''),
     queryFn: () =>
       api.get<SessionDetail>(`/api/sessions/${encodeURIComponent(id!)}`),
-    enabled: !!id,
+    enabled: (options?.enabled ?? true) && !!id,
     staleTime: 5_000,
+    refetchInterval: options?.refetchInterval,
   });
 }
 

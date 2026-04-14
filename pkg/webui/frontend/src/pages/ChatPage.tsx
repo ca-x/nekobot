@@ -22,7 +22,7 @@ import { useWatchStatus } from '@/hooks/useConfig';
 import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
 import { usePrompts, usePromptSessionBindings, useReplacePromptSessionBindings } from '@/hooks/usePrompts';
 import { useProviders } from '@/hooks/useProviders';
-import { useSessionDetail, useUpdateSessionRuntime } from '@/hooks/useSessions';
+import { useSessionDetail, useSessionDetailWithOptions, useUpdateSessionRuntime } from '@/hooks/useSessions';
 import { useAccountBindings, useChannelAccounts, useRuntimeAgents } from '@/hooks/useTopology';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -290,6 +290,10 @@ export default function ChatPage() {
   const activeSessionBindingID = activeRuntimeID ? `route:${activeRuntimeID}:webui-chat` : 'webui-chat';
   const baseChatSessionID = 'webui-chat';
   const { data: baseSessionDetail } = useSessionDetail(baseChatSessionID);
+  const { data: activeSessionDetail } = useSessionDetailWithOptions(activeSessionBindingID, {
+    refetchInterval: activeRuntimeID ? 1500 : undefined,
+    enabled: !!activeRuntimeID,
+  });
   const updateSessionRuntime = useUpdateSessionRuntime();
   const { data: sessionPromptBindings } = usePromptSessionBindings(activeSessionBindingID);
   const replacePromptSessionBindings = useReplacePromptSessionBindings();
@@ -401,6 +405,20 @@ export default function ChatPage() {
     }
     setSelectedRuntimeID(boundRuntimeID);
   }, [baseSessionDetail?.runtime_id, chatRuntimes, selectedRuntimeID]);
+
+  useEffect(() => {
+    if (!activeRuntimeID || !activeSessionDetail) {
+      return;
+    }
+    const nextMessages = (activeSessionDetail.messages ?? []).map((message, index) => ({
+      role: message.role as ChatMessage['role'],
+      content: message.content,
+      timestamp: Date.now() + index,
+    }));
+    if (nextMessages.length > 0) {
+      replaceMessages(activeSessionBindingID, nextMessages);
+    }
+  }, [activeRuntimeID, activeSessionBindingID, activeSessionDetail, replaceMessages]);
 
   function handleProviderChange(value: string) {
     const provider = fromSelectValue(value);
