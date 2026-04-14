@@ -829,6 +829,8 @@ function BindingCard({
           className="h-9 w-9 shrink-0 rounded-full text-muted-foreground hover:text-destructive"
           onClick={() => onDelete(binding.id)}
           disabled={deleting}
+          aria-label={t('promptBindingDeleteTitle')}
+          title={t('promptBindingDeleteTitle')}
         >
           <Trash2 className="h-4 w-4" />
         </Button>
