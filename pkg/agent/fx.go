@@ -21,6 +21,7 @@ import (
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/subagent"
+	"nekobot/pkg/tools"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -141,8 +142,9 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 	// Set skills manager on context builder
 	agent.context.SetSkillsManager(skillsMgr)
 
-	// Register skill tool
+	// Register skill tools
 	agent.RegisterSkillTool(skillsMgr)
+	agent.GetTools().MustRegister(tools.NewSkillManageTool(skillsMgr))
 	agent.EnableSubagents(func(task *subagent.SubagentTask) {
 		if err := subagent.SendTaskNotification(busNotificationSender{bus: deps.Bus}, task); err != nil {
 			log.Warn("Subagent notification failed", zap.Error(err))

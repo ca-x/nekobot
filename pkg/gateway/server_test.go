@@ -25,6 +25,7 @@ import (
 	"nekobot/pkg/logger"
 	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
+	"nekobot/pkg/providers"
 	"nekobot/pkg/session"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
@@ -721,6 +722,40 @@ func TestGatewayListApprovalsReturnsPendingRequests(t *testing.T) {
 	}
 	if len(pending) != 1 || pending[0].ToolName != "codex" {
 		t.Fatalf("expected one codex approval request, got %+v", pending)
+	}
+}
+
+func TestGatewayApprovePendingToolCallReplaysAgentCall(t *testing.T) {
+	s, token := newAuthedTestServer(t)
+	s.approval = approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	s.taskStore = tasks.NewStore()
+	requestID := "approval-tool-1"
+	if _, err := s.approval.EnqueueRequest("exec", map[string]interface{}{"command": "pwd"}, "sess-tool-1"); err != nil {
+		t.Fatalf("enqueue approval request: %v", err)
+	}
+	pending := s.approval.GetPending()
+	if len(pending) != 1 {
+		t.Fatalf("expected one pending approval, got %d", len(pending))
+	}
+	requestID = pending[0].ID
+	if err := approval.RememberPendingToolCall(requestID, "sess-tool-1", providers.UnifiedToolCall{
+		Name:      "exec",
+		Arguments: map[string]interface{}{"command": "pwd"},
+	}); err != nil {
+		t.Fatalf("remember pending tool call: %v", err)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/v1/approvals/"+requestID+"/approve", nil)
+	approveReq.Header.Set("Authorization", "Bearer "+token)
+	approveReq.RemoteAddr = "127.0.0.1:4321"
+	approveRec := httptest.NewRecorder()
+	s.mux.ServeHTTP(approveRec, approveReq)
+
+	if approveRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", approveRec.Code, approveRec.Body.String())
+	}
+	if _, ok := approval.PendingToolCallForRequest(requestID); ok {
+		t.Fatalf("expected pending tool call %q to be cleared", requestID)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
+	"nekobot/pkg/providers"
 	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
 )
@@ -980,4 +981,40 @@ func TestApproveExternalAgentPendingRequestStartsProcessImmediately(t *testing.T
 		t.Fatalf("expected non-empty process command after approve, got %+v", status)
 	}
 	t.Cleanup(func() { _ = processMgr.Kill(firstPayload.Session.ID) })
+}
+
+func TestApprovePendingToolCallClearsStoredReplayContext(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	approvalMgr := approval.NewManager(approval.Config{Mode: approval.ModeManual})
+	server := &Server{config: cfg, logger: newTestLogger(t), approval: approvalMgr, taskStore: tasks.NewStore()}
+	e := echo.New()
+
+	if _, err := approvalMgr.EnqueueRequest("exec", map[string]interface{}{"command": "pwd"}, "sess-tool-1"); err != nil {
+		t.Fatalf("enqueue approval request: %v", err)
+	}
+	pending := approvalMgr.GetPending()
+	if len(pending) != 1 {
+		t.Fatalf("expected one pending approval, got %d", len(pending))
+	}
+	requestID := pending[0].ID
+	if err := approval.RememberPendingToolCall(requestID, "sess-tool-1", providers.UnifiedToolCall{Name: "exec", Arguments: map[string]interface{}{"command": "pwd"}}); err != nil {
+		t.Fatalf("remember pending tool call: %v", err)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/approvals/"+requestID+"/approve", nil)
+	approveRec := httptest.NewRecorder()
+	approveCtx := e.NewContext(approveReq, approveRec)
+	approveCtx.SetPath("/api/approvals/:id/approve")
+	approveCtx.SetPathValues(echo.PathValues{{Name: "id", Value: requestID}})
+	if err := server.handleApproveRequest(approveCtx); err != nil {
+		t.Fatalf("approve handler failed: %v", err)
+	}
+	if approveRec.Code != http.StatusOK {
+		t.Fatalf("expected approve status %d, got %d: %s", http.StatusOK, approveRec.Code, approveRec.Body.String())
+	}
+	if _, ok := approval.PendingToolCallForRequest(requestID); ok {
+		t.Fatalf("expected pending tool call %q to be cleared", requestID)
+	}
 }

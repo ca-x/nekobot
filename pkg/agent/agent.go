@@ -523,6 +523,22 @@ func (a *Agent) ChatWithPromptContextDetailed(
 	)
 }
 
+// ReplayApprovedToolCall replays a previously blocked ordinary tool call after approval.
+func (a *Agent) ReplayApprovedToolCall(
+	ctx context.Context,
+	sessionID string,
+	call providers.UnifiedToolCall,
+) (string, error) {
+	if a == nil {
+		return "", fmt.Errorf("agent is nil")
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID != "" {
+		ctx = context.WithValue(ctx, promptContextSessionKey, sessionID)
+	}
+	return a.executeToolCall(ctx, call)
+}
+
 // ChatWithProviderModelAndFallbackDetailed returns the response plus routing diagnostics.
 func (a *Agent) ChatWithProviderModelAndFallbackDetailed(
 	ctx context.Context,
@@ -1323,6 +1339,9 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 				if err != nil {
 					return "", fmt.Errorf("enqueue approval request: %w", err)
 				}
+				if err := approval.RememberPendingToolCall(requestID, sessionID, toolCall); err != nil {
+					return "", fmt.Errorf("track pending tool call: %w", err)
+				}
 				if a.taskStore != nil {
 					a.taskStore.SetSessionPendingAction(sessionID, toolCall.Name, requestID)
 				}
@@ -1353,6 +1372,9 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 			}
 			return "Tool call denied by approval policy", nil
 		case approval.Pending:
+			if err := approval.RememberPendingToolCall(requestID, sessionID, toolCall); err != nil {
+				return "", fmt.Errorf("track pending tool call: %w", err)
+			}
 			if a.taskStore != nil {
 				a.taskStore.SetSessionPendingAction(sessionID, toolCall.Name, requestID)
 				if mode, ok := a.approval.GetSessionMode(sessionID); ok {

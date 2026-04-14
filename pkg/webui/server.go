@@ -7357,6 +7357,17 @@ func (s *Server) handleApproveRequest(c *echo.Context) error {
 			}
 		}
 	}
+	if req != nil {
+		if pendingToolCall, ok := approval.PendingToolCallForRequest(id); ok {
+			if s.agent != nil {
+				s.approval.SetSessionMode(req.SessionID, approval.ModeAuto)
+				if _, err := s.agent.ReplayApprovedToolCall(c.Request().Context(), pendingToolCall.SessionID, pendingToolCall.Call); err != nil {
+					return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to replay approved tool call: " + err.Error()})
+				}
+			}
+			approval.ClearPendingToolCall(id)
+		}
+	}
 	if req != nil && s.taskStore != nil {
 		s.taskStore.ClearSessionPendingAction(req.SessionID)
 		if mode, ok := s.approval.GetSessionMode(req.SessionID); ok {
@@ -7383,6 +7394,7 @@ func (s *Server) handleDenyRequest(c *echo.Context) error {
 	if err := s.approval.Deny(id, body.Reason); err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 	}
+	approval.ClearPendingToolCall(id)
 	if req != nil && s.taskStore != nil {
 		s.taskStore.ClearSessionPendingAction(req.SessionID)
 	}

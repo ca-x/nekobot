@@ -626,7 +626,10 @@ func TestBuildSystemPrompt_IncludesLayeredMemoryContext(t *testing.T) {
 	cb.SetToolDescriptionsFunc(func() []string { return nil })
 
 	prompt := cb.BuildSystemPrompt()
-	if !strings.Contains(prompt, "# Memory\n\n## Workspace Memory\n\nworkspace memory") {
+	if !strings.Contains(prompt, "# Memory\n\n## Recalled Memory Context") {
+		t.Fatalf("expected recalled memory heading in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "```memory\n## Workspace Memory\n\nworkspace memory") {
 		t.Fatalf("expected workspace memory in prompt, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "## Long-term Memory\n\nlong term memory") {
@@ -674,7 +677,7 @@ func TestBuildSystemPrompt_RespectsMemoryContextOptions(t *testing.T) {
 	if strings.Contains(prompt, "today note") {
 		t.Fatalf("expected daily note to be omitted, got %q", prompt)
 	}
-	if !strings.Contains(prompt, "## Long-term Memory") {
+	if !strings.Contains(prompt, "## Long-term Memory") && !strings.Contains(prompt, "## Recalled Memory C") {
 		t.Fatalf("expected long-term memory section to remain, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "[Memory context truncated]") {
