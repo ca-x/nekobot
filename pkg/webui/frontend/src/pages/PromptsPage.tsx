@@ -192,6 +192,13 @@ export default function PromptsPage() {
     setDeleteTarget(null);
   }
 
+  const deleteDialogTitle =
+    deleteTarget?.type === 'binding' ? t('promptBindingDeleteTitle') : t('promptDeleteTitle');
+  const deleteDialogDescription =
+    deleteTarget?.type === 'binding'
+      ? t('promptBindingDeleteDescription')
+      : t('promptDeleteDescription');
+
   async function handlePreviewContextSources() {
     await previewContextSources.mutateAsync({
       channel: previewChannel.trim(),
@@ -758,8 +765,8 @@ export default function PromptsPage() {
         <DialogPortal>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{t('deleteConfirmTitle')}</DialogTitle>
-              <DialogDescription>{t('deleteConfirmDescription')}</DialogDescription>
+              <DialogTitle>{deleteDialogTitle}</DialogTitle>
+              <DialogDescription>{deleteDialogDescription}</DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>
