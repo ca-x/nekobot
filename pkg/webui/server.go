@@ -2104,6 +2104,8 @@ func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.T
 	messageRole := "system"
 	messageContent := ""
 	switch state {
+	case string(tasks.StateClaimed):
+		messageContent = fmt.Sprintf("Daemon task claimed.\nTask ID: %s", strings.TrimSpace(task.ID))
 	case string(tasks.StateRunning):
 		messageContent = fmt.Sprintf("Daemon task started.\nTask ID: %s", strings.TrimSpace(task.ID))
 	case string(tasks.StateRequiresAction):
@@ -2155,6 +2157,7 @@ func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.T
 	}
 	return nil
 }
+
 func (s *Server) handleUpdateToolSession(c *echo.Context) error {
 	if s.toolSess == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})

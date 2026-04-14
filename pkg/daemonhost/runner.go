@@ -226,6 +226,8 @@ func DefaultCLIExecutor(inventory *daemonv1.RuntimeInventory) TaskExecutor {
 			return runCodexTask(ctx, prompt, rtCtx.workspace)
 		case "claude":
 			return runClaudeTask(ctx, prompt, rtCtx.workspace)
+		case "opencode":
+			return runOpenCodeTask(ctx, prompt, rtCtx.workspace)
 		default:
 			return "", fmt.Errorf("runtime kind %s does not support daemon execution yet", rtCtx.runtime.Kind)
 		}
@@ -318,6 +320,28 @@ func runClaudeTask(ctx context.Context, prompt string, workspace *daemonv1.Works
 	}
 	if trimmed == "" {
 		return "", fmt.Errorf("claude print returned no output")
+	}
+	return trimmed, nil
+}
+
+func runOpenCodeTask(ctx context.Context, prompt string, workspace *daemonv1.Workspace) (string, error) {
+	args := []string{
+		"run",
+		"--format", "json",
+		"--dir", workspaceDir(workspace),
+		prompt,
+	}
+	cmd := exec.CommandContext(ctx, "opencode", args...)
+	output, err := cmd.CombinedOutput()
+	trimmed := strings.TrimSpace(string(output))
+	if err != nil {
+		if trimmed != "" {
+			return trimmed, fmt.Errorf("opencode run: %w", err)
+		}
+		return "", fmt.Errorf("opencode run: %w", err)
+	}
+	if trimmed == "" {
+		return "", fmt.Errorf("opencode run returned no output")
 	}
 	return trimmed, nil
 }

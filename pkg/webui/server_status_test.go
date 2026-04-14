@@ -1343,14 +1343,17 @@ func TestHandleFetchDaemonTasksAndUpdateStatus(t *testing.T) {
 		t.Fatalf("get existing session failed: %v", err)
 	}
 	messages := sess.GetMessages()
-	if len(messages) != 2 {
-		t.Fatalf("expected 2 daemon session messages, got %+v", messages)
+	if len(messages) != 3 {
+		t.Fatalf("expected 3 daemon session messages, got %+v", messages)
 	}
-	if messages[0].Role != "system" || !strings.Contains(messages[0].Content, "Daemon task started") {
-		t.Fatalf("unexpected running session message: %+v", messages[0])
+	if messages[0].Role != "system" || !strings.Contains(messages[0].Content, "Daemon task claimed") {
+		t.Fatalf("unexpected claimed session message: %+v", messages[0])
 	}
-	if messages[1].Role != "assistant" || messages[1].Content != "remote execution done" {
-		t.Fatalf("unexpected completion session message: %+v", messages[1])
+	if messages[1].Role != "system" || !strings.Contains(messages[1].Content, "Daemon task started") {
+		t.Fatalf("unexpected running session message: %+v", messages[1])
+	}
+	if messages[2].Role != "assistant" || messages[2].Content != "remote execution done" {
+		t.Fatalf("unexpected completion session message: %+v", messages[2])
 	}
 }
 
@@ -1405,7 +1408,7 @@ func TestDaemonHTTPFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 			sess, err := sessionMgr.GetExisting("webui-chat:daemon-e2e")
 			if err == nil {
 				messages := sess.GetMessages()
-				if len(messages) >= 2 && messages[len(messages)-1].Content == "daemon-ok" {
+				if len(messages) >= 3 && messages[len(messages)-1].Content == "daemon-ok" {
 					cancel()
 					return
 				}
@@ -1462,8 +1465,11 @@ func TestDaemonHTTPFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 		t.Fatalf("get existing session failed: %v", err)
 	}
 	messages := sess.GetMessages()
-	if len(messages) < 2 {
+	if len(messages) < 3 {
 		t.Fatalf("expected daemon session messages, got %+v", messages)
+	}
+	if !strings.Contains(messages[len(messages)-3].Content, "Daemon task claimed") {
+		t.Fatalf("expected claimed daemon session message, got %+v", messages)
 	}
 	if messages[len(messages)-1].Role != "assistant" || messages[len(messages)-1].Content != "daemon-ok" {
 		t.Fatalf("unexpected final daemon session message: %+v", messages[len(messages)-1])

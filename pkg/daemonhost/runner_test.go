@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,6 +162,34 @@ func TestRunClaudeTaskUsesWorkspace(t *testing.T) {
 	}
 	if got := string(pwdBytes); got == "" || filepath.Clean(string(pwdBytes[:len(pwdBytes)-1])) != workspace {
 		t.Fatalf("expected workspace cwd, got %q", got)
+	}
+}
+
+func TestRunOpenCodeTaskUsesWorkspace(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := t.TempDir()
+	logFile := filepath.Join(workspace, "opencode-call.txt")
+	scriptPath := filepath.Join(binDir, "opencode")
+	script := "#!/usr/bin/env bash\nprintf '%s' \"$*\" > " + logFile + "\nprintf '{\"message\":\"daemon-ok\"}\\n'\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake opencode: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	result, err := runOpenCodeTask(context.Background(), "hello", &daemonv1.Workspace{Path: workspace})
+	if err != nil {
+		t.Fatalf("runOpenCodeTask failed: %v", err)
+	}
+	if result != "{\"message\":\"daemon-ok\"}" {
+		t.Fatalf("unexpected opencode result: %q", result)
+	}
+	callBytes, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("read fake opencode log: %v", err)
+	}
+	call := string(callBytes)
+	if !strings.Contains(call, "--dir "+workspace) {
+		t.Fatalf("expected workspace flag in call, got %q", call)
 	}
 }
 

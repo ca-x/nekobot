@@ -24,3 +24,5 @@
 - Replaced the placeholder daemon executor with a runtime-aware CLI executor. Current first-class paths are `codex` and `claude`.
 - Daemon task fetch now filters to installed + healthy runtimes so the server does not assign work to unavailable local runtimes.
 - Fresh verification evidence: HTTP-level daemon E2E test passed for register -> heartbeat -> fetch -> execute -> update -> session writeback.
+- Added `opencode` as a daemon executor path, but live execution is currently blocked on this host by an invalid global opencode config file.
+- Added `claimed` session feedback so daemon-backed chats now show claim -> running -> completion/failure progression more explicitly.
