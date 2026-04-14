@@ -1250,5 +1250,11 @@
   "sessionRuntimeSaveFailed": "Failed to save session runtime",
   "sessionRuntimeNone": "No bound runtime",
   "sessionRuntimeDescription": "When set, chat messages can reuse this runtime without reselecting it each time.",
-  "chatSessionRuntimeBindingHint": "This chat will reuse bound runtime: {0}"
+  "chatSessionRuntimeBindingHint": "This chat will reuse bound runtime: {0}",
+  "sessionThreadTopicLabel": "Thread Topic",
+  "sessionThreadSave": "Save Thread",
+  "sessionThreadSaved": "Session thread saved",
+  "sessionThreadSaveFailed": "Failed to save session thread",
+  "sessionThreadTopicPlaceholder": "Describe what this thread is for",
+  "sessionThreadTopicDescription": "Use a short topic to describe the purpose of this daemon-backed thread."
 }

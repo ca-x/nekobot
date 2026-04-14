@@ -70,6 +70,15 @@ func TestSessionHandlers_Return503WhenManagerUnavailable(t *testing.T) {
 			path:       "/api/sessions/:id/runtime",
 			pathValues: echo.PathValues{{Name: "id", Value: "s1"}},
 		},
+		{
+			name:       "update-thread",
+			handler:    s.handleUpdateSessionThread,
+			method:     http.MethodPut,
+			target:     "/api/sessions/s1/thread",
+			body:       `{"topic":"ops triage"}`,
+			path:       "/api/sessions/:id/thread",
+			pathValues: echo.PathValues{{Name: "id", Value: "s1"}},
+		},
 	}
 
 	for _, tc := range tests {
@@ -238,6 +247,20 @@ func TestSessionHandlers_EndToEndFlow(t *testing.T) {
 		t.Fatalf("expected runtime binding daemon-runtime-1, got %q", runtimeID)
 	}
 
+	threadReq := httptest.NewRequest(http.MethodPut, "/api/sessions/"+sessionID+"/thread", strings.NewReader(`{"topic":"ops triage"}`))
+	threadReq.Header.Set("Content-Type", "application/json")
+	threadRec := httptest.NewRecorder()
+	threadCtx := e.NewContext(threadReq, threadRec)
+	threadCtx.SetPath("/api/sessions/:id/thread")
+	threadCtx.SetPathValues(echo.PathValues{{Name: "id", Value: sessionID}})
+	if err := s.handleUpdateSessionThread(threadCtx); err != nil {
+		t.Fatalf("thread update handler failed: %v", err)
+	}
+	if threadRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, threadRec.Code)
+	}
+	assertStatusPayload(t, threadRec.Body.Bytes(), "updated")
+
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sessions/"+sessionID, nil)
 	deleteRec := httptest.NewRecorder()
 	deleteCtx := e.NewContext(deleteReq, deleteRec)
@@ -313,6 +336,20 @@ func TestSessionHandlers_NotFoundBehavior(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, runtimeRec.Code)
 	}
 	assertErrorPayload(t, runtimeRec.Body.Bytes())
+
+	threadReq := httptest.NewRequest(http.MethodPut, "/api/sessions/"+missingID+"/thread", strings.NewReader(`{"topic":"ops triage"}`))
+	threadReq.Header.Set("Content-Type", "application/json")
+	threadRec := httptest.NewRecorder()
+	threadCtx := e.NewContext(threadReq, threadRec)
+	threadCtx.SetPath("/api/sessions/:id/thread")
+	threadCtx.SetPathValues(echo.PathValues{{Name: "id", Value: missingID}})
+	if err := s.handleUpdateSessionThread(threadCtx); err != nil {
+		t.Fatalf("thread update handler failed: %v", err)
+	}
+	if threadRec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, threadRec.Code)
+	}
+	assertErrorPayload(t, threadRec.Body.Bytes())
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sessions/"+missingID, nil)
 	deleteRec := httptest.NewRecorder()

@@ -10,6 +10,7 @@ export interface SessionSummary {
   summary: string;
   message_count: number;
   runtime_id: string;
+  topic: string;
 }
 
 export interface SessionMessage {
@@ -101,5 +102,20 @@ export function useUpdateSessionRuntime() {
       toast.success(t('sessionRuntimeSaved'));
     },
     onError: (err) => toast.error(err.message || t('sessionRuntimeSaveFailed')),
+  });
+}
+
+export function useUpdateSessionThread() {
+  const qc = useQueryClient();
+
+  return useMutation<unknown, Error, { id: string; topic: string }>({
+    mutationFn: ({ id, topic }) =>
+      api.put(`/api/sessions/${encodeURIComponent(id)}/thread`, { topic }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: sessionKeys.list() });
+      qc.invalidateQueries({ queryKey: sessionKeys.detail(vars.id) });
+      toast.success(t('sessionThreadSaved'));
+    },
+    onError: (err) => toast.error(err.message || t('sessionThreadSaveFailed')),
   });
 }

@@ -426,6 +426,7 @@ func (s *Server) setup() {
 	api.GET("/sessions/:id", s.handleGetSession)
 	api.PUT("/sessions/:id/summary", s.handleUpdateSessionSummary)
 	api.PUT("/sessions/:id/runtime", s.handleUpdateSessionRuntime)
+	api.PUT("/sessions/:id/thread", s.handleUpdateSessionThread)
 	api.DELETE("/sessions/:id", s.handleDeleteSession)
 	api.POST("/sessions/cleanup", s.handleCleanupSessions)
 
@@ -5518,6 +5519,7 @@ type sessionSummaryResponse struct {
 	Summary      string    `json:"summary"`
 	MessageCount int       `json:"message_count"`
 	RuntimeID    string    `json:"runtime_id"`
+	Topic        string    `json:"topic"`
 }
 
 type sessionMessageResponse struct {
@@ -5533,6 +5535,7 @@ type sessionDetailResponse struct {
 	Summary      string                   `json:"summary"`
 	MessageCount int                      `json:"message_count"`
 	RuntimeID    string                   `json:"runtime_id"`
+	Topic        string                   `json:"topic"`
 	Messages     []sessionMessageResponse `json:"messages"`
 }
 
@@ -5575,6 +5578,7 @@ func (s *Server) handleListSessions(c *echo.Context) error {
 			Summary:      sess.GetSummary(),
 			MessageCount: len(messages),
 			RuntimeID:    s.getSessionRuntimeBinding(id),
+			Topic:        s.getSessionThreadTopic(id),
 		})
 	}
 
@@ -5612,6 +5616,7 @@ func (s *Server) handleGetSession(c *echo.Context) error {
 		Summary:      sess.GetSummary(),
 		MessageCount: len(messages),
 		RuntimeID:    s.getSessionRuntimeBinding(id),
+		Topic:        s.getSessionThreadTopic(id),
 		Messages:     buildSessionMessageResponses(messages),
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -5676,6 +5681,32 @@ func (s *Server) handleUpdateSessionRuntime(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
 }
 
+func (s *Server) handleUpdateSessionThread(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if _, err := s.sessionMgr.GetExisting(id); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load session: %v", err)})
+	}
+	var body struct {
+		Topic string `json:"topic"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if err := s.setSessionThreadTopic(id, body.Topic); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
+}
+
 func (s *Server) handleDeleteSession(c *echo.Context) error {
 	if s.sessionMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
@@ -5695,6 +5726,8 @@ func (s *Server) handleDeleteSession(c *echo.Context) error {
 	if err := s.sessionMgr.Delete(id); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to delete session: %v", err)})
 	}
+	_ = s.setSessionRuntimeBinding(id, "")
+	_ = s.setSessionThreadTopic(id, "")
 	if s.prompts != nil {
 		if err := s.prompts.ClearSessionBindings(c.Request().Context(), id); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to delete session prompts: %v", err)})
@@ -7992,6 +8025,10 @@ func (s *Server) sessionRuntimeBindingKey(sessionID string) string {
 	return "webui.session_runtime." + strings.TrimSpace(sessionID)
 }
 
+func (s *Server) sessionThreadTopicKey(sessionID string) string {
+	return "webui.session_thread.topic." + strings.TrimSpace(sessionID)
+}
+
 func (s *Server) getSessionRuntimeBinding(sessionID string) string {
 	if s == nil || s.kvStore == nil {
 		return ""
@@ -8008,6 +8045,24 @@ func (s *Server) setSessionRuntimeBinding(sessionID, runtimeID string) error {
 		return nil
 	}
 	return s.kvStore.Set(context.Background(), s.sessionRuntimeBindingKey(sessionID), strings.TrimSpace(runtimeID))
+}
+
+func (s *Server) getSessionThreadTopic(sessionID string) string {
+	if s == nil || s.kvStore == nil {
+		return ""
+	}
+	value, ok, err := s.kvStore.GetString(context.Background(), s.sessionThreadTopicKey(sessionID))
+	if err != nil || !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func (s *Server) setSessionThreadTopic(sessionID, topic string) error {
+	if s == nil || s.kvStore == nil {
+		return nil
+	}
+	return s.kvStore.Set(context.Background(), s.sessionThreadTopicKey(sessionID), strings.TrimSpace(topic))
 }
 
 func (s *Server) authorizeDaemonRequest(c *echo.Context) bool {

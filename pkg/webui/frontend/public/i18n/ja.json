@@ -1250,5 +1250,11 @@
   "sessionRuntimeSaveFailed": "セッションランタイムの保存に失敗しました",
   "sessionRuntimeNone": "ランタイム未バインド",
   "sessionRuntimeDescription": "設定すると、チャットメッセージは毎回再選択せずにこのランタイムを再利用できます。",
-  "chatSessionRuntimeBindingHint": "このチャットはバインド済みランタイムを再利用します: {0}"
+  "chatSessionRuntimeBindingHint": "このチャットはバインド済みランタイムを再利用します: {0}",
+  "sessionThreadTopicLabel": "スレッドトピック",
+  "sessionThreadSave": "スレッドを保存",
+  "sessionThreadSaved": "セッションスレッドを保存しました",
+  "sessionThreadSaveFailed": "セッションスレッドの保存に失敗しました",
+  "sessionThreadTopicPlaceholder": "このスレッドの用途を説明してください",
+  "sessionThreadTopicDescription": "この daemon-backed thread の目的を短いトピックで表します。"
 }

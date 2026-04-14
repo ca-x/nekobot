@@ -16,6 +16,7 @@ import {
   useDeleteSession,
   useSessionDetail,
   useSessions,
+  useUpdateSessionThread,
   useUpdateSessionRuntime,
   useUpdateSessionSummary,
 } from '@/hooks/useSessions';
@@ -45,9 +46,11 @@ export default function SessionsPage() {
   const [selectedId, setSelectedId] = useState('');
   const [summaryDraft, setSummaryDraft] = useState('');
   const [runtimeDraft, setRuntimeDraft] = useState('');
+  const [topicDraft, setTopicDraft] = useState('');
 
   const updateSummary = useUpdateSessionSummary();
   const updateRuntime = useUpdateSessionRuntime();
+  const updateThread = useUpdateSessionThread();
   const deleteSession = useDeleteSession();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { data: runtimes = [] } = useRuntimeAgents();
@@ -86,6 +89,7 @@ export default function SessionsPage() {
     if (detail) {
       setSummaryDraft(detail.summary || '');
       setRuntimeDraft(detail.runtime_id || '');
+      setTopicDraft(detail.topic || '');
     }
   }, [detail]);
 
@@ -97,6 +101,11 @@ export default function SessionsPage() {
   const handleSaveRuntime = () => {
     if (!detail) return;
     updateRuntime.mutate({ id: detail.id, runtime_id: runtimeDraft });
+  };
+
+  const handleSaveThread = () => {
+    if (!detail) return;
+    updateThread.mutate({ id: detail.id, topic: topicDraft });
   };
 
   const handleDeleteSession = () => {
@@ -256,6 +265,12 @@ export default function SessionsPage() {
                     </div>
                     <div className="font-mono break-all">{detail.runtime_id || '-'}</div>
                   </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">
+                      {t('sessionThreadTopicLabel')}
+                    </div>
+                    <div>{detail.topic || '-'}</div>
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -293,6 +308,17 @@ export default function SessionsPage() {
                       {t('sessionRuntimeSave')}
                     </Button>
                     <Button
+                      variant="outline"
+                      onClick={handleSaveThread}
+                      disabled={
+                        updateThread.isPending || topicDraft === detail.topic
+                      }
+                      className="h-11 flex-1 sm:flex-initial"
+                    >
+                      <Save className="h-4 w-4 mr-1.5" />
+                      {t('sessionThreadSave')}
+                    </Button>
+                    <Button
                       variant="destructive"
                       onClick={handleDeleteSession}
                       disabled={deleteSession.isPending}
@@ -302,6 +328,21 @@ export default function SessionsPage() {
                       {t('delete')}
                     </Button>
                   </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    {t('sessionThreadTopicLabel')}
+                  </label>
+                  <Input
+                    className="h-11"
+                    value={topicDraft}
+                    onChange={(e) => setTopicDraft(e.target.value)}
+                    placeholder={t('sessionThreadTopicPlaceholder')}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t('sessionThreadTopicDescription')}
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-2">

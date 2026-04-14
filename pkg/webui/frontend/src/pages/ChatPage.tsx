@@ -697,6 +697,11 @@ export default function ChatPage() {
                       ? t('chatRuntimeControlsRoute')
                       : t('chatNoFallback')}
                 </span>
+                {baseSessionDetail?.topic ? (
+                  <span className="max-w-full break-all rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
+                    {t('sessionThreadTopicLabel')}: {baseSessionDetail.topic}
+                  </span>
+                ) : null}
               </div>
             </div>
 

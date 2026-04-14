@@ -1250,5 +1250,11 @@
   "sessionRuntimeSaveFailed": "保存会话运行时失败",
   "sessionRuntimeNone": "未绑定运行时",
   "sessionRuntimeDescription": "设置后，聊天消息可自动复用这个运行时，无需每次重新选择。",
-  "chatSessionRuntimeBindingHint": "当前聊天将复用已绑定运行时：{0}"
+  "chatSessionRuntimeBindingHint": "当前聊天将复用已绑定运行时：{0}",
+  "sessionThreadTopicLabel": "Thread 主题",
+  "sessionThreadSave": "保存 Thread",
+  "sessionThreadSaved": "会话 Thread 已保存",
+  "sessionThreadSaveFailed": "保存会话 Thread 失败",
+  "sessionThreadTopicPlaceholder": "描述这个 thread 的用途",
+  "sessionThreadTopicDescription": "用简短主题描述这个 daemon-backed thread 的目的。"
 }
