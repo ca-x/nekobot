@@ -125,6 +125,7 @@ func buildDaemonSnapshot(machineName, inventoryHomeDir string, buildInfo func(st
 	if err != nil {
 		return nil, nil, fmt.Errorf("build inventory: %w", err)
 	}
+	normalizeInventoryMachine(info, inventory)
 	return info, inventory, nil
 }
 
@@ -264,6 +265,51 @@ func buildRuntimeContexts(inventory *daemonv1.RuntimeInventory) map[string]runti
 		}
 	}
 	return result
+}
+
+func normalizeInventoryMachine(info *daemonv1.DaemonInfo, inventory *daemonv1.RuntimeInventory) {
+	if info == nil || inventory == nil {
+		return
+	}
+	machineID := strings.TrimSpace(info.MachineId)
+	if machineID == "" {
+		return
+	}
+	workspaceIDMap := map[string]string{}
+	for _, workspace := range inventory.Workspaces {
+		if workspace == nil {
+			continue
+		}
+		oldWorkspaceID := strings.TrimSpace(workspace.WorkspaceId)
+		newWorkspaceID := oldWorkspaceID
+		if workspace.IsDefault || oldWorkspaceID == "" {
+			newWorkspaceID = machineID + ":default"
+		} else if parts := strings.Split(oldWorkspaceID, ":"); len(parts) > 1 {
+			newWorkspaceID = machineID + ":" + strings.Join(parts[1:], ":")
+		}
+		workspaceIDMap[oldWorkspaceID] = newWorkspaceID
+		workspace.WorkspaceId = newWorkspaceID
+		workspace.MachineId = machineID
+	}
+	for _, runtime := range inventory.Runtimes {
+		if runtime == nil {
+			continue
+		}
+		oldWorkspaceID := strings.TrimSpace(runtime.WorkspaceId)
+		newWorkspaceID := workspaceIDMap[oldWorkspaceID]
+		if newWorkspaceID == "" {
+			newWorkspaceID = machineID + ":default"
+		}
+		runtime.WorkspaceId = newWorkspaceID
+		runtime.MachineId = machineID
+		kind := strings.TrimSpace(runtime.Kind)
+		if kind == "" {
+			kind = strings.TrimSpace(runtime.RuntimeId)
+		}
+		if kind != "" {
+			runtime.RuntimeId = newWorkspaceID + ":" + kind
+		}
+	}
 }
 
 func runCodexTask(ctx context.Context, prompt string, workspace *daemonv1.Workspace) (string, error) {

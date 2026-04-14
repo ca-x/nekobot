@@ -26,3 +26,4 @@
 - Fresh verification evidence: HTTP-level daemon E2E test passed for register -> heartbeat -> fetch -> execute -> update -> session writeback.
 - Added `opencode` as a daemon executor path, but live execution is currently blocked on this host by an invalid global opencode config file.
 - Added `claimed` session feedback so daemon-backed chats now show claim -> running -> completion/failure progression more explicitly.
+- Fresh verification evidence: live daemon process E2E passed using a real `nekobot daemon run` process plus fake installed `claude` binary and real HTTP control-plane endpoints.

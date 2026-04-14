@@ -138,6 +138,33 @@ func TestDefaultCLIExecutorRejectsUnavailableRuntime(t *testing.T) {
 	}
 }
 
+func TestNormalizeInventoryMachineAlignsWorkspaceAndRuntimeIDs(t *testing.T) {
+	info := &daemonv1.DaemonInfo{MachineId: "machine-a"}
+	inventory := &daemonv1.RuntimeInventory{
+		Workspaces: []*daemonv1.Workspace{{
+			WorkspaceId: "host123:default",
+			MachineId:   "host123",
+			IsDefault:   true,
+		}},
+		Runtimes: []*daemonv1.Runtime{{
+			RuntimeId:   "host123:default:claude",
+			MachineId:   "host123",
+			WorkspaceId: "host123:default",
+			Kind:        "claude",
+		}},
+	}
+	normalizeInventoryMachine(info, inventory)
+	if inventory.Workspaces[0].WorkspaceId != "machine-a:default" {
+		t.Fatalf("unexpected workspace id: %+v", inventory.Workspaces[0])
+	}
+	if inventory.Runtimes[0].RuntimeId != "machine-a:default:claude" {
+		t.Fatalf("unexpected runtime id: %+v", inventory.Runtimes[0])
+	}
+	if inventory.Runtimes[0].MachineId != "machine-a" {
+		t.Fatalf("unexpected runtime machine id: %+v", inventory.Runtimes[0])
+	}
+}
+
 func TestRunClaudeTaskUsesWorkspace(t *testing.T) {
 	workspace := t.TempDir()
 	binDir := t.TempDir()

@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1474,6 +1476,149 @@ func TestDaemonHTTPFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 	if messages[len(messages)-1].Role != "assistant" || messages[len(messages)-1].Content != "daemon-ok" {
 		t.Fatalf("unexpected final daemon session message: %+v", messages[len(messages)-1])
 	}
+}
+
+func TestLiveDaemonProcessCompletesTaskAndWritesSessionResult(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Sessions.Sources.WebUI = true
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, store, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	_, err = ag.TaskService().Enqueue(tasks.Task{
+		ID:        "task-live",
+		Type:      tasks.TypeRemoteAgent,
+		Summary:   "daemon live work",
+		SessionID: "webui-chat:daemon-live",
+		RuntimeID: "machine-live:default:claude",
+		Metadata: map[string]any{
+			"machine_id": "machine-live",
+		},
+	})
+	if err != nil {
+		t.Fatalf("enqueue task: %v", err)
+	}
+
+	s := &Server{config: cfg, kvStore: store, agent: ag, sessionMgr: sessionMgr}
+	e := echo.New()
+	e.POST("/api/daemon/register", s.handleRegisterDaemon)
+	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
+	e.POST("/api/daemon/tasks/fetch", s.handleFetchDaemonTasks)
+	e.POST("/api/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+	httpServer := httptest.NewServer(e)
+	defer httpServer.Close()
+
+	tempHome := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempHome, ".claude"), 0o755); err != nil {
+		t.Fatalf("mkdir fake claude config dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tempHome, "code"), 0o755); err != nil {
+		t.Fatalf("mkdir fake workspace root: %v", err)
+	}
+	binDir := t.TempDir()
+	scriptPath := filepath.Join(binDir, "claude")
+	script := "#!/usr/bin/env bash\nprintf 'daemon-live-ok\\n'\n"
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake claude binary: %v", err)
+	}
+
+	daemonAddr := reserveTCPAddr(t)
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	daemonBin := filepath.Join(t.TempDir(), "nekobot-daemon-test")
+	buildCmd := exec.Command("go", "build", "-o", daemonBin, "./cmd/nekobot")
+	buildCmd.Dir = repoRoot
+	buildOutput, buildErr := buildCmd.CombinedOutput()
+	if buildErr != nil {
+		t.Fatalf("build daemon binary failed: %v\n%s", buildErr, string(buildOutput))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, daemonBin, "--config", configPath, "daemon", "run",
+		"--addr", daemonAddr,
+		"--server-url", httpServer.URL,
+		"--token", s.getDaemonToken(),
+		"--machine-name", "machine-live",
+	)
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(),
+		"HOME="+tempHome,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	go func() {
+		for i := 0; i < 400; i++ {
+			items := ag.TaskService().List()
+			if len(items) == 1 && items[0].State == tasks.StateCompleted {
+				cancel()
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
+
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		items := ag.TaskService().List()
+		if len(items) == 1 && items[0].State == tasks.StateCompleted {
+			goto verifySession
+		}
+		snapshot, _ := daemonhost.NewRegistry(store).Snapshot(context.Background())
+		t.Fatalf("daemon process context ended before success: %v\nprocess=%s\nsnapshot=%+v\ntasks=%+v", ctx.Err(), string(output), snapshot, items)
+	}
+	if err != nil && ctx.Err() == nil {
+		snapshot, _ := daemonhost.NewRegistry(store).Snapshot(context.Background())
+		t.Fatalf("daemon process failed: %v\nprocess=%s\nsnapshot=%+v\ntasks=%+v", err, string(output), snapshot, ag.TaskService().List())
+	}
+
+verifySession:
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		sess, getErr := sessionMgr.GetExisting("webui-chat:daemon-live")
+		if getErr == nil {
+			messages := sess.GetMessages()
+			if len(messages) >= 3 && messages[len(messages)-1].Content == "daemon-live-ok" {
+				items := ag.TaskService().List()
+				if len(items) != 1 || items[0].State != tasks.StateCompleted {
+					t.Fatalf("unexpected task state after live daemon flow: %+v", items)
+				}
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	sess, _ := sessionMgr.GetExisting("webui-chat:daemon-live")
+	if sess != nil {
+		snapshot, _ := daemonhost.NewRegistry(store).Snapshot(context.Background())
+		t.Fatalf("live daemon session never completed, messages=%+v\nprocess=%s\nsnapshot=%+v\ntasks=%+v", sess.GetMessages(), string(output), snapshot, ag.TaskService().List())
+	}
+	snapshot, _ := daemonhost.NewRegistry(store).Snapshot(context.Background())
+	t.Fatalf("live daemon session never completed\nprocess=%s\nsnapshot=%+v\ntasks=%+v", string(output), snapshot, ag.TaskService().List())
+}
+
+func reserveTCPAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve tcp addr: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().String()
 }
 
 func TestHandleGetDaemonBootstrapReturnsCommand(t *testing.T) {
