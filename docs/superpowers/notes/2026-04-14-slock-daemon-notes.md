@@ -30,3 +30,4 @@
 - Fresh verification evidence: isolated live `opencode --pure run --format json` returned `daemon-ok` on this host when HOME/XDG_CONFIG_HOME were sandboxed.
 - Fresh verification evidence: live daemon process E2E also passed for `opencode`, using an isolated runtime environment and real HTTP control-plane endpoints.
 - Fresh verification evidence: live daemon process E2E also passed for `codex`, using a fake codex binary with real daemon startup and HTTP control-plane flow.
+- Fresh verification evidence: session-level runtime binding now persists through the sessions API and is reused by WebUI runtime selection when no explicit runtime_id is provided.

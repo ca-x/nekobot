@@ -425,6 +425,7 @@ func (s *Server) setup() {
 	api.GET("/sessions", s.handleListSessions)
 	api.GET("/sessions/:id", s.handleGetSession)
 	api.PUT("/sessions/:id/summary", s.handleUpdateSessionSummary)
+	api.PUT("/sessions/:id/runtime", s.handleUpdateSessionRuntime)
 	api.DELETE("/sessions/:id", s.handleDeleteSession)
 	api.POST("/sessions/cleanup", s.handleCleanupSessions)
 
@@ -5516,6 +5517,7 @@ type sessionSummaryResponse struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 	Summary      string    `json:"summary"`
 	MessageCount int       `json:"message_count"`
+	RuntimeID    string    `json:"runtime_id"`
 }
 
 type sessionMessageResponse struct {
@@ -5530,6 +5532,7 @@ type sessionDetailResponse struct {
 	UpdatedAt    time.Time                `json:"updated_at"`
 	Summary      string                   `json:"summary"`
 	MessageCount int                      `json:"message_count"`
+	RuntimeID    string                   `json:"runtime_id"`
 	Messages     []sessionMessageResponse `json:"messages"`
 }
 
@@ -5571,6 +5574,7 @@ func (s *Server) handleListSessions(c *echo.Context) error {
 			UpdatedAt:    sess.GetUpdatedAt(),
 			Summary:      sess.GetSummary(),
 			MessageCount: len(messages),
+			RuntimeID:    s.getSessionRuntimeBinding(id),
 		})
 	}
 
@@ -5607,6 +5611,7 @@ func (s *Server) handleGetSession(c *echo.Context) error {
 		UpdatedAt:    sess.GetUpdatedAt(),
 		Summary:      sess.GetSummary(),
 		MessageCount: len(messages),
+		RuntimeID:    s.getSessionRuntimeBinding(id),
 		Messages:     buildSessionMessageResponses(messages),
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -5642,6 +5647,32 @@ func (s *Server) handleUpdateSessionSummary(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to save session summary: %v", err)})
 	}
 
+	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
+}
+
+func (s *Server) handleUpdateSessionRuntime(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "session id is required"})
+	}
+	if _, err := s.sessionMgr.GetExisting(id); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load session: %v", err)})
+	}
+	var body struct {
+		RuntimeID string `json:"runtime_id"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if err := s.setSessionRuntimeBinding(id, body.RuntimeID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
 }
 
@@ -6485,6 +6516,9 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				continue
 			}
 			runtimeID := strings.TrimSpace(msg.RuntimeID)
+			if runtimeID == "" {
+				runtimeID = s.getSessionRuntimeBinding(webUIChatSessionID(username))
+			}
 			sessionID := webUIRuntimeChatSessionID(username, runtimeID)
 			clientSessionID := webUIClientChatSessionID(runtimeID)
 			requestedModel := strings.TrimSpace(msg.Model)
@@ -6497,6 +6531,8 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 					sendWSError(conn, fmt.Sprintf("persist chat routing failed: %v", err), clientSessionID)
 					continue
 				}
+			} else {
+				_ = s.setSessionRuntimeBinding(webUIChatSessionID(username), runtimeID)
 			}
 
 			provider, model, fallback, explicitPromptIDs, err := s.resolveWebUIRuntimeSelection(
@@ -7950,6 +7986,28 @@ func (s *Server) getDaemonToken() string {
 	token := "daemon-" + config.GenerateJWTSecret()
 	_ = s.kvStore.Set(ctx, "daemonhost.auth.token", token)
 	return token
+}
+
+func (s *Server) sessionRuntimeBindingKey(sessionID string) string {
+	return "webui.session_runtime." + strings.TrimSpace(sessionID)
+}
+
+func (s *Server) getSessionRuntimeBinding(sessionID string) string {
+	if s == nil || s.kvStore == nil {
+		return ""
+	}
+	value, ok, err := s.kvStore.GetString(context.Background(), s.sessionRuntimeBindingKey(sessionID))
+	if err != nil || !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func (s *Server) setSessionRuntimeBinding(sessionID, runtimeID string) error {
+	if s == nil || s.kvStore == nil {
+		return nil
+	}
+	return s.kvStore.Set(context.Background(), s.sessionRuntimeBindingKey(sessionID), strings.TrimSpace(runtimeID))
 }
 
 func (s *Server) authorizeDaemonRequest(c *echo.Context) bool {

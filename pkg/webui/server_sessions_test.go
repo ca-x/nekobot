@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
 	"nekobot/pkg/session"
+	"nekobot/pkg/state"
 )
 
 func TestSessionHandlers_Return503WhenManagerUnavailable(t *testing.T) {
@@ -59,6 +61,15 @@ func TestSessionHandlers_Return503WhenManagerUnavailable(t *testing.T) {
 			path:       "/api/sessions/:id",
 			pathValues: echo.PathValues{{Name: "id", Value: "s1"}},
 		},
+		{
+			name:       "update-runtime",
+			handler:    s.handleUpdateSessionRuntime,
+			method:     http.MethodPut,
+			target:     "/api/sessions/s1/runtime",
+			body:       `{"runtime_id":"rt-1"}`,
+			path:       "/api/sessions/:id/runtime",
+			pathValues: echo.PathValues{{Name: "id", Value: "s1"}},
+		},
 	}
 
 	for _, tc := range tests {
@@ -99,8 +110,15 @@ func TestSessionHandlers_Return503WhenManagerUnavailable(t *testing.T) {
 }
 
 func TestSessionHandlers_EndToEndFlow(t *testing.T) {
-	sm := session.NewManager(t.TempDir(), config.DefaultConfig().Sessions)
-	s := &Server{sessionMgr: sm}
+	cfg := config.DefaultConfig()
+	sm := session.NewManager(t.TempDir(), cfg.Sessions)
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "session-state.json")})
+	if err != nil {
+		t.Fatalf("new file store failed: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	s := &Server{sessionMgr: sm, kvStore: store}
 	e := echo.New()
 
 	const sessionID = "webui-e2e"
@@ -186,6 +204,40 @@ func TestSessionHandlers_EndToEndFlow(t *testing.T) {
 		t.Fatalf("expected updated summary, got %q", got)
 	}
 
+	runtimeReq := httptest.NewRequest(http.MethodPut, "/api/sessions/"+sessionID+"/runtime", strings.NewReader(`{"runtime_id":"daemon-runtime-1"}`))
+	runtimeReq.Header.Set("Content-Type", "application/json")
+	runtimeRec := httptest.NewRecorder()
+	runtimeCtx := e.NewContext(runtimeReq, runtimeRec)
+	runtimeCtx.SetPath("/api/sessions/:id/runtime")
+	runtimeCtx.SetPathValues(echo.PathValues{{Name: "id", Value: sessionID}})
+	if err := s.handleUpdateSessionRuntime(runtimeCtx); err != nil {
+		t.Fatalf("runtime update handler failed: %v", err)
+	}
+	if runtimeRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, runtimeRec.Code)
+	}
+	assertStatusPayload(t, runtimeRec.Body.Bytes(), "updated")
+
+	getAfterRuntimeReq := httptest.NewRequest(http.MethodGet, "/api/sessions/"+sessionID, nil)
+	getAfterRuntimeRec := httptest.NewRecorder()
+	getAfterRuntimeCtx := e.NewContext(getAfterRuntimeReq, getAfterRuntimeRec)
+	getAfterRuntimeCtx.SetPath("/api/sessions/:id")
+	getAfterRuntimeCtx.SetPathValues(echo.PathValues{{Name: "id", Value: sessionID}})
+	if err := s.handleGetSession(getAfterRuntimeCtx); err != nil {
+		t.Fatalf("get-after-runtime handler failed: %v", err)
+	}
+	var detailAfterRuntime map[string]json.RawMessage
+	if err := json.Unmarshal(getAfterRuntimeRec.Body.Bytes(), &detailAfterRuntime); err != nil {
+		t.Fatalf("unmarshal runtime detail response failed: %v", err)
+	}
+	var runtimeID string
+	if err := json.Unmarshal(detailAfterRuntime["runtime_id"], &runtimeID); err != nil {
+		t.Fatalf("unmarshal runtime_id failed: %v", err)
+	}
+	if runtimeID != "daemon-runtime-1" {
+		t.Fatalf("expected runtime binding daemon-runtime-1, got %q", runtimeID)
+	}
+
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sessions/"+sessionID, nil)
 	deleteRec := httptest.NewRecorder()
 	deleteCtx := e.NewContext(deleteReq, deleteRec)
@@ -205,8 +257,15 @@ func TestSessionHandlers_EndToEndFlow(t *testing.T) {
 }
 
 func TestSessionHandlers_NotFoundBehavior(t *testing.T) {
-	sm := session.NewManager(t.TempDir(), config.DefaultConfig().Sessions)
-	s := &Server{sessionMgr: sm}
+	cfg := config.DefaultConfig()
+	sm := session.NewManager(t.TempDir(), cfg.Sessions)
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "session-state.json")})
+	if err != nil {
+		t.Fatalf("new file store failed: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	s := &Server{sessionMgr: sm, kvStore: store}
 	e := echo.New()
 
 	const missingID = "missing-session"
@@ -240,6 +299,20 @@ func TestSessionHandlers_NotFoundBehavior(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusNotFound, updateRec.Code)
 	}
 	assertErrorPayload(t, updateRec.Body.Bytes())
+
+	runtimeReq := httptest.NewRequest(http.MethodPut, "/api/sessions/"+missingID+"/runtime", strings.NewReader(`{"runtime_id":"rt-1"}`))
+	runtimeReq.Header.Set("Content-Type", "application/json")
+	runtimeRec := httptest.NewRecorder()
+	runtimeCtx := e.NewContext(runtimeReq, runtimeRec)
+	runtimeCtx.SetPath("/api/sessions/:id/runtime")
+	runtimeCtx.SetPathValues(echo.PathValues{{Name: "id", Value: missingID}})
+	if err := s.handleUpdateSessionRuntime(runtimeCtx); err != nil {
+		t.Fatalf("runtime update handler failed: %v", err)
+	}
+	if runtimeRec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, runtimeRec.Code)
+	}
+	assertErrorPayload(t, runtimeRec.Body.Bytes())
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/sessions/"+missingID, nil)
 	deleteRec := httptest.NewRecorder()
