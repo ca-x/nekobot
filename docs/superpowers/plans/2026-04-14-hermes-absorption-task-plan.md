@@ -32,3 +32,18 @@ Compare ~/code/hermes-agent against nekobot, identify the highest-value capabili
 
 ## Design constraint update
 - Nekobot has no historical data burden for this wave. Prefer cleaner model/protocol design over compatibility scaffolding, as long as frontend/backend remain usable.
+
+
+## Skills alignment wave
+
+### Goal
+Bring Nekobot skills closer to Hermes in the highest-value areas that remain incomplete: progressive disclosure and fine-grained skill management.
+
+### Target slices
+1. Add `patch` support to `skill_manage`
+2. Add `write_file` / `remove_file` support to `skill_manage`
+3. Improve `skill` tool progressive disclosure so list stays compact and get/view remains the detail path
+
+### Verification
+- targeted Go tests for `pkg/skills`, `pkg/tools`
+- frontend build remains regression gate only; no intended frontend source changes in this wave

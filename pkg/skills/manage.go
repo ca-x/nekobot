@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"go.uber.org/zap"
@@ -11,6 +12,13 @@ import (
 )
 
 const skillFileName = "SKILL.md"
+
+var allowedSkillSubdirs = map[string]struct{}{
+	"references": {},
+	"templates":  {},
+	"scripts":    {},
+	"assets":     {},
+}
 
 // PreviewSkillContent parses and validates SKILL.md content without writing it.
 func (m *Manager) PreviewSkillContent(content string) (*Skill, error) {
@@ -176,4 +184,187 @@ func (m *Manager) DeleteWorkspaceSkill(id string) error {
 	}
 	_ = os.Remove(filepath.Dir(targetPath))
 	return m.Discover()
+}
+
+// ReadSkillFile returns the content of SKILL.md or a supporting file within a workspace skill.
+func (m *Manager) ReadSkillFile(id, filePath string) (string, error) {
+	skill, err := m.GetByName(id)
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://") {
+		if strings.TrimSpace(filePath) != "" {
+			return "", fmt.Errorf("builtin skill supporting files are not addressable")
+		}
+		return ReadBuiltinSkillContent(skill.FilePath)
+	}
+	target, err := m.resolveSkillTarget(skill, filePath)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		return "", fmt.Errorf("read skill file %s: %w", target, err)
+	}
+	return string(data), nil
+}
+
+// PatchWorkspaceSkillFile performs a targeted string replacement in SKILL.md or a supporting file.
+func (m *Manager) PatchWorkspaceSkillFile(id, filePath, oldString, newString string, replaceAll bool) error {
+	if m == nil {
+		return fmt.Errorf("skills manager is nil")
+	}
+	oldString = strings.TrimSpace(oldString)
+	if oldString == "" {
+		return fmt.Errorf("old_string is required")
+	}
+	skill, err := m.GetByName(id)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://") {
+		return fmt.Errorf("builtin skill %s cannot be patched in place", skill.ID)
+	}
+	target, err := m.resolveSkillTarget(skill, filePath)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		return fmt.Errorf("read skill file %s: %w", target, err)
+	}
+	content := string(data)
+	count := strings.Count(content, oldString)
+	if count == 0 {
+		return fmt.Errorf("old_string not found")
+	}
+	if count > 1 && !replaceAll {
+		return fmt.Errorf("old_string matched %d times; use replace_all to patch every occurrence", count)
+	}
+	replaced := content
+	if replaceAll {
+		replaced = strings.ReplaceAll(content, oldString, newString)
+	} else {
+		replaced = strings.Replace(content, oldString, newString, 1)
+	}
+	if err := fileutil.WriteFileAtomic(target, []byte(replaced), 0o644); err != nil {
+		return fmt.Errorf("write patched skill file: %w", err)
+	}
+	if filepath.Base(target) == skillFileName {
+		return m.Discover()
+	}
+	return nil
+}
+
+// WriteWorkspaceSkillFile writes a supporting file beneath one workspace skill.
+func (m *Manager) WriteWorkspaceSkillFile(id, filePath, content string) error {
+	if m == nil {
+		return fmt.Errorf("skills manager is nil")
+	}
+	skill, err := m.GetByName(id)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://") {
+		return fmt.Errorf("builtin skill %s cannot be modified in place", skill.ID)
+	}
+	target, err := m.resolveSkillTarget(skill, filePath)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return fmt.Errorf("create skill file directory: %w", err)
+	}
+	if err := fileutil.WriteFileAtomic(target, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("write skill file: %w", err)
+	}
+	return nil
+}
+
+// RemoveWorkspaceSkillFile removes a supporting file beneath one workspace skill.
+func (m *Manager) RemoveWorkspaceSkillFile(id, filePath string) error {
+	if m == nil {
+		return fmt.Errorf("skills manager is nil")
+	}
+	skill, err := m.GetByName(id)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://") {
+		return fmt.Errorf("builtin skill %s cannot be modified in place", skill.ID)
+	}
+	target, err := m.resolveSkillTarget(skill, filePath)
+	if err != nil {
+		return err
+	}
+	if filepath.Base(target) == skillFileName {
+		return fmt.Errorf("remove the entire skill instead of deleting SKILL.md directly")
+	}
+	if err := os.Remove(target); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("skill file not found: %s", filePath)
+		}
+		return fmt.Errorf("remove skill file: %w", err)
+	}
+	parent := filepath.Dir(target)
+	if parent != filepath.Dir(skill.FilePath) {
+		_ = os.Remove(parent)
+	}
+	return nil
+}
+
+// ListSupportingFiles returns relative supporting file paths for one skill.
+func (m *Manager) ListSupportingFiles(id string) ([]string, error) {
+	skill, err := m.GetByName(id)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://") {
+		return nil, nil
+	}
+	root := filepath.Dir(skill.FilePath)
+	var paths []string
+	for subdir := range allowedSkillSubdirs {
+		base := filepath.Join(root, subdir)
+		_ = filepath.Walk(base, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil || info == nil || info.IsDir() {
+				return nil
+			}
+			rel, err := filepath.Rel(root, path)
+			if err == nil {
+				paths = append(paths, filepath.ToSlash(rel))
+			}
+			return nil
+		})
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func (m *Manager) resolveSkillTarget(skill *Skill, filePath string) (string, error) {
+	if skill == nil {
+		return "", fmt.Errorf("skill is nil")
+	}
+	root := filepath.Dir(strings.TrimSpace(skill.FilePath))
+	trimmed := strings.TrimSpace(filePath)
+	if trimmed == "" {
+		return skill.FilePath, nil
+	}
+	cleaned := filepath.Clean(trimmed)
+	parts := strings.Split(filepath.ToSlash(cleaned), "/")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("file_path must include an allowed subdirectory and filename")
+	}
+	if _, ok := allowedSkillSubdirs[parts[0]]; !ok {
+		return "", fmt.Errorf("file_path must be under references/, templates/, scripts/, or assets/")
+	}
+	target := filepath.Join(root, cleaned)
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return "", fmt.Errorf("resolve skill file path: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("file_path must stay within the skill directory")
+	}
+	return target, nil
 }

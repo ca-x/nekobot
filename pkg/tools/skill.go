@@ -101,6 +101,11 @@ func (t *SkillTool) list() (string, error) {
 
 	var sb strings.Builder
 	_, _ = fmt.Fprintf(&sb, "Available Skills (%d total):\n\n", len(allSkills))
+	sb.WriteString("Progressive disclosure:\n")
+	sb.WriteString("- use `skill list` to scan names and short descriptions\n")
+	sb.WriteString("- use `skill get <skill_id>` to inspect one skill in detail\n")
+	sb.WriteString("- use `skill invoke <skill_id>` to load its full instructions\n")
+	sb.WriteString("- use `skill_manage` for create/update/patch/file operations\n\n")
 
 	// Show enabled skills
 	if len(enabled) > 0 {
@@ -209,6 +214,12 @@ func (t *SkillTool) get(params map[string]interface{}) (string, error) {
 		}
 		_, _ = fmt.Fprintf(&sb, "**Instructions Preview:**\n```\n%s\n```\n\n", preview)
 		_, _ = fmt.Fprintf(&sb, "Full instructions: %d characters\n", len(skill.Instructions))
+	}
+	if supportingFiles, err := t.manager.ListSupportingFiles(skill.ID); err == nil && len(supportingFiles) > 0 {
+		sb.WriteString("\n**Supporting Files:**\n")
+		for _, item := range supportingFiles {
+			_, _ = fmt.Fprintf(&sb, "- %s\n", item)
+		}
 	}
 
 	return sb.String(), nil

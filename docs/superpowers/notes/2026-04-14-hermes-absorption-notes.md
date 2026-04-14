@@ -58,3 +58,8 @@ Compare Hermes Agent with Nekobot, focused on:
 - Compared Hermes `gateway/platforms/weixin.py` against Nekobot `pkg/wechat` and `pkg/channels/wechat`.
 - Nekobot already covers the core protocol surfaces currently visible in Hermes: QR login, context_token, getconfig, sendtyping, getuploadurl, CDN media handling, and typing keepalive.
 - No concrete protocol delta was identified that required a code change in this wave; future sync should continue to watch Hermes for newly introduced request/response fields or media item shapes.
+
+
+## Skills alignment wave
+- Focus on Hermes-style progressive disclosure and fine-grained skill management.
+- Chosen slices: patch, write_file/remove_file, and tighter list/get separation.

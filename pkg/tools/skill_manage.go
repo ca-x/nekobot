@@ -30,7 +30,7 @@ func (t *SkillManageTool) Parameters() map[string]interface{} {
 		"properties": map[string]interface{}{
 			"action": map[string]interface{}{
 				"type":        "string",
-				"enum":        []string{"get", "create", "update", "delete"},
+				"enum":        []string{"get", "create", "update", "patch", "delete", "write_file", "remove_file"},
 				"description": "Action to perform on workspace skills",
 			},
 			"skill_id": map[string]interface{}{
@@ -40,6 +40,22 @@ func (t *SkillManageTool) Parameters() map[string]interface{} {
 			"content": map[string]interface{}{
 				"type":        "string",
 				"description": "Full SKILL.md content for create or update",
+			},
+			"file_path": map[string]interface{}{
+				"type":        "string",
+				"description": "Optional supporting file path under references/, templates/, scripts/, or assets/",
+			},
+			"old_string": map[string]interface{}{
+				"type":        "string",
+				"description": "Target text to replace for patch",
+			},
+			"new_string": map[string]interface{}{
+				"type":        "string",
+				"description": "Replacement text for patch (can be empty to delete the matched text)",
+			},
+			"replace_all": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Replace all matches when patching",
 			},
 		},
 		"required": []string{"action"},
@@ -56,25 +72,19 @@ func (t *SkillManageTool) Execute(ctx context.Context, params map[string]interfa
 	skillID, _ := params["skill_id"].(string)
 	skillID = strings.TrimSpace(skillID)
 	content, _ := params["content"].(string)
+	filePath, _ := params["file_path"].(string)
+	oldString, _ := params["old_string"].(string)
+	newString, newStringProvided := params["new_string"].(string)
+	replaceAll, _ := params["replace_all"].(bool)
 
 	switch action {
 	case "get":
 		if skillID == "" {
 			return "", fmt.Errorf("skill_id is required for get")
 		}
-		skill, err := t.manager.GetByName(skillID)
+		body, err := t.manager.ReadSkillFile(skillID, filePath)
 		if err != nil {
 			return "", err
-		}
-		body := strings.TrimSpace(skill.Instructions)
-		if body == "" && !strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://") {
-			return "", fmt.Errorf("skill %s has no instructions", skill.ID)
-		}
-		if strings.HasPrefix(strings.TrimSpace(skill.FilePath), "builtin://") {
-			loaded, err := skills.ReadBuiltinSkillContent(skill.FilePath)
-			if err == nil {
-				body = strings.TrimSpace(loaded)
-			}
 		}
 		return body, nil
 	case "create":
@@ -128,6 +138,24 @@ func (t *SkillManageTool) Execute(ctx context.Context, params map[string]interfa
 			return "", fmt.Errorf("skill %s does not exist yet; use create", targetID)
 		}
 		return fmt.Sprintf("Updated workspace skill %s at %s", skill.ID, skill.FilePath), nil
+	case "patch":
+		if skillID == "" {
+			return "", fmt.Errorf("skill_id is required for patch")
+		}
+		if strings.TrimSpace(oldString) == "" {
+			return "", fmt.Errorf("old_string is required for patch")
+		}
+		if !newStringProvided {
+			return "", fmt.Errorf("new_string is required for patch")
+		}
+		if err := t.manager.PatchWorkspaceSkillFile(skillID, filePath, oldString, newString, replaceAll); err != nil {
+			return "", err
+		}
+		target := strings.TrimSpace(filePath)
+		if target == "" {
+			target = "SKILL.md"
+		}
+		return fmt.Sprintf("Patched %s in skill %s", target, skillID), nil
 	case "delete":
 		if skillID == "" {
 			return "", fmt.Errorf("skill_id is required for delete")
@@ -143,6 +171,28 @@ func (t *SkillManageTool) Execute(ctx context.Context, params map[string]interfa
 			return "", err
 		}
 		return fmt.Sprintf("Deleted workspace skill %s", skill.ID), nil
+	case "write_file":
+		if skillID == "" {
+			return "", fmt.Errorf("skill_id is required for write_file")
+		}
+		if strings.TrimSpace(filePath) == "" {
+			return "", fmt.Errorf("file_path is required for write_file")
+		}
+		if err := t.manager.WriteWorkspaceSkillFile(skillID, filePath, content); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Wrote %s in skill %s", filePath, skillID), nil
+	case "remove_file":
+		if skillID == "" {
+			return "", fmt.Errorf("skill_id is required for remove_file")
+		}
+		if strings.TrimSpace(filePath) == "" {
+			return "", fmt.Errorf("file_path is required for remove_file")
+		}
+		if err := t.manager.RemoveWorkspaceSkillFile(skillID, filePath); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Removed %s from skill %s", filePath, skillID), nil
 	default:
 		return "", fmt.Errorf("unknown action: %s", action)
 	}
