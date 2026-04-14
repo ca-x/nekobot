@@ -70,6 +70,7 @@ import (
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
+	"nekobot/pkg/threads"
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/userprefs"
 	"nekobot/pkg/version"
@@ -114,6 +115,7 @@ type Server struct {
 	serviceCtrl        serviceController
 	taskStore          *tasks.Store
 	kvStore            state.KV
+	threads            *threads.Manager
 	watcher            *watch.Watcher
 	webhookTestHandler func(ctx context.Context, username, message string) (string, error)
 	port               int
@@ -227,6 +229,7 @@ func NewServer(
 		skillsMgr:   skillsManager,
 		workspace:   workspaceManager,
 		kvStore:     kvStore,
+		threads:     threads.NewManager(kvStore),
 		entClient:   entClient,
 		auditLogger: auditLogger,
 		snapshotMgr: func() *session.SnapshotManager {
@@ -5422,9 +5425,6 @@ func (s *Server) handleTestWebhook(c *echo.Context) error {
 		reply, err = s.agent.Chat(c.Request().Context(), sess, messageText)
 	}
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "no providers configured") {
-			return c.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
-		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]any{
@@ -5604,8 +5604,8 @@ func (s *Server) handleListSessions(c *echo.Context) error {
 			UpdatedAt:    sess.GetUpdatedAt(),
 			Summary:      sess.GetSummary(),
 			MessageCount: len(messages),
-			RuntimeID:    s.getSessionRuntimeBinding(id),
-			Topic:        s.getSessionThreadTopic(id),
+			RuntimeID:    s.getThreadRuntimeBinding(id),
+			Topic:        s.getThreadTopic(id),
 		})
 	}
 
@@ -5642,8 +5642,8 @@ func (s *Server) handleGetSession(c *echo.Context) error {
 		UpdatedAt:    sess.GetUpdatedAt(),
 		Summary:      sess.GetSummary(),
 		MessageCount: len(messages),
-		RuntimeID:    s.getSessionRuntimeBinding(id),
-		Topic:        s.getSessionThreadTopic(id),
+		RuntimeID:    s.getThreadRuntimeBinding(id),
+		Topic:        s.getThreadTopic(id),
 		Messages:     buildSessionMessageResponses(messages),
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -5702,7 +5702,7 @@ func (s *Server) handleUpdateSessionRuntime(c *echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	if err := s.setSessionRuntimeBinding(id, body.RuntimeID); err != nil {
+	if err := s.setThreadRuntimeBinding(id, body.RuntimeID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
@@ -5728,7 +5728,7 @@ func (s *Server) handleUpdateSessionThread(c *echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	if err := s.setSessionThreadTopic(id, body.Topic); err != nil {
+	if err := s.setThreadTopic(id, body.Topic); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
@@ -5753,8 +5753,7 @@ func (s *Server) handleDeleteSession(c *echo.Context) error {
 	if err := s.sessionMgr.Delete(id); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to delete session: %v", err)})
 	}
-	_ = s.setSessionRuntimeBinding(id, "")
-	_ = s.setSessionThreadTopic(id, "")
+	_ = s.deleteThread(id)
 	if s.prompts != nil {
 		if err := s.prompts.ClearSessionBindings(c.Request().Context(), id); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to delete session prompts: %v", err)})
@@ -5822,8 +5821,8 @@ func (s *Server) handleListThreads(c *echo.Context) error {
 			UpdatedAt:    sess.GetUpdatedAt(),
 			Summary:      sess.GetSummary(),
 			MessageCount: len(messages),
-			RuntimeID:    s.getSessionRuntimeBinding(id),
-			Topic:        s.getSessionThreadTopic(id),
+			RuntimeID:    s.getThreadRuntimeBinding(id),
+			Topic:        s.getThreadTopic(id),
 		})
 	}
 
@@ -5859,8 +5858,8 @@ func (s *Server) handleGetThread(c *echo.Context) error {
 		UpdatedAt:    sess.GetUpdatedAt(),
 		Summary:      sess.GetSummary(),
 		MessageCount: len(messages),
-		RuntimeID:    s.getSessionRuntimeBinding(id),
-		Topic:        s.getSessionThreadTopic(id),
+		RuntimeID:    s.getThreadRuntimeBinding(id),
+		Topic:        s.getThreadTopic(id),
 		Messages:     buildSessionMessageResponses(messages),
 	})
 }
@@ -5894,10 +5893,10 @@ func (s *Server) handleUpdateThread(c *echo.Context) error {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to save thread summary: %v", err)})
 		}
 	}
-	if err := s.setSessionRuntimeBinding(id, body.RuntimeID); err != nil {
+	if err := s.setThreadRuntimeBinding(id, body.RuntimeID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	if err := s.setSessionThreadTopic(id, body.Topic); err != nil {
+	if err := s.setThreadTopic(id, body.Topic); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
@@ -6684,7 +6683,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 			runtimeID := strings.TrimSpace(msg.RuntimeID)
 			if runtimeID == "" {
-				runtimeID = s.getSessionRuntimeBinding(webUIChatSessionID(username))
+				runtimeID = s.getThreadRuntimeBinding(webUIChatSessionID(username))
 			}
 			sessionID := webUIRuntimeChatSessionID(username, runtimeID)
 			clientSessionID := webUIClientChatSessionID(runtimeID)
@@ -6699,7 +6698,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 					continue
 				}
 			} else {
-				_ = s.setSessionRuntimeBinding(webUIChatSessionID(username), runtimeID)
+				_ = s.setThreadRuntimeBinding(webUIChatSessionID(username), runtimeID)
 			}
 
 			provider, model, fallback, explicitPromptIDs, err := s.resolveWebUIRuntimeSelection(
@@ -8163,40 +8162,49 @@ func (s *Server) sessionThreadTopicKey(sessionID string) string {
 	return "webui.session_thread.topic." + strings.TrimSpace(sessionID)
 }
 
-func (s *Server) getSessionRuntimeBinding(sessionID string) string {
-	if s == nil || s.kvStore == nil {
+func (s *Server) getThreadRuntimeBinding(sessionID string) string {
+	if s == nil || s.threads == nil {
 		return ""
 	}
-	value, ok, err := s.kvStore.GetString(context.Background(), s.sessionRuntimeBindingKey(sessionID))
+	record, ok, err := s.threads.Get(context.Background(), sessionID)
 	if err != nil || !ok {
 		return ""
 	}
-	return strings.TrimSpace(value)
+	return strings.TrimSpace(record.RuntimeID)
 }
 
-func (s *Server) setSessionRuntimeBinding(sessionID, runtimeID string) error {
-	if s == nil || s.kvStore == nil {
+func (s *Server) setThreadRuntimeBinding(sessionID, runtimeID string) error {
+	if s == nil || s.threads == nil {
 		return nil
 	}
-	return s.kvStore.Set(context.Background(), s.sessionRuntimeBindingKey(sessionID), strings.TrimSpace(runtimeID))
+	record, _, _ := s.threads.Get(context.Background(), sessionID)
+	return s.threads.Upsert(context.Background(), sessionID, strings.TrimSpace(runtimeID), record.Topic)
 }
 
-func (s *Server) getSessionThreadTopic(sessionID string) string {
-	if s == nil || s.kvStore == nil {
+func (s *Server) getThreadTopic(sessionID string) string {
+	if s == nil || s.threads == nil {
 		return ""
 	}
-	value, ok, err := s.kvStore.GetString(context.Background(), s.sessionThreadTopicKey(sessionID))
+	record, ok, err := s.threads.Get(context.Background(), sessionID)
 	if err != nil || !ok {
 		return ""
 	}
-	return strings.TrimSpace(value)
+	return strings.TrimSpace(record.Topic)
 }
 
-func (s *Server) setSessionThreadTopic(sessionID, topic string) error {
-	if s == nil || s.kvStore == nil {
+func (s *Server) setThreadTopic(sessionID, topic string) error {
+	if s == nil || s.threads == nil {
 		return nil
 	}
-	return s.kvStore.Set(context.Background(), s.sessionThreadTopicKey(sessionID), strings.TrimSpace(topic))
+	record, _, _ := s.threads.Get(context.Background(), sessionID)
+	return s.threads.Upsert(context.Background(), sessionID, record.RuntimeID, strings.TrimSpace(topic))
+}
+
+func (s *Server) deleteThread(sessionID string) error {
+	if s == nil || s.threads == nil {
+		return nil
+	}
+	return s.threads.Delete(context.Background(), sessionID)
 }
 
 func (s *Server) authorizeDaemonRequest(c *echo.Context) bool {

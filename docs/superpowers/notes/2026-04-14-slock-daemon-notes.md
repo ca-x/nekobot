@@ -39,3 +39,4 @@
 - Fresh verification evidence: lightweight Threads API and Threads page build both passed, proving topic+runtime metadata can be surfaced as a first-class thread view.
 - Fresh verification evidence: lightweight Threads page and Chat/Session surfaces all build successfully after introducing thread topic/runtime first-class UI.
 - Fresh verification evidence: Threads-to-Chat handoff UI shipped cleanly, with Chat rehydrating the selected runtime from thread handoff state after frontend production build.
+- Fresh verification evidence: independent `threads.Manager` persistence passed dedicated tests and now backs the session/thread read-write path in webui handlers.

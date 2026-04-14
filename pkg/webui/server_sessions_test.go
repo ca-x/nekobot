@@ -15,6 +15,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/session"
 	"nekobot/pkg/state"
+	"nekobot/pkg/threads"
 )
 
 func TestSessionHandlers_Return503WhenManagerUnavailable(t *testing.T) {
@@ -127,7 +128,7 @@ func TestSessionHandlers_EndToEndFlow(t *testing.T) {
 		t.Fatalf("new file store failed: %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	s := &Server{sessionMgr: sm, kvStore: store}
+	s := &Server{sessionMgr: sm, kvStore: store, threads: threads.NewManager(store)}
 	e := echo.New()
 
 	const sessionID = "webui-e2e"
@@ -288,7 +289,7 @@ func TestSessionHandlers_NotFoundBehavior(t *testing.T) {
 		t.Fatalf("new file store failed: %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	s := &Server{sessionMgr: sm, kvStore: store}
+	s := &Server{sessionMgr: sm, kvStore: store, threads: threads.NewManager(store)}
 	e := echo.New()
 
 	const missingID = "missing-session"
@@ -374,7 +375,7 @@ func TestThreadHandlers_EndToEndFlow(t *testing.T) {
 		t.Fatalf("new file store failed: %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	s := &Server{sessionMgr: sm, kvStore: store}
+	s := &Server{sessionMgr: sm, kvStore: store, threads: threads.NewManager(store)}
 	e := echo.New()
 
 	const threadID = "thread-e2e"
@@ -387,10 +388,10 @@ func TestThreadHandlers_EndToEndFlow(t *testing.T) {
 	if err := sm.Save(sess); err != nil {
 		t.Fatalf("save thread failed: %v", err)
 	}
-	if err := s.setSessionRuntimeBinding(threadID, "daemon-runtime-1"); err != nil {
+	if err := s.setThreadRuntimeBinding(threadID, "daemon-runtime-1"); err != nil {
 		t.Fatalf("set runtime binding failed: %v", err)
 	}
-	if err := s.setSessionThreadTopic(threadID, "ops triage"); err != nil {
+	if err := s.setThreadTopic(threadID, "ops triage"); err != nil {
 		t.Fatalf("set thread topic failed: %v", err)
 	}
 
