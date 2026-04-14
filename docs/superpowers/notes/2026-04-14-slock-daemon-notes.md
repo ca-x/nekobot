@@ -41,3 +41,4 @@
 - Fresh verification evidence: Threads-to-Chat handoff UI shipped cleanly, with Chat rehydrating the selected runtime from thread handoff state after frontend production build.
 - Fresh verification evidence: independent `threads.Manager` persistence passed dedicated tests and now backs the session/thread read-write path in webui handlers.
 - Fresh verification evidence: daemon chat event SSE plumbing passed backend tests and the Chat frontend build after wiring EventSource-based updates for daemon-backed sessions.
+- Fresh verification evidence: SSE event-stream groundwork remains green after re-running threads/webui backend tests and a fresh frontend production build on the current main-based branch.
