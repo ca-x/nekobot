@@ -36,3 +36,4 @@
 - Fresh verification evidence: Chat page now reuses and updates persisted session runtime bindings, with targeted webui tests and a passing frontend production build.
 - Fresh verification evidence: Chat page frontend build passed after adding near-real-time session-detail polling for daemon-backed runtime sessions.
 - Fresh verification evidence: thread-style topic metadata now persists through the sessions API and both Sessions/Chat frontend surfaces build successfully with the new topic fields.
+- Fresh verification evidence: lightweight Threads API and Threads page build both passed, proving topic+runtime metadata can be surfaced as a first-class thread view.

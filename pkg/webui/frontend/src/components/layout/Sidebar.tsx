@@ -16,6 +16,7 @@ import {
   Settings,
   Activity,
   Library,
+  Rows3,
   Clock3,
   Webhook,
   Shield,
@@ -53,6 +54,7 @@ export default function Sidebar() {
 
   const navItems = [
     { target: '/chat', label: t('tabChat'), icon: MessageSquare },
+    { target: '/threads', label: t('tabThreads'), icon: Rows3 },
     { target: '/sessions', label: t('tabSessions'), icon: Library },
     { target: '/tools', label: t('tabTools'), icon: Terminal },
     { target: '/providers', label: t('tabProviders'), icon: Cpu },

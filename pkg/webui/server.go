@@ -428,6 +428,9 @@ func (s *Server) setup() {
 	api.PUT("/sessions/:id/runtime", s.handleUpdateSessionRuntime)
 	api.PUT("/sessions/:id/thread", s.handleUpdateSessionThread)
 	api.DELETE("/sessions/:id", s.handleDeleteSession)
+	api.GET("/threads", s.handleListThreads)
+	api.GET("/threads/:id", s.handleGetThread)
+	api.PUT("/threads/:id", s.handleUpdateThread)
 	api.POST("/sessions/cleanup", s.handleCleanupSessions)
 
 	// Marketplace routes
@@ -5539,6 +5542,27 @@ type sessionDetailResponse struct {
 	Messages     []sessionMessageResponse `json:"messages"`
 }
 
+type threadSummaryResponse struct {
+	ID           string    `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Summary      string    `json:"summary"`
+	MessageCount int       `json:"message_count"`
+	RuntimeID    string    `json:"runtime_id"`
+	Topic        string    `json:"topic"`
+}
+
+type threadDetailResponse struct {
+	ID           string                   `json:"id"`
+	CreatedAt    time.Time                `json:"created_at"`
+	UpdatedAt    time.Time                `json:"updated_at"`
+	Summary      string                   `json:"summary"`
+	MessageCount int                      `json:"message_count"`
+	RuntimeID    string                   `json:"runtime_id"`
+	Topic        string                   `json:"topic"`
+	Messages     []sessionMessageResponse `json:"messages"`
+}
+
 func buildSessionMessageResponses(messages []session.Message) []sessionMessageResponse {
 	respMessages := make([]sessionMessageResponse, len(messages))
 	for i, msg := range messages {
@@ -5767,6 +5791,113 @@ func (s *Server) handleCleanupSessions(c *echo.Context) error {
 		}
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "cleaned"})
+}
+
+func (s *Server) handleListThreads(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+
+	ids, err := s.sessionMgr.List()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to list threads: %v", err)})
+	}
+
+	items := make([]threadSummaryResponse, 0, len(ids))
+	for _, id := range ids {
+		sess, err := s.sessionMgr.GetExisting(id)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load thread %q: %v", id, err)})
+		}
+		messages := sess.GetMessages()
+		items = append(items, threadSummaryResponse{
+			ID:           sess.GetID(),
+			CreatedAt:    sess.GetCreatedAt(),
+			UpdatedAt:    sess.GetUpdatedAt(),
+			Summary:      sess.GetSummary(),
+			MessageCount: len(messages),
+			RuntimeID:    s.getSessionRuntimeBinding(id),
+			Topic:        s.getSessionThreadTopic(id),
+		})
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].UpdatedAt.After(items[j].UpdatedAt)
+	})
+
+	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleGetThread(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "thread id is required"})
+	}
+
+	sess, err := s.sessionMgr.GetExisting(id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "thread not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load thread: %v", err)})
+	}
+
+	messages := sess.GetMessages()
+	return c.JSON(http.StatusOK, threadDetailResponse{
+		ID:           sess.GetID(),
+		CreatedAt:    sess.GetCreatedAt(),
+		UpdatedAt:    sess.GetUpdatedAt(),
+		Summary:      sess.GetSummary(),
+		MessageCount: len(messages),
+		RuntimeID:    s.getSessionRuntimeBinding(id),
+		Topic:        s.getSessionThreadTopic(id),
+		Messages:     buildSessionMessageResponses(messages),
+	})
+}
+
+func (s *Server) handleUpdateThread(c *echo.Context) error {
+	if s.sessionMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "session manager not available"})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "thread id is required"})
+	}
+	sess, err := s.sessionMgr.GetExisting(id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "thread not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load thread: %v", err)})
+	}
+	var body struct {
+		Summary   string `json:"summary"`
+		RuntimeID string `json:"runtime_id"`
+		Topic     string `json:"topic"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if strings.TrimSpace(body.Summary) != "" || body.Summary == "" {
+		sess.SetSummary(body.Summary)
+		if err := s.sessionMgr.Save(sess); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to save thread summary: %v", err)})
+		}
+	}
+	if err := s.setSessionRuntimeBinding(id, body.RuntimeID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if err := s.setSessionThreadTopic(id, body.Topic); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
 }
 
 // --- Status Handler ---

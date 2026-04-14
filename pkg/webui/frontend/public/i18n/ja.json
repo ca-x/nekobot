@@ -1256,5 +1256,15 @@
   "sessionThreadSaved": "セッションスレッドを保存しました",
   "sessionThreadSaveFailed": "セッションスレッドの保存に失敗しました",
   "sessionThreadTopicPlaceholder": "このスレッドの用途を説明してください",
-  "sessionThreadTopicDescription": "この daemon-backed thread の目的を短いトピックで表します。"
+  "sessionThreadTopicDescription": "この daemon-backed thread の目的を短いトピックで表します。",
+  "tabThreads": "Threads",
+  "threadsPageDescription": "daemon-backed thread のメタデータとメッセージ履歴を表示します。",
+  "threadListCount": "{0} 件の threads",
+  "threadsLoading": "threads を読み込み中…",
+  "threadsEmpty": "まだ threads はありません",
+  "threadsEmptyHint": "チャットセッションに daemon 関連メタデータが付くと、ここに表示されます。",
+  "threadDetailsTitle": "Thread 詳細",
+  "threadSelectHint": "thread を選択してメタデータを表示または編集します。",
+  "threadSaved": "Thread を保存しました",
+  "threadSaveFailed": "Thread の保存に失敗しました"
 }

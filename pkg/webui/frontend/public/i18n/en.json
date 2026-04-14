@@ -1256,5 +1256,15 @@
   "sessionThreadSaved": "Session thread saved",
   "sessionThreadSaveFailed": "Failed to save session thread",
   "sessionThreadTopicPlaceholder": "Describe what this thread is for",
-  "sessionThreadTopicDescription": "Use a short topic to describe the purpose of this daemon-backed thread."
+  "sessionThreadTopicDescription": "Use a short topic to describe the purpose of this daemon-backed thread.",
+  "tabThreads": "Threads",
+  "threadsPageDescription": "Daemon-backed thread metadata and message history.",
+  "threadListCount": "{0} threads",
+  "threadsLoading": "Loading threads…",
+  "threadsEmpty": "No threads yet",
+  "threadsEmptyHint": "Threads appear as chat sessions gain daemon-backed metadata.",
+  "threadDetailsTitle": "Thread Details",
+  "threadSelectHint": "Select a thread to inspect or edit its metadata.",
+  "threadSaved": "Thread saved",
+  "threadSaveFailed": "Failed to save thread"
 }

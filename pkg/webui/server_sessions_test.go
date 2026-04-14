@@ -365,6 +365,117 @@ func TestSessionHandlers_NotFoundBehavior(t *testing.T) {
 	assertErrorPayload(t, deleteRec.Body.Bytes())
 }
 
+func TestThreadHandlers_EndToEndFlow(t *testing.T) {
+	cfg := config.DefaultConfig()
+	sm := session.NewManager(t.TempDir(), cfg.Sessions)
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "thread-state.json")})
+	if err != nil {
+		t.Fatalf("new file store failed: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	s := &Server{sessionMgr: sm, kvStore: store}
+	e := echo.New()
+
+	const threadID = "thread-e2e"
+	sess, err := sm.GetWithSource(threadID, session.SourceWebUI)
+	if err != nil {
+		t.Fatalf("create thread failed: %v", err)
+	}
+	sess.AddMessage(agent.Message{Role: "user", Content: "hello"})
+	sess.SetSummary("initial thread")
+	if err := sm.Save(sess); err != nil {
+		t.Fatalf("save thread failed: %v", err)
+	}
+	if err := s.setSessionRuntimeBinding(threadID, "daemon-runtime-1"); err != nil {
+		t.Fatalf("set runtime binding failed: %v", err)
+	}
+	if err := s.setSessionThreadTopic(threadID, "ops triage"); err != nil {
+		t.Fatalf("set thread topic failed: %v", err)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/threads", nil)
+	listRec := httptest.NewRecorder()
+	listCtx := e.NewContext(listReq, listRec)
+	if err := s.handleListThreads(listCtx); err != nil {
+		t.Fatalf("list threads failed: %v", err)
+	}
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, listRec.Code)
+	}
+
+	var listed []map[string]json.RawMessage
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal list response failed: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("expected 1 thread, got %d", len(listed))
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/threads/"+threadID, nil)
+	getRec := httptest.NewRecorder()
+	getCtx := e.NewContext(getReq, getRec)
+	getCtx.SetPath("/api/threads/:id")
+	getCtx.SetPathValues(echo.PathValues{{Name: "id", Value: threadID}})
+	if err := s.handleGetThread(getCtx); err != nil {
+		t.Fatalf("get thread failed: %v", err)
+	}
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, getRec.Code)
+	}
+	var detail map[string]json.RawMessage
+	if err := json.Unmarshal(getRec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("unmarshal thread detail failed: %v", err)
+	}
+	var topic string
+	if err := json.Unmarshal(detail["topic"], &topic); err != nil {
+		t.Fatalf("unmarshal topic failed: %v", err)
+	}
+	if topic != "ops triage" {
+		t.Fatalf("expected topic ops triage, got %q", topic)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/threads/"+threadID, strings.NewReader(`{"summary":"updated thread","runtime_id":"daemon-runtime-2","topic":"incident response"}`))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateRec := httptest.NewRecorder()
+	updateCtx := e.NewContext(updateReq, updateRec)
+	updateCtx.SetPath("/api/threads/:id")
+	updateCtx.SetPathValues(echo.PathValues{{Name: "id", Value: threadID}})
+	if err := s.handleUpdateThread(updateCtx); err != nil {
+		t.Fatalf("update thread failed: %v", err)
+	}
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, updateRec.Code)
+	}
+	assertStatusPayload(t, updateRec.Body.Bytes(), "updated")
+
+	getAfterReq := httptest.NewRequest(http.MethodGet, "/api/threads/"+threadID, nil)
+	getAfterRec := httptest.NewRecorder()
+	getAfterCtx := e.NewContext(getAfterReq, getAfterRec)
+	getAfterCtx.SetPath("/api/threads/:id")
+	getAfterCtx.SetPathValues(echo.PathValues{{Name: "id", Value: threadID}})
+	if err := s.handleGetThread(getAfterCtx); err != nil {
+		t.Fatalf("get thread after update failed: %v", err)
+	}
+	var detailAfter map[string]json.RawMessage
+	if err := json.Unmarshal(getAfterRec.Body.Bytes(), &detailAfter); err != nil {
+		t.Fatalf("unmarshal thread detail after update failed: %v", err)
+	}
+	var runtimeID string
+	if err := json.Unmarshal(detailAfter["runtime_id"], &runtimeID); err != nil {
+		t.Fatalf("unmarshal runtime_id failed: %v", err)
+	}
+	if runtimeID != "daemon-runtime-2" {
+		t.Fatalf("expected runtime daemon-runtime-2, got %q", runtimeID)
+	}
+	if err := json.Unmarshal(detailAfter["topic"], &topic); err != nil {
+		t.Fatalf("unmarshal topic after update failed: %v", err)
+	}
+	if topic != "incident response" {
+		t.Fatalf("expected topic incident response, got %q", topic)
+	}
+}
+
 func TestHandleCleanupSessions(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Sessions.Enabled = true

@@ -1256,5 +1256,15 @@
   "sessionThreadSaved": "会话 Thread 已保存",
   "sessionThreadSaveFailed": "保存会话 Thread 失败",
   "sessionThreadTopicPlaceholder": "描述这个 thread 的用途",
-  "sessionThreadTopicDescription": "用简短主题描述这个 daemon-backed thread 的目的。"
+  "sessionThreadTopicDescription": "用简短主题描述这个 daemon-backed thread 的目的。",
+  "tabThreads": "Threads",
+  "threadsPageDescription": "查看 daemon-backed thread 元数据与消息历史。",
+  "threadListCount": "{0} 个 threads",
+  "threadsLoading": "正在加载 threads…",
+  "threadsEmpty": "暂时还没有 threads",
+  "threadsEmptyHint": "当聊天会话拥有 daemon 相关元数据后，这里就会出现。",
+  "threadDetailsTitle": "Thread 详情",
+  "threadSelectHint": "选择一个 thread 查看或编辑其元数据。",
+  "threadSaved": "Thread 已保存",
+  "threadSaveFailed": "保存 Thread 失败"
 }

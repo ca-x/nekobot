@@ -7,6 +7,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const InitPage = lazy(() => import('./pages/InitPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const SessionsPage = lazy(() => import('./pages/SessionsPage'));
+const ThreadsPage = lazy(() => import('./pages/ThreadsPage'));
 const ToolSessionsPage = lazy(() => import('./pages/ToolSessionsPage'));
 const ProvidersPage = lazy(() => import('./pages/ProvidersPage'));
 const ModelsPage = lazy(() => import('./pages/ModelsPage'));
@@ -39,6 +40,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/threads" element={<ThreadsPage />} />
           <Route path="/tools" element={<ToolSessionsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/models" element={<ModelsPage />} />
