@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { useRuntimeAgents } from '@/hooks/useTopology';
 import { useThreadDetail, useThreads, useUpdateThread } from '@/hooks/useThreads';
 import { Save, MessageSquare } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 function formatDateTime(value: string): string {
   if (!value) return '-';
@@ -18,6 +19,7 @@ function formatDateTime(value: string): string {
 }
 
 export default function ThreadsPage() {
+  const navigate = useNavigate();
   const { data: threads = [], isLoading } = useThreads();
   const { data: runtimes = [] } = useRuntimeAgents();
   const updateThread = useUpdateThread();
@@ -54,6 +56,17 @@ export default function ThreadsPage() {
       runtime_id: runtimeDraft,
       topic: topicDraft,
     });
+  };
+
+  const handleOpenInChat = () => {
+    if (!detail) return;
+    sessionStorage.setItem(
+      'nekobot_chat_thread_handoff',
+      JSON.stringify({
+        runtime_id: detail.runtime_id || '',
+      }),
+    );
+    navigate('/chat');
   };
 
   return (
@@ -166,6 +179,10 @@ export default function ThreadsPage() {
                   <Button onClick={handleSave} disabled={updateThread.isPending}>
                     <Save className="h-4 w-4 mr-1.5" />
                     {t('save')}
+                  </Button>
+                  <Button variant="outline" onClick={handleOpenInChat}>
+                    <MessageSquare className="h-4 w-4 mr-1.5" />
+                    {t('threadsOpenInChat')}
                   </Button>
                 </div>
 

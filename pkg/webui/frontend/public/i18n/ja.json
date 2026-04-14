@@ -1266,5 +1266,6 @@
   "threadDetailsTitle": "Thread 詳細",
   "threadSelectHint": "thread を選択してメタデータを表示または編集します。",
   "threadSaved": "Thread を保存しました",
-  "threadSaveFailed": "Thread の保存に失敗しました"
+  "threadSaveFailed": "Thread の保存に失敗しました",
+  "threadsOpenInChat": "チャットで開く"
 }

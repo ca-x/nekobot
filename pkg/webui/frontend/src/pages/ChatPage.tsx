@@ -165,6 +165,15 @@ export default function ChatPage() {
       return [];
     }
   });
+  const [threadHandoff, setThreadHandoff] = useState<{ runtime_id?: string } | null>(() => {
+    const raw = sessionStorage.getItem('nekobot_chat_thread_handoff');
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as { runtime_id?: string };
+    } catch {
+      return {};
+    }
+  });
   const providersQuery = useProviders();
   const configQuery = useAppConfig();
   const promptsQuery = usePrompts();
@@ -269,6 +278,12 @@ export default function ChatPage() {
       sessionStorage.removeItem('nekobot_init_handoff');
     }
   }, [initHandoff]);
+
+  useEffect(() => {
+    if (threadHandoff !== null) {
+      sessionStorage.removeItem('nekobot_chat_thread_handoff');
+    }
+  }, [threadHandoff]);
 
   useEffect(() => {
     if (!selectedProvider) {
@@ -391,6 +406,18 @@ export default function ChatPage() {
     }
     setSelectedRuntimeID('');
   }, [chatRuntimes, selectedRuntimeID]);
+
+  useEffect(() => {
+    const handedOffRuntimeID = threadHandoff?.runtime_id?.trim() || '';
+    if (!handedOffRuntimeID) {
+      return;
+    }
+    if (!chatRuntimes.some((runtime) => runtime.id === handedOffRuntimeID)) {
+      return;
+    }
+    setSelectedRuntimeID(handedOffRuntimeID);
+    setThreadHandoff(null);
+  }, [threadHandoff, chatRuntimes]);
 
   useEffect(() => {
     if (selectedRuntimeID) {
@@ -697,9 +724,9 @@ export default function ChatPage() {
                       ? t('chatRuntimeControlsRoute')
                       : t('chatNoFallback')}
                 </span>
-                {baseSessionDetail?.topic ? (
+                {activeSessionDetail?.topic || baseSessionDetail?.topic ? (
                   <span className="max-w-full break-all rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
-                    {t('sessionThreadTopicLabel')}: {baseSessionDetail.topic}
+                    {t('sessionThreadTopicLabel')}: {activeSessionDetail?.topic || baseSessionDetail?.topic}
                   </span>
                 ) : null}
               </div>

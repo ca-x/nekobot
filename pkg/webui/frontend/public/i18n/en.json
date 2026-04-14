@@ -1266,5 +1266,6 @@
   "threadDetailsTitle": "Thread Details",
   "threadSelectHint": "Select a thread to inspect or edit its metadata.",
   "threadSaved": "Thread saved",
-  "threadSaveFailed": "Failed to save thread"
+  "threadSaveFailed": "Failed to save thread",
+  "threadsOpenInChat": "Open in Chat"
 }
