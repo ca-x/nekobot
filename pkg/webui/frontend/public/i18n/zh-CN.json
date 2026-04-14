@@ -1249,5 +1249,6 @@
   "sessionRuntimeSaved": "会话运行时已保存",
   "sessionRuntimeSaveFailed": "保存会话运行时失败",
   "sessionRuntimeNone": "未绑定运行时",
-  "sessionRuntimeDescription": "设置后，聊天消息可自动复用这个运行时，无需每次重新选择。"
+  "sessionRuntimeDescription": "设置后，聊天消息可自动复用这个运行时，无需每次重新选择。",
+  "chatSessionRuntimeBindingHint": "当前聊天将复用已绑定运行时：{0}"
 }

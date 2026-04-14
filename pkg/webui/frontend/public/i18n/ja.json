@@ -1249,5 +1249,6 @@
   "sessionRuntimeSaved": "セッションランタイムを保存しました",
   "sessionRuntimeSaveFailed": "セッションランタイムの保存に失敗しました",
   "sessionRuntimeNone": "ランタイム未バインド",
-  "sessionRuntimeDescription": "設定すると、チャットメッセージは毎回再選択せずにこのランタイムを再利用できます。"
+  "sessionRuntimeDescription": "設定すると、チャットメッセージは毎回再選択せずにこのランタイムを再利用できます。",
+  "chatSessionRuntimeBindingHint": "このチャットはバインド済みランタイムを再利用します: {0}"
 }

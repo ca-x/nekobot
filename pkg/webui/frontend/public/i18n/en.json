@@ -1249,5 +1249,6 @@
   "sessionRuntimeSaved": "Session runtime saved",
   "sessionRuntimeSaveFailed": "Failed to save session runtime",
   "sessionRuntimeNone": "No bound runtime",
-  "sessionRuntimeDescription": "When set, chat messages can reuse this runtime without reselecting it each time."
+  "sessionRuntimeDescription": "When set, chat messages can reuse this runtime without reselecting it each time.",
+  "chatSessionRuntimeBindingHint": "This chat will reuse bound runtime: {0}"
 }

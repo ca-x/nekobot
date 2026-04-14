@@ -22,6 +22,7 @@ import { useWatchStatus } from '@/hooks/useConfig';
 import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
 import { usePrompts, usePromptSessionBindings, useReplacePromptSessionBindings } from '@/hooks/usePrompts';
 import { useProviders } from '@/hooks/useProviders';
+import { useSessionDetail, useUpdateSessionRuntime } from '@/hooks/useSessions';
 import { useAccountBindings, useChannelAccounts, useRuntimeAgents } from '@/hooks/useTopology';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -287,6 +288,9 @@ export default function ChatPage() {
   const activeProvider = selectedProvider.trim();
   const activeRuntimeID = selectedRuntimeID.trim();
   const activeSessionBindingID = activeRuntimeID ? `route:${activeRuntimeID}:webui-chat` : 'webui-chat';
+  const baseChatSessionID = 'webui-chat';
+  const { data: baseSessionDetail } = useSessionDetail(baseChatSessionID);
+  const updateSessionRuntime = useUpdateSessionRuntime();
   const { data: sessionPromptBindings } = usePromptSessionBindings(activeSessionBindingID);
   const replacePromptSessionBindings = useReplacePromptSessionBindings();
   const activeFallback = selectedFallbackTargets.filter((target) => target.trim().length > 0);
@@ -384,6 +388,20 @@ export default function ChatPage() {
     setSelectedRuntimeID('');
   }, [chatRuntimes, selectedRuntimeID]);
 
+  useEffect(() => {
+    if (selectedRuntimeID) {
+      return;
+    }
+    const boundRuntimeID = baseSessionDetail?.runtime_id?.trim() || '';
+    if (!boundRuntimeID) {
+      return;
+    }
+    if (!chatRuntimes.some((runtime) => runtime.id === boundRuntimeID)) {
+      return;
+    }
+    setSelectedRuntimeID(boundRuntimeID);
+  }, [baseSessionDetail?.runtime_id, chatRuntimes, selectedRuntimeID]);
+
   function handleProviderChange(value: string) {
     const provider = fromSelectValue(value);
     setSelectedProvider(provider);
@@ -415,6 +433,12 @@ export default function ChatPage() {
         ? current.filter((item) => item !== targetName)
         : [...current, targetName],
     );
+  }
+
+  function handleRuntimeBindingChange(value: string) {
+    const nextRuntimeID = fromSelectValue(value);
+    setSelectedRuntimeID(nextRuntimeID);
+    updateSessionRuntime.mutate({ id: baseChatSessionID, runtime_id: nextRuntimeID });
   }
 
   function handleTogglePrompt(promptID: string, mode: 'system' | 'user') {
@@ -788,7 +812,7 @@ export default function ChatPage() {
                 />
               ) : (
                 <>
-                  <Select value={toSelectValue(selectedRuntimeID)} onValueChange={(value) => setSelectedRuntimeID(fromSelectValue(value))}>
+                  <Select value={toSelectValue(selectedRuntimeID)} onValueChange={handleRuntimeBindingChange}>
                     <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-card/90">
                       <SelectValue placeholder={t('chatRuntimeTarget')} />
                     </SelectTrigger>
@@ -806,6 +830,11 @@ export default function ChatPage() {
                       {t('chatRuntimeControlsRoute')}
                     </p>
                   )}
+                  {baseSessionDetail?.runtime_id ? (
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      {t('chatSessionRuntimeBindingHint', baseSessionDetail.runtime_id)}
+                    </p>
+                  ) : null}
                   {!runtimeControlsRoute && chatRuntimes.length === 0 ? (
                     <p className="text-xs leading-5 text-muted-foreground">
                       {hasRuntimeBindings ? t('chatRuntimeUnavailableHint') : t('chatRuntimeEmptyHint')}
