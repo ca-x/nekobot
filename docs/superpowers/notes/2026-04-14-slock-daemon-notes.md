@@ -28,3 +28,4 @@
 - Added `claimed` session feedback so daemon-backed chats now show claim -> running -> completion/failure progression more explicitly.
 - Fresh verification evidence: live daemon process E2E passed using a real `nekobot daemon run` process plus fake installed `claude` binary and real HTTP control-plane endpoints.
 - Fresh verification evidence: isolated live `opencode --pure run --format json` returned `daemon-ok` on this host when HOME/XDG_CONFIG_HOME were sandboxed.
+- Fresh verification evidence: live daemon process E2E also passed for `opencode`, using an isolated runtime environment and real HTTP control-plane endpoints.
