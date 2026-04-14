@@ -18,7 +18,7 @@ export default function WebhooksPage() {
   const [enabled, setEnabled] = useState(Boolean(current.enabled));
   const [path, setPath] = useState(current.path ?? '/api/webhooks/agent');
   const [message, setMessage] = useState('hello from webhook test');
-  const canSendTest = message.trim() !== '';
+  const canSendTest = enabled && message.trim() !== '';
 
   useEffect(() => {
     setEnabled(Boolean(current.enabled));
@@ -73,7 +73,7 @@ export default function WebhooksPage() {
           <Button
             onClick={() => {
               const trimmed = message.trim();
-              if (!trimmed) return;
+              if (!enabled || !trimmed) return;
               testWebhook.mutate(trimmed);
             }}
             disabled={testWebhook.isPending || !canSendTest}
