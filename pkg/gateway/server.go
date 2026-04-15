@@ -29,6 +29,7 @@ import (
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
+	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
@@ -867,7 +868,7 @@ func (s *Server) handleResolveExternalAgentSession(w http.ResponseWriter, r *htt
 		probe,
 		starter,
 		s.toolSess,
-		nil,
+		runtimeagents.DefaultTransport(),
 		externalagent.SessionSpec{
 			Owner:     authCtx.username,
 			AgentKind: body.AgentKind,
@@ -904,7 +905,7 @@ func (s *Server) ensureExternalAgentProcess(ctx context.Context, sess *toolsessi
 		probe,
 		starter,
 		s.toolSess,
-		nil,
+		runtimeagents.DefaultTransport(),
 		sess,
 	)
 }

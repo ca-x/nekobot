@@ -19,6 +19,7 @@ import (
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
+	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
@@ -382,7 +383,7 @@ func (s *ControlService) ResolveRuntime(
 			wechatProcessProbe{s.process},
 			s.process,
 			s.sessions,
-			nil,
+			runtimeagents.DefaultTransport(),
 			sess,
 		); err != nil {
 			_ = s.sessions.TerminateSession(context.Background(), sess.ID, "failed to start managed runtime: "+err.Error())
@@ -1069,7 +1070,7 @@ func (s *ControlService) resolveManagedPendingInteraction(
 			s.taskStore.ClearSessionPendingAction(target.ID)
 			s.taskStore.SetSessionPermissionMode(target.ID, string(approval.ModeAuto))
 		}
-		if err := externalagent.EnsureProcess(ctx, s.cfg.WorkspacePath(), wechatProcessProbe{s.process}, s.process, s.sessions, nil, target); err != nil {
+		if err := externalagent.EnsureProcess(ctx, s.cfg.WorkspacePath(), wechatProcessProbe{s.process}, s.process, s.sessions, runtimeagents.DefaultTransport(), target); err != nil {
 			return "", true, err
 		}
 		s.clearPendingInteraction(chatID)
