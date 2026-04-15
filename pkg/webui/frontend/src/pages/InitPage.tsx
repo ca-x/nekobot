@@ -188,7 +188,7 @@ export default function InitPage() {
           <div className="mb-8 flex flex-col gap-5 border-b border-border/70 pb-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-background/70 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                First-time setup
+                {t('initHeroBadge')}
               </div>
               <div className="mt-5 flex items-center gap-4">
                 <img
@@ -207,9 +207,9 @@ export default function InitPage() {
 
             <div className="grid gap-3 text-left sm:grid-cols-3">
               {[
-                ['Admin', 'Create the first operator account'],
-                ['Runtime', 'Review generated paths and startup defaults'],
-                ['Access', 'Confirm web UI and webhook bootstrap values'],
+                [t('initHeroAdminTitle'), t('initHeroAdminDesc')],
+                [t('initHeroRuntimeTitle'), t('initHeroRuntimeDesc')],
+                [t('initHeroAccessTitle'), t('initHeroAccessDesc')],
               ].map(([title, desc]) => (
                 <div
                   key={title}

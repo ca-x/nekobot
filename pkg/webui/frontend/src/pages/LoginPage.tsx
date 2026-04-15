@@ -71,7 +71,7 @@ export default function LoginPage() {
           <section className="hidden flex-col justify-between rounded-[2rem] border border-white/45 bg-white/35 p-8 text-foreground shadow-[0_32px_120px_-48px_rgba(15,23,42,0.45)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/5 lg:flex">
             <div>
               <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-background/70 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                NekoBot Control Surface
+                {t('loginHeroBadge')}
               </div>
               <div className="mt-8 flex items-center gap-4">
                 <img
@@ -84,21 +84,20 @@ export default function LoginPage() {
                     Nekobot
                   </h1>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Unified chat, sessions, providers, tools, and automation in one console.
+                    {t('loginHeroSubtitle')}
                   </p>
                 </div>
               </div>
               <p className="mt-8 max-w-xl text-sm leading-7 text-muted-foreground">
-                Sign in to continue managing runtime sessions, webhook integrations, model providers,
-                and agent workflows from a single operational workspace.
+                {t('loginHeroDescription')}
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
               {[
-                ['Sessions', 'Track active runs and tool traces'],
-                ['Providers', 'Switch models and credentials safely'],
-                ['Runtime', 'Observe chat, threads, and automations'],
+                [t('loginHeroMetricSessionsTitle'), t('loginHeroMetricSessionsDesc')],
+                [t('loginHeroMetricProvidersTitle'), t('loginHeroMetricProvidersDesc')],
+                [t('loginHeroMetricRuntimeTitle'), t('loginHeroMetricRuntimeDesc')],
               ].map(([title, desc]) => (
                 <div
                   key={title}
@@ -123,7 +122,7 @@ export default function LoginPage() {
                 </div>
                 <div>
                   <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-                    Welcome back
+                    {t('loginHeroTitle')}
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">{t('loginHint')}</p>
                 </div>
