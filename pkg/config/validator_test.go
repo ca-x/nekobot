@@ -347,6 +347,20 @@ func TestValidateConfigRejectsInvalidWebUIRecordRetentionConfig(t *testing.T) {
 	}
 }
 
+func TestValidateConfigRejectsInvalidToolSessionRuntimeTransport(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.WebUI.ToolSessionRuntimeTransport = "screen"
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected validation error for invalid runtime transport")
+	}
+	if !strings.Contains(err.Error(), "webui.tool_session_runtime_transport") {
+		t.Fatalf("expected tool_session_runtime_transport validation error, got %v", err)
+	}
+}
+
 func TestValidateConfigRejectsInvalidHarnessFeatureConfig(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Agents.Defaults.Workspace = t.TempDir()

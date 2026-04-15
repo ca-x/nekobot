@@ -518,6 +518,11 @@ func (v *Validator) validateWebUI(cfg *WebUIConfig) {
 	if cfg.ToolSessionOTPTTLSeconds < 0 {
 		v.addError("webui.tool_session_otp_ttl_seconds", "tool_session_otp_ttl_seconds cannot be negative")
 	}
+	switch strings.TrimSpace(strings.ToLower(cfg.ToolSessionRuntimeTransport)) {
+	case "", "tmux", "zellij":
+	default:
+		v.addError("webui.tool_session_runtime_transport", "tool_session_runtime_transport must be empty, tmux, or zellij")
+	}
 	if cfg.ToolSessionEvents.Enabled && cfg.ToolSessionEvents.RetentionDays < 1 {
 		v.addError("webui.tool_session_events.retention_days", "retention_days must be at least 1 when tool session events are enabled")
 	}

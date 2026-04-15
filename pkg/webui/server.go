@@ -1862,7 +1862,7 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	metadata = withToolProxyMetadata(metadata, proxyMode, proxyURL)
 	metadata["user_command"] = command
 	metadata["user_args"] = strings.TrimSpace(body.CommandArgs)
-	transport := runtimeTransportFromName(body.RuntimeTransport)
+	transport := s.resolveSessionRuntimeTransport(metadata, body.RuntimeTransport)
 
 	sess, err := s.toolSess.CreateSession(c.Request().Context(), toolsessions.CreateSessionInput{
 		Owner:    s.currentUsername(c),
@@ -2477,7 +2477,7 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	nextMetadata := withToolProxyMetadata(cloneMap(current.Metadata), proxyMode, proxyURL)
 	nextMetadata["user_command"] = command
 	nextMetadata["user_args"] = strings.TrimSpace(body.CommandArgs)
-	transport := resolveSessionRuntimeTransport(nextMetadata, body.RuntimeTransport)
+	transport := s.resolveSessionRuntimeTransport(nextMetadata, body.RuntimeTransport)
 
 	launchCommand := applyToolProxyToCommand(command, proxyMode, proxyURL)
 	runtimeSession := ""
@@ -3077,7 +3077,7 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 		return false
 	}
 
-	transport := resolveSessionRuntimeTransport(sess.Metadata, "")
+	transport := s.resolveSessionRuntimeTransport(sess.Metadata, "")
 	attachCmd, runtimeSession, ok := buildToolReattachLaunchWithTransport(transport, id)
 	if !ok {
 		return false
@@ -3169,19 +3169,34 @@ func runtimeTransportFromName(name string) runtimeagents.RuntimeTransport {
 	return runtimeagents.TransportByName(name)
 }
 
-func resolveSessionRuntimeTransport(metadata map[string]interface{}, requested string) runtimeagents.RuntimeTransport {
+func (s *Server) defaultRuntimeTransport() runtimeagents.RuntimeTransport {
+	if s == nil || s.config == nil {
+		return runtimeagents.DefaultTransport()
+	}
+	name := strings.TrimSpace(s.config.WebUI.ToolSessionRuntimeTransport)
+	if name == "" {
+		return runtimeagents.DefaultTransport()
+	}
+	return runtimeTransportFromName(name)
+}
+
+func (s *Server) resolveSessionRuntimeTransport(metadata map[string]interface{}, requested string) runtimeagents.RuntimeTransport {
 	requested = strings.TrimSpace(requested)
 	if requested != "" {
 		return runtimeTransportFromName(requested)
 	}
-	return runtimeTransportFromName(runtimeagents.MetadataString(metadata, runtimeagents.MetadataRuntimeTransport))
+	stored := runtimeagents.MetadataString(metadata, runtimeagents.MetadataRuntimeTransport)
+	if stored != "" {
+		return runtimeTransportFromName(stored)
+	}
+	return s.defaultRuntimeTransport()
 }
 
 func (s *Server) tryKillRuntimeSession(ctx context.Context, sessionID string) {
-	transport := runtimeagents.DefaultTransport()
+	transport := s.defaultRuntimeTransport()
 	if s != nil && s.toolSess != nil {
 		if sess, err := s.toolSess.GetSession(ctx, sessionID); err == nil && sess != nil {
-			transport = resolveSessionRuntimeTransport(sess.Metadata, "")
+			transport = s.resolveSessionRuntimeTransport(sess.Metadata, "")
 		}
 	}
 	transport.KillSession(sessionID)

@@ -807,6 +807,61 @@ func TestHandleRestartToolSessionAcceptsExplicitZellijTransport(t *testing.T) {
 	}
 }
 
+func TestHandleSpawnToolSessionUsesConfiguredDefaultRuntimeTransport(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.WebUI.ToolSessionRuntimeTransport = runtimeagents.TransportZellij
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	preparer := &captureWebUITestPreparer{}
+	pm := process.NewManager(log)
+	pm.SetPreparer(preparer)
+	server := &Server{
+		config:     cfg,
+		logger:     log,
+		toolSess:   toolMgr,
+		processMgr: pm,
+	}
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tool-sessions/spawn", strings.NewReader(
+		`{"tool":"codex","command":"sleep 5","workdir":"`+cfg.WorkspacePath()+`"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/spawn")
+	if err := server.handleSpawnToolSession(ctx); err != nil {
+		t.Fatalf("spawn handler failed: %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Session toolsessions.Session `json:"session"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if got, _ := payload.Session.Metadata["runtime_transport"].(string); got != runtimeagents.TransportZellij {
+		t.Fatalf("expected configured default runtime_transport=%q, got %+v", runtimeagents.TransportZellij, payload.Session.Metadata)
+	}
+	if !strings.Contains(preparer.last.Command, "zellij") {
+		t.Fatalf("expected execenv command to use configured zellij transport, got %q", preparer.last.Command)
+	}
+	if err := pm.Reset(preparer.last.SessionID); err != nil {
+		t.Fatalf("reset spawned process: %v", err)
+	}
+}
+
 func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) {
 	if !runtimeagents.DefaultTransport().Available() {
 		t.Skip("tmux not available")
