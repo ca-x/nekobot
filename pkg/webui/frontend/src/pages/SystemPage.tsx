@@ -94,7 +94,17 @@ export default function SystemPage() {
   }, [daemonWorkspaces.data?.workspaces, selectedDaemonWorkspace, selectedWorkspace]);
   const selectedWorkspaceId = selectedWorkspace?.workspace_id ?? null;
   const daemonTree = useDaemonWorkspaceTree(selectedMachine?.info.machine_id ?? null, selectedWorkspaceId, daemonPath);
-  const daemonFile = useDaemonWorkspaceFile();
+  const {
+    mutate: loadDaemonFile,
+    data: daemonFileData,
+    error: daemonFileError,
+    isPending: daemonFilePending,
+    reset: resetDaemonFile,
+  } = useDaemonWorkspaceFile();
+  useEffect(() => {
+    setSelectedPreviewPath("");
+    resetDaemonFile();
+  }, [selectedMachine?.info.machine_id, selectedWorkspaceId, resetDaemonFile]);
   const sessionStates = status?.session_runtime_states ?? [];
   const agentDefinition = status?.agent_definition ?? null;
   const agentRoute = agentDefinition?.route ?? null;
@@ -474,7 +484,7 @@ export default function SystemPage() {
                           {daemonWorkspaces.isLoading ? (
                             <div className="text-sm text-muted-foreground animate-pulse">{t("systemLoading")}</div>
                           ) : daemonWorkspaces.error ? (
-                            <div className="text-sm text-destructive">{daemonWorkspaces.error.message}</div>
+                            <div className="text-sm text-destructive">{t("systemDaemonExplorerLoadFailed")}</div>
                           ) : daemonWorkspaces.data?.workspaces?.length ? (
                             daemonWorkspaces.data.workspaces.map((workspace) => (
                               <button
@@ -483,7 +493,6 @@ export default function SystemPage() {
                                 onClick={() => {
                                   setSelectedDaemonWorkspace(workspace.workspace_id);
                                   setDaemonPath("");
-                                  setSelectedPreviewPath("");
                                 }}
                                 className={cn(
                                   "w-full rounded-xl border px-3 py-2 text-left text-sm transition",
@@ -542,7 +551,7 @@ export default function SystemPage() {
                                   }
                                   setSelectedPreviewPath(entry.path);
                                   if (selectedMachine && selectedWorkspaceId) {
-                                    daemonFile.mutate({
+                                    loadDaemonFile({
                                       machine_id: selectedMachine.info.machine_id,
                                       workspace_id: selectedWorkspaceId,
                                       path: entry.path,
@@ -579,19 +588,19 @@ export default function SystemPage() {
                           {selectedPreviewPath || t("systemDaemonExplorerPreviewEmpty")}
                         </div>
                         <div className="mt-4 rounded-xl border border-border/70 bg-background/80 p-3">
-                          {daemonFile.isPending ? (
+                          {daemonFilePending ? (
                             <div className="text-sm text-muted-foreground animate-pulse">{t("systemLoading")}</div>
-                          ) : daemonFile.error ? (
-                            <div className="text-sm text-destructive">{daemonFile.error.message}</div>
-                          ) : daemonFile.data ? (
+                          ) : daemonFileError ? (
+                            <div className="text-sm text-destructive">{daemonFileError.message}</div>
+                          ) : daemonFileData ? (
                             <div className="space-y-3">
-                              {daemonFile.data.truncated ? (
+                              {daemonFileData.truncated ? (
                                 <div className="text-xs text-amber-600 dark:text-amber-300">
                                   {t("systemDaemonExplorerTruncated")}
                                 </div>
                               ) : null}
                               <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-foreground">
-                                {daemonFile.data.content || ""}
+                                {daemonFileData.content || ""}
                               </pre>
                             </div>
                           ) : (
