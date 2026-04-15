@@ -46,6 +46,16 @@ const ACCESS_MODES = [
 ];
 
 const DRAFT_KEY = 'nekobot_tool_session_draft';
+const TOOL_FIELD_ID = 'tool-session-tool';
+const CUSTOM_TOOL_FIELD_ID = 'tool-session-custom-tool';
+const TITLE_FIELD_ID = 'tool-session-title';
+const COMMAND_ARGS_FIELD_ID = 'tool-session-command-args';
+const WORKDIR_FIELD_ID = 'tool-session-workdir';
+const PROXY_MODE_FIELD_ID = 'tool-session-proxy-mode';
+const PROXY_URL_FIELD_ID = 'tool-session-proxy-url';
+const ACCESS_MODE_FIELD_ID = 'tool-session-access-mode';
+const ACCESS_PASSWORD_FIELD_ID = 'tool-session-access-password';
+const PUBLIC_BASE_URL_FIELD_ID = 'tool-session-public-base-url';
 
 function loadDraft(): Partial<CreateToolSessionPayload> {
   try {
@@ -267,9 +277,9 @@ export default function ToolSessionDialog({
         <div className="space-y-4">
           {/* Tool selection */}
           <div className="space-y-2">
-            <Label>{t('toolName')}</Label>
+            <Label htmlFor={TOOL_FIELD_ID}>{t('toolName')}</Label>
             <Select value={tool} onValueChange={setTool}>
-              <SelectTrigger>
+              <SelectTrigger id={TOOL_FIELD_ID}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -282,6 +292,7 @@ export default function ToolSessionDialog({
             </Select>
             {tool === '__custom__' && (
               <Input
+                id={CUSTOM_TOOL_FIELD_ID}
                 placeholder={t('customTool')}
                 value={customTool}
                 onChange={(e) => setCustomTool(e.target.value)}
@@ -291,8 +302,9 @@ export default function ToolSessionDialog({
 
           {/* Session title */}
           <div className="space-y-2">
-            <Label>{t('sessionTitle')}</Label>
+            <Label htmlFor={TITLE_FIELD_ID}>{t('sessionTitle')}</Label>
             <Input
+              id={TITLE_FIELD_ID}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={t('sessionTitle')}
@@ -301,8 +313,9 @@ export default function ToolSessionDialog({
 
           {/* Command args */}
           <div className="space-y-2">
-            <Label>{t('launchCommand')}</Label>
+            <Label htmlFor={COMMAND_ARGS_FIELD_ID}>{t('launchCommand')}</Label>
             <Input
+              id={COMMAND_ARGS_FIELD_ID}
               value={commandArgs}
               onChange={(e) => setCommandArgs(e.target.value)}
               placeholder={t('launchCommand')}
@@ -314,8 +327,9 @@ export default function ToolSessionDialog({
 
           {/* Working directory */}
           <div className="space-y-2">
-            <Label>{t('workingDirectory')}</Label>
+            <Label htmlFor={WORKDIR_FIELD_ID}>{t('workingDirectory')}</Label>
             <Input
+              id={WORKDIR_FIELD_ID}
               value={workdir}
               onChange={(e) => setWorkdir(e.target.value)}
               placeholder={t('workingDirectory')}
@@ -324,9 +338,9 @@ export default function ToolSessionDialog({
 
           {/* Proxy mode */}
           <div className="space-y-2">
-            <Label>{t('proxyMode')}</Label>
+            <Label htmlFor={PROXY_MODE_FIELD_ID}>{t('proxyMode')}</Label>
             <Select value={proxyMode} onValueChange={setProxyMode}>
-              <SelectTrigger>
+              <SelectTrigger id={PROXY_MODE_FIELD_ID}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -339,6 +353,7 @@ export default function ToolSessionDialog({
             </Select>
             {proxyMode === 'custom' && (
               <Input
+                id={PROXY_URL_FIELD_ID}
                 placeholder="http://proxy:port\u2026"
                 value={proxyUrl}
                 onChange={(e) => setProxyUrl(e.target.value)}
@@ -348,9 +363,9 @@ export default function ToolSessionDialog({
 
           {/* Access mode */}
           <div className="space-y-2">
-            <Label>{t('accessMode')}</Label>
+            <Label htmlFor={ACCESS_MODE_FIELD_ID}>{t('accessMode')}</Label>
             <Select value={accessMode} onValueChange={setAccessMode}>
-              <SelectTrigger>
+              <SelectTrigger id={ACCESS_MODE_FIELD_ID}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -366,8 +381,9 @@ export default function ToolSessionDialog({
           {/* Access password (only shown for permanent) */}
           {accessMode === 'permanent' && (
             <div className="space-y-2">
-              <Label>{t('accessPassword')}</Label>
+              <Label htmlFor={ACCESS_PASSWORD_FIELD_ID}>{t('accessPassword')}</Label>
               <Input
+                id={ACCESS_PASSWORD_FIELD_ID}
                 value={accessPassword}
                 onChange={(e) => setAccessPassword(e.target.value)}
                 placeholder={t('accessPassword')}
@@ -378,8 +394,9 @@ export default function ToolSessionDialog({
           {/* Public base URL */}
           {accessMode !== 'none' && (
             <div className="space-y-2">
-              <Label>{t('publicBaseUrl')}</Label>
+              <Label htmlFor={PUBLIC_BASE_URL_FIELD_ID}>{t('publicBaseUrl')}</Label>
               <Input
+                id={PUBLIC_BASE_URL_FIELD_ID}
                 value={publicBaseUrl}
                 onChange={(e) => setPublicBaseUrl(e.target.value)}
                 placeholder="https://example.com\u2026"
