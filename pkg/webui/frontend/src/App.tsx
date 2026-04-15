@@ -22,6 +22,8 @@ const SystemPage = lazy(() => import('./pages/SystemPage'));
 const CronPage = lazy(() => import('./pages/CronPage'));
 const WebhooksPage = lazy(() => import('./pages/WebhooksPage'));
 const PolicyPage = lazy(() => import('./pages/PolicyPage'));
+const GoalRunsPage = lazy(() => import('./pages/GoalRunsPage'));
+const GoalRunDetailPage = lazy(() => import('./pages/GoalRunDetailPage'));
 
 function Loading() {
   return (
@@ -54,6 +56,8 @@ export default function App() {
           <Route path="/cron" element={<CronPage />} />
           <Route path="/webhooks" element={<WebhooksPage />} />
           <Route path="/policy" element={<PolicyPage />} />
+          <Route path="/goal-runs" element={<GoalRunsPage />} />
+          <Route path="/goal-runs/:id" element={<GoalRunDetailPage />} />
           <Route path="/system" element={<SystemPage />} />
           <Route path="/" element={<Navigate to="/chat" replace />} />
         </Route>

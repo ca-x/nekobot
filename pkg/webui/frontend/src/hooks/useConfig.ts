@@ -164,6 +164,8 @@ export interface DaemonMachineStatus {
   workspace_count: number;
   runtime_count: number;
   installed_runtime_count: number;
+  healthy_runtime_count: number;
+  goal_run_runnable: boolean;
 }
 
 export interface DaemonBootstrapData {

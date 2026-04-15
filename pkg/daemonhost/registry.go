@@ -28,6 +28,8 @@ type MachineStatus struct {
 	WorkspaceCount        int                  `json:"workspace_count"`
 	RuntimeCount          int                  `json:"runtime_count"`
 	InstalledRuntimeCount int                  `json:"installed_runtime_count"`
+	HealthyRuntimeCount   int                  `json:"healthy_runtime_count"`
+	GoalRunRunnable       bool                 `json:"goal_run_runnable"`
 }
 
 func NewRegistry(kv state.KV) *Registry { return &Registry{kv: kv} }
@@ -159,14 +161,56 @@ func MachineStatuses(snapshot *Snapshot) []MachineStatus {
 			status.WorkspaceCount = len(inv.Workspaces)
 			status.RuntimeCount = len(inv.Runtimes)
 			for _, item := range inv.Runtimes {
-				if item != nil && item.Installed {
+				if item == nil {
+					continue
+				}
+				if item.Installed {
 					status.InstalledRuntimeCount++
 				}
+				if item.Installed && item.Healthy {
+					status.HealthyRuntimeCount++
+				}
 			}
+			_, _, status.GoalRunRunnable = SelectRunnableWorkspaceRuntime(inv)
 		}
 		out = append(out, status)
 	}
 	return out
+}
+
+// SelectRunnableWorkspaceRuntime returns the runnable runtime in the selected/default workspace.
+// The chosen runtime must be installed and healthy.
+func SelectRunnableWorkspaceRuntime(inventory *daemonv1.RuntimeInventory) (runtimeID, workspaceID string, ok bool) {
+	if inventory == nil {
+		return "", "", false
+	}
+	for _, ws := range inventory.Workspaces {
+		if ws == nil {
+			continue
+		}
+		if ws.IsDefault {
+			workspaceID = strings.TrimSpace(ws.WorkspaceId)
+			break
+		}
+	}
+	if workspaceID == "" && len(inventory.Workspaces) > 0 && inventory.Workspaces[0] != nil {
+		workspaceID = strings.TrimSpace(inventory.Workspaces[0].WorkspaceId)
+	}
+	if workspaceID == "" {
+		return "", "", false
+	}
+	for _, runtimeItem := range inventory.Runtimes {
+		if runtimeItem == nil {
+			continue
+		}
+		if strings.TrimSpace(runtimeItem.WorkspaceId) != workspaceID {
+			continue
+		}
+		if runtimeItem.Installed && runtimeItem.Healthy {
+			return strings.TrimSpace(runtimeItem.RuntimeId), workspaceID, true
+		}
+	}
+	return "", workspaceID, false
 }
 
 func DeriveMachineStatus(info *daemonv1.DaemonInfo, now time.Time) string {

@@ -25,6 +25,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/gateway"
+	"nekobot/pkg/goaldriven"
 	"nekobot/pkg/heartbeat"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
@@ -122,6 +123,7 @@ func (s *GatewayService) run() {
 		heartbeat.Module,
 		cron.Module,
 		gateway.Module,
+		goaldriven.Module,
 		webui.Module,
 
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, b bus.Bus, cm *channels.Manager) {
@@ -313,6 +315,7 @@ func runGatewayForeground() {
 		heartbeat.Module,
 		cron.Module,
 		gateway.Module,
+		goaldriven.Module,
 		webui.Module,
 
 		fx.Invoke(func(lc fx.Lifecycle, log *logger.Logger, b bus.Bus, cm *channels.Manager, cfg *config.Config) {

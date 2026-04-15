@@ -267,10 +267,10 @@ export default function Sidebar() {
         </div>
         <div className="mb-4 rounded-2xl border border-border/60 bg-background/60 px-3 py-3 backdrop-blur-xl">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Control surface
+            {t('sidebarOverviewTitle')}
           </div>
           <div className="mt-1 text-xs leading-5 text-muted-foreground">
-            Chat, providers, sessions, policies, and runtime status.
+            {t('sidebarOverviewDesc')}
           </div>
         </div>
         {renderNav()}

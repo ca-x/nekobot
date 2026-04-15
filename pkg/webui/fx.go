@@ -8,14 +8,33 @@ import (
 	"go.uber.org/zap"
 
 	"nekobot/pkg/config"
+	"nekobot/pkg/goaldriven"
 	"nekobot/pkg/logger"
 )
 
 // Module provides the WebUI server for fx dependency injection.
 var Module = fx.Module("webui",
 	fx.Provide(NewServer),
+	fx.Invoke(bindGoalDrivenService),
 	fx.Invoke(registerLifecycle),
 )
+
+type bindGoalDrivenDeps struct {
+	fx.In
+
+	Server  *Server
+	GoalSvc *goaldriven.Service `optional:"true"`
+}
+
+func bindGoalDrivenService(deps bindGoalDrivenDeps) {
+	if deps.GoalSvc == nil {
+		return
+	}
+	deps.GoalSvc.SetLogger(deps.Server.logger)
+	deps.GoalSvc.SetAgent(deps.Server.agent)
+	deps.GoalSvc.SetKVStore(deps.Server.kvStore)
+	deps.Server.goalSvc = deps.GoalSvc
+}
 
 func registerLifecycle(lc fx.Lifecycle, s *Server, cfg *config.Config, log *logger.Logger) {
 	if !cfg.WebUI.Enabled {
