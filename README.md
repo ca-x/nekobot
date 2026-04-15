@@ -23,6 +23,8 @@ start from CLI, then complete provider, channel, agent, memory, and tool configu
 
 ✅ **Tool sessions** - browser-accessible long-running tools with access control and process management
 
+✅ **Pluggable runtime transport** - tool sessions can stay on tmux by default or opt into zellij for controlled rollout and web-oriented terminal workflows
+
 ✅ **Runtime prompts** - Web-managed prompt templates with global / channel / session bindings and render-time context resolution
 
 ✅ **Docker and service deployment** - containerized runtime plus native gateway service mode
@@ -83,6 +85,32 @@ requires an explicit migration/restart workflow. A minimal file looks like this:
 
 Most runtime settings, including providers / agents / tools / channels, should be
 edited in WebUI and are persisted in the runtime database `nekobot.db`.
+
+Tool Sessions now support a runtime transport selection:
+
+- **Default:** `tmux`
+- **Optional:** `zellij`
+
+Operators can:
+
+- keep the shipped default (`tmux`)
+- choose `zellij` per Tool Session in WebUI
+- or set an instance-level default with `webui.tool_session_runtime_transport`
+
+Example:
+
+```json
+{
+  "webui": {
+    "enabled": true,
+    "port": 0,
+    "tool_session_runtime_transport": "zellij"
+  }
+}
+```
+
+`zellij` is currently an opt-in path intended for staged validation. Existing installs
+should continue to use `tmux` unless you explicitly switch.
 
 Or use environment variables:
 

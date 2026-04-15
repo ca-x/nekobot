@@ -259,6 +259,53 @@ nekobot skills list --builtin
 
 ### 运行时配置（推荐在 WebUI 中编辑）
 
+## WebUI Tool Session Runtime Transport
+
+WebUI 现在支持为 Tool Session 选择终端 / 会话后端。
+
+### 配置项
+
+```json
+{
+  "webui": {
+    "tool_session_runtime_transport": "tmux"
+  }
+}
+```
+
+可选值：
+
+- `tmux` — 默认、当前最稳妥的 shipped backend
+- `zellij` — 可选 backend，适合受控验证和更偏 web 的会话工作流
+
+### 优先级
+
+Tool Session transport 的选择顺序为：
+
+1. **当前会话显式选择**（WebUI Tool Session 弹窗里的 Runtime transport）
+2. **已保存 session metadata**（恢复 / kill / restart 时沿用）
+3. **`webui.tool_session_runtime_transport` 配置值**
+4. **内置默认值 `tmux`**
+
+### 建议
+
+- 生产默认继续使用 `tmux`
+- 仅在需要验证 zellij 行为时，按会话或按实例显式启用 `zellij`
+- 在切换实例级默认值之前，先验证：
+  - 新建 Tool Session
+  - 刷新 / 重连
+  - process status / restore
+  - kill / terminate
+
+### 当前状态
+
+截至当前版本：
+
+- `tmux` 是默认 transport
+- `zellij` 已可通过 WebUI/API 显式选择
+- `zellij` 也可通过 `webui.tool_session_runtime_transport` 设为实例默认
+- 仍建议先做受控 rollout，再考虑更广泛启用
+
 ```json
 {
   "agents": {
