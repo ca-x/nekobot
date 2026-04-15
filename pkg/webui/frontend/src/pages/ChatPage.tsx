@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2, AlertCircle, ArrowRight, RotateCcw, Eye, EyeOff, ShieldCheck, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -24,6 +24,7 @@ import { usePrompts, usePromptSessionBindings, useReplacePromptSessionBindings }
 import { useProviders } from '@/hooks/useProviders';
 import { useSessionDetail, useSessionDetailWithOptions, useUpdateSessionRuntime } from '@/hooks/useSessions';
 import { useAccountBindings, useChannelAccounts, useRuntimeAgents } from '@/hooks/useTopology';
+import { useThreadDetail } from '@/hooks/useThreads';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { MessageBubble } from '@/components/chat/MessageBubble';
@@ -153,6 +154,7 @@ function contextBudgetTone(status: 'ok' | 'warning' | 'critical') {
 }
 
 export default function ChatPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [initHandoff, setInitHandoff] = useState<string[] | null>(() => {
     const raw = sessionStorage.getItem('nekobot_init_handoff');
     if (!raw) {
@@ -305,7 +307,9 @@ export default function ChatPage() {
   const activeRuntimeID = selectedRuntimeID.trim();
   const activeSessionBindingID = activeRuntimeID ? `route:${activeRuntimeID}:webui-chat` : 'webui-chat';
   const baseChatSessionID = 'webui-chat';
+  const threadQueryID = searchParams.get('thread');
   const { data: baseSessionDetail } = useSessionDetail(baseChatSessionID);
+  const { data: selectedThreadDetail } = useThreadDetail(threadQueryID);
   const { data: activeSessionDetail } = useSessionDetailWithOptions(activeSessionBindingID, {
     refetchInterval: activeRuntimeID && daemonEventStreamStatus !== 'connected' ? 1500 : undefined,
     enabled: !!activeRuntimeID,
@@ -407,6 +411,18 @@ export default function ChatPage() {
     }
     setSelectedRuntimeID('');
   }, [chatRuntimes, selectedRuntimeID]);
+
+  useEffect(() => {
+    const queryRuntimeID = selectedThreadDetail?.runtime_id?.trim() || '';
+    if (!threadQueryID || !queryRuntimeID) {
+      return;
+    }
+    if (!chatRuntimes.some((runtime) => runtime.id === queryRuntimeID)) {
+      return;
+    }
+    setSelectedRuntimeID(queryRuntimeID);
+    setSearchParams({}, { replace: true });
+  }, [threadQueryID, selectedThreadDetail?.runtime_id, chatRuntimes, setSearchParams]);
 
   useEffect(() => {
     const handedOffRuntimeID = threadHandoff?.runtime_id?.trim() || '';
@@ -725,9 +741,9 @@ export default function ChatPage() {
                       ? t('chatRuntimeControlsRoute')
                       : t('chatNoFallback')}
                 </span>
-                {activeSessionDetail?.topic || baseSessionDetail?.topic ? (
+                {selectedThreadDetail?.topic || activeSessionDetail?.topic || baseSessionDetail?.topic ? (
                   <span className="max-w-full break-all rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
-                    {t('sessionThreadTopicLabel')}: {activeSessionDetail?.topic || baseSessionDetail?.topic}
+                    {t('sessionThreadTopicLabel')}: {selectedThreadDetail?.topic || activeSessionDetail?.topic || baseSessionDetail?.topic}
                   </span>
                 ) : null}
               </div>

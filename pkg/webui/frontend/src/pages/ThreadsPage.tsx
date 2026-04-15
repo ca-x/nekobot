@@ -60,13 +60,7 @@ export default function ThreadsPage() {
 
   const handleOpenInChat = () => {
     if (!detail) return;
-    sessionStorage.setItem(
-      'nekobot_chat_thread_handoff',
-      JSON.stringify({
-        runtime_id: detail.runtime_id || '',
-      }),
-    );
-    navigate('/chat');
+    navigate(`/chat?thread=${encodeURIComponent(detail.id)}`);
   };
 
   return (

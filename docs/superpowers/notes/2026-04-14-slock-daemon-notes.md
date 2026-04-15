@@ -43,3 +43,5 @@
 - Fresh verification evidence: daemon chat event SSE plumbing passed backend tests and the Chat frontend build after wiring EventSource-based updates for daemon-backed sessions.
 - Fresh verification evidence: SSE event-stream groundwork remains green after re-running threads/webui backend tests and a fresh frontend production build on the current main-based branch.
 - Fresh verification evidence: daemon-backed chat now builds cleanly with SSE-first event wiring while keeping session-detail polling only as a fallback path.
+
+- Fresh verification evidence: Threads page now deep-links to Chat with `?thread=` so Chat restores the selected thread runtime/topic from thread detail and clears the one-shot query after a passing frontend production build.
