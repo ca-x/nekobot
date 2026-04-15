@@ -1732,7 +1732,7 @@ func (s *Server) handleTerminateToolSession(c *echo.Context) error {
 	if s.processMgr != nil {
 		_ = s.processMgr.Kill(id)
 	}
-	s.tryKillRuntimeSession(id)
+	s.tryKillRuntimeSession(c.Request().Context(), id)
 	if err := s.toolSess.TerminateSession(c.Request().Context(), id, body.Reason); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
@@ -1825,17 +1825,18 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	}
 
 	var body struct {
-		Tool           string                 `json:"tool"`
-		Title          string                 `json:"title"`
-		Command        string                 `json:"command"`
-		CommandArgs    string                 `json:"command_args"`
-		Workdir        string                 `json:"workdir"`
-		Metadata       map[string]interface{} `json:"metadata"`
-		AccessMode     string                 `json:"access_mode"`
-		AccessPassword string                 `json:"access_password"`
-		ProxyMode      string                 `json:"proxy_mode"`
-		ProxyURL       string                 `json:"proxy_url"`
-		PublicBaseURL  string                 `json:"public_base_url"`
+		Tool             string                 `json:"tool"`
+		Title            string                 `json:"title"`
+		Command          string                 `json:"command"`
+		CommandArgs      string                 `json:"command_args"`
+		RuntimeTransport string                 `json:"runtime_transport"`
+		Workdir          string                 `json:"workdir"`
+		Metadata         map[string]interface{} `json:"metadata"`
+		AccessMode       string                 `json:"access_mode"`
+		AccessPassword   string                 `json:"access_password"`
+		ProxyMode        string                 `json:"proxy_mode"`
+		ProxyURL         string                 `json:"proxy_url"`
+		PublicBaseURL    string                 `json:"public_base_url"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -1861,6 +1862,7 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	metadata = withToolProxyMetadata(metadata, proxyMode, proxyURL)
 	metadata["user_command"] = command
 	metadata["user_args"] = strings.TrimSpace(body.CommandArgs)
+	transport := runtimeTransportFromName(body.RuntimeTransport)
 
 	sess, err := s.toolSess.CreateSession(c.Request().Context(), toolsessions.CreateSessionInput{
 		Owner:    s.currentUsername(c),
@@ -1877,13 +1879,13 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	}
 
 	launchCommand := applyToolProxyToCommand(command, proxyMode, proxyURL)
-	tmuxSession := ""
-	if wrapped, sessionName := buildToolRuntimeLaunch(launchCommand, sess.ID); sessionName != "" {
+	runtimeSession := ""
+	if wrapped, sessionName := buildToolRuntimeLaunchWithTransport(transport, launchCommand, sess.ID); sessionName != "" {
 		launchCommand = wrapped
-		tmuxSession = sessionName
+		runtimeSession = sessionName
 		metadata = runtimeagents.ApplyLaunchMetadata(metadata, runtimeagents.LaunchInfo{
-			TransportName: runtimeagents.TransportTmux,
-			SessionName:   tmuxSession,
+			TransportName: transport.Name(),
+			SessionName:   runtimeSession,
 			LaunchCommand: launchCommand,
 		})
 	}
@@ -1917,8 +1919,8 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", map[string]interface{}{
 		"command":         command,
 		"launch_cmd":      launchCommand,
-		"runtime_session": tmuxSession,
-		"tmux_session":    tmuxSession,
+		"runtime_session": runtimeSession,
+		"tmux_session":    runtimeSession,
 		"workdir":         workdir,
 		"proxy_mode":      proxyMode,
 	})
@@ -2313,16 +2315,17 @@ func (s *Server) handleUpdateToolSession(c *echo.Context) error {
 	}
 
 	var body struct {
-		Tool           string `json:"tool"`
-		Title          string `json:"title"`
-		Command        string `json:"command"`
-		CommandArgs    string `json:"command_args"`
-		Workdir        string `json:"workdir"`
-		AccessMode     string `json:"access_mode"`
-		AccessPassword string `json:"access_password"`
-		ProxyMode      string `json:"proxy_mode"`
-		ProxyURL       string `json:"proxy_url"`
-		PublicBaseURL  string `json:"public_base_url"`
+		Tool             string `json:"tool"`
+		Title            string `json:"title"`
+		Command          string `json:"command"`
+		CommandArgs      string `json:"command_args"`
+		RuntimeTransport string `json:"runtime_transport"`
+		Workdir          string `json:"workdir"`
+		AccessMode       string `json:"access_mode"`
+		AccessPassword   string `json:"access_password"`
+		ProxyMode        string `json:"proxy_mode"`
+		ProxyURL         string `json:"proxy_url"`
+		PublicBaseURL    string `json:"public_base_url"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -2426,16 +2429,17 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	}
 
 	var body struct {
-		Tool           string `json:"tool"`
-		Title          string `json:"title"`
-		Command        string `json:"command"`
-		CommandArgs    string `json:"command_args"`
-		Workdir        string `json:"workdir"`
-		AccessMode     string `json:"access_mode"`
-		AccessPassword string `json:"access_password"`
-		ProxyMode      string `json:"proxy_mode"`
-		ProxyURL       string `json:"proxy_url"`
-		PublicBaseURL  string `json:"public_base_url"`
+		Tool             string `json:"tool"`
+		Title            string `json:"title"`
+		Command          string `json:"command"`
+		CommandArgs      string `json:"command_args"`
+		RuntimeTransport string `json:"runtime_transport"`
+		Workdir          string `json:"workdir"`
+		AccessMode       string `json:"access_mode"`
+		AccessPassword   string `json:"access_password"`
+		ProxyMode        string `json:"proxy_mode"`
+		ProxyURL         string `json:"proxy_url"`
+		PublicBaseURL    string `json:"public_base_url"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -2473,15 +2477,16 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	nextMetadata := withToolProxyMetadata(cloneMap(current.Metadata), proxyMode, proxyURL)
 	nextMetadata["user_command"] = command
 	nextMetadata["user_args"] = strings.TrimSpace(body.CommandArgs)
+	transport := resolveSessionRuntimeTransport(nextMetadata, body.RuntimeTransport)
 
 	launchCommand := applyToolProxyToCommand(command, proxyMode, proxyURL)
-	tmuxSession := ""
-	if wrapped, sessionName := buildToolRuntimeLaunch(launchCommand, id); sessionName != "" {
+	runtimeSession := ""
+	if wrapped, sessionName := buildToolRuntimeLaunchWithTransport(transport, launchCommand, id); sessionName != "" {
 		launchCommand = wrapped
-		tmuxSession = sessionName
+		runtimeSession = sessionName
 		nextMetadata = runtimeagents.ApplyLaunchMetadata(nextMetadata, runtimeagents.LaunchInfo{
-			TransportName: runtimeagents.TransportTmux,
-			SessionName:   tmuxSession,
+			TransportName: transport.Name(),
+			SessionName:   runtimeSession,
 			LaunchCommand: launchCommand,
 		})
 	} else {
@@ -2492,7 +2497,7 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	nextMetadata[runtimeagents.MetadataLaunchCommand] = launchCommand
 
 	_ = s.processMgr.Reset(id)
-	s.tryKillRuntimeSession(id)
+	s.tryKillRuntimeSession(c.Request().Context(), id)
 	spec := execenv.StartSpecFromContext(c.Request().Context(), id, launchCommand, workdir, nextMetadata)
 	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
 		_ = s.toolSess.TerminateSession(context.Background(), id, "failed to restart process: "+err.Error())
@@ -2531,8 +2536,8 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", map[string]interface{}{
 		"command":         command,
 		"launch_cmd":      launchCommand,
-		"runtime_session": tmuxSession,
-		"tmux_session":    tmuxSession,
+		"runtime_session": runtimeSession,
+		"tmux_session":    runtimeSession,
 		"workdir":         workdir,
 		"proxy_mode":      proxyMode,
 	})
@@ -2717,7 +2722,7 @@ func (s *Server) handleToolSessionProcessKill(c *echo.Context) error {
 	if err != nil && !isProcessSessionNotFound(err) && !strings.Contains(strings.ToLower(err.Error()), "not running") {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	s.tryKillRuntimeSession(id)
+	s.tryKillRuntimeSession(c.Request().Context(), id)
 	_ = s.toolSess.TerminateSession(c.Request().Context(), id, "killed from webui")
 	return c.JSON(http.StatusOK, map[string]string{"status": "killed"})
 }
@@ -3072,7 +3077,8 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 		return false
 	}
 
-	attachCmd, runtimeSession, ok := buildToolReattachLaunch(id)
+	transport := resolveSessionRuntimeTransport(sess.Metadata, "")
+	attachCmd, runtimeSession, ok := buildToolReattachLaunchWithTransport(transport, id)
 	if !ok {
 		return false
 	}
@@ -3095,7 +3101,7 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 
 	metadata := cloneMap(sess.Metadata)
 	metadata = runtimeagents.ApplyLaunchMetadata(metadata, runtimeagents.LaunchInfo{
-		TransportName: runtimeagents.TransportTmux,
+		TransportName: transport.Name(),
 		SessionName:   runtimeSession,
 		LaunchCommand: attachCmd,
 	})
@@ -3135,6 +3141,22 @@ func buildToolReattachLaunch(sessionID string) (string, string, bool) {
 	return reattachInfo.LaunchCommand, reattachInfo.SessionName, ok
 }
 
+func buildToolRuntimeLaunchWithTransport(transport runtimeagents.RuntimeTransport, command, sessionID string) (string, string) {
+	if transport == nil {
+		transport = runtimeagents.DefaultTransport()
+	}
+	launchInfo := transport.WrapStart(command, sessionID)
+	return launchInfo.LaunchCommand, launchInfo.SessionName
+}
+
+func buildToolReattachLaunchWithTransport(transport runtimeagents.RuntimeTransport, sessionID string) (string, string, bool) {
+	if transport == nil {
+		transport = runtimeagents.DefaultTransport()
+	}
+	reattachInfo, ok := transport.BuildReattach(sessionID)
+	return reattachInfo.LaunchCommand, reattachInfo.SessionName, ok
+}
+
 func metadataString(values map[string]interface{}, key string) string {
 	if len(values) == 0 {
 		return ""
@@ -3143,8 +3165,26 @@ func metadataString(values map[string]interface{}, key string) string {
 	return strings.TrimSpace(value)
 }
 
-func (s *Server) tryKillRuntimeSession(sessionID string) {
-	runtimeagents.DefaultTransport().KillSession(sessionID)
+func runtimeTransportFromName(name string) runtimeagents.RuntimeTransport {
+	return runtimeagents.TransportByName(name)
+}
+
+func resolveSessionRuntimeTransport(metadata map[string]interface{}, requested string) runtimeagents.RuntimeTransport {
+	requested = strings.TrimSpace(requested)
+	if requested != "" {
+		return runtimeTransportFromName(requested)
+	}
+	return runtimeTransportFromName(runtimeagents.MetadataString(metadata, runtimeagents.MetadataRuntimeTransport))
+}
+
+func (s *Server) tryKillRuntimeSession(ctx context.Context, sessionID string) {
+	transport := runtimeagents.DefaultTransport()
+	if s != nil && s.toolSess != nil {
+		if sess, err := s.toolSess.GetSession(ctx, sessionID); err == nil && sess != nil {
+			transport = resolveSessionRuntimeTransport(sess.Metadata, "")
+		}
+	}
+	transport.KillSession(sessionID)
 }
 
 func isProcessSessionNotFound(err error) bool {
@@ -7065,7 +7105,7 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 				if s.processMgr != nil {
 					_ = s.processMgr.Kill(sessionID)
 				}
-				s.tryKillRuntimeSession(sessionID)
+				s.tryKillRuntimeSession(context.Background(), sessionID)
 				_ = s.toolSess.TerminateSession(context.Background(), sessionID, "killed from tool ws")
 			case "resize":
 				if msg.Cols <= 0 || msg.Rows <= 0 {

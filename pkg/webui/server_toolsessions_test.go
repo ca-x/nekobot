@@ -665,6 +665,147 @@ func TestHandleRestartToolSessionPersistsLaunchMetadata(t *testing.T) {
 	}
 }
 
+func TestHandleSpawnToolSessionAcceptsExplicitZellijTransport(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	preparer := &captureWebUITestPreparer{}
+	pm := process.NewManager(log)
+	pm.SetPreparer(preparer)
+	server := &Server{
+		config:     cfg,
+		logger:     log,
+		toolSess:   toolMgr,
+		processMgr: pm,
+	}
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tool-sessions/spawn", strings.NewReader(
+		`{"tool":"codex","command":"sleep 5","runtime_transport":"zellij","workdir":"`+cfg.WorkspacePath()+`"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/spawn")
+	if err := server.handleSpawnToolSession(ctx); err != nil {
+		t.Fatalf("spawn handler failed: %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Session toolsessions.Session `json:"session"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if got, _ := payload.Session.Metadata["runtime_transport"].(string); got != runtimeagents.TransportZellij {
+		t.Fatalf("expected runtime_transport=%q, got %+v", runtimeagents.TransportZellij, payload.Session.Metadata)
+	}
+	if got, _ := payload.Session.Metadata["runtime_session"].(string); strings.TrimSpace(got) == "" {
+		t.Fatalf("expected runtime_session for zellij launch, got %+v", payload.Session.Metadata)
+	}
+	if _, exists := payload.Session.Metadata["tmux_session"]; exists {
+		t.Fatalf("did not expect tmux_session compatibility field for zellij launch, got %+v", payload.Session.Metadata)
+	}
+	if got, _ := payload.Session.Metadata["launch_cmd"].(string); !strings.Contains(got, "zellij") {
+		t.Fatalf("expected zellij launch command, got %q", got)
+	}
+	if !strings.Contains(preparer.last.Command, "zellij") {
+		t.Fatalf("expected execenv command to use zellij, got %q", preparer.last.Command)
+	}
+	if err := pm.Reset(preparer.last.SessionID); err != nil {
+		t.Fatalf("reset spawned process: %v", err)
+	}
+}
+
+func TestHandleRestartToolSessionAcceptsExplicitZellijTransport(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	preparer := &captureWebUITestPreparer{}
+	pm := process.NewManager(log)
+	pm.SetPreparer(preparer)
+	server := &Server{
+		config:     cfg,
+		logger:     log,
+		toolSess:   toolMgr,
+		processMgr: pm,
+	}
+	e := echo.New()
+
+	sess, err := toolMgr.CreateSession(context.Background(), toolsessions.CreateSessionInput{
+		Owner:    "alice",
+		Source:   toolsessions.SourceWebUI,
+		Tool:     "codex",
+		Title:    "Restartable Session",
+		Command:  "sleep 5",
+		Workdir:  cfg.WorkspacePath(),
+		State:    toolsessions.StateRunning,
+		Metadata: map[string]interface{}{"runtime_id": "runtime-webui"},
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tool-sessions/"+sess.ID+"/restart", strings.NewReader(
+		`{"runtime_transport":"zellij","tool":"codex","command":"sleep 5","workdir":"`+cfg.WorkspacePath()+`"}`,
+	))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/:id/restart")
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: sess.ID}})
+	if err := server.handleRestartToolSession(ctx); err != nil {
+		t.Fatalf("restart handler failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Session toolsessions.Session `json:"session"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if got, _ := payload.Session.Metadata["runtime_transport"].(string); got != runtimeagents.TransportZellij {
+		t.Fatalf("expected runtime_transport=%q, got %+v", runtimeagents.TransportZellij, payload.Session.Metadata)
+	}
+	if got, _ := payload.Session.Metadata["runtime_session"].(string); strings.TrimSpace(got) == "" {
+		t.Fatalf("expected runtime_session for zellij restart, got %+v", payload.Session.Metadata)
+	}
+	if _, exists := payload.Session.Metadata["tmux_session"]; exists {
+		t.Fatalf("did not expect tmux_session compatibility field for zellij restart, got %+v", payload.Session.Metadata)
+	}
+	if got, _ := payload.Session.Metadata["launch_cmd"].(string); !strings.Contains(got, "zellij") {
+		t.Fatalf("expected zellij launch command, got %q", got)
+	}
+	if !strings.Contains(preparer.last.Command, "zellij") {
+		t.Fatalf("expected execenv command to use zellij, got %q", preparer.last.Command)
+	}
+	if err := pm.Reset(sess.ID); err != nil {
+		t.Fatalf("reset restarted process: %v", err)
+	}
+}
+
 func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) {
 	if !runtimeagents.DefaultTransport().Available() {
 		t.Skip("tmux not available")
