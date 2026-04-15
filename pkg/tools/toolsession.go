@@ -15,25 +15,25 @@ import (
 
 // ToolSessionTool lets the agent create and manage tool sessions.
 type ToolSessionTool struct {
-	processMgr     *process.Manager
-	toolSessionMgr *toolsessions.Manager
-	cfg            *config.Config
-	processProbe   externalagent.ProcessProbe
-	processStarter externalagent.ProcessStarter
-	sessionUpdater externalagent.SessionUpdater
-	runtimeCommand externalagent.StartRuntimeCommandFunc
+	processMgr       *process.Manager
+	toolSessionMgr   *toolsessions.Manager
+	cfg              *config.Config
+	processProbe     externalagent.ProcessProbe
+	processStarter   externalagent.ProcessStarter
+	sessionUpdater   externalagent.SessionUpdater
+	runtimeTransport externalagent.RuntimeTransport
 }
 
 // NewToolSessionTool creates a new ToolSessionTool.
 func NewToolSessionTool(processMgr *process.Manager, toolSessionMgr *toolsessions.Manager, cfg *config.Config) *ToolSessionTool {
 	return &ToolSessionTool{
-		processMgr:     processMgr,
-		toolSessionMgr: toolSessionMgr,
-		cfg:            cfg,
-		processProbe:   processManagerProbe{manager: processMgr},
-		processStarter: processMgr,
-		sessionUpdater: toolSessionMgr,
-		runtimeCommand: buildRuntimeCommand,
+		processMgr:       processMgr,
+		toolSessionMgr:   toolSessionMgr,
+		cfg:              cfg,
+		processProbe:     processManagerProbe{manager: processMgr},
+		processStarter:   processMgr,
+		sessionUpdater:   toolSessionMgr,
+		runtimeTransport: runtimeagents.DefaultTransport(),
 	}
 }
 
@@ -161,7 +161,7 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 			t.processProbe,
 			t.processStarter,
 			t.sessionUpdater,
-			t.runtimeCommand,
+			t.runtimeTransport,
 			sess,
 		); err != nil {
 			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
@@ -183,17 +183,14 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 
 	launchCommand := command
 	tmuxSession := ""
-	if wrapped, sessionName := buildRuntimeCommand(launchCommand, sess.ID); sessionName != "" {
-		launchCommand = wrapped
-		tmuxSession = sessionName
-		metadata = runtimeagents.ApplyLaunchMetadata(metadata, runtimeagents.LaunchInfo{
-			TransportName: runtimeagents.TransportTmux,
-			SessionName:   tmuxSession,
-			LaunchCommand: launchCommand,
-		})
+	if t.runtimeTransport != nil {
+		launchInfo := t.runtimeTransport.WrapStart(launchCommand, sess.ID)
+		launchCommand = launchInfo.LaunchCommand
+		tmuxSession = launchInfo.SessionName
+		metadata = runtimeagents.ApplyLaunchMetadata(metadata, launchInfo)
 		if err := t.toolSessionMgr.UpdateSessionMetadata(ctx, sess.ID, metadata); err != nil {
-			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist tmux metadata: "+err.Error())
-			return "", fmt.Errorf("failed to persist tmux metadata: %w", err)
+			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist runtime metadata: "+err.Error())
+			return "", fmt.Errorf("failed to persist runtime metadata: %w", err)
 		}
 	}
 

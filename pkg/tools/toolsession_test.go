@@ -286,8 +286,12 @@ func TestToolSessionToolSpawnSupportedExternalAgentAppendsProcessStartedEvent(t 
 	fakeStarter := &fakeProcessStarter{}
 	tool.processProbe = fakeStarter
 	tool.processStarter = fakeStarter
-	tool.runtimeCommand = func(command, sessionID string) (string, string) {
-		return command + " --wrapped", "neko_test"
+	tool.runtimeTransport = stubRuntimeTransport{
+		launchInfo: runtimeagents.LaunchInfo{
+			TransportName: runtimeagents.TransportTmux,
+			SessionName:   "neko_test",
+			LaunchCommand: "codex --wrapped",
+		},
 	}
 
 	if _, err := tool.Execute(context.Background(), map[string]interface{}{
@@ -378,6 +382,28 @@ type fakeProcessStarter struct {
 	calls int
 	last  execenv.StartSpec
 }
+
+type stubRuntimeTransport struct {
+	launchInfo runtimeagents.LaunchInfo
+}
+
+func (s stubRuntimeTransport) Name() string {
+	return s.launchInfo.TransportName
+}
+
+func (s stubRuntimeTransport) Available() bool {
+	return true
+}
+
+func (s stubRuntimeTransport) WrapStart(command, sessionID string) runtimeagents.LaunchInfo {
+	return s.launchInfo
+}
+
+func (s stubRuntimeTransport) BuildReattach(sessionID string) (runtimeagents.ReattachInfo, bool) {
+	return runtimeagents.ReattachInfo{}, false
+}
+
+func (s stubRuntimeTransport) KillSession(sessionID string) {}
 
 func (f *fakeProcessStarter) HasProcess(string) bool {
 	return false

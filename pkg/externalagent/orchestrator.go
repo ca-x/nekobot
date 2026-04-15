@@ -272,7 +272,7 @@ func ExecuteResolveFlow(
 	processProbe ProcessProbe,
 	processMgr ProcessStarter,
 	sessionMgr SessionUpdater,
-	buildRuntimeCommand StartRuntimeCommandFunc,
+	transport RuntimeTransport,
 	spec SessionSpec,
 ) (ResolveFlowResult, error) {
 	if manager == nil {
@@ -302,7 +302,7 @@ func ExecuteResolveFlow(
 			SessionState: orchestrator.currentSessionState(session),
 		}, nil
 	}
-	if err := EnsureProcess(ctx, workspacePath, processProbe, processMgr, sessionMgr, buildRuntimeCommand, session); err != nil {
+	if err := EnsureProcess(ctx, workspacePath, processProbe, processMgr, sessionMgr, transport, session); err != nil {
 		return ResolveFlowResult{}, err
 	}
 	return ResolveFlowResult{

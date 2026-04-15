@@ -24,7 +24,7 @@ type SessionUpdater interface {
 	AppendEvent(ctx context.Context, id, eventType string, payload map[string]interface{}) error
 }
 
-type StartRuntimeCommandFunc func(command, sessionID string) (string, string)
+type RuntimeTransport = runtimeagents.RuntimeTransport
 
 func EnsureProcess(
 	ctx context.Context,
@@ -32,7 +32,7 @@ func EnsureProcess(
 	processProbe ProcessProbe,
 	processMgr ProcessStarter,
 	sessionMgr SessionUpdater,
-	buildRuntimeCommand StartRuntimeCommandFunc,
+	transport RuntimeTransport,
 	sess *toolsessions.Session,
 ) error {
 	if processMgr == nil || sessionMgr == nil || sess == nil {
@@ -56,22 +56,12 @@ func EnsureProcess(
 	}
 
 	metadata := cloneMetadata(sess.Metadata)
-	launchCommand := command
-	tmuxSession := ""
-	if buildRuntimeCommand != nil {
-		if wrapped, sessionName := buildRuntimeCommand(launchCommand, sessionID); sessionName != "" {
-			launchCommand = wrapped
-			tmuxSession = sessionName
-			metadata["runtime_transport"] = "tmux"
-			metadata[runtimeagents.MetadataRuntimeSession] = tmuxSession
-			metadata["tmux_session"] = tmuxSession
-		} else {
-			delete(metadata, "runtime_transport")
-			delete(metadata, runtimeagents.MetadataRuntimeSession)
-			delete(metadata, "tmux_session")
-		}
+	launchInfo := runtimeagents.LaunchInfo{LaunchCommand: command}
+	if transport != nil {
+		launchInfo = transport.WrapStart(command, sessionID)
 	}
-	metadata["launch_cmd"] = launchCommand
+	launchCommand := launchInfo.LaunchCommand
+	metadata = runtimeagents.ApplyLaunchMetadata(metadata, launchInfo)
 
 	if err := sessionMgr.UpdateSessionMetadata(ctx, sessionID, metadata); err != nil {
 		return fmt.Errorf("persist external agent metadata: %w", err)
@@ -84,10 +74,11 @@ func EnsureProcess(
 		return fmt.Errorf("update external agent launch session: %w", err)
 	}
 	_ = sessionMgr.AppendEvent(context.Background(), sessionID, "process_started", map[string]interface{}{
-		"command":      command,
-		"launch_cmd":   launchCommand,
-		"tmux_session": tmuxSession,
-		"workdir":      workdir,
+		"command":         command,
+		"launch_cmd":      launchCommand,
+		"runtime_session": launchInfo.SessionName,
+		"tmux_session":    launchInfo.SessionName,
+		"workdir":         workdir,
 	})
 	return nil
 }

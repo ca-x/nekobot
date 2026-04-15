@@ -1959,7 +1959,7 @@ func (s *Server) handleResolveExternalAgentSession(c *echo.Context) error {
 		probe,
 		starter,
 		s.toolSess,
-		buildToolRuntimeCommand,
+		runtimeagents.DefaultTransport(),
 		externalagent.SessionSpec{
 			Owner:     s.currentUsername(c),
 			AgentKind: body.AgentKind,
@@ -8021,7 +8021,7 @@ func (s *Server) ensureExternalAgentProcess(ctx context.Context, sess *toolsessi
 		probe,
 		starter,
 		s.toolSess,
-		buildToolRuntimeCommand,
+		runtimeagents.DefaultTransport(),
 		sess,
 	)
 }
