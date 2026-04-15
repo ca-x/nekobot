@@ -52,6 +52,17 @@ function formatUpdatedAt(value?: string): string {
   return parsed.toLocaleString();
 }
 
+function getRuntimeTransport(session: ToolSession): string {
+  const direct = (session.runtime_transport || '').trim();
+  if (direct) return direct;
+  const metadata = session.metadata;
+  if (metadata && typeof metadata === 'object') {
+    const nested = String((metadata as Record<string, unknown>).runtime_transport || '').trim();
+    if (nested) return nested;
+  }
+  return 'tmux';
+}
+
 function SessionStatusBadge({ session }: { session: ToolSession | null }) {
   if (!session) return null;
   const running = (session.state || '').toLowerCase() === 'running';
@@ -300,6 +311,8 @@ export default function ToolSessionsPage() {
                               <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
                                 <span className="shrink-0">{item.tool || '-'}</span>
                                 <span className="shrink-0">·</span>
+                                <span className="shrink-0 uppercase">{getRuntimeTransport(item)}</span>
+                                <span className="shrink-0">·</span>
                                 <span className="min-w-0 break-all font-mono" title={item.command || '-'}>{item.command || '-'}</span>
                               </div>
                             </div>
@@ -453,6 +466,7 @@ export default function ToolSessionsPage() {
                           </div>
                           <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                             <div className="break-all font-mono" title={session.command || '-'}>{session.command || '-'}</div>
+                            <div className="uppercase">{getRuntimeTransport(session)}</div>
                             <div className="break-all" title={session.workdir || '-'}>{session.workdir || '-'}</div>
                           </div>
                         </div>

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -921,6 +922,119 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 	}
 	if got, _ := updated.Metadata["tmux_session"].(string); got != tmuxName {
 		t.Fatalf("expected persisted tmux_session %q, got %q", tmuxName, got)
+	}
+}
+
+func TestHandleToolSessionProcessStatusRestoresZellijLaunchMetadata(t *testing.T) {
+	if !runtimeagents.TransportByName(runtimeagents.TransportZellij).Available() {
+		t.Skip("zellij not available")
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+
+	pm := process.NewManager(log)
+	server := &Server{
+		config:     cfg,
+		logger:     log,
+		toolSess:   toolMgr,
+		processMgr: pm,
+	}
+	e := echo.New()
+
+	sess, err := toolMgr.CreateSession(context.Background(), toolsessions.CreateSessionInput{
+		Owner:   "alice",
+		Source:  toolsessions.SourceWebUI,
+		Tool:    "codex",
+		Title:   "Restorable Zellij Session",
+		Command: "sleep 30",
+		Workdir: cfg.WorkspacePath(),
+		State:   toolsessions.StateDetached,
+		Metadata: map[string]interface{}{
+			"runtime_transport": runtimeagents.TransportZellij,
+			"runtime_session":   runtimeagents.TmuxSessionName("restore-zellij"),
+			"launch_cmd":        "zellij attach " + runtimeagents.TmuxSessionName("restore-zellij"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	zellijName := runtimeagents.TmuxSessionName(sess.ID)
+	if output, err := exec.Command("zellij", "attach", "-b", "-c", zellijName).CombinedOutput(); err != nil {
+		t.Fatalf("create zellij session: %v (%s)", err, strings.TrimSpace(string(output)))
+	}
+	if output, err := exec.Command("zellij", "--session", zellijName, "run", "--cwd", cfg.WorkspacePath(), "--", "/bin/sh", "-lc", "sleep 30").CombinedOutput(); err != nil {
+		t.Fatalf("seed zellij pane: %v (%s)", err, strings.TrimSpace(string(output)))
+	}
+
+	t.Cleanup(func() {
+		_ = pm.Reset(sess.ID)
+		_ = exec.Command("zellij", "kill-session", zellijName).Run()
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/tool-sessions/"+sess.ID+"/process/status", nil)
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/:id/process/status")
+	ctx.SetPathValues(echo.PathValues{{Name: "id", Value: sess.ID}})
+	if err := server.handleToolSessionProcessStatus(ctx); err != nil {
+		t.Fatalf("process status handler failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		ID               string `json:"id"`
+		Running          bool   `json:"running"`
+		RuntimeTransport string `json:"runtime_transport"`
+		RuntimeSession   string `json:"runtime_session"`
+		TmuxSession      string `json:"tmux_session"`
+		LaunchCmd        string `json:"launch_cmd"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if payload.ID != sess.ID {
+		t.Fatalf("expected session id %q, got %q", sess.ID, payload.ID)
+	}
+	if !payload.Running {
+		t.Fatalf("expected restored process to be running, got %+v", payload)
+	}
+	if payload.RuntimeTransport != runtimeagents.TransportZellij {
+		t.Fatalf("expected runtime transport %q, got %+v", runtimeagents.TransportZellij, payload)
+	}
+	if payload.RuntimeSession != zellijName {
+		t.Fatalf("expected runtime session %q, got %+v", zellijName, payload)
+	}
+	if payload.TmuxSession != "" {
+		t.Fatalf("did not expect tmux compatibility field for zellij restore, got %+v", payload)
+	}
+	if want := "zellij attach " + strconv.Quote(zellijName); payload.LaunchCmd != want {
+		t.Fatalf("expected restored launch cmd %q, got %+v", want, payload)
+	}
+
+	updated, err := toolMgr.GetSession(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatalf("get restored session: %v", err)
+	}
+	if got, _ := updated.Metadata["runtime_transport"].(string); got != runtimeagents.TransportZellij {
+		t.Fatalf("expected persisted runtime_transport %q, got %q", runtimeagents.TransportZellij, got)
+	}
+	if got, _ := updated.Metadata["runtime_session"].(string); got != zellijName {
+		t.Fatalf("expected persisted runtime_session %q, got %q", zellijName, got)
+	}
+	if _, exists := updated.Metadata["tmux_session"]; exists {
+		t.Fatalf("did not expect persisted tmux_session for zellij restore, got %+v", updated.Metadata)
 	}
 }
 

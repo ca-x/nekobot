@@ -14,6 +14,7 @@ export interface ToolSession {
   state: string; // "running" | "terminated" | "archived" | ...
   access_mode: string; // "none" | "one_time" | "permanent"
   source?: string; // "agent" | "channel" | ""
+  runtime_transport?: string;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -23,6 +24,7 @@ export interface CreateToolSessionPayload {
   tool: string;
   title?: string;
   command_args?: string;
+  runtime_transport?: string;
   workdir?: string;
   proxy_mode?: string;
   proxy_url?: string;

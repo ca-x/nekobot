@@ -45,11 +45,17 @@ const ACCESS_MODES = [
   { value: 'permanent', label: 'Permanent password' },
 ];
 
+const RUNTIME_TRANSPORTS = [
+  { value: 'tmux', labelKey: 'runtimeTransportTmux' },
+  { value: 'zellij', labelKey: 'runtimeTransportZellij' },
+];
+
 const DRAFT_KEY = 'nekobot_tool_session_draft';
 const TOOL_FIELD_ID = 'tool-session-tool';
 const CUSTOM_TOOL_FIELD_ID = 'tool-session-custom-tool';
 const TITLE_FIELD_ID = 'tool-session-title';
 const COMMAND_ARGS_FIELD_ID = 'tool-session-command-args';
+const RUNTIME_TRANSPORT_FIELD_ID = 'tool-session-runtime-transport';
 const WORKDIR_FIELD_ID = 'tool-session-workdir';
 const PROXY_MODE_FIELD_ID = 'tool-session-proxy-mode';
 const PROXY_URL_FIELD_ID = 'tool-session-proxy-url';
@@ -94,6 +100,7 @@ export default function ToolSessionDialog({
   const [customTool, setCustomTool] = useState('');
   const [title, setTitle] = useState('');
   const [commandArgs, setCommandArgs] = useState('');
+  const [runtimeTransport, setRuntimeTransport] = useState('tmux');
   const [workdir, setWorkdir] = useState('');
   const [proxyMode, setProxyMode] = useState('inherit');
   const [proxyUrl, setProxyUrl] = useState('');
@@ -129,6 +136,15 @@ export default function ToolSessionDialog({
         const cmd = String(editSession.command || '').trim();
         setCommandArgs(inferCommandArgs(toolVal, cmd));
       }
+      setRuntimeTransport(
+        String(
+          editSession.runtime_transport ||
+            (meta as Record<string, unknown>).runtime_transport ||
+            'tmux',
+        )
+          .trim()
+          .toLowerCase() || 'tmux',
+      );
       setWorkdir(String(editSession.workdir || '').trim());
       setProxyMode(
         String((meta as Record<string, unknown>).proxy_mode || 'inherit')
@@ -158,6 +174,9 @@ export default function ToolSessionDialog({
       }
       setTitle('');
       setCommandArgs(String(draft.command_args || '').trim());
+      setRuntimeTransport(
+        String(draft.runtime_transport || 'tmux').trim().toLowerCase() || 'tmux',
+      );
       setWorkdir(String(draft.workdir || '').trim());
       setProxyMode(
         String(draft.proxy_mode || 'inherit').trim().toLowerCase() || 'inherit',
@@ -206,6 +225,7 @@ export default function ToolSessionDialog({
       tool: effectiveTool,
       title: title.trim(),
       command_args: commandArgs.trim(),
+      runtime_transport: runtimeTransport,
       workdir: workdir.trim(),
       proxy_mode: effectiveProxyMode,
       proxy_url: effectiveProxyUrl,
@@ -218,6 +238,7 @@ export default function ToolSessionDialog({
     saveDraft({
       tool: effectiveTool,
       command_args: payload.command_args,
+      runtime_transport: payload.runtime_transport,
       workdir: payload.workdir,
       proxy_mode: payload.proxy_mode,
       proxy_url: payload.proxy_url,
@@ -323,6 +344,23 @@ export default function ToolSessionDialog({
             <p className="text-xs text-muted-foreground">
               {t('launchCommandHelp')}
             </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={RUNTIME_TRANSPORT_FIELD_ID}>{t('runtimeTransport')}</Label>
+            <Select value={runtimeTransport} onValueChange={setRuntimeTransport}>
+              <SelectTrigger id={RUNTIME_TRANSPORT_FIELD_ID}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RUNTIME_TRANSPORTS.map((item) => (
+                  <SelectItem key={item.value} value={item.value}>
+                    {t(item.labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t('runtimeTransportHelp')}</p>
           </div>
 
           {/* Working directory */}
