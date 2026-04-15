@@ -1732,7 +1732,7 @@ func (s *Server) handleTerminateToolSession(c *echo.Context) error {
 	if s.processMgr != nil {
 		_ = s.processMgr.Kill(id)
 	}
-	s.tryKillTmuxSession(id)
+	s.tryKillRuntimeSession(id)
 	if err := s.toolSess.TerminateSession(c.Request().Context(), id, body.Reason); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
@@ -1878,7 +1878,7 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 
 	launchCommand := applyToolProxyToCommand(command, proxyMode, proxyURL)
 	tmuxSession := ""
-	if wrapped, sessionName := buildToolRuntimeCommand(launchCommand, sess.ID); sessionName != "" {
+	if wrapped, sessionName := buildToolRuntimeLaunch(launchCommand, sess.ID); sessionName != "" {
 		launchCommand = wrapped
 		tmuxSession = sessionName
 		metadata = runtimeagents.ApplyLaunchMetadata(metadata, runtimeagents.LaunchInfo{
@@ -1915,11 +1915,12 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
 
 	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", map[string]interface{}{
-		"command":      command,
-		"launch_cmd":   launchCommand,
-		"tmux_session": tmuxSession,
-		"workdir":      workdir,
-		"proxy_mode":   proxyMode,
+		"command":         command,
+		"launch_cmd":      launchCommand,
+		"runtime_session": tmuxSession,
+		"tmux_session":    tmuxSession,
+		"workdir":         workdir,
+		"proxy_mode":      proxyMode,
 	})
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"session":         sess,
@@ -2475,7 +2476,7 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 
 	launchCommand := applyToolProxyToCommand(command, proxyMode, proxyURL)
 	tmuxSession := ""
-	if wrapped, sessionName := buildToolRuntimeCommand(launchCommand, id); sessionName != "" {
+	if wrapped, sessionName := buildToolRuntimeLaunch(launchCommand, id); sessionName != "" {
 		launchCommand = wrapped
 		tmuxSession = sessionName
 		nextMetadata = runtimeagents.ApplyLaunchMetadata(nextMetadata, runtimeagents.LaunchInfo{
@@ -2491,7 +2492,7 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	nextMetadata[runtimeagents.MetadataLaunchCommand] = launchCommand
 
 	_ = s.processMgr.Reset(id)
-	s.tryKillTmuxSession(id)
+	s.tryKillRuntimeSession(id)
 	spec := execenv.StartSpecFromContext(c.Request().Context(), id, launchCommand, workdir, nextMetadata)
 	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
 		_ = s.toolSess.TerminateSession(context.Background(), id, "failed to restart process: "+err.Error())
@@ -2528,11 +2529,12 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
 
 	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", map[string]interface{}{
-		"command":      command,
-		"launch_cmd":   launchCommand,
-		"tmux_session": tmuxSession,
-		"workdir":      workdir,
-		"proxy_mode":   proxyMode,
+		"command":         command,
+		"launch_cmd":      launchCommand,
+		"runtime_session": tmuxSession,
+		"tmux_session":    tmuxSession,
+		"workdir":         workdir,
+		"proxy_mode":      proxyMode,
 	})
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
@@ -2715,7 +2717,7 @@ func (s *Server) handleToolSessionProcessKill(c *echo.Context) error {
 	if err != nil && !isProcessSessionNotFound(err) && !strings.Contains(strings.ToLower(err.Error()), "not running") {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	s.tryKillTmuxSession(id)
+	s.tryKillRuntimeSession(id)
 	_ = s.toolSess.TerminateSession(c.Request().Context(), id, "killed from webui")
 	return c.JSON(http.StatusOK, map[string]string{"status": "killed"})
 }
@@ -3070,7 +3072,7 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 		return false
 	}
 
-	attachCmd, tmuxName, ok := buildToolReattachCommand(id)
+	attachCmd, runtimeSession, ok := buildToolReattachLaunch(id)
 	if !ok {
 		return false
 	}
@@ -3083,9 +3085,9 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 		if strings.Contains(strings.ToLower(err.Error()), "session already exists") {
 			return true
 		}
-		s.logger.Warn("Failed to restore tool session runtime from tmux",
+		s.logger.Warn("Failed to restore tool session runtime",
 			zap.String("session_id", id),
-			zap.String("tmux_session", tmuxName),
+			zap.String("runtime_session", runtimeSession),
 			zap.Error(err),
 		)
 		return false
@@ -3094,40 +3096,41 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 	metadata := cloneMap(sess.Metadata)
 	metadata = runtimeagents.ApplyLaunchMetadata(metadata, runtimeagents.LaunchInfo{
 		TransportName: runtimeagents.TransportTmux,
-		SessionName:   tmuxName,
+		SessionName:   runtimeSession,
 		LaunchCommand: attachCmd,
 	})
 	if err := s.toolSess.UpdateSessionMetadata(context.Background(), id, metadata); err != nil {
 		s.logger.Warn("Failed to persist restored tool session metadata",
 			zap.String("session_id", id),
-			zap.String("tmux_session", tmuxName),
+			zap.String("runtime_session", runtimeSession),
 			zap.Error(err),
 		)
 	}
 
 	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", map[string]interface{}{
-		"launch_cmd":   attachCmd,
-		"tmux_session": tmuxName,
-		"workdir":      workdir,
+		"launch_cmd":      attachCmd,
+		"runtime_session": runtimeSession,
+		"tmux_session":    runtimeSession,
+		"workdir":         workdir,
 	})
 	_ = s.toolSess.TouchSession(context.Background(), id, toolsessions.StateRunning)
-	s.logger.Info("Restored tool session runtime from tmux",
+	s.logger.Info("Restored tool session runtime",
 		zap.String("session_id", id),
-		zap.String("tmux_session", tmuxName),
+		zap.String("runtime_session", runtimeSession),
 	)
 	return true
 }
 
-func tmuxAvailable() bool {
+func runtimeTransportAvailable() bool {
 	return runtimeagents.DefaultTransport().Available()
 }
 
-func buildToolRuntimeCommand(command, sessionID string) (string, string) {
+func buildToolRuntimeLaunch(command, sessionID string) (string, string) {
 	launchInfo := runtimeagents.DefaultTransport().WrapStart(command, sessionID)
 	return launchInfo.LaunchCommand, launchInfo.SessionName
 }
 
-func buildToolReattachCommand(sessionID string) (string, string, bool) {
+func buildToolReattachLaunch(sessionID string) (string, string, bool) {
 	reattachInfo, ok := runtimeagents.DefaultTransport().BuildReattach(sessionID)
 	return reattachInfo.LaunchCommand, reattachInfo.SessionName, ok
 }
@@ -3140,18 +3143,7 @@ func metadataString(values map[string]interface{}, key string) string {
 	return strings.TrimSpace(value)
 }
 
-func tmuxSessionExists(name string) bool {
-	if !tmuxAvailable() {
-		return false
-	}
-	return exec.Command("tmux", "has-session", "-t", strings.TrimSpace(name)).Run() == nil
-}
-
-func tmuxSessionName(sessionID string) string {
-	return runtimeagents.TmuxSessionName(sessionID)
-}
-
-func (s *Server) tryKillTmuxSession(sessionID string) {
+func (s *Server) tryKillRuntimeSession(sessionID string) {
 	runtimeagents.DefaultTransport().KillSession(sessionID)
 }
 
@@ -7073,7 +7065,7 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 				if s.processMgr != nil {
 					_ = s.processMgr.Kill(sessionID)
 				}
-				s.tryKillTmuxSession(sessionID)
+				s.tryKillRuntimeSession(sessionID)
 				_ = s.toolSess.TerminateSession(context.Background(), sessionID, "killed from tool ws")
 			case "resize":
 				if msg.Cols <= 0 || msg.Rows <= 0 {

@@ -16,6 +16,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/process"
+	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -665,7 +666,7 @@ func TestHandleRestartToolSessionPersistsLaunchMetadata(t *testing.T) {
 }
 
 func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) {
-	if !tmuxAvailable() {
+	if !runtimeagents.DefaultTransport().Available() {
 		t.Skip("tmux not available")
 	}
 
@@ -701,8 +702,8 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 		State:   toolsessions.StateDetached,
 		Metadata: map[string]interface{}{
 			"runtime_transport": "tmux",
-			"runtime_session":   tmuxSessionName("restore-session"),
-			"tmux_session":      tmuxSessionName("restore-session"),
+			"runtime_session":   runtimeagents.TmuxSessionName("restore-session"),
+			"tmux_session":      runtimeagents.TmuxSessionName("restore-session"),
 			"launch_cmd":        "tmux new-session -A -s stale sh -c 'sleep 30'",
 		},
 	})
@@ -710,7 +711,7 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 		t.Fatalf("create session: %v", err)
 	}
 
-	tmuxName := tmuxSessionName(sess.ID)
+	tmuxName := runtimeagents.TmuxSessionName(sess.ID)
 	cmd := exec.Command("tmux", "new-session", "-d", "-s", tmuxName, "sh", "-lc", "sleep 30")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("create tmux session: %v (%s)", err, strings.TrimSpace(string(output)))
