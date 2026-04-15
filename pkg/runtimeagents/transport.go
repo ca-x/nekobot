@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -143,7 +144,15 @@ func (t zellijTransport) KillSession(sessionID string) {
 	if !t.Available() {
 		return
 	}
-	_ = exec.Command("zellij", "kill-session", TmuxSessionName(sessionID)).Run()
+	name := TmuxSessionName(sessionID)
+	_ = exec.Command("zellij", "kill-session", name).Run()
+	for range 5 {
+		_ = exec.Command("zellij", "delete-session", "--force", name).Run()
+		if exec.Command("zellij", "--session", name, "action", "list-panes").Run() != nil {
+			return
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
 }
 
 func ApplyLaunchMetadata(metadata map[string]interface{}, info LaunchInfo) map[string]interface{} {

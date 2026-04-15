@@ -1,8 +1,10 @@
 package runtimeagents
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestApplyLaunchMetadataKeepsTmuxCompatibilityFields(t *testing.T) {
@@ -71,5 +73,29 @@ func TestZellijWrapStartBuildsSessionBootstrapCommand(t *testing.T) {
 	}
 	if !strings.Contains(launchInfo.LaunchCommand, "zellij --session") {
 		t.Fatalf("expected zellij run command, got %q", launchInfo.LaunchCommand)
+	}
+}
+
+func TestZellijKillSessionDeletesResurrectableSession(t *testing.T) {
+	transport := zellijTransport{}
+	if !transport.Available() {
+		t.Skip("zellij not available")
+	}
+
+	name := TmuxSessionName("kill-zellij-test")
+	_ = exec.Command("zellij", "delete-session", "--force", name).Run()
+
+	if output, err := exec.Command("zellij", "attach", "-b", "-c", name).CombinedOutput(); err != nil {
+		t.Fatalf("create zellij session: %v (%s)", err, strings.TrimSpace(string(output)))
+	}
+	if output, err := exec.Command("zellij", "--session", name, "run", "--cwd", "/tmp", "--", "/bin/sh", "-lc", "true").CombinedOutput(); err != nil {
+		t.Fatalf("seed zellij pane: %v (%s)", err, strings.TrimSpace(string(output)))
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	transport.KillSession("kill-zellij-test")
+
+	if output, err := exec.Command("zellij", "list-sessions").CombinedOutput(); err == nil && strings.Contains(string(output), name) {
+		t.Fatalf("expected zellij session %q to be removed after KillSession", name)
 	}
 }
