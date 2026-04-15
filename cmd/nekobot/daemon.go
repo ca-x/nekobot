@@ -66,10 +66,12 @@ func runDaemon(cmd *cobra.Command, args []string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	if daemonServerURL != "" {
+		daemonURL := "http://" + daemonAddr
 		client := daemonhost.NewAuthedClient(daemonServerURL, daemonToken)
 		go func() {
 			if err := daemonhost.RegisterAndPoll(ctx, client, daemonhost.PollOptions{
 				MachineName: daemonMachineName,
+				DaemonURL:   daemonURL,
 			}); err != nil && ctx.Err() == nil {
 				log.Warn("Daemon remote polling stopped", zap.Error(err))
 			}

@@ -38,6 +38,7 @@ type PollOptions struct {
 	TaskLimit        uint32
 	Executor         TaskExecutor
 	BuildInfo        func(string) (*daemonv1.DaemonInfo, error)
+	DaemonURL        string
 	BuildInventory   func(string) (*daemonv1.RuntimeInventory, error)
 	InventoryHomeDir string
 }
@@ -59,7 +60,7 @@ func RegisterAndPoll(ctx context.Context, client RemoteRegistryClient, opts Poll
 	if buildInventory == nil {
 		buildInventory = BuildInventory
 	}
-	info, inventory, err := buildDaemonSnapshot(opts.MachineName, opts.InventoryHomeDir, buildInfo, buildInventory)
+	info, inventory, err := buildDaemonSnapshot(opts.MachineName, opts.InventoryHomeDir, opts.DaemonURL, buildInfo, buildInventory)
 	if err != nil {
 		return err
 	}
@@ -90,7 +91,7 @@ func RegisterAndPoll(ctx context.Context, client RemoteRegistryClient, opts Poll
 }
 
 func pollOnce(ctx context.Context, client RemoteRegistryClient, opts PollOptions, buildInfo func(string) (*daemonv1.DaemonInfo, error), buildInventory func(string) (*daemonv1.RuntimeInventory, error)) error {
-	info, inventory, err := buildDaemonSnapshot(opts.MachineName, opts.InventoryHomeDir, buildInfo, buildInventory)
+	info, inventory, err := buildDaemonSnapshot(opts.MachineName, opts.InventoryHomeDir, opts.DaemonURL, buildInfo, buildInventory)
 	if err != nil {
 		return err
 	}
@@ -117,10 +118,13 @@ func pollOnce(ctx context.Context, client RemoteRegistryClient, opts PollOptions
 	return nil
 }
 
-func buildDaemonSnapshot(machineName, inventoryHomeDir string, buildInfo func(string) (*daemonv1.DaemonInfo, error), buildInventory func(string) (*daemonv1.RuntimeInventory, error)) (*daemonv1.DaemonInfo, *daemonv1.RuntimeInventory, error) {
+func buildDaemonSnapshot(machineName, inventoryHomeDir, daemonURL string, buildInfo func(string) (*daemonv1.DaemonInfo, error), buildInventory func(string) (*daemonv1.RuntimeInventory, error)) (*daemonv1.DaemonInfo, *daemonv1.RuntimeInventory, error) {
 	info, err := buildInfo(machineName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build daemon info: %w", err)
+	}
+	if strings.TrimSpace(daemonURL) != "" {
+		info.DaemonUrl = strings.TrimSpace(daemonURL)
 	}
 	inventory, err := buildInventory(inventoryHomeDir)
 	if err != nil {

@@ -117,6 +117,28 @@ export interface AgentDefinitionStatus {
   };
 }
 
+export interface DaemonWorkspaceTreeEntry {
+  path: string;
+  name: string;
+  is_dir: boolean;
+  size_bytes: number;
+  modified_time_unix: number;
+}
+
+export interface DaemonWorkspaceTreeData {
+  workspace_id: string;
+  path: string;
+  entries: DaemonWorkspaceTreeEntry[];
+}
+
+export interface DaemonWorkspaceFileData {
+  workspace_id: string;
+  path: string;
+  content: string;
+  truncated: boolean;
+  size_bytes: number;
+}
+
 export interface DaemonMachineStatus {
   info: {
     daemon_id: string;
@@ -128,6 +150,7 @@ export interface DaemonMachineStatus {
     version: string;
     status: string;
     last_seen_unix: number;
+    daemon_url?: string;
   };
   workspace_count: number;
   runtime_count: number;
@@ -400,5 +423,27 @@ export function useCleanupSkillVersions() {
       );
     },
     onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+
+export function useDaemonWorkspaceTree(machineID: string | null, workspaceID: string | null, path: string) {
+  return useQuery<DaemonWorkspaceTreeData>({
+    queryKey: ["daemon-workspace-tree", machineID, workspaceID, path],
+    queryFn: () =>
+      api.post("/api/daemon/explorer/tree", {
+        machine_id: machineID,
+        workspace_id: workspaceID,
+        path,
+      }),
+    enabled: Boolean(machineID && workspaceID),
+    staleTime: 10_000,
+  });
+}
+
+export function useDaemonWorkspaceFile() {
+  return useMutation({
+    mutationFn: (payload: { machine_id: string; workspace_id: string; path: string }) =>
+      api.post<DaemonWorkspaceFileData>("/api/daemon/explorer/file", payload),
   });
 }

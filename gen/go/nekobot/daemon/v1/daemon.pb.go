@@ -324,6 +324,7 @@ type DaemonInfo struct {
 	Version       string                 `protobuf:"bytes,7,opt,name=version,proto3" json:"version,omitempty"`
 	Status        string                 `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
 	LastSeenUnix  int64                  `protobuf:"varint,9,opt,name=last_seen_unix,json=lastSeenUnix,proto3" json:"last_seen_unix,omitempty"`
+	DaemonUrl     string                 `protobuf:"bytes,10,opt,name=daemon_url,json=daemonUrl,proto3" json:"daemon_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -419,6 +420,13 @@ func (x *DaemonInfo) GetLastSeenUnix() int64 {
 		return x.LastSeenUnix
 	}
 	return 0
+}
+
+func (x *DaemonInfo) GetDaemonUrl() string {
+	if x != nil {
+		return x.DaemonUrl
+	}
+	return ""
 }
 
 type RegisterMachineRequest struct {
@@ -985,6 +993,338 @@ func (x *UpdateTaskStatusResponse) GetAccepted() bool {
 	return false
 }
 
+type WorkspaceTreeEntry struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Path             string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Name             string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	IsDir            bool                   `protobuf:"varint,3,opt,name=is_dir,json=isDir,proto3" json:"is_dir,omitempty"`
+	SizeBytes        int64                  `protobuf:"varint,4,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	ModifiedTimeUnix int64                  `protobuf:"varint,5,opt,name=modified_time_unix,json=modifiedTimeUnix,proto3" json:"modified_time_unix,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *WorkspaceTreeEntry) Reset() {
+	*x = WorkspaceTreeEntry{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WorkspaceTreeEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WorkspaceTreeEntry) ProtoMessage() {}
+
+func (x *WorkspaceTreeEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WorkspaceTreeEntry.ProtoReflect.Descriptor instead.
+func (*WorkspaceTreeEntry) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *WorkspaceTreeEntry) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *WorkspaceTreeEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *WorkspaceTreeEntry) GetIsDir() bool {
+	if x != nil {
+		return x.IsDir
+	}
+	return false
+}
+
+func (x *WorkspaceTreeEntry) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *WorkspaceTreeEntry) GetModifiedTimeUnix() int64 {
+	if x != nil {
+		return x.ModifiedTimeUnix
+	}
+	return 0
+}
+
+type ListWorkspaceTreeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Limit         uint32                 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorkspaceTreeRequest) Reset() {
+	*x = ListWorkspaceTreeRequest{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkspaceTreeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkspaceTreeRequest) ProtoMessage() {}
+
+func (x *ListWorkspaceTreeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkspaceTreeRequest.ProtoReflect.Descriptor instead.
+func (*ListWorkspaceTreeRequest) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ListWorkspaceTreeRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ListWorkspaceTreeRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ListWorkspaceTreeRequest) GetLimit() uint32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListWorkspaceTreeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Entries       []*WorkspaceTreeEntry  `protobuf:"bytes,3,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorkspaceTreeResponse) Reset() {
+	*x = ListWorkspaceTreeResponse{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkspaceTreeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkspaceTreeResponse) ProtoMessage() {}
+
+func (x *ListWorkspaceTreeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkspaceTreeResponse.ProtoReflect.Descriptor instead.
+func (*ListWorkspaceTreeResponse) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ListWorkspaceTreeResponse) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ListWorkspaceTreeResponse) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ListWorkspaceTreeResponse) GetEntries() []*WorkspaceTreeEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+type ReadWorkspaceFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	MaxBytes      uint32                 `protobuf:"varint,3,opt,name=max_bytes,json=maxBytes,proto3" json:"max_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadWorkspaceFileRequest) Reset() {
+	*x = ReadWorkspaceFileRequest{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadWorkspaceFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadWorkspaceFileRequest) ProtoMessage() {}
+
+func (x *ReadWorkspaceFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadWorkspaceFileRequest.ProtoReflect.Descriptor instead.
+func (*ReadWorkspaceFileRequest) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ReadWorkspaceFileRequest) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ReadWorkspaceFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ReadWorkspaceFileRequest) GetMaxBytes() uint32 {
+	if x != nil {
+		return x.MaxBytes
+	}
+	return 0
+}
+
+type ReadWorkspaceFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	WorkspaceId   string                 `protobuf:"bytes,1,opt,name=workspace_id,json=workspaceId,proto3" json:"workspace_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Content       string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	Truncated     bool                   `protobuf:"varint,4,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	SizeBytes     int64                  `protobuf:"varint,5,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadWorkspaceFileResponse) Reset() {
+	*x = ReadWorkspaceFileResponse{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadWorkspaceFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadWorkspaceFileResponse) ProtoMessage() {}
+
+func (x *ReadWorkspaceFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadWorkspaceFileResponse.ProtoReflect.Descriptor instead.
+func (*ReadWorkspaceFileResponse) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ReadWorkspaceFileResponse) GetWorkspaceId() string {
+	if x != nil {
+		return x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *ReadWorkspaceFileResponse) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ReadWorkspaceFileResponse) GetContent() string {
+	if x != nil {
+		return x.Content
+	}
+	return ""
+}
+
+func (x *ReadWorkspaceFileResponse) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+func (x *ReadWorkspaceFileResponse) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
 var File_nekobot_daemon_v1_daemon_proto protoreflect.FileDescriptor
 
 const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
@@ -1023,7 +1363,7 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x1c.nekobot.daemon.v1.WorkspaceR\n" +
 	"workspaces\x126\n" +
-	"\bruntimes\x18\x02 \x03(\v2\x1a.nekobot.daemon.v1.RuntimeR\bruntimes\"\x83\x02\n" +
+	"\bruntimes\x18\x02 \x03(\v2\x1a.nekobot.daemon.v1.RuntimeR\bruntimes\"\xa2\x02\n" +
 	"\n" +
 	"DaemonInfo\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12\x1d\n" +
@@ -1035,7 +1375,10 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\x04arch\x18\x06 \x01(\tR\x04arch\x12\x18\n" +
 	"\aversion\x18\a \x01(\tR\aversion\x12\x16\n" +
 	"\x06status\x18\b \x01(\tR\x06status\x12$\n" +
-	"\x0elast_seen_unix\x18\t \x01(\x03R\flastSeenUnix\"\x8e\x01\n" +
+	"\x0elast_seen_unix\x18\t \x01(\x03R\flastSeenUnix\x12\x1d\n" +
+	"\n" +
+	"daemon_url\x18\n" +
+	" \x01(\tR\tdaemonUrl\"\x8e\x01\n" +
 	"\x16RegisterMachineRequest\x121\n" +
 	"\x04info\x18\x01 \x01(\v2\x1d.nekobot.daemon.v1.DaemonInfoR\x04info\x12A\n" +
 	"\tinventory\x18\x02 \x01(\v2#.nekobot.daemon.v1.RuntimeInventoryR\tinventory\"_\n" +
@@ -1079,7 +1422,33 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\x0eblocked_reason\x18\x06 \x01(\tR\rblockedReason\x12%\n" +
 	"\x0eresult_message\x18\a \x01(\tR\rresultMessage\"6\n" +
 	"\x18UpdateTaskStatusResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\bR\bacceptedB+Z)nekobot/gen/go/nekobot/daemon/v1;daemonv1b\x06proto3"
+	"\baccepted\x18\x01 \x01(\bR\baccepted\"\xa0\x01\n" +
+	"\x12WorkspaceTreeEntry\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x15\n" +
+	"\x06is_dir\x18\x03 \x01(\bR\x05isDir\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x04 \x01(\x03R\tsizeBytes\x12,\n" +
+	"\x12modified_time_unix\x18\x05 \x01(\x03R\x10modifiedTimeUnix\"g\n" +
+	"\x18ListWorkspaceTreeRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\rR\x05limit\"\x93\x01\n" +
+	"\x19ListWorkspaceTreeResponse\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12?\n" +
+	"\aentries\x18\x03 \x03(\v2%.nekobot.daemon.v1.WorkspaceTreeEntryR\aentries\"n\n" +
+	"\x18ReadWorkspaceFileRequest\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1b\n" +
+	"\tmax_bytes\x18\x03 \x01(\rR\bmaxBytes\"\xa9\x01\n" +
+	"\x19ReadWorkspaceFileResponse\x12!\n" +
+	"\fworkspace_id\x18\x01 \x01(\tR\vworkspaceId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
+	"\acontent\x18\x03 \x01(\tR\acontent\x12\x1c\n" +
+	"\ttruncated\x18\x04 \x01(\bR\ttruncated\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x05 \x01(\x03R\tsizeBytesB+Z)nekobot/gen/go/nekobot/daemon/v1;daemonv1b\x06proto3"
 
 var (
 	file_nekobot_daemon_v1_daemon_proto_rawDescOnce sync.Once
@@ -1093,7 +1462,7 @@ func file_nekobot_daemon_v1_daemon_proto_rawDescGZIP() []byte {
 	return file_nekobot_daemon_v1_daemon_proto_rawDescData
 }
 
-var file_nekobot_daemon_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_nekobot_daemon_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_nekobot_daemon_v1_daemon_proto_goTypes = []any{
 	(*Workspace)(nil),                  // 0: nekobot.daemon.v1.Workspace
 	(*Runtime)(nil),                    // 1: nekobot.daemon.v1.Runtime
@@ -1108,20 +1477,26 @@ var file_nekobot_daemon_v1_daemon_proto_goTypes = []any{
 	(*FetchAssignedTasksResponse)(nil), // 10: nekobot.daemon.v1.FetchAssignedTasksResponse
 	(*UpdateTaskStatusRequest)(nil),    // 11: nekobot.daemon.v1.UpdateTaskStatusRequest
 	(*UpdateTaskStatusResponse)(nil),   // 12: nekobot.daemon.v1.UpdateTaskStatusResponse
+	(*WorkspaceTreeEntry)(nil),         // 13: nekobot.daemon.v1.WorkspaceTreeEntry
+	(*ListWorkspaceTreeRequest)(nil),   // 14: nekobot.daemon.v1.ListWorkspaceTreeRequest
+	(*ListWorkspaceTreeResponse)(nil),  // 15: nekobot.daemon.v1.ListWorkspaceTreeResponse
+	(*ReadWorkspaceFileRequest)(nil),   // 16: nekobot.daemon.v1.ReadWorkspaceFileRequest
+	(*ReadWorkspaceFileResponse)(nil),  // 17: nekobot.daemon.v1.ReadWorkspaceFileResponse
 }
 var file_nekobot_daemon_v1_daemon_proto_depIdxs = []int32{
-	0, // 0: nekobot.daemon.v1.RuntimeInventory.workspaces:type_name -> nekobot.daemon.v1.Workspace
-	1, // 1: nekobot.daemon.v1.RuntimeInventory.runtimes:type_name -> nekobot.daemon.v1.Runtime
-	3, // 2: nekobot.daemon.v1.RegisterMachineRequest.info:type_name -> nekobot.daemon.v1.DaemonInfo
-	2, // 3: nekobot.daemon.v1.RegisterMachineRequest.inventory:type_name -> nekobot.daemon.v1.RuntimeInventory
-	3, // 4: nekobot.daemon.v1.HeartbeatMachineRequest.info:type_name -> nekobot.daemon.v1.DaemonInfo
-	2, // 5: nekobot.daemon.v1.HeartbeatMachineRequest.inventory:type_name -> nekobot.daemon.v1.RuntimeInventory
-	8, // 6: nekobot.daemon.v1.FetchAssignedTasksResponse.tasks:type_name -> nekobot.daemon.v1.Task
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	0,  // 0: nekobot.daemon.v1.RuntimeInventory.workspaces:type_name -> nekobot.daemon.v1.Workspace
+	1,  // 1: nekobot.daemon.v1.RuntimeInventory.runtimes:type_name -> nekobot.daemon.v1.Runtime
+	3,  // 2: nekobot.daemon.v1.RegisterMachineRequest.info:type_name -> nekobot.daemon.v1.DaemonInfo
+	2,  // 3: nekobot.daemon.v1.RegisterMachineRequest.inventory:type_name -> nekobot.daemon.v1.RuntimeInventory
+	3,  // 4: nekobot.daemon.v1.HeartbeatMachineRequest.info:type_name -> nekobot.daemon.v1.DaemonInfo
+	2,  // 5: nekobot.daemon.v1.HeartbeatMachineRequest.inventory:type_name -> nekobot.daemon.v1.RuntimeInventory
+	8,  // 6: nekobot.daemon.v1.FetchAssignedTasksResponse.tasks:type_name -> nekobot.daemon.v1.Task
+	13, // 7: nekobot.daemon.v1.ListWorkspaceTreeResponse.entries:type_name -> nekobot.daemon.v1.WorkspaceTreeEntry
+	8,  // [8:8] is the sub-list for method output_type
+	8,  // [8:8] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_nekobot_daemon_v1_daemon_proto_init() }
@@ -1135,7 +1510,7 @@ func file_nekobot_daemon_v1_daemon_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nekobot_daemon_v1_daemon_proto_rawDesc), len(file_nekobot_daemon_v1_daemon_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

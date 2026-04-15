@@ -2,6 +2,7 @@ package daemonhost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,10 @@ import (
 const DefaultAddr = "127.0.0.1:7777"
 
 func BuildInfo(machineName string) (*daemonv1.DaemonInfo, error) {
+	return BuildInfoWithURL(machineName, "")
+}
+
+func BuildInfoWithURL(machineName, daemonURL string) (*daemonv1.DaemonInfo, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("resolve hostname: %w", err)
@@ -44,6 +49,7 @@ func BuildInfo(machineName string) (*daemonv1.DaemonInfo, error) {
 		Version:      "v1alpha1",
 		Status:       "online",
 		LastSeenUnix: time.Now().Unix(),
+		DaemonUrl:    strings.TrimSpace(daemonURL),
 	}, nil
 }
 
@@ -106,10 +112,12 @@ func BuildInventory(homeDir string) (*daemonv1.RuntimeInventory, error) {
 }
 
 type Server struct {
-	addr        string
-	machineName string
-	registry    *Registry
-	httpServer  *http.Server
+	addr          string
+	machineName   string
+	inventoryHome string
+	publicURL     string
+	registry      *Registry
+	httpServer    *http.Server
 }
 
 func NewServer(addr, machineName string, kv state.KV) *Server {
@@ -119,6 +127,27 @@ func NewServer(addr, machineName string, kv state.KV) *Server {
 	return &Server{addr: addr, machineName: machineName, registry: NewRegistry(kv)}
 }
 
+func (s *Server) buildInventory() (*daemonv1.RuntimeInventory, error) {
+	return BuildInventory(s.inventoryHome)
+}
+
+func (s *Server) daemonURL() string {
+	if s == nil {
+		return ""
+	}
+	if url := strings.TrimSpace(s.publicURL); url != "" {
+		return url
+	}
+	addr := strings.TrimSpace(s.addr)
+	if addr == "" {
+		addr = DefaultAddr
+	}
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return addr
+	}
+	return "http://" + addr
+}
+
 func (s *Server) Serve(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/info", s.handleInfo)
@@ -126,6 +155,8 @@ func (s *Server) Serve(ctx context.Context) error {
 	mux.HandleFunc("/v1/register", s.handleRegister)
 	mux.HandleFunc("/v1/heartbeat", s.handleHeartbeat)
 	mux.HandleFunc("/v1/registry", s.handleRegistry)
+	mux.HandleFunc("/v1/workspace/tree", s.handleWorkspaceTree)
+	mux.HandleFunc("/v1/workspace/file", s.handleWorkspaceFile)
 	s.httpServer = &http.Server{Addr: s.addr, Handler: mux}
 	go func() {
 		<-ctx.Done()
@@ -150,7 +181,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRuntimes(w http.ResponseWriter, r *http.Request) {
-	inventory, err := BuildInventory("")
+	inventory, err := s.buildInventory()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -234,4 +265,69 @@ func snapshotToMessage(snapshot *Snapshot) *daemonv1.RuntimeInventory {
 		result.Runtimes = append(result.Runtimes, inventory.Runtimes...)
 	}
 	return result
+}
+
+func (s *Server) handleWorkspaceTree(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	inventory, err := s.buildInventory()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var req daemonv1.ListWorkspaceTreeRequest
+	if err := DecodeProtoJSON(r, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resp, err := ListWorkspaceTree(inventory, &req)
+	if err != nil {
+		handleWorkspaceError(w, err)
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
+func (s *Server) handleWorkspaceFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	inventory, err := s.buildInventory()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var req daemonv1.ReadWorkspaceFileRequest
+	if err := DecodeProtoJSON(r, &req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resp, err := ReadWorkspaceFile(inventory, &req)
+	if err != nil {
+		handleWorkspaceError(w, err)
+		return
+	}
+	writeProtoJSON(w, resp)
+}
+
+func handleWorkspaceError(w http.ResponseWriter, err error) {
+	if err == nil {
+		return
+	}
+	switch {
+	case errors.Is(err, errWorkspaceNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case os.IsNotExist(err):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case strings.Contains(err.Error(), "workspace_id is required"),
+		strings.Contains(err.Error(), "path escapes workspace root"),
+		strings.Contains(err.Error(), "path is not a directory"),
+		strings.Contains(err.Error(), "path is a directory"):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

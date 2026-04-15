@@ -121,6 +121,7 @@ func decodeSnapshot(raw map[string]interface{}) *Snapshot {
 					Version:      getString(item, "version"),
 					Status:       getString(item, "status"),
 					LastSeenUnix: getInt64(item, "last_seen_unix"),
+					DaemonUrl:    getString(item, "daemon_url"),
 				}
 			}
 		}
@@ -244,6 +245,7 @@ func encodeSnapshot(snapshot *Snapshot) map[string]interface{} {
 			"version":        item.Version,
 			"status":         item.Status,
 			"last_seen_unix": item.LastSeenUnix,
+			"daemon_url":     item.DaemonUrl,
 		}
 	}
 	inventories := result["inventories"].(map[string]interface{})

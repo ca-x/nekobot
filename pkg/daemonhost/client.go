@@ -99,6 +99,22 @@ func (c *Client) UpdateTaskStatusRemote(req *daemonv1.UpdateTaskStatusRequest) (
 	return &resp, nil
 }
 
+func (c *Client) ListWorkspaceTree(req *daemonv1.ListWorkspaceTreeRequest) (*daemonv1.ListWorkspaceTreeResponse, error) {
+	var resp daemonv1.ListWorkspaceTreeResponse
+	if err := c.postProto("/v1/workspace/tree", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (c *Client) ReadWorkspaceFile(req *daemonv1.ReadWorkspaceFileRequest) (*daemonv1.ReadWorkspaceFileResponse, error) {
+	var resp daemonv1.ReadWorkspaceFileResponse
+	if err := c.postProto("/v1/workspace/file", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Client) getProto(path string, target proto.Message) error {
 	req, err := http.NewRequest(http.MethodGet, c.baseURL+path, nil)
 	if err != nil {

@@ -1,8 +1,11 @@
+import { useEffect, useMemo, useState } from "react";
 import { t } from "@/lib/i18n";
 import {
   SessionRuntimeState,
   StatusTask,
   useDaemonBootstrap,
+  useDaemonWorkspaceFile,
+  useDaemonWorkspaceTree,
   useReloadService,
   useRestartService,
   useServiceStatus,
@@ -55,6 +58,23 @@ export default function SystemPage() {
   const recentCronJobs = status?.recent_cron_jobs ?? [];
   const runtimeStates = status?.runtime_states ?? [];
   const daemonMachines = status?.daemon_machines ?? [];
+  const daemonMachinesWithURL = daemonMachines.filter((machine) => machine.info.daemon_url);
+  const [selectedDaemonMachine, setSelectedDaemonMachine] = useState<string>("");
+  const [daemonPath, setDaemonPath] = useState<string>("");
+  const [selectedPreviewPath, setSelectedPreviewPath] = useState<string>("");
+  const selectedMachine = useMemo(() => daemonMachinesWithURL.find((machine) => machine.info.machine_id === selectedDaemonMachine) ?? daemonMachinesWithURL[0] ?? null, [daemonMachinesWithURL, selectedDaemonMachine]);
+  useEffect(() => {
+    if (!selectedMachine) {
+      setSelectedDaemonMachine("");
+      return;
+    }
+    if (!selectedDaemonMachine || !daemonMachinesWithURL.some((machine) => machine.info.machine_id === selectedDaemonMachine)) {
+      setSelectedDaemonMachine(selectedMachine.info.machine_id);
+    }
+  }, [daemonMachinesWithURL, selectedDaemonMachine, selectedMachine]);
+  const selectedWorkspaceId = selectedMachine ? `${selectedMachine.info.machine_id}:default` : null;
+  const daemonTree = useDaemonWorkspaceTree(selectedMachine?.info.machine_id ?? null, selectedWorkspaceId, daemonPath);
+  const daemonFile = useDaemonWorkspaceFile();
   const sessionStates = status?.session_runtime_states ?? [];
   const agentDefinition = status?.agent_definition ?? null;
   const agentRoute = agentDefinition?.route ?? null;
@@ -374,6 +394,159 @@ export default function SystemPage() {
                 {t("systemDaemonEmpty")}
               </div>
             )}
+
+
+
+            <div className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-4">
+              <div>
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  {t("systemDaemonExplorerTitle")}
+                </div>
+                <div className="mt-2 text-sm text-muted-foreground">
+                  {t("systemDaemonExplorerDescription")}
+                </div>
+              </div>
+
+              {daemonMachinesWithURL.length === 0 ? (
+                <div className="mt-4 rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                  {t("systemDaemonExplorerNoMachines")}
+                </div>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  <div className="grid gap-3 md:grid-cols-[minmax(16rem,20rem)_1fr]">
+                    <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                        {t("systemDaemonExplorerSelectMachine")}
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {daemonMachinesWithURL.map((machine) => (
+                          <button
+                            key={machine.info.machine_id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedDaemonMachine(machine.info.machine_id);
+                              setDaemonPath("");
+                              setSelectedPreviewPath("");
+                            }}
+                            className={cn(
+                              "w-full rounded-xl border px-3 py-2 text-left text-sm transition",
+                              selectedMachine?.info.machine_id === machine.info.machine_id
+                                ? "border-primary/60 bg-primary/10 text-foreground"
+                                : "border-border/70 bg-background/80 text-muted-foreground hover:border-primary/30 hover:text-foreground",
+                            )}
+                          >
+                            <div className="font-medium text-foreground">
+                              {machine.info.machine_name || machine.info.hostname}
+                            </div>
+                            <div className="mt-1 text-xs break-all">{machine.info.machine_id}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                      <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                            {t("systemDaemonExplorerPath")}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const current = daemonPath.trim();
+                              if (!current) return;
+                              const parts = current.split("/").filter(Boolean);
+                              parts.pop();
+                              setDaemonPath(parts.join("/"));
+                            }}
+                            disabled={!daemonPath.trim()}
+                          >
+                            {t("systemDaemonExplorerBack")}
+                          </Button>
+                        </div>
+                        <div className="mt-2 break-all font-mono text-xs text-muted-foreground">
+                          {daemonPath || "/"}
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          {daemonTree.isLoading ? (
+                            <div className="text-sm text-muted-foreground animate-pulse">{t("systemLoading")}</div>
+                          ) : daemonTree.error ? (
+                            <div className="text-sm text-destructive">{t("systemDaemonExplorerLoadFailed")}</div>
+                          ) : daemonTree.data?.entries?.length ? (
+                            daemonTree.data.entries.map((entry) => (
+                              <button
+                                key={entry.path}
+                                type="button"
+                                onClick={() => {
+                                  if (entry.is_dir) {
+                                    setDaemonPath(entry.path);
+                                    return;
+                                  }
+                                  setSelectedPreviewPath(entry.path);
+                                  if (selectedMachine && selectedWorkspaceId) {
+                                    daemonFile.mutate({
+                                      machine_id: selectedMachine.info.machine_id,
+                                      workspace_id: selectedWorkspaceId,
+                                      path: entry.path,
+                                    });
+                                  }
+                                }}
+                                className={cn(
+                                  "flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm transition",
+                                  selectedPreviewPath === entry.path
+                                    ? "border-primary/60 bg-primary/10 text-foreground"
+                                    : "border-border/70 bg-background/80 text-muted-foreground hover:border-primary/30 hover:text-foreground",
+                                )}
+                              >
+                                <div className="min-w-0">
+                                  <div className="truncate font-medium text-foreground">
+                                    {entry.is_dir ? `📁 ${entry.name}` : `📄 ${entry.name}`}
+                                  </div>
+                                  <div className="mt-1 truncate text-xs">{entry.path}</div>
+                                </div>
+                                {!entry.is_dir ? <span className="ml-3 text-xs">{t("systemDaemonExplorerOpen")}</span> : null}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="text-sm text-muted-foreground">{t("systemDaemonExplorerEmpty")}</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                          {t("systemDaemonExplorerPreview")}
+                        </div>
+                        <div className="mt-2 break-all font-mono text-xs text-muted-foreground">
+                          {selectedPreviewPath || t("systemDaemonExplorerPreviewEmpty")}
+                        </div>
+                        <div className="mt-4 rounded-xl border border-border/70 bg-background/80 p-3">
+                          {daemonFile.isPending ? (
+                            <div className="text-sm text-muted-foreground animate-pulse">{t("systemLoading")}</div>
+                          ) : daemonFile.error ? (
+                            <div className="text-sm text-destructive">{daemonFile.error.message}</div>
+                          ) : daemonFile.data ? (
+                            <div className="space-y-3">
+                              {daemonFile.data.truncated ? (
+                                <div className="text-xs text-amber-600 dark:text-amber-300">
+                                  {t("systemDaemonExplorerTruncated")}
+                                </div>
+                              ) : null}
+                              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-foreground">
+                                {daemonFile.data.content || ""}
+                              </pre>
+                            </div>
+                          ) : (
+                            <div className="text-sm text-muted-foreground">{t("systemDaemonExplorerPreviewEmpty")}</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-4">
               <div className="flex items-start justify-between gap-3">

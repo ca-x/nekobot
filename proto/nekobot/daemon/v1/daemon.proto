@@ -46,6 +46,7 @@ message DaemonInfo {
   string version = 7;
   string status = 8;
   int64 last_seen_unix = 9;
+  string daemon_url = 10;
 }
 
 message RegisterMachineRequest {
@@ -103,4 +104,39 @@ message UpdateTaskStatusRequest {
 
 message UpdateTaskStatusResponse {
   bool accepted = 1;
+}
+
+
+message WorkspaceTreeEntry {
+  string path = 1;
+  string name = 2;
+  bool is_dir = 3;
+  int64 size_bytes = 4;
+  int64 modified_time_unix = 5;
+}
+
+message ListWorkspaceTreeRequest {
+  string workspace_id = 1;
+  string path = 2;
+  uint32 limit = 3;
+}
+
+message ListWorkspaceTreeResponse {
+  string workspace_id = 1;
+  string path = 2;
+  repeated WorkspaceTreeEntry entries = 3;
+}
+
+message ReadWorkspaceFileRequest {
+  string workspace_id = 1;
+  string path = 2;
+  uint32 max_bytes = 3;
+}
+
+message ReadWorkspaceFileResponse {
+  string workspace_id = 1;
+  string path = 2;
+  string content = 3;
+  bool truncated = 4;
+  int64 size_bytes = 5;
 }

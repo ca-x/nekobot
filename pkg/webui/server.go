@@ -495,6 +495,8 @@ func (s *Server) setup() {
 	api.POST("/daemon/heartbeat", s.handleHeartbeatDaemon)
 	api.POST("/daemon/tasks/fetch", s.handleFetchDaemonTasks)
 	api.POST("/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+	api.POST("/daemon/explorer/tree", s.handleDaemonExplorerTree)
+	api.POST("/daemon/explorer/file", s.handleDaemonExplorerFile)
 	api.GET("/tool-sessions/:id/process/status", s.handleToolSessionProcessStatus)
 	api.GET("/tool-sessions/:id/process/output", s.handleToolSessionProcessOutput)
 	api.POST("/tool-sessions/:id/process/input", s.handleToolSessionProcessInput)
@@ -2023,6 +2025,88 @@ func (s *Server) handleGetDaemonRegistry(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{
 		"machines": daemonhost.MachineStatuses(snapshot),
 	})
+}
+
+func (s *Server) daemonClientForMachine(ctx context.Context, machineID string) (*daemonhost.Client, *daemonv1.RuntimeInventory, error) {
+	if s == nil || s.kvStore == nil {
+		return nil, nil, fmt.Errorf("daemon registry unavailable")
+	}
+	snapshot, err := daemonhost.NewRegistry(s.kvStore).Snapshot(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	machineID = strings.TrimSpace(machineID)
+	if machineID == "" {
+		return nil, nil, fmt.Errorf("machine_id is required")
+	}
+	info := snapshot.Machines[machineID]
+	if info == nil {
+		return nil, nil, fmt.Errorf("daemon machine not found")
+	}
+	baseURL := strings.TrimSpace(info.DaemonUrl)
+	if baseURL == "" {
+		return nil, nil, fmt.Errorf("daemon machine has no reachable daemon_url")
+	}
+	inv := snapshot.Inventories[machineID]
+	if inv == nil {
+		inv = &daemonv1.RuntimeInventory{}
+	}
+	return daemonhost.NewClient(baseURL), inv, nil
+}
+
+func (s *Server) handleDaemonExplorerTree(c *echo.Context) error {
+	var body struct {
+		MachineID   string `json:"machine_id"`
+		WorkspaceID string `json:"workspace_id"`
+		Path        string `json:"path"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	client, inv, err := s.daemonClientForMachine(c.Request().Context(), body.MachineID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	workspaceID := strings.TrimSpace(body.WorkspaceID)
+	if workspaceID == "" {
+		for _, ws := range inv.Workspaces {
+			if ws != nil && ws.IsDefault {
+				workspaceID = strings.TrimSpace(ws.WorkspaceId)
+				break
+			}
+		}
+	}
+	resp, err := client.ListWorkspaceTree(&daemonv1.ListWorkspaceTreeRequest{
+		WorkspaceId: workspaceID,
+		Path:        strings.TrimSpace(body.Path),
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleDaemonExplorerFile(c *echo.Context) error {
+	var body struct {
+		MachineID   string `json:"machine_id"`
+		WorkspaceID string `json:"workspace_id"`
+		Path        string `json:"path"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	client, _, err := s.daemonClientForMachine(c.Request().Context(), body.MachineID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	resp, err := client.ReadWorkspaceFile(&daemonv1.ReadWorkspaceFileRequest{
+		WorkspaceId: strings.TrimSpace(body.WorkspaceID),
+		Path:        strings.TrimSpace(body.Path),
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (s *Server) handleGetDaemonBootstrap(c *echo.Context) error {
