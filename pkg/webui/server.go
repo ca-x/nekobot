@@ -495,6 +495,7 @@ func (s *Server) setup() {
 	api.POST("/daemon/heartbeat", s.handleHeartbeatDaemon)
 	api.POST("/daemon/tasks/fetch", s.handleFetchDaemonTasks)
 	api.POST("/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+	api.GET("/daemon/explorer/workspaces", s.handleDaemonExplorerWorkspaces)
 	api.POST("/daemon/explorer/tree", s.handleDaemonExplorerTree)
 	api.POST("/daemon/explorer/file", s.handleDaemonExplorerFile)
 	api.GET("/tool-sessions/:id/process/status", s.handleToolSessionProcessStatus)
@@ -2052,6 +2053,22 @@ func (s *Server) daemonClientForMachine(ctx context.Context, machineID string) (
 		inv = &daemonv1.RuntimeInventory{}
 	}
 	return daemonhost.NewClient(baseURL), inv, nil
+}
+
+func (s *Server) handleDaemonExplorerWorkspaces(c *echo.Context) error {
+	machineID := strings.TrimSpace(c.QueryParam("machine_id"))
+	_, inv, err := s.daemonClientForMachine(c.Request().Context(), machineID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	workspaces := make([]*daemonv1.Workspace, 0, len(inv.Workspaces))
+	for _, ws := range inv.Workspaces {
+		if ws == nil {
+			continue
+		}
+		workspaces = append(workspaces, ws)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"workspaces": workspaces})
 }
 
 func (s *Server) handleDaemonExplorerTree(c *echo.Context) error {

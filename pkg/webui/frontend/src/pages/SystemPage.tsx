@@ -4,6 +4,7 @@ import {
   SessionRuntimeState,
   StatusTask,
   useDaemonBootstrap,
+  useDaemonExplorerWorkspaces,
   useDaemonWorkspaceFile,
   useDaemonWorkspaceTree,
   useReloadService,
@@ -60,6 +61,7 @@ export default function SystemPage() {
   const daemonMachines = status?.daemon_machines ?? [];
   const daemonMachinesWithURL = daemonMachines.filter((machine) => machine.info.daemon_url);
   const [selectedDaemonMachine, setSelectedDaemonMachine] = useState<string>("");
+  const [selectedDaemonWorkspace, setSelectedDaemonWorkspace] = useState<string>("");
   const [daemonPath, setDaemonPath] = useState<string>("");
   const [selectedPreviewPath, setSelectedPreviewPath] = useState<string>("");
   const selectedMachine = useMemo(() => daemonMachinesWithURL.find((machine) => machine.info.machine_id === selectedDaemonMachine) ?? daemonMachinesWithURL[0] ?? null, [daemonMachinesWithURL, selectedDaemonMachine]);
@@ -72,7 +74,25 @@ export default function SystemPage() {
       setSelectedDaemonMachine(selectedMachine.info.machine_id);
     }
   }, [daemonMachinesWithURL, selectedDaemonMachine, selectedMachine]);
-  const selectedWorkspaceId = selectedMachine ? `${selectedMachine.info.machine_id}:default` : null;
+  const daemonWorkspaces = useDaemonExplorerWorkspaces(selectedMachine?.info.machine_id ?? null);
+  const selectedWorkspace = useMemo(() => {
+    const items = daemonWorkspaces.data?.workspaces ?? [];
+    return items.find((workspace) => workspace.workspace_id === selectedDaemonWorkspace)
+      ?? items.find((workspace) => workspace.is_default)
+      ?? items[0]
+      ?? null;
+  }, [daemonWorkspaces.data?.workspaces, selectedDaemonWorkspace]);
+  useEffect(() => {
+    if (!selectedWorkspace) {
+      setSelectedDaemonWorkspace("");
+      return;
+    }
+    const items = daemonWorkspaces.data?.workspaces ?? [];
+    if (!selectedDaemonWorkspace || !items.some((workspace) => workspace.workspace_id === selectedDaemonWorkspace)) {
+      setSelectedDaemonWorkspace(selectedWorkspace.workspace_id);
+    }
+  }, [daemonWorkspaces.data?.workspaces, selectedDaemonWorkspace, selectedWorkspace]);
+  const selectedWorkspaceId = selectedWorkspace?.workspace_id ?? null;
   const daemonTree = useDaemonWorkspaceTree(selectedMachine?.info.machine_id ?? null, selectedWorkspaceId, daemonPath);
   const daemonFile = useDaemonWorkspaceFile();
   const sessionStates = status?.session_runtime_states ?? [];
@@ -425,6 +445,7 @@ export default function SystemPage() {
                             type="button"
                             onClick={() => {
                               setSelectedDaemonMachine(machine.info.machine_id);
+                              setSelectedDaemonWorkspace("");
                               setDaemonPath("");
                               setSelectedPreviewPath("");
                             }}
@@ -446,7 +467,43 @@ export default function SystemPage() {
 
                     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                       <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
-                        <div className="flex items-center justify-between gap-3">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                          {t("systemDaemonExplorerSelectWorkspace")}
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {daemonWorkspaces.isLoading ? (
+                            <div className="text-sm text-muted-foreground animate-pulse">{t("systemLoading")}</div>
+                          ) : daemonWorkspaces.error ? (
+                            <div className="text-sm text-destructive">{daemonWorkspaces.error.message}</div>
+                          ) : daemonWorkspaces.data?.workspaces?.length ? (
+                            daemonWorkspaces.data.workspaces.map((workspace) => (
+                              <button
+                                key={workspace.workspace_id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDaemonWorkspace(workspace.workspace_id);
+                                  setDaemonPath("");
+                                  setSelectedPreviewPath("");
+                                }}
+                                className={cn(
+                                  "w-full rounded-xl border px-3 py-2 text-left text-sm transition",
+                                  selectedWorkspace?.workspace_id === workspace.workspace_id
+                                    ? "border-primary/60 bg-primary/10 text-foreground"
+                                    : "border-border/70 bg-background/80 text-muted-foreground hover:border-primary/30 hover:text-foreground",
+                                )}
+                              >
+                                <div className="font-medium text-foreground">
+                                  {workspace.display_name || workspace.workspace_id}
+                                </div>
+                                <div className="mt-1 text-xs break-all">{workspace.path}</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="text-sm text-muted-foreground">{t("systemDaemonExplorerNoWorkspaces")}</div>
+                          )}
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-between gap-3">
                           <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                             {t("systemDaemonExplorerPath")}
                           </div>

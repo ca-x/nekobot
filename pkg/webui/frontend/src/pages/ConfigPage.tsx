@@ -1720,6 +1720,23 @@ function WebUISectionForm({
             </div>
           </div>
 
+          <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+            <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiToolSessionRuntimeTransport')}</Label>
+            <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiToolSessionRuntimeTransportDesc')}</div>
+            <Select
+              value={readString('tool_session_runtime_transport') || 'tmux'}
+              onValueChange={(value) => onChange('tool_session_runtime_transport', value)}
+            >
+              <SelectTrigger className="h-11 rounded-xl bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="tmux">{t('runtimeTransportTmux')}</SelectItem>
+                <SelectItem value="zellij">{t('runtimeTransportZellij')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <Card className="border-white/70 bg-white/80 shadow-none">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">{t('webuiToolSessionEventsTitle')}</CardTitle>

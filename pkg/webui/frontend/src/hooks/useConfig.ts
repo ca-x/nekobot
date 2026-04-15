@@ -117,6 +117,15 @@ export interface AgentDefinitionStatus {
   };
 }
 
+export interface DaemonWorkspaceInfo {
+  workspace_id: string;
+  machine_id: string;
+  path: string;
+  display_name: string;
+  aliases: string[];
+  is_default: boolean;
+}
+
 export interface DaemonWorkspaceTreeEntry {
   path: string;
   name: string;
@@ -445,5 +454,13 @@ export function useDaemonWorkspaceFile() {
   return useMutation({
     mutationFn: (payload: { machine_id: string; workspace_id: string; path: string }) =>
       api.post<DaemonWorkspaceFileData>("/api/daemon/explorer/file", payload),
+  });
+}
+export function useDaemonExplorerWorkspaces(machineID: string | null) {
+  return useQuery<{ workspaces: DaemonWorkspaceInfo[] }>({
+    queryKey: ["daemon-explorer-workspaces", machineID],
+    queryFn: () => api.get(`/api/daemon/explorer/workspaces?machine_id=${encodeURIComponent(machineID ?? "")}`),
+    enabled: Boolean(machineID),
+    staleTime: 10_000,
   });
 }
