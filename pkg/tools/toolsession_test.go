@@ -12,6 +12,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/process"
+	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
 )
@@ -74,6 +75,9 @@ func TestToolSessionToolSpawnPersistsResumeMetadata(t *testing.T) {
 	if isTmuxAvailable() {
 		if got, _ := sess.Metadata["runtime_transport"].(string); got != "tmux" {
 			t.Fatalf("expected runtime transport tmux in metadata, got %q", got)
+		}
+		if got, _ := sess.Metadata[runtimeagents.MetadataRuntimeSession].(string); strings.TrimSpace(got) == "" {
+			t.Fatal("expected runtime session metadata to be populated")
 		}
 		if got, _ := sess.Metadata["tmux_session"].(string); strings.TrimSpace(got) == "" {
 			t.Fatal("expected tmux session metadata to be populated")

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"nekobot/pkg/execenv"
+	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -62,9 +63,11 @@ func EnsureProcess(
 			launchCommand = wrapped
 			tmuxSession = sessionName
 			metadata["runtime_transport"] = "tmux"
+			metadata[runtimeagents.MetadataRuntimeSession] = tmuxSession
 			metadata["tmux_session"] = tmuxSession
 		} else {
 			delete(metadata, "runtime_transport")
+			delete(metadata, runtimeagents.MetadataRuntimeSession)
 			delete(metadata, "tmux_session")
 		}
 	}

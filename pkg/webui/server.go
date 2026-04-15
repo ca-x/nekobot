@@ -1881,10 +1881,13 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	if wrapped, sessionName := buildToolRuntimeCommand(launchCommand, sess.ID); sessionName != "" {
 		launchCommand = wrapped
 		tmuxSession = sessionName
-		metadata["runtime_transport"] = "tmux"
-		metadata["tmux_session"] = tmuxSession
+		metadata = runtimeagents.ApplyLaunchMetadata(metadata, runtimeagents.LaunchInfo{
+			TransportName: runtimeagents.TransportTmux,
+			SessionName:   tmuxSession,
+			LaunchCommand: launchCommand,
+		})
 	}
-	metadata["launch_cmd"] = launchCommand
+	metadata[runtimeagents.MetadataLaunchCommand] = launchCommand
 	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), sess.ID, metadata); err != nil {
 		_ = s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to persist launch metadata: "+err.Error())
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to persist tool session metadata: " + err.Error()})
@@ -2475,13 +2478,17 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	if wrapped, sessionName := buildToolRuntimeCommand(launchCommand, id); sessionName != "" {
 		launchCommand = wrapped
 		tmuxSession = sessionName
-		nextMetadata["runtime_transport"] = "tmux"
-		nextMetadata["tmux_session"] = tmuxSession
+		nextMetadata = runtimeagents.ApplyLaunchMetadata(nextMetadata, runtimeagents.LaunchInfo{
+			TransportName: runtimeagents.TransportTmux,
+			SessionName:   tmuxSession,
+			LaunchCommand: launchCommand,
+		})
 	} else {
-		delete(nextMetadata, "runtime_transport")
-		delete(nextMetadata, "tmux_session")
+		delete(nextMetadata, runtimeagents.MetadataRuntimeTransport)
+		delete(nextMetadata, runtimeagents.MetadataRuntimeSession)
+		delete(nextMetadata, runtimeagents.MetadataTmuxSession)
 	}
-	nextMetadata["launch_cmd"] = launchCommand
+	nextMetadata[runtimeagents.MetadataLaunchCommand] = launchCommand
 
 	_ = s.processMgr.Reset(id)
 	s.tryKillTmuxSession(id)
@@ -2563,9 +2570,10 @@ func (s *Server) handleToolSessionProcessStatus(c *echo.Context) error {
 				"id":                id,
 				"running":           false,
 				"missing":           true,
-				"runtime_transport": metadataString(sess.Metadata, "runtime_transport"),
-				"tmux_session":      metadataString(sess.Metadata, "tmux_session"),
-				"launch_cmd":        metadataString(sess.Metadata, "launch_cmd"),
+				"runtime_transport": metadataString(sess.Metadata, runtimeagents.MetadataRuntimeTransport),
+				"runtime_session":   metadataString(sess.Metadata, runtimeagents.MetadataRuntimeSession),
+				"tmux_session":      metadataString(sess.Metadata, runtimeagents.MetadataTmuxSession),
+				"launch_cmd":        metadataString(sess.Metadata, runtimeagents.MetadataLaunchCommand),
 			})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -2574,9 +2582,10 @@ func (s *Server) handleToolSessionProcessStatus(c *echo.Context) error {
 		"id":                status.ID,
 		"running":           status.Running,
 		"exit_code":         status.ExitCode,
-		"runtime_transport": metadataString(sess.Metadata, "runtime_transport"),
-		"tmux_session":      metadataString(sess.Metadata, "tmux_session"),
-		"launch_cmd":        metadataString(sess.Metadata, "launch_cmd"),
+		"runtime_transport": metadataString(sess.Metadata, runtimeagents.MetadataRuntimeTransport),
+		"runtime_session":   metadataString(sess.Metadata, runtimeagents.MetadataRuntimeSession),
+		"tmux_session":      metadataString(sess.Metadata, runtimeagents.MetadataTmuxSession),
+		"launch_cmd":        metadataString(sess.Metadata, runtimeagents.MetadataLaunchCommand),
 		"observation":       status.Observation,
 	})
 }
@@ -3083,9 +3092,11 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 	}
 
 	metadata := cloneMap(sess.Metadata)
-	metadata["runtime_transport"] = "tmux"
-	metadata["tmux_session"] = tmuxName
-	metadata["launch_cmd"] = attachCmd
+	metadata = runtimeagents.ApplyLaunchMetadata(metadata, runtimeagents.LaunchInfo{
+		TransportName: runtimeagents.TransportTmux,
+		SessionName:   tmuxName,
+		LaunchCommand: attachCmd,
+	})
 	if err := s.toolSess.UpdateSessionMetadata(context.Background(), id, metadata); err != nil {
 		s.logger.Warn("Failed to persist restored tool session metadata",
 			zap.String("session_id", id),
@@ -3108,73 +3119,17 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 }
 
 func tmuxAvailable() bool {
-	_, err := exec.LookPath("tmux")
-	return err == nil
-}
-
-func toolShellPath() string {
-	candidates := []string{
-		"/bin/sh",
-		"/usr/bin/sh",
-		"/bin/bash",
-		"/usr/bin/bash",
-		"/usr/local/bin/bash",
-		"/bin/zsh",
-		"/usr/bin/zsh",
-		"/usr/local/bin/zsh",
-		"/bin/ash",
-		"/usr/bin/ash",
-		"/system/bin/sh",
-		"/usr/bin/fish",
-		"/bin/fish",
-		"/usr/local/bin/fish",
-	}
-	for _, path := range candidates {
-		if !isExecutableShell(path) {
-			continue
-		}
-		return path
-	}
-	lookupNames := []string{"sh", "bash", "zsh", "ash", "fish"}
-	for _, name := range lookupNames {
-		lookedUp, err := exec.LookPath(name)
-		if err != nil {
-			continue
-		}
-		if isExecutableShell(lookedUp) {
-			return lookedUp
-		}
-	}
-	return "sh"
-}
-
-func isExecutableShell(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
-		return false
-	}
-	return info.Mode()&0o111 != 0
+	return runtimeagents.DefaultTransport().Available()
 }
 
 func buildToolRuntimeCommand(command, sessionID string) (string, string) {
-	if !tmuxAvailable() {
-		return command, ""
-	}
-	name := tmuxSessionName(sessionID)
-	// Run the requested command inside tmux so the terminal session can survive reconnects.
-	wrapped := fmt.Sprintf("tmux new-session -A -s %s %s -c %s", name, strconv.Quote(toolShellPath()), strconv.Quote(command))
-	return wrapped, name
+	launchInfo := runtimeagents.DefaultTransport().WrapStart(command, sessionID)
+	return launchInfo.LaunchCommand, launchInfo.SessionName
 }
 
 func buildToolReattachCommand(sessionID string) (string, string, bool) {
-	if !tmuxAvailable() {
-		return "", "", false
-	}
-	name := tmuxSessionName(sessionID)
-	if !tmuxSessionExists(name) {
-		return "", "", false
-	}
-	return fmt.Sprintf("tmux attach-session -t %s", name), name, true
+	reattachInfo, ok := runtimeagents.DefaultTransport().BuildReattach(sessionID)
+	return reattachInfo.LaunchCommand, reattachInfo.SessionName, ok
 }
 
 func metadataString(values map[string]interface{}, key string) string {
@@ -3193,32 +3148,11 @@ func tmuxSessionExists(name string) bool {
 }
 
 func tmuxSessionName(sessionID string) string {
-	raw := strings.TrimSpace(strings.ToLower(sessionID))
-	if raw == "" {
-		return "nekobot_session"
-	}
-	var b strings.Builder
-	b.WriteString("nekobot_")
-	for _, r := range raw {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		}
-	}
-	name := b.String()
-	if len(name) > 40 {
-		name = name[:40]
-	}
-	if name == "nekobot_" {
-		return "nekobot_session"
-	}
-	return name
+	return runtimeagents.TmuxSessionName(sessionID)
 }
 
 func (s *Server) tryKillTmuxSession(sessionID string) {
-	if !tmuxAvailable() {
-		return
-	}
-	_ = exec.Command("tmux", "kill-session", "-t", tmuxSessionName(sessionID)).Run()
+	runtimeagents.DefaultTransport().KillSession(sessionID)
 }
 
 func isProcessSessionNotFound(err error) bool {

@@ -357,6 +357,7 @@ func TestToolSessionHandlers_SmokeFlow(t *testing.T) {
 		ID               string `json:"id"`
 		Running          bool   `json:"running"`
 		RuntimeTransport string `json:"runtime_transport"`
+		RuntimeSession   string `json:"runtime_session"`
 		TmuxSession      string `json:"tmux_session"`
 		LaunchCmd        string `json:"launch_cmd"`
 		Observation      struct {
@@ -371,8 +372,13 @@ func TestToolSessionHandlers_SmokeFlow(t *testing.T) {
 	if statusPayload.RuntimeTransport != "" && strings.TrimSpace(statusPayload.LaunchCmd) == "" {
 		t.Fatalf("expected launch command metadata for runtime-managed session, got %+v", statusPayload)
 	}
-	if statusPayload.RuntimeTransport == "tmux" && strings.TrimSpace(statusPayload.TmuxSession) == "" {
-		t.Fatalf("expected tmux session metadata in process status, got %+v", statusPayload)
+	if statusPayload.RuntimeTransport == "tmux" {
+		if strings.TrimSpace(statusPayload.RuntimeSession) == "" {
+			t.Fatalf("expected runtime session metadata in process status, got %+v", statusPayload)
+		}
+		if strings.TrimSpace(statusPayload.TmuxSession) == "" {
+			t.Fatalf("expected tmux session metadata in process status, got %+v", statusPayload)
+		}
 	}
 
 	inputReq := httptest.NewRequest(
@@ -560,6 +566,9 @@ func TestHandleSpawnToolSessionPassesMetadataToExecenv(t *testing.T) {
 		t.Fatal("expected spawned tool session to persist launch_cmd metadata")
 	}
 	if got, _ := payload.Session.Metadata["runtime_transport"].(string); got == "tmux" {
+		if got, _ := payload.Session.Metadata["runtime_session"].(string); strings.TrimSpace(got) == "" {
+			t.Fatal("expected runtime_session metadata to be populated")
+		}
 		if got, _ := payload.Session.Metadata["tmux_session"].(string); strings.TrimSpace(got) == "" {
 			t.Fatal("expected tmux_session metadata to be populated")
 		}
@@ -640,6 +649,9 @@ func TestHandleRestartToolSessionPersistsLaunchMetadata(t *testing.T) {
 		t.Fatal("expected restarted tool session to persist launch_cmd metadata")
 	}
 	if got, _ := payload.Session.Metadata["runtime_transport"].(string); got == "tmux" {
+		if got, _ := payload.Session.Metadata["runtime_session"].(string); strings.TrimSpace(got) == "" {
+			t.Fatal("expected restarted runtime_session metadata to be populated")
+		}
 		if got, _ := payload.Session.Metadata["tmux_session"].(string); strings.TrimSpace(got) == "" {
 			t.Fatal("expected restarted tmux_session metadata to be populated")
 		}
@@ -689,6 +701,7 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 		State:   toolsessions.StateDetached,
 		Metadata: map[string]interface{}{
 			"runtime_transport": "tmux",
+			"runtime_session":   tmuxSessionName("restore-session"),
 			"tmux_session":      tmuxSessionName("restore-session"),
 			"launch_cmd":        "tmux new-session -A -s stale sh -c 'sleep 30'",
 		},
@@ -723,6 +736,7 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 		ID               string `json:"id"`
 		Running          bool   `json:"running"`
 		RuntimeTransport string `json:"runtime_transport"`
+		RuntimeSession   string `json:"runtime_session"`
 		TmuxSession      string `json:"tmux_session"`
 		LaunchCmd        string `json:"launch_cmd"`
 		Observation      struct {
@@ -740,6 +754,9 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 	if payload.RuntimeTransport != "tmux" {
 		t.Fatalf("expected runtime transport tmux, got %+v", payload)
 	}
+	if payload.RuntimeSession != tmuxName {
+		t.Fatalf("expected runtime session %q, got %+v", tmuxName, payload)
+	}
 	if payload.TmuxSession != tmuxName {
 		t.Fatalf("expected tmux session %q, got %+v", tmuxName, payload)
 	}
@@ -756,6 +773,9 @@ func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) 
 	}
 	if got, _ := updated.Metadata["launch_cmd"].(string); got != "tmux attach-session -t "+tmuxName {
 		t.Fatalf("expected persisted launch_cmd to be updated, got %q", got)
+	}
+	if got, _ := updated.Metadata["runtime_session"].(string); got != tmuxName {
+		t.Fatalf("expected persisted runtime_session %q, got %q", tmuxName, got)
 	}
 	if got, _ := updated.Metadata["tmux_session"].(string); got != tmuxName {
 		t.Fatalf("expected persisted tmux_session %q, got %q", tmuxName, got)

@@ -3,14 +3,13 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os/exec"
-	"strconv"
 	"strings"
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/process"
+	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/toolsessions"
 )
 
@@ -176,8 +175,8 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 			workdir = sess.Workdir
 		}
 		result := fmt.Sprintf("Tool session created successfully.\nSession ID: %s\nTool: %s\nCommand: %s\nWorkdir: %s", sess.ID, toolName, command, workdir)
-		if got, _ := sess.Metadata["tmux_session"].(string); strings.TrimSpace(got) != "" {
-			result += fmt.Sprintf("\nTmux session: %s", got)
+		if got := runtimeagents.MetadataString(sess.Metadata, runtimeagents.MetadataRuntimeSession); got != "" {
+			result += fmt.Sprintf("\nRuntime session: %s", got)
 		}
 		return result, nil
 	}
@@ -187,9 +186,11 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 	if wrapped, sessionName := buildRuntimeCommand(launchCommand, sess.ID); sessionName != "" {
 		launchCommand = wrapped
 		tmuxSession = sessionName
-		metadata["runtime_transport"] = "tmux"
-		metadata["tmux_session"] = tmuxSession
-		metadata["launch_cmd"] = launchCommand
+		metadata = runtimeagents.ApplyLaunchMetadata(metadata, runtimeagents.LaunchInfo{
+			TransportName: runtimeagents.TransportTmux,
+			SessionName:   tmuxSession,
+			LaunchCommand: launchCommand,
+		})
 		if err := t.toolSessionMgr.UpdateSessionMetadata(ctx, sess.ID, metadata); err != nil {
 			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist tmux metadata: "+err.Error())
 			return "", fmt.Errorf("failed to persist tmux metadata: %w", err)
@@ -204,7 +205,7 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 
 	result := fmt.Sprintf("Tool session created successfully.\nSession ID: %s\nTool: %s\nCommand: %s\nWorkdir: %s", sess.ID, toolName, command, workdir)
 	if tmuxSession != "" {
-		result += fmt.Sprintf("\nTmux session: %s", tmuxSession)
+		result += fmt.Sprintf("\nRuntime session: %s", tmuxSession)
 	}
 	return result, nil
 }
@@ -317,57 +318,16 @@ func (t *ToolSessionTool) resolveCommand(toolName, command string) string {
 
 // buildRuntimeCommand wraps a command in tmux if available.
 func buildRuntimeCommand(command, sessionID string) (string, string) {
-	if !isTmuxAvailable() {
-		return command, ""
-	}
-	name := buildTmuxSessionName(sessionID)
-	shell := findShellPath()
-	wrapped := fmt.Sprintf("tmux new-session -A -s %s %s -c %s", name, strconv.Quote(shell), strconv.Quote(command))
-	return wrapped, name
+	launchInfo := runtimeagents.DefaultTransport().WrapStart(command, sessionID)
+	return launchInfo.LaunchCommand, launchInfo.SessionName
 }
 
 func isTmuxAvailable() bool {
-	_, err := exec.LookPath("tmux")
-	return err == nil
-}
-
-func findShellPath() string {
-	candidates := []string{
-		"/bin/sh",
-		"/usr/bin/sh",
-		"/bin/bash",
-		"/usr/bin/bash",
-	}
-	for _, c := range candidates {
-		if isExecFile(c) {
-			return c
-		}
-	}
-	return "/bin/sh"
-}
-
-func isExecFile(path string) bool {
-	info, err := exec.LookPath(path)
-	return err == nil && info != ""
+	return runtimeagents.DefaultTransport().Available()
 }
 
 func buildTmuxSessionName(sessionID string) string {
-	raw := strings.TrimSpace(strings.ToLower(sessionID))
-	if raw == "" {
-		return "nekobot_session"
-	}
-	var b strings.Builder
-	b.WriteString("neko_")
-	for _, r := range raw {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
-			b.WriteRune(r)
-		}
-	}
-	name := b.String()
-	if len(name) > 50 {
-		name = name[:50]
-	}
-	return name
+	return runtimeagents.TmuxSessionName(sessionID)
 }
 
 type processManagerProbe struct {
