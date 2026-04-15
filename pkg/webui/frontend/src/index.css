@@ -84,6 +84,21 @@
     @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
     --tw-ring-color: hsl(var(--ring));
   }
+
+  .surface-highlight {
+    position: relative;
+  }
+
+  .surface-highlight::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.02) 28%, transparent 55%);
+    opacity: 0.8;
+  }
 }
 
 @layer components {

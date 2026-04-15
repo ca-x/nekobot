@@ -15,6 +15,27 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return;
+          }
+
+          if (id.includes('/@shader-gradient/') || id.includes('/camera-controls/')) {
+            return 'shader-gradient-vendor';
+          }
+
+          if (id.includes('/three/')) {
+            return 'three-vendor';
+          }
+
+          if (id.includes('/@xterm/') || id.includes('/xterm/')) {
+            return 'xterm-vendor';
+          }
+        },
+      },
+    },
   },
   server: {
     host: '127.0.0.1',

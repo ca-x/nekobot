@@ -6,6 +6,7 @@ import { t } from '@/lib/i18n';
 import { toast } from 'sonner';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Button } from '@/components/ui/button';
+import AuthGradientShell from '@/components/layout/AuthGradientShell';
 
 interface InitResponse {
   token: string;
@@ -170,37 +171,60 @@ export default function InitPage() {
 
   if (bootstrapping) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background p-4">
-        <div className="text-sm text-muted-foreground">{t('checkingInit')}</div>
-      </div>
+      <AuthGradientShell variant="init">
+        <div className="flex min-h-screen items-center justify-center p-4">
+          <div className="rounded-2xl border border-white/50 bg-white/70 px-5 py-4 text-sm text-muted-foreground shadow-card backdrop-blur-xl dark:border-white/10 dark:bg-[hsl(var(--card))/0.78]">
+            {t('checkingInit')}
+          </div>
+        </div>
+      </AuthGradientShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <div className="w-full max-w-4xl">
-        <div className="rounded-2xl border border-border bg-card p-8 shadow-card">
-          {/* Logo */}
-          <div className="mb-2 flex items-center justify-center gap-3">
-            <img
-              src="/brand/nekobot-logo.png"
-              alt="Nekobot"
-              className="h-10 w-10 rounded-xl object-cover shadow-sm"
-            />
-            <span className="text-xl font-semibold text-foreground tracking-tight">
-              Nekobot
-            </span>
+    <AuthGradientShell variant="init">
+      <div className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
+        <div className="w-full max-w-6xl rounded-[2rem] border border-white/60 bg-white/76 p-6 shadow-[0_28px_120px_-56px_rgba(15,23,42,0.58)] backdrop-blur-2xl dark:border-white/10 dark:bg-[hsl(var(--card))/0.78] sm:p-8">
+          <div className="mb-8 flex flex-col gap-5 border-b border-border/70 pb-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-background/70 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+                First-time setup
+              </div>
+              <div className="mt-5 flex items-center gap-4">
+                <img
+                  src="/brand/nekobot-logo.png"
+                  alt="Nekobot"
+                  className="h-12 w-12 rounded-2xl object-cover shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+                />
+                <div>
+                  <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                    {t('initTitle')}
+                  </h1>
+                  <p className="mt-1 text-sm text-muted-foreground">{t('firstRunHint')}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 text-left sm:grid-cols-3">
+              {[
+                ['Admin', 'Create the first operator account'],
+                ['Runtime', 'Review generated paths and startup defaults'],
+                ['Access', 'Confirm web UI and webhook bootstrap values'],
+              ].map(([title, desc]) => (
+                <div
+                  key={title}
+                  className="rounded-2xl border border-border/60 bg-background/60 px-4 py-3 backdrop-blur-xl"
+                >
+                  <div className="text-sm font-semibold text-foreground">{title}</div>
+                  <div className="mt-1 text-xs leading-5 text-muted-foreground">{desc}</div>
+                </div>
+              ))}
+            </div>
           </div>
-          <p className="text-center text-sm text-muted-foreground mb-1">
-            {t('initTitle')}
-          </p>
-          <p className="text-center text-xs text-muted-foreground mb-6">
-            {t('firstRunHint')}
-          </p>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid gap-6 lg:grid-cols-2">
-              <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-5">
+              <div className="space-y-4 rounded-[1.5rem] border border-border/70 bg-background/62 p-5 backdrop-blur-xl">
                 <div>
                   <div className="text-sm font-semibold text-foreground">{t('initAdminTitle')}</div>
                   <p className="mt-1 text-xs text-muted-foreground">{t('initAdminDesc')}</p>
@@ -222,7 +246,7 @@ export default function InitPage() {
                     spellCheck={false}
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
+                    className="w-full rounded-2xl border border-border/80 bg-background/85 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
                     placeholder={t('username')}
                   />
                 </div>
@@ -238,7 +262,7 @@ export default function InitPage() {
                   helperText={t('initPasswordHint')}
                 />
 
-                <div className="rounded-xl border border-border/70 bg-muted/40 px-3 py-3 text-xs text-muted-foreground">
+                <div className="rounded-2xl border border-border/70 bg-muted/35 px-4 py-4 text-xs text-muted-foreground">
                   {submitStatus === 'submitting' ? (
                     <div className="flex items-start gap-2">
                       <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
@@ -261,7 +285,7 @@ export default function InitPage() {
                 </div>
               </div>
 
-              <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-5">
+              <div className="space-y-4 rounded-[1.5rem] border border-border/70 bg-background/62 p-5 backdrop-blur-xl">
                 <div>
                   <div className="text-sm font-semibold text-foreground">{t('initBootstrapTitle')}</div>
                   <p className="mt-1 text-xs text-muted-foreground">{t('initBootstrapDesc')}</p>
@@ -272,7 +296,7 @@ export default function InitPage() {
                     <label className="block text-sm font-medium text-foreground mb-1.5">
                       {t('initConfigPath')}
                     </label>
-                    <div className="w-full rounded-xl border border-border bg-muted px-3 py-2 text-sm text-muted-foreground break-all">
+                    <div className="w-full rounded-2xl border border-border bg-muted px-4 py-3 text-sm text-muted-foreground break-all">
                       {configPath}
                     </div>
                   </div>
@@ -281,7 +305,7 @@ export default function InitPage() {
                     <label className="block text-sm font-medium text-foreground mb-1.5">
                       {t('initDBDir')}
                     </label>
-                    <div className="w-full rounded-xl border border-border bg-muted px-3 py-2 text-sm text-muted-foreground break-all">
+                    <div className="w-full rounded-2xl border border-border bg-muted px-4 py-3 text-sm text-muted-foreground break-all">
                       {dbDir}
                     </div>
                   </div>
@@ -290,12 +314,12 @@ export default function InitPage() {
                     <label className="block text-sm font-medium text-foreground mb-1.5">
                       {t('initWorkspace')}
                     </label>
-                    <div className="w-full rounded-xl border border-border bg-muted px-3 py-2 text-sm text-muted-foreground break-all">
+                    <div className="w-full rounded-2xl border border-border bg-muted px-4 py-3 text-sm text-muted-foreground break-all">
                       {workspace}
                     </div>
                   </div>
 
-                  <div className="md:col-span-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-3 text-xs text-muted-foreground">
+                  <div className="md:col-span-2 rounded-2xl border border-border/70 bg-muted/35 px-4 py-4 text-xs text-muted-foreground">
                     <div className="font-medium text-foreground mb-1">{t('initWorkspaceBootstrapTitle')}</div>
                     {workspaceBootstrapped
                       ? t('initWorkspaceBootstrapped')
@@ -312,7 +336,7 @@ export default function InitPage() {
                     ) : null}
                   </div>
 
-                  <div className="md:col-span-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-3 text-xs text-muted-foreground">
+                  <div className="md:col-span-2 rounded-2xl border border-border/70 bg-muted/35 px-4 py-4 text-xs text-muted-foreground">
                     <div className="font-medium text-foreground mb-1">{t('initWebhookPathTitle')}</div>
                     <div>{webhookPath}</div>
                   </div>
@@ -328,7 +352,7 @@ export default function InitPage() {
                       id="logger-level"
                       value={loggerLevel}
                       onChange={(e) => setLoggerLevel(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                      className="w-full rounded-2xl border border-border/80 bg-background/85 px-4 py-3 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                     >
                       {['debug', 'info', 'warn', 'error'].map((level) => (
                         <option key={level} value={level}>
@@ -350,7 +374,7 @@ export default function InitPage() {
                       type="text"
                       value={gatewayHost}
                       onChange={(e) => setGatewayHost(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
+                      className="w-full rounded-2xl border border-border/80 bg-background/85 px-4 py-3 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
                     />
                   </div>
 
@@ -367,7 +391,7 @@ export default function InitPage() {
                       min="1"
                       value={gatewayPort}
                       onChange={(e) => setGatewayPort(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
+                      className="w-full rounded-2xl border border-border/80 bg-background/85 px-4 py-3 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
                     />
                   </div>
 
@@ -400,13 +424,13 @@ export default function InitPage() {
                       type="url"
                       value={publicBaseURL}
                       onChange={(e) => setPublicBaseURL(e.target.value)}
-                      className="w-full rounded-xl border border-border bg-input px-3 py-2 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
+                      className="w-full rounded-2xl border border-border/80 bg-background/85 px-4 py-3 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 transition-shadow"
                       placeholder="https://bot.example.com"
                     />
                   </div>
                 </div>
 
-                <label className="flex items-start gap-3 rounded-xl border border-border/80 bg-card px-3 py-3">
+                <label className="flex items-start gap-3 rounded-2xl border border-border/80 bg-card/80 px-4 py-4 backdrop-blur-xl">
                   <input
                     type="checkbox"
                     checked={webuiEnabled}
@@ -419,11 +443,11 @@ export default function InitPage() {
                   </span>
                 </label>
 
-                <div className="rounded-xl border border-amber-300/80 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900">
+                <div className="rounded-2xl border border-amber-300/80 bg-amber-50/90 px-4 py-3 text-xs leading-5 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
                   {t('initRestartNotice')}
                 </div>
 
-                <div className="rounded-xl border border-border/70 bg-muted/60 px-4 py-3 text-xs leading-5 text-muted-foreground">
+                <div className="rounded-2xl border border-border/70 bg-muted/55 px-4 py-3 text-xs leading-5 text-muted-foreground">
                   {t('initStorageReadonly')}
                 </div>
               </div>
@@ -432,7 +456,7 @@ export default function InitPage() {
             <Button
               type="submit"
               disabled={loading || !username.trim() || !password.trim()}
-              className="w-full"
+              className="h-11 w-full rounded-2xl"
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {loading ? t('initSubmittingButton') : t('initialize')}
@@ -440,6 +464,6 @@ export default function InitPage() {
           </form>
         </div>
       </div>
-    </div>
+    </AuthGradientShell>
   );
 }

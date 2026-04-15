@@ -22,6 +22,7 @@ import {
   Shield,
   ShieldCheck,
   Waypoints,
+  Target,
   Sun,
   Moon,
   LogOut,
@@ -69,6 +70,7 @@ export default function Sidebar() {
     { target: '/cron', label: t('tabCron'), icon: Clock3 },
     { target: '/webhooks', label: t('tabWebhooks'), icon: Webhook },
     { target: '/policy', label: t('tabPolicy'), icon: Shield },
+    { target: '/goal-runs', label: t('tabGoalRuns'), icon: Target },
     { target: '/system', label: t('tabStatus'), icon: Activity },
   ];
 
@@ -93,9 +95,9 @@ export default function Sidebar() {
 
   const langLabel = LANGUAGE_OPTIONS.find((o) => o.value === currentLang)?.label ?? 'EN';
   const shellButtonClass =
-    'flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-card/90 text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
+    'flex h-10 w-10 items-center justify-center rounded-2xl border border-border/70 bg-card/90 text-muted-foreground shadow-sm backdrop-blur-xl transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
   const panelClass =
-    'flex h-full min-h-0 flex-col border-r border-border/70 bg-card/88 text-foreground shadow-[0_24px_60px_-42px_rgba(15,23,42,0.55)] backdrop-blur-xl';
+    'flex h-full min-h-0 flex-col border-r border-border/70 bg-card/82 text-foreground shadow-[0_24px_60px_-42px_rgba(15,23,42,0.55)] backdrop-blur-2xl';
 
   const handleNavigate = () => {
     setMobileSidebarOpen(false);
@@ -127,8 +129,8 @@ export default function Sidebar() {
                     'group flex w-full items-center gap-3 rounded-2xl text-[13px] font-medium transition-colors duration-150',
                     sidebarOpen ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
                     isActive
-                      ? 'bg-accent text-accent-foreground font-semibold shadow-sm ring-1 ring-[hsl(var(--brand-200))/0.7]'
-                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      ? 'bg-[linear-gradient(135deg,hsl(var(--brand-50))/0.9,hsl(var(--accent))/0.92)] text-accent-foreground font-semibold shadow-sm ring-1 ring-[hsl(var(--brand-200))/0.7] dark:bg-[linear-gradient(135deg,hsl(var(--brand-500))/0.18,hsl(var(--accent))/0.88)]'
+                      : 'text-muted-foreground hover:bg-muted/85 hover:text-foreground',
                   )
                 }
               >
@@ -263,6 +265,14 @@ export default function Sidebar() {
             <X className="h-4 w-4" />
           </button>
         </div>
+        <div className="mb-4 rounded-2xl border border-border/60 bg-background/60 px-3 py-3 backdrop-blur-xl">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            Control surface
+          </div>
+          <div className="mt-1 text-xs leading-5 text-muted-foreground">
+            Chat, providers, sessions, policies, and runtime status.
+          </div>
+        </div>
         {renderNav()}
         {renderActions()}
       </aside>
@@ -281,13 +291,18 @@ export default function Sidebar() {
           )}
         >
           {sidebarOpen ? (
-            <div className="flex min-w-0 items-center gap-2.5">
-              <img
-                src="/brand/nekobot-logo.png"
-                alt="Nekobot"
-                className="h-7 w-7 shrink-0 rounded-xl object-cover shadow-sm"
-              />
-              <span className="truncate text-[15px] font-semibold tracking-tight">Nekobot</span>
+            <div className="min-w-0 rounded-2xl border border-border/60 bg-background/60 px-3 py-2 backdrop-blur-xl">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <img
+                  src="/brand/nekobot-logo.png"
+                  alt="Nekobot"
+                  className="h-7 w-7 shrink-0 rounded-xl object-cover shadow-sm"
+                />
+                <div className="min-w-0">
+                  <span className="block truncate text-[15px] font-semibold tracking-tight">Nekobot</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">{t('appSubtitle')}</span>
+                </div>
+              </div>
             </div>
           ) : (
             <img
