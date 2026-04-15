@@ -14,7 +14,8 @@ const (
 	MetadataTmuxSession      = "tmux_session"
 	MetadataLaunchCommand    = "launch_cmd"
 
-	TransportTmux = "tmux"
+	TransportTmux   = "tmux"
+	TransportZellij = "zellij"
 )
 
 type LaunchInfo struct {
@@ -38,9 +39,21 @@ type RuntimeTransport interface {
 }
 
 type tmuxTransport struct{}
+type zellijTransport struct{}
 
 func DefaultTransport() RuntimeTransport {
 	return tmuxTransport{}
+}
+
+func TransportByName(name string) RuntimeTransport {
+	switch strings.TrimSpace(strings.ToLower(name)) {
+	case TransportZellij:
+		return zellijTransport{}
+	case TransportTmux:
+		fallthrough
+	default:
+		return tmuxTransport{}
+	}
 }
 
 func (tmuxTransport) Name() string {
@@ -85,6 +98,52 @@ func (t tmuxTransport) KillSession(sessionID string) {
 		return
 	}
 	_ = exec.Command("tmux", "kill-session", "-t", TmuxSessionName(sessionID)).Run()
+}
+
+func (zellijTransport) Name() string {
+	return TransportZellij
+}
+
+func (zellijTransport) Available() bool {
+	_, err := exec.LookPath("zellij")
+	return err == nil
+}
+
+func (t zellijTransport) WrapStart(command, sessionID string) LaunchInfo {
+	if !t.Available() {
+		return LaunchInfo{LaunchCommand: command}
+	}
+	name := TmuxSessionName(sessionID)
+	shell := toolShellPath()
+	ensureSession := fmt.Sprintf("zellij attach -b -c %s >/dev/null 2>&1", strconv.Quote(name))
+	runCommand := fmt.Sprintf("zellij --session %s run --cwd . -- %s -lc %s", strconv.Quote(name), strconv.Quote(shell), strconv.Quote(command))
+	return LaunchInfo{
+		TransportName: t.Name(),
+		SessionName:   name,
+		LaunchCommand: ensureSession + " && " + runCommand,
+	}
+}
+
+func (t zellijTransport) BuildReattach(sessionID string) (ReattachInfo, bool) {
+	if !t.Available() {
+		return ReattachInfo{}, false
+	}
+	name := TmuxSessionName(sessionID)
+	if exec.Command("zellij", "--session", name, "action", "list-panes").Run() != nil {
+		return ReattachInfo{}, false
+	}
+	return ReattachInfo{
+		TransportName: t.Name(),
+		SessionName:   name,
+		LaunchCommand: fmt.Sprintf("zellij attach %s", strconv.Quote(name)),
+	}, true
+}
+
+func (t zellijTransport) KillSession(sessionID string) {
+	if !t.Available() {
+		return
+	}
+	_ = exec.Command("zellij", "kill-session", TmuxSessionName(sessionID)).Run()
 }
 
 func ApplyLaunchMetadata(metadata map[string]interface{}, info LaunchInfo) map[string]interface{} {
