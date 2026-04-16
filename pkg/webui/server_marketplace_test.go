@@ -865,6 +865,9 @@ Inventory body.
 	if contract, ok := beforeRepair["contract"].(map[string]interface{}); !ok || contract["kind"] != "session" {
 		t.Fatalf("expected workspace contract kind session, got %+v", beforeRepair["contract"])
 	}
+	if summary, ok := beforeRepair["validation_summary"].(map[string]interface{}); !ok || summary["on_turn_end"] == nil {
+		t.Fatalf("expected workspace validation summary, got %+v", beforeRepair["validation_summary"])
+	}
 
 	repairReq := httptest.NewRequest(http.MethodPost, "/api/workspace/repair", nil)
 	repairRec := httptest.NewRecorder()

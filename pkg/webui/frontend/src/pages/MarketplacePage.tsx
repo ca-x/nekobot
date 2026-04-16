@@ -393,6 +393,24 @@ export default function MarketplacePage() {
                     </span>
                   ))}
                 </div>
+                {(workspaceStatus.validation_summary?.on_turn_end ?? []).length > 0 ||
+                (workspaceStatus.validation_summary?.on_completion ?? []).length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {[...(workspaceStatus.validation_summary?.on_turn_end ?? []), ...(workspaceStatus.validation_summary?.on_completion ?? [])].map((item) => (
+                      <div
+                        key={`${item.name}-${item.detail || ""}`}
+                        className={`rounded-xl px-3 py-2 text-xs ${
+                          item.passed
+                            ? 'bg-emerald-500/10 text-emerald-700'
+                            : 'bg-amber-500/12 text-amber-700'
+                        }`}
+                      >
+                        {item.name}: {item.passed ? 'pass' : 'flag'}
+                        {item.detail ? ` · ${item.detail}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

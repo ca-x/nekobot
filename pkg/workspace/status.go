@@ -14,6 +14,7 @@ type Status struct {
 	Exists               bool     `json:"exists"`
 	Bootstrapped         bool     `json:"bootstrapped"`
 	Contract             Contract `json:"contract"`
+	ValidationSummary    ValidationSummary `json:"validation_summary"`
 	BootstrapFiles       []string `json:"bootstrap_files"`
 	MissingBootstrap     []string `json:"missing_bootstrap"`
 	TodayLogPath         string   `json:"today_log_path"`
@@ -41,6 +42,7 @@ func (m *Manager) Inspect() (*Status, error) {
 		if os.IsNotExist(err) {
 			status.MissingBootstrap = append([]string(nil), BootstrapFiles...)
 			sort.Strings(status.MissingBootstrap)
+			status.ValidationSummary = EvaluateContract(status.Contract, status)
 			return status, nil
 		}
 		return nil, fmt.Errorf("stat workspace: %w", err)
@@ -89,6 +91,8 @@ func (m *Manager) Inspect() (*Status, error) {
 	}); err != nil {
 		return nil, fmt.Errorf("walk workspace: %w", err)
 	}
+
+	status.ValidationSummary = EvaluateContract(status.Contract, status)
 
 	return status, nil
 }

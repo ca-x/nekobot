@@ -211,6 +211,11 @@ export interface StatusData {
       on_failure?: string[];
     }>;
   };
+  workspace_validation_summary?: {
+    on_turn_end?: Array<{ name: string; passed: boolean; detail?: string }>;
+    on_source_change?: Array<{ name: string; passed: boolean; detail?: string }>;
+    on_completion?: Array<{ name: string; passed: boolean; detail?: string }>;
+  };
   task_count: number;
   task_state_counts: Record<string, number>;
   recent_tasks: StatusTask[];
