@@ -1394,6 +1394,8 @@
   "goalRunsConfirmMachineLabel": "Daemon 主机",
   "goalRunsConfirmMachinePlaceholder": "选择 daemon 主机",
   "goalRunsConfirmMachineRequired": "确认 daemon 执行前必须先选择一台主机。",
+  "goalRunsConfirmMachineUnavailable": "当前没有可运行 Goal Run 的在线 daemon 主机。请保持服务器范围，或等待 daemon 心跳恢复。",
+  "goalRunsConfirmMachineStale": "当前选中的 daemon 主机已经不再可运行。请重新选择一台在线 daemon 后再确认。",
   "goalRunsConfirmSubmit": "确认成功标准",
   "goalRunsConfirmSuccess": "成功标准已确认",
   "goalRunsConfirmSuccessDaemon": "已按 daemon 范围确认成功标准",

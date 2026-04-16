@@ -1394,6 +1394,8 @@
   "goalRunsConfirmMachineLabel": "Daemon machine",
   "goalRunsConfirmMachinePlaceholder": "Select daemon machine",
   "goalRunsConfirmMachineRequired": "Pick a daemon machine before confirming daemon execution.",
+  "goalRunsConfirmMachineUnavailable": "No runnable daemon machine is currently online. Keep server scope selected or wait for a daemon heartbeat.",
+  "goalRunsConfirmMachineStale": "The selected daemon machine is no longer runnable. Pick another online daemon before confirming.",
   "goalRunsConfirmSubmit": "Confirm criteria",
   "goalRunsConfirmSuccess": "Criteria confirmed",
   "goalRunsConfirmSuccessDaemon": "Criteria confirmed for daemon scope",

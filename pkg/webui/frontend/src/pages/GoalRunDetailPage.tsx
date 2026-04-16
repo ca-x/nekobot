@@ -45,6 +45,12 @@ import {
 import { useStatus } from '@/hooks/useConfig';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import {
+  autofillDaemonMachineID,
+  initialMachineID,
+  initialScopeKind,
+  isRunnableDaemonMachineSelected,
+} from './goalRunScopeSelection';
 
 function formatDateTime(value?: string): string {
   if (!value) return '-';
@@ -321,14 +327,20 @@ function ConfirmCriteriaCard({
     if (!run) {
       return;
     }
-    const initial = (run.selected_scope ?? run.recommended_scope)?.kind ?? 'server';
-    setSelectedScopeKind(initial);
-    if ((run.selected_scope ?? run.recommended_scope)?.kind === 'daemon') {
-      setSelectedMachineID((run.selected_scope ?? run.recommended_scope)?.machine_id ?? '');
-      return;
-    }
-    setSelectedMachineID((current) => current || daemonOptions[0]?.value || '');
+    setSelectedScopeKind(initialScopeKind(run));
+    setSelectedMachineID(initialMachineID(run, daemonOptions));
   }, [run]);
+
+  useEffect(() => {
+    setSelectedMachineID((current) =>
+      autofillDaemonMachineID({
+        currentMachineID: current,
+        selectedScopeKind,
+        run,
+        daemonOptions,
+      }),
+    );
+  }, [daemonOptions, run, selectedScopeKind]);
 
   const selectedScope = useMemo(() => {
     if (!run) {
@@ -342,7 +354,10 @@ function ConfirmCriteriaCard({
   }
 
   const daemonSelectionRequired = selectedScopeKind === 'daemon';
-  const daemonSelectionValid = !daemonSelectionRequired || selectedMachineID.trim().length > 0;
+  const daemonScopeUnavailable = daemonSelectionRequired && daemonOptions.length === 0;
+  const daemonSelectionAvailable = isRunnableDaemonMachineSelected(selectedMachineID, daemonOptions);
+  const daemonSelectionValid = !daemonSelectionRequired || daemonSelectionAvailable;
+  const daemonSelectionStale = daemonSelectionRequired && selectedMachineID.trim().length > 0 && !daemonSelectionAvailable;
 
   const handleConfirm = () => {
     if (!daemonSelectionValid) {
@@ -387,7 +402,7 @@ function ConfirmCriteriaCard({
         {selectedScopeKind === 'daemon' ? (
           <div className="grid gap-2 md:max-w-sm">
             <div className="text-sm font-medium text-foreground">{t('goalRunsConfirmMachineLabel')}</div>
-            <Select value={selectedMachineID} onValueChange={setSelectedMachineID}>
+            <Select value={selectedMachineID} onValueChange={setSelectedMachineID} disabled={daemonScopeUnavailable}>
               <SelectTrigger>
                 <SelectValue placeholder={t('goalRunsConfirmMachinePlaceholder')} />
               </SelectTrigger>
@@ -399,14 +414,18 @@ function ConfirmCriteriaCard({
                 ))}
               </SelectContent>
             </Select>
-            {!daemonSelectionValid ? (
+            {daemonScopeUnavailable ? (
+              <div className="text-xs text-muted-foreground">{t('goalRunsConfirmMachineUnavailable')}</div>
+            ) : daemonSelectionStale ? (
+              <div className="text-xs text-destructive">{t('goalRunsConfirmMachineStale')}</div>
+            ) : !daemonSelectionValid ? (
               <div className="text-xs text-destructive">{t('goalRunsConfirmMachineRequired')}</div>
             ) : null}
           </div>
         ) : null}
 
         <div className="flex flex-wrap gap-3">
-          <Button onClick={handleConfirm} disabled={confirmCriteria.isPending || !daemonSelectionValid}>
+          <Button onClick={handleConfirm} disabled={confirmCriteria.isPending || !daemonSelectionValid || daemonScopeUnavailable}>
             {confirmCriteria.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (

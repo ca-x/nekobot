@@ -1394,6 +1394,8 @@
   "goalRunsConfirmMachineLabel": "Daemon マシン",
   "goalRunsConfirmMachinePlaceholder": "Daemon マシンを選択",
   "goalRunsConfirmMachineRequired": "Daemon 実行を確定する前にマシンを選択してください。",
+  "goalRunsConfirmMachineUnavailable": "現在、Goal Run を実行できるオンライン Daemon マシンはありません。サーバースコープのまま進めるか、Daemon のハートビートを待ってください。",
+  "goalRunsConfirmMachineStale": "選択した Daemon マシンは現在実行できません。確認する前に別のオンライン Daemon を選択してください。",
   "goalRunsConfirmSubmit": "条件を確定",
   "goalRunsConfirmSuccess": "条件を確定しました",
   "goalRunsConfirmSuccessDaemon": "Daemon スコープで条件を確定しました",
