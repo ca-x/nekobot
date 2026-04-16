@@ -410,3 +410,8 @@ func findChrome() string {
 
 	return ""
 }
+
+// FindChromeForTesting exposes Chrome discovery for integration tests.
+func FindChromeForTesting() string {
+	return findChrome()
+}

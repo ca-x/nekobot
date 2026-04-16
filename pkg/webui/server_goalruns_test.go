@@ -24,6 +24,7 @@ import (
 	goaldrivenscope "nekobot/pkg/goaldriven/scope"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/state"
+	"nekobot/pkg/tools"
 )
 
 func TestHandleCreateGoalRunAndGetAndList(t *testing.T) {
@@ -570,6 +571,114 @@ func TestManualOnlyGoalRunHTTPFlowCompletesOnFreshProcess(t *testing.T) {
 	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusCompleted), 15*time.Second)
 }
 
+func TestGoalRunBrowserToolManualFlowE2E(t *testing.T) {
+	browserPath := tools.FindChromeForTesting()
+	if browserPath == "" {
+		t.Skip("browser e2e requires chromium or chrome in PATH")
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustPort(t, reserveGoalRunTCPAddr(t))
+	cfg.WebUI.Port = mustPort(t, reserveGoalRunTCPAddr(t))
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("SaveToFile failed: %v", err)
+	}
+
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	binPath := filepath.Join(t.TempDir(), "nekobot-goalrun-browser-e2e")
+	buildCmd := exec.Command("go", "build", "-o", binPath, "./cmd/nekobot")
+	buildCmd.Dir = repoRoot
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("build binary failed: %v\n%s", err, string(output))
+	}
+
+	cmd := exec.Command(binPath, "--config", configPath, "gateway")
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start gateway process: %v", err)
+	}
+	defer func() {
+		if cmd.Process == nil {
+			return
+		}
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	}()
+
+	waitForHTTPOK(t, "http://127.0.0.1:"+itoa(cfg.WebUI.Port)+"/api/auth/init-status", 15*time.Second)
+	token := initAdminAndGetToken(t, cfg.WebUI.Port)
+
+	tool := tools.NewBrowserTool(logOrFatal(t), true, 30, t.TempDir())
+	if _, err := tool.Execute(t.Context(), map[string]interface{}{
+		"action": "start_session",
+		"mode":   "direct",
+	}); err != nil {
+		t.Fatalf("start browser session: %v", err)
+	}
+	defer func() {
+		_, _ = tool.Execute(context.Background(), map[string]interface{}{"action": "close_session"})
+	}()
+
+	baseURL := "http://127.0.0.1:" + itoa(cfg.WebUI.Port)
+	if _, err := tool.Execute(t.Context(), map[string]interface{}{
+		"action": "navigate",
+		"url":    baseURL + "/goal-runs",
+	}); err != nil {
+		t.Fatalf("navigate goal-runs: %v", err)
+	}
+	if _, err := tool.Execute(t.Context(), map[string]interface{}{
+		"action": "execute_script",
+		"script": fmt.Sprintf(`localStorage.setItem("nekobot_token", %q);`, token),
+	}); err != nil {
+		t.Fatalf("seed auth token: %v", err)
+	}
+	if _, err := tool.Execute(t.Context(), map[string]interface{}{
+		"action": "navigate",
+		"url":    baseURL + "/goal-runs",
+	}); err != nil {
+		t.Fatalf("reload goal-runs after auth: %v", err)
+	}
+
+	steps := []map[string]interface{}{
+		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('New goal run'))?.click(); true;`},
+		{"action": "type", "selector": "#goal-run-name", "text": "Browser tool e2e"},
+		{"action": "type", "selector": "#goal-run-goal", "text": "Verify browser-tool Goal Runs flow"},
+		{"action": "type", "selector": "#goal-run-criteria", "text": "confirm manually"},
+		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Create run'))?.click(); true;`},
+		{"action": "wait", "duration": float64(1200)},
+		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Confirm criteria'))?.click(); true;`},
+		{"action": "wait", "duration": float64(600)},
+		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Start run'))?.click(); true;`},
+		{"action": "wait", "duration": float64(1200)},
+		{"action": "execute_script", "script": `const areas = Array.from(document.querySelectorAll('textarea')); if (areas.length > 0) { areas[areas.length - 1].focus(); } true;`},
+		{"action": "type", "selector": "textarea", "text": "browser tool e2e confirmed"},
+		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Approve criterion'))?.click(); true;`},
+		{"action": "wait", "duration": float64(1200)},
+	}
+	for _, step := range steps {
+		if _, err := tool.Execute(t.Context(), step); err != nil {
+			t.Fatalf("browser step failed (%v): %v", step, err)
+		}
+	}
+
+	textOut, err := tool.Execute(t.Context(), map[string]interface{}{"action": "get_text"})
+	if err != nil {
+		t.Fatalf("get_text failed: %v", err)
+	}
+	if !strings.Contains(textOut, "Completed") {
+		t.Fatalf("expected Completed in browser text, got %s", textOut)
+	}
+	if !strings.Contains(textOut, "Browser tool e2e") {
+		t.Fatalf("expected created goal run name in browser text, got %s", textOut)
+	}
+}
+
 func TestDaemonBackedGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
@@ -722,6 +831,16 @@ func TestDaemonBackedGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 		"note":         "daemon restart recovery e2e confirmed",
 	})
 	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusCompleted), 15*time.Second)
+}
+
+
+func logOrFatal(t *testing.T) *logger.Logger {
+	t.Helper()
+	log, err := logger.New(&logger.Config{Level: logger.LevelInfo, Development: true})
+	if err != nil {
+		t.Fatalf("logger.New failed: %v", err)
+	}
+	return log
 }
 
 func reserveGoalRunTCPAddr(t *testing.T) string {
