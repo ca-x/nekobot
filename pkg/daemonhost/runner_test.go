@@ -10,6 +10,7 @@ import (
 	"time"
 
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type stubRemoteRegistryClient struct {
@@ -43,8 +44,8 @@ func (s *stubRemoteRegistryClient) FetchAssignedTasksRemote(req *daemonv1.FetchA
 }
 
 func (s *stubRemoteRegistryClient) UpdateTaskStatusRemote(req *daemonv1.UpdateTaskStatusRequest) (*daemonv1.UpdateTaskStatusResponse, error) {
-	cloned := *req
-	s.updates = append(s.updates, &cloned)
+	cloned := proto.Clone(req).(*daemonv1.UpdateTaskStatusRequest)
+	s.updates = append(s.updates, cloned)
 	return &daemonv1.UpdateTaskStatusResponse{Accepted: true}, nil
 }
 

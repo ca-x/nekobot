@@ -101,6 +101,6 @@ func TestHandleWorkspaceFileReturnsContent(t *testing.T) {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	if out.Content != "hello daemon" || out.Path != "hello.txt" || out.WorkspaceId != workspaceID {
-		t.Fatalf("unexpected response: %+v", out)
+		t.Fatalf("unexpected response: content=%q path=%q workspace_id=%q", out.Content, out.Path, out.WorkspaceId)
 	}
 }
