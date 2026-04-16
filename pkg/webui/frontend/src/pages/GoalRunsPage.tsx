@@ -39,6 +39,7 @@ import {
 } from '@/hooks/useGoalRuns';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { formatGoalRunScopeSummary } from './goalRunScopeCopy';
 
 const RISK_LEVELS: GoalRunRiskLevel[] = ['conservative', 'balanced', 'aggressive'];
 
@@ -81,15 +82,7 @@ function riskTone(riskLevel: GoalRunRiskLevel): string {
 }
 
 function scopeLabel(run: GoalRun): string {
-  const scope = run.selected_scope ?? run.recommended_scope;
-  if (!scope) return t('goalRunsScopeUnknown');
-  const source = scope.source === 'manual' ? t('goalRunsScopeManual') : t('goalRunsScopeAuto');
-  if (scope.kind === 'daemon') {
-    return scope.machine_id
-      ? t('goalRunsScopeDaemonWithMachine', scope.machine_id, source)
-      : t('goalRunsScopeDaemon', source);
-  }
-  return t('goalRunsScopeServer', source);
+  return formatGoalRunScopeSummary(run, t);
 }
 
 function StatusBadge({ status }: { status: GoalRun['status'] }) {

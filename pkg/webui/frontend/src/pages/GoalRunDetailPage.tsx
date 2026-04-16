@@ -51,6 +51,7 @@ import {
   initialScopeKind,
   isRunnableDaemonMachineSelected,
 } from './goalRunScopeSelection';
+import { formatGoalRunScope, formatGoalRunSelectedScope } from './goalRunScopeCopy';
 
 function formatDateTime(value?: string): string {
   if (!value) return '-';
@@ -102,24 +103,11 @@ function criterionTone(status: GoalCriterion['status']): string {
 }
 
 function describeScope(scope?: GoalRunScope | null): string {
-  if (!scope) return t('goalRunsScopeUnknown');
-  const source = scope.source === 'manual' ? t('goalRunsScopeManual') : t('goalRunsScopeAuto');
-  if (scope.kind === 'daemon') {
-    return scope.machine_id
-      ? t('goalRunsScopeDaemonWithMachine', scope.machine_id, source)
-      : t('goalRunsScopeDaemon', source);
-  }
-  return t('goalRunsScopeServer', source);
+  return formatGoalRunScope(scope, t);
 }
 
 function describeSelectedScope(run: GoalRun): string {
-  if (run.selected_scope) {
-    return describeScope(run.selected_scope);
-  }
-  if (run.recommended_scope) {
-    return t('goalRunsScopePendingSelection');
-  }
-  return t('goalRunsScopeUnknown');
+  return formatGoalRunSelectedScope(run, t);
 }
 
 function buildScopeSelection(
