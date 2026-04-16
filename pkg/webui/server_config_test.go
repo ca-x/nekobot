@@ -1193,8 +1193,8 @@ func TestPersistChatRoutingRejectsUnknownProvider(t *testing.T) {
 func TestPersistChatRoutingAcceptsProviderGroupTargets(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Providers = []config.ProviderProfile{
-		{Name: "primary", ProviderKind: "openai"},
-		{Name: "backup", ProviderKind: "openai"},
+		{Name: "primary", ProviderKind: "openai", APIKey: "primary-key"},
+		{Name: "backup", ProviderKind: "openai", APIKey: "backup-key"},
 	}
 	cfg.Agents.Defaults.ProviderGroups = []config.ProviderGroupConfig{
 		{
@@ -1223,8 +1223,8 @@ func TestPersistChatRoutingAcceptsProviderGroupTargets(t *testing.T) {
 func TestPersistChatRoutingUpdatesRouteFields(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Providers = []config.ProviderProfile{
-		{Name: "primary", ProviderKind: "openai"},
-		{Name: "backup", ProviderKind: "openai"},
+		{Name: "primary", ProviderKind: "openai", APIKey: "primary-key"},
+		{Name: "backup", ProviderKind: "openai", APIKey: "backup-key"},
 	}
 
 	s := &Server{
