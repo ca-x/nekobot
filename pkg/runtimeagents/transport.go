@@ -168,10 +168,30 @@ func ApplyLaunchMetadata(metadata map[string]interface{}, info LaunchInfo) map[s
 	}
 	metadata[MetadataRuntimeTransport] = strings.TrimSpace(info.TransportName)
 	metadata[MetadataRuntimeSession] = strings.TrimSpace(info.SessionName)
+	delete(metadata, MetadataTmuxSession)
 	if strings.TrimSpace(info.TransportName) == TransportTmux {
 		metadata[MetadataTmuxSession] = strings.TrimSpace(info.SessionName)
 	}
 	return metadata
+}
+
+func ApplyRuntimeSessionPayload(payload map[string]interface{}, transportName, sessionName string) map[string]interface{} {
+	if payload == nil {
+		payload = map[string]interface{}{}
+	}
+	sessionName = strings.TrimSpace(sessionName)
+	transportName = strings.TrimSpace(transportName)
+	if sessionName == "" {
+		delete(payload, MetadataRuntimeSession)
+		delete(payload, MetadataTmuxSession)
+		return payload
+	}
+	payload[MetadataRuntimeSession] = sessionName
+	delete(payload, MetadataTmuxSession)
+	if transportName == TransportTmux {
+		payload[MetadataTmuxSession] = sessionName
+	}
+	return payload
 }
 
 func MetadataString(values map[string]interface{}, key string) string {

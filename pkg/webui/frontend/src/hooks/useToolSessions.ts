@@ -60,6 +60,12 @@ export interface ProcessStatus {
   missing?: boolean;
 }
 
+export interface RuntimeTransportInfo {
+  name: string;
+  available: boolean;
+  is_default: boolean;
+}
+
 /* ---------- query keys ---------- */
 
 export const toolSessionKeys = {
@@ -67,6 +73,7 @@ export const toolSessionKeys = {
   list: () => [...toolSessionKeys.all, 'list'] as const,
   detail: (id: string) => [...toolSessionKeys.all, 'detail', id] as const,
   processStatus: (id: string) => [...toolSessionKeys.all, 'process-status', id] as const,
+  runtimeTransports: () => [...toolSessionKeys.all, 'runtime-transports'] as const,
 };
 
 /* ---------- queries ---------- */
@@ -93,6 +100,17 @@ export function useProcessStatus(sessionId: string | null) {
     enabled: !!sessionId,
     staleTime: 3_000,
     refetchInterval: 5_000,
+  });
+}
+
+export function useToolSessionRuntimeTransports() {
+  return useQuery<RuntimeTransportInfo[]>({
+    queryKey: toolSessionKeys.runtimeTransports(),
+    queryFn: async () => {
+      const data = await api.get<{ items?: RuntimeTransportInfo[] }>('/api/tool-sessions/runtime-transports');
+      return Array.isArray(data.items) ? data.items : [];
+    },
+    staleTime: 30_000,
   });
 }
 

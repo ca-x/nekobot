@@ -862,6 +862,70 @@ func TestHandleSpawnToolSessionUsesConfiguredDefaultRuntimeTransport(t *testing.
 	}
 }
 
+func TestHandleListToolSessionRuntimeTransports(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	cfg.WebUI.ToolSessionRuntimeTransport = runtimeagents.TransportZellij
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	server := &Server{
+		config: cfg,
+		logger: log,
+	}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/tool-sessions/runtime-transports", nil)
+	rec := httptest.NewRecorder()
+	ctx := newAuthedContext(e, req, rec, "alice")
+	ctx.SetPath("/api/tool-sessions/runtime-transports")
+	if err := server.handleListToolSessionRuntimeTransports(ctx); err != nil {
+		t.Fatalf("runtime transport handler failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Items []struct {
+			Name      string `json:"name"`
+			Available bool   `json:"available"`
+			IsDefault bool   `json:"is_default"`
+		} `json:"items"`
+	}
+	decodeJSON(t, rec.Body.Bytes(), &payload)
+	if len(payload.Items) != 2 {
+		t.Fatalf("expected 2 transport entries, got %+v", payload.Items)
+	}
+	seen := map[string]bool{}
+	for _, item := range payload.Items {
+		seen[item.Name] = true
+		switch item.Name {
+		case runtimeagents.TransportTmux:
+			if item.Available != runtimeagents.TransportByName(runtimeagents.TransportTmux).Available() {
+				t.Fatalf("unexpected tmux availability %+v", item)
+			}
+			if item.IsDefault {
+				t.Fatalf("did not expect tmux to be default when zellij configured: %+v", item)
+			}
+		case runtimeagents.TransportZellij:
+			if item.Available != runtimeagents.TransportByName(runtimeagents.TransportZellij).Available() {
+				t.Fatalf("unexpected zellij availability %+v", item)
+			}
+			if !item.IsDefault {
+				t.Fatalf("expected zellij to be default when configured: %+v", item)
+			}
+		default:
+			t.Fatalf("unexpected transport entry %+v", item)
+		}
+	}
+	if !seen[runtimeagents.TransportTmux] || !seen[runtimeagents.TransportZellij] {
+		t.Fatalf("expected both tmux and zellij entries, got %+v", payload.Items)
+	}
+}
+
 func TestHandleToolSessionProcessStatusRestoresTmuxLaunchMetadata(t *testing.T) {
 	if !runtimeagents.DefaultTransport().Available() {
 		t.Skip("tmux not available")

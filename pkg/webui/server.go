@@ -49,6 +49,8 @@ import (
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/gateway"
+	"nekobot/pkg/goaldriven"
+	goalcriteria "nekobot/pkg/goaldriven/criteria"
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
@@ -116,6 +118,7 @@ type Server struct {
 	taskStore          *tasks.Store
 	kvStore            state.KV
 	threads            *threads.Manager
+	goalSvc            *goaldriven.Service
 	chatEventMu        sync.RWMutex
 	chatEventSubs      map[string]map[chan chatEvent]struct{}
 	watcher            *watch.Watcher
@@ -487,6 +490,7 @@ func (s *Server) setup() {
 	api.POST("/tool-sessions/:id/attach-token", s.handleCreateToolSessionAttachToken)
 	api.POST("/tool-sessions/consume-token", s.handleConsumeToolSessionAttachToken)
 	api.POST("/tool-sessions/spawn", s.handleSpawnToolSession)
+	api.GET("/tool-sessions/runtime-transports", s.handleListToolSessionRuntimeTransports)
 	api.POST("/external-agents/resolve-session", s.handleResolveExternalAgentSession)
 	api.GET("/external-agents/catalog", s.handleGetExternalAgentCatalog)
 	api.GET("/daemon/registry", s.handleGetDaemonRegistry)
@@ -498,6 +502,14 @@ func (s *Server) setup() {
 	api.GET("/daemon/explorer/workspaces", s.handleDaemonExplorerWorkspaces)
 	api.POST("/daemon/explorer/tree", s.handleDaemonExplorerTree)
 	api.POST("/daemon/explorer/file", s.handleDaemonExplorerFile)
+	api.GET("/goal-runs", s.handleListGoalRuns)
+	api.POST("/goal-runs", s.handleCreateGoalRun)
+	api.GET("/goal-runs/:id", s.handleGetGoalRun)
+	api.POST("/goal-runs/:id/confirm-criteria", s.handleConfirmGoalRunCriteria)
+	api.POST("/goal-runs/:id/start", s.handleStartGoalRun)
+	api.POST("/goal-runs/:id/stop", s.handleStopGoalRun)
+	api.POST("/goal-runs/:id/cancel", s.handleCancelGoalRun)
+	api.POST("/goal-runs/:id/confirm-manual", s.handleConfirmGoalRunManualCriterion)
 	api.GET("/tool-sessions/:id/process/status", s.handleToolSessionProcessStatus)
 	api.GET("/tool-sessions/:id/process/output", s.handleToolSessionProcessOutput)
 	api.POST("/tool-sessions/:id/process/input", s.handleToolSessionProcessInput)
@@ -1919,14 +1931,14 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	}
 	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
 
-	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", map[string]interface{}{
+	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"command":         command,
 		"launch_cmd":      launchCommand,
-		"runtime_session": runtimeSession,
-		"tmux_session":    runtimeSession,
 		"workdir":         workdir,
 		"proxy_mode":      proxyMode,
-	})
+	}, transport.Name(), runtimeSession)
+	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
+	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", eventPayload)
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"session":         sess,
 		"access_mode":     sess.AccessMode,
@@ -2124,6 +2136,137 @@ func (s *Server) handleDaemonExplorerFile(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleListGoalRuns(c *echo.Context) error {
+	if s.goalSvc == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "goal-driven service unavailable"})
+	}
+	items, err := s.goalSvc.ListGoalRuns(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) handleCreateGoalRun(c *echo.Context) error {
+	if s.goalSvc == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "goal-driven service unavailable"})
+	}
+	var body struct {
+		Name                    string                     `json:"name"`
+		Goal                    string                     `json:"goal"`
+		NaturalLanguageCriteria string                     `json:"natural_language_criteria"`
+		RiskLevel               goaldriven.RiskLevel       `json:"risk_level"`
+		AllowAutoScope          bool                       `json:"allow_auto_scope"`
+		SelectedScope           *goaldriven.ExecutionScope `json:"selected_scope"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	result, err := s.goalSvc.CreateGoalRun(c.Request().Context(), goaldriven.CreateGoalRunInput{
+		Name:                    body.Name,
+		Goal:                    body.Goal,
+		NaturalLanguageCriteria: body.NaturalLanguageCriteria,
+		RiskLevel:               body.RiskLevel,
+		AllowAutoScope:          body.AllowAutoScope,
+		SelectedScope:           body.SelectedScope,
+		CreatedBy:               s.currentUsername(c),
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handleGetGoalRun(c *echo.Context) error {
+	if s.goalSvc == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "goal-driven service unavailable"})
+	}
+	detail, ok, err := s.goalSvc.GetGoalRunDetail(c.Request().Context(), strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if !ok {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "goal run not found"})
+	}
+	return c.JSON(http.StatusOK, detail)
+}
+
+func (s *Server) handleConfirmGoalRunCriteria(c *echo.Context) error {
+	if s.goalSvc == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "goal-driven service unavailable"})
+	}
+	var body struct {
+		Criteria      goalcriteria.Set           `json:"criteria"`
+		SelectedScope *goaldriven.ExecutionScope `json:"selected_scope"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	run, err := s.goalSvc.ConfirmCriteria(c.Request().Context(), strings.TrimSpace(c.Param("id")), body.Criteria, body.SelectedScope)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"goal_run": run})
+}
+
+func (s *Server) handleStartGoalRun(c *echo.Context) error {
+	if s.goalSvc == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "goal-driven service unavailable"})
+	}
+	run, err := s.goalSvc.StartGoalRun(c.Request().Context(), strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"goal_run": run})
+}
+
+func (s *Server) handleStopGoalRun(c *echo.Context) error {
+	if s.goalSvc == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "goal-driven service unavailable"})
+	}
+	run, err := s.goalSvc.StopGoalRun(c.Request().Context(), strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"goal_run": run})
+}
+
+func (s *Server) handleCancelGoalRun(c *echo.Context) error {
+	if s.goalSvc == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "goal-driven service unavailable"})
+	}
+	run, err := s.goalSvc.CancelGoalRun(c.Request().Context(), strings.TrimSpace(c.Param("id")))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"goal_run": run})
+}
+
+func (s *Server) handleConfirmGoalRunManualCriterion(c *echo.Context) error {
+	if s.goalSvc == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "goal-driven service unavailable"})
+	}
+	var body struct {
+		CriterionID string `json:"criterion_id"`
+		Approved    bool   `json:"approved"`
+		Note        string `json:"note"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	run, err := s.goalSvc.ConfirmManualCriterion(
+		c.Request().Context(),
+		strings.TrimSpace(c.Param("id")),
+		body.CriterionID,
+		body.Note,
+		body.Approved,
+	)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"goal_run": run})
 }
 
 func (s *Server) handleGetDaemonBootstrap(c *echo.Context) error {
@@ -2634,14 +2777,14 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	}
 	updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
 
-	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", map[string]interface{}{
+	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"command":         command,
 		"launch_cmd":      launchCommand,
-		"runtime_session": runtimeSession,
-		"tmux_session":    runtimeSession,
 		"workdir":         workdir,
 		"proxy_mode":      proxyMode,
-	})
+	}, transport.Name(), runtimeSession)
+	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
+	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", eventPayload)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"session":         updatedSession,
@@ -3214,12 +3357,12 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 		)
 	}
 
-	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", map[string]interface{}{
+	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"launch_cmd":      attachCmd,
-		"runtime_session": runtimeSession,
-		"tmux_session":    runtimeSession,
 		"workdir":         workdir,
-	})
+	}, transport.Name(), runtimeSession)
+	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
+	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", eventPayload)
 	_ = s.toolSess.TouchSession(context.Background(), id, toolsessions.StateRunning)
 	s.logger.Info("Restored tool session runtime",
 		zap.String("session_id", id),
@@ -3268,6 +3411,23 @@ func metadataString(values map[string]interface{}, key string) string {
 
 func runtimeTransportFromName(name string) runtimeagents.RuntimeTransport {
 	return runtimeagents.TransportByName(name)
+}
+
+func (s *Server) handleListToolSessionRuntimeTransports(c *echo.Context) error {
+	defaultName := s.defaultRuntimeTransport().Name()
+	items := []map[string]interface{}{
+		{
+			"name":       runtimeagents.TransportTmux,
+			"available":  runtimeagents.TransportByName(runtimeagents.TransportTmux).Available(),
+			"is_default": defaultName == runtimeagents.TransportTmux,
+		},
+		{
+			"name":       runtimeagents.TransportZellij,
+			"available":  runtimeagents.TransportByName(runtimeagents.TransportZellij).Available(),
+			"is_default": defaultName == runtimeagents.TransportZellij,
+		},
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{"items": items})
 }
 
 func (s *Server) defaultRuntimeTransport() runtimeagents.RuntimeTransport {

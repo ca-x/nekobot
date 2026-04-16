@@ -20,6 +20,7 @@ import {
 import { t } from '@/lib/i18n';
 import {
   useCreateToolSession,
+  useToolSessionRuntimeTransports,
   useUpdateToolSession,
   type ToolSession,
   type CreateToolSessionPayload,
@@ -110,6 +111,9 @@ export default function ToolSessionDialog({
 
   const createMutation = useCreateToolSession();
   const updateMutation = useUpdateToolSession();
+  const runtimeTransportsQuery = useToolSessionRuntimeTransports();
+  const runtimeTransportItems = runtimeTransportsQuery.data ?? [];
+  const selectedRuntimeTransportInfo = runtimeTransportItems.find((item) => item.name === runtimeTransport);
 
   const resetForm = useCallback(() => {
     if (editSession) {
@@ -281,7 +285,8 @@ export default function ToolSessionDialog({
     isPending ||
     !getEffectiveTool() ||
     (!isEdit && (!title.trim() || !workdir.trim())) ||
-    (proxyMode === 'custom' && !proxyUrl.trim());
+    (proxyMode === 'custom' && !proxyUrl.trim()) ||
+    (selectedRuntimeTransportInfo != null && !selectedRuntimeTransportInfo.available);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -361,6 +366,27 @@ export default function ToolSessionDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">{t('runtimeTransportHelp')}</p>
+            {runtimeTransportItems.length > 0 ? (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {runtimeTransportItems.map((item) => (
+                  <span
+                    key={item.name}
+                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                      item.available
+                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-amber-500/12 text-amber-700 dark:text-amber-300'
+                    }`}
+                  >
+                    {item.name} · {item.available ? t('runtimeTransportAvailable') : t('runtimeTransportUnavailable')}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {selectedRuntimeTransportInfo && !selectedRuntimeTransportInfo.available ? (
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                {t('runtimeTransportUnavailableWarning', selectedRuntimeTransportInfo.name)}
+              </p>
+            ) : null}
           </div>
 
           {/* Working directory */}
