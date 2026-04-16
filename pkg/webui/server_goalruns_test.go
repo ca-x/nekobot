@@ -479,6 +479,97 @@ func TestGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusCompleted), 15*time.Second)
 }
 
+func TestManualOnlyGoalRunHTTPFlowCompletesOnFreshProcess(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustPort(t, reserveGoalRunTCPAddr(t))
+	cfg.WebUI.Port = mustPort(t, reserveGoalRunTCPAddr(t))
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("SaveToFile failed: %v", err)
+	}
+
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	binPath := filepath.Join(t.TempDir(), "nekobot-goalrun-manual-flow")
+	buildCmd := exec.Command("go", "build", "-o", binPath, "./cmd/nekobot")
+	buildCmd.Dir = repoRoot
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("build binary failed: %v\n%s", err, string(output))
+	}
+
+	cmd := exec.Command(binPath, "--config", configPath, "gateway")
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start gateway process: %v", err)
+	}
+	defer func() {
+		if cmd.Process == nil {
+			return
+		}
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	}()
+
+	waitForHTTPOK(t, "http://127.0.0.1:"+itoa(cfg.WebUI.Port)+"/api/auth/init-status", 15*time.Second)
+	token := initAdminAndGetToken(t, cfg.WebUI.Port)
+
+	created := createGoalRunHTTP(t, cfg.WebUI.Port, token, map[string]any{
+		"name":                      "manual-only e2e",
+		"goal":                      "verify a manual-only Goal Run on a fresh process",
+		"natural_language_criteria": "confirm manually",
+		"risk_level":                "balanced",
+		"allow_auto_scope":          true,
+	})
+	goalRunID := nestedString(t, created, "goal_run", "id")
+	if goalRunID == "" {
+		t.Fatalf("expected created goal run id, got %+v", created)
+	}
+
+	confirmGoalRunCriteriaHTTP(t, cfg.WebUI.Port, token, goalRunID, map[string]any{
+		"criteria": map[string]any{
+			"criteria": []map[string]any{
+				{
+					"id":       "manual-1",
+					"title":    "Manual confirmation",
+					"type":     "manual_confirmation",
+					"required": true,
+					"scope": map[string]any{
+						"kind":   "server",
+						"source": "manual",
+					},
+					"definition": map[string]any{
+						"prompt": "Confirm success",
+					},
+				},
+			},
+		},
+		"selected_scope": map[string]any{
+			"kind":   "server",
+			"source": "manual",
+		},
+	})
+
+	startGoalRunHTTP(t, cfg.WebUI.Port, token, goalRunID)
+	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusNeedsHumanConfirmation), 15*time.Second)
+
+	detail := getJSON(t, "http://127.0.0.1:"+itoa(cfg.WebUI.Port)+"/api/goal-runs/"+goalRunID, token)
+	workers, _ := detail["workers"].([]any)
+	if len(workers) != 0 {
+		t.Fatalf("expected manual-only flow to avoid workers, got %+v", workers)
+	}
+
+	confirmManualCriterionHTTP(t, cfg.WebUI.Port, token, goalRunID, map[string]any{
+		"criterion_id": "manual-1",
+		"approved":     true,
+		"note":         "manual-only e2e confirmed",
+	})
+	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusCompleted), 15*time.Second)
+}
+
 func TestDaemonBackedGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
