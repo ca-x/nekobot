@@ -3,6 +3,7 @@ package criteria
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,79 +36,11 @@ func (p *Parser) Parse(_ context.Context, in ParseInput) (Set, error) {
 		return Set{}, fmt.Errorf("scope is required")
 	}
 
-	items := make([]Item, 0, 3)
-
-	if targetURL, statusCode, bodyContains := inferHTTPCheck(in.Natural); targetURL != "" {
-		definition := map[string]any{
-			"url": targetURL,
-		}
-		title := "HTTP success check"
-		if statusCode != 0 {
-			definition["expect_status"] = statusCode
-			title = "HTTP status check"
-		}
-		if bodyContains != "" {
-			definition["body_contains"] = bodyContains
-			title = "HTTP response content check"
-		}
-		items = append(items, Item{
-			ID:         "http-check-1",
-			Title:      title,
-			Type:       TypeHTTPCheck,
-			Scope:      *in.Scope,
-			Required:   true,
-			Status:     StatusPending,
-			Definition: definition,
-			UpdatedAt:  time.Now().UTC(),
-		})
-	}
-
-	if path := inferFileExists(in.Natural); path != "" {
-		items = append(items, Item{
-			ID:       "file-exists-1",
-			Title:    "Required file exists",
-			Type:     TypeFileExists,
-			Scope:    *in.Scope,
-			Required: true,
-			Status:   StatusPending,
-			Definition: map[string]any{
-				"path": path,
-			},
-			UpdatedAt: time.Now().UTC(),
-		})
-	}
-
-	if path, needle := inferFileContains(in.Natural); path != "" && needle != "" {
-		items = append(items, Item{
-			ID:       "file-contains-1",
-			Title:    "Required file contains expected content",
-			Type:     TypeFileContains,
-			Scope:    *in.Scope,
-			Required: true,
-			Status:   StatusPending,
-			Definition: map[string]any{
-				"path":     path,
-				"contains": needle,
-			},
-			UpdatedAt: time.Now().UTC(),
-		})
-	}
-
-	if len(items) == 0 {
-		if cmd := inferCommand(in.Natural); cmd != "" {
-			items = append(items, Item{
-				ID:       "command-check-1",
-				Title:    "Command-based success check",
-				Type:     TypeCommand,
-				Scope:    *in.Scope,
-				Required: true,
-				Status:   StatusPending,
-				Definition: map[string]any{
-					"command":          cmd,
-					"expect_exit_code": 0,
-				},
-				UpdatedAt: time.Now().UTC(),
-			})
+	items := make([]Item, 0, 4)
+	for idx, clause := range splitNaturalCriteria(in.Natural) {
+		inferred := inferCriterion(clause, *in.Scope, idx+1)
+		if inferred != nil {
+			items = append(items, *inferred)
 		}
 	}
 
@@ -127,6 +60,118 @@ func (p *Parser) Parse(_ context.Context, in ParseInput) (Set, error) {
 	}
 
 	return Set{Criteria: items}, nil
+}
+
+func inferCriterion(clause string, scope shared.ExecutionScope, ordinal int) *Item {
+	now := time.Now().UTC()
+
+	if targetURL, statusCode, bodyContains := inferHTTPCheck(clause); targetURL != "" {
+		definition := map[string]any{
+			"url": targetURL,
+		}
+		title := "HTTP success check"
+		if statusCode != 0 {
+			definition["expect_status"] = statusCode
+			title = "HTTP status check"
+		}
+		if bodyContains != "" {
+			definition["body_contains"] = bodyContains
+			title = "HTTP response content check"
+		}
+		return &Item{
+			ID:         fmt.Sprintf("http-check-%d", ordinal),
+			Title:      title,
+			Type:       TypeHTTPCheck,
+			Scope:      scope,
+			Required:   true,
+			Status:     StatusPending,
+			Definition: definition,
+			UpdatedAt:  now,
+		}
+	}
+
+	if path := inferFileExists(clause); path != "" {
+		return &Item{
+			ID:       fmt.Sprintf("file-exists-%d", ordinal),
+			Title:    "Required file exists",
+			Type:     TypeFileExists,
+			Scope:    scope,
+			Required: true,
+			Status:   StatusPending,
+			Definition: map[string]any{
+				"path": path,
+			},
+			UpdatedAt: now,
+		}
+	}
+
+	if path, needle := inferFileContains(clause); path != "" && needle != "" {
+		return &Item{
+			ID:       fmt.Sprintf("file-contains-%d", ordinal),
+			Title:    "Required file contains expected content",
+			Type:     TypeFileContains,
+			Scope:    scope,
+			Required: true,
+			Status:   StatusPending,
+			Definition: map[string]any{
+				"path":     path,
+				"contains": needle,
+			},
+			UpdatedAt: now,
+		}
+	}
+
+	if cmd := inferCommand(clause); cmd != "" {
+		return &Item{
+			ID:       fmt.Sprintf("command-check-%d", ordinal),
+			Title:    "Command-based success check",
+			Type:     TypeCommand,
+			Scope:    scope,
+			Required: true,
+			Status:   StatusPending,
+			Definition: map[string]any{
+				"command":          cmd,
+				"expect_exit_code": 0,
+			},
+			UpdatedAt: now,
+		}
+	}
+
+	return nil
+}
+
+func splitNaturalCriteria(natural string) []string {
+	trimmed := strings.TrimSpace(natural)
+	if trimmed == "" {
+		return nil
+	}
+	replaced := strings.ReplaceAll(trimmed, ";", "\n")
+	replaced = splitClauseKeyword(replaced, "ensure")
+	replaced = splitClauseKeyword(replaced, "check")
+	replaced = splitClauseKeyword(replaced, "run command")
+	parts := strings.Split(replaced, "\n")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func splitClauseKeyword(input, keyword string) string {
+	pattern := regexp.MustCompile(`(?i)\s+and\s+` + regexp.QuoteMeta(keyword) + `\s+`)
+	return pattern.ReplaceAllStringFunc(input, func(match string) string {
+		trimmed := strings.TrimSpace(match)
+		lower := strings.ToLower(trimmed)
+		idx := strings.Index(lower, keyword)
+		if idx < 0 {
+			return match
+		}
+		return "\n" + keyword + " "
+	})
 }
 
 func inferCommand(natural string) string {

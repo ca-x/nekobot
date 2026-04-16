@@ -253,3 +253,63 @@ func TestSchemaRejectsSpecialUseIPv6Targets(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSplitsMultipleClausesIntoMultipleCriteria(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser()
+	set, err := parser.Parse(t.Context(), ParseInput{
+		Goal: "verify release output",
+		Natural: "ensure file /tmp/result.txt exists; ensure file /tmp/result.txt contains SUCCESS; " +
+			"ensure url https://example.com/health returns 200; run command go build ./cmd/nekobot",
+		Scope:     &shared.ExecutionScope{Kind: shared.ScopeServer, Source: "manual"},
+		RiskLevel: shared.RiskBalanced,
+	})
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(set.Criteria) != 4 {
+		t.Fatalf("expected 4 criteria, got %+v", set.Criteria)
+	}
+
+	types := []CriterionType{
+		set.Criteria[0].Type,
+		set.Criteria[1].Type,
+		set.Criteria[2].Type,
+		set.Criteria[3].Type,
+	}
+	want := []CriterionType{
+		TypeFileExists,
+		TypeFileContains,
+		TypeHTTPCheck,
+		TypeCommand,
+	}
+	for i := range want {
+		if types[i] != want[i] {
+			t.Fatalf("expected types %v, got %v", want, types)
+		}
+	}
+}
+
+func TestParseSplitsCapitalizedEnsureClauses(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser()
+	set, err := parser.Parse(t.Context(), ParseInput{
+		Goal:      "verify two files",
+		Natural:   "Ensure file /tmp/a exists and Ensure file /tmp/b exists",
+		Scope:     &shared.ExecutionScope{Kind: shared.ScopeServer, Source: "manual"},
+		RiskLevel: shared.RiskBalanced,
+	})
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(set.Criteria) != 2 {
+		t.Fatalf("expected 2 criteria, got %+v", set.Criteria)
+	}
+	for i, item := range set.Criteria {
+		if item.Type != TypeFileExists {
+			t.Fatalf("criterion %d expected file_exists, got %q", i, item.Type)
+		}
+	}
+}
