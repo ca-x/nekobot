@@ -833,7 +833,6 @@ func TestDaemonBackedGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusCompleted), 15*time.Second)
 }
 
-
 func logOrFatal(t *testing.T) *logger.Logger {
 	t.Helper()
 	log, err := logger.New(&logger.Config{Level: logger.LevelInfo, Development: true})
