@@ -9,6 +9,7 @@ import (
 
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/state"
+	"google.golang.org/protobuf/proto"
 )
 
 const daemonRegistryKey = "daemonhost.registry.v1"
@@ -98,9 +99,9 @@ func (r *Registry) update(ctx context.Context, info *daemonv1.DaemonInfo, invent
 		if machineID == "" {
 			machineID = strings.TrimSpace(info.DaemonId)
 		}
-		copiedInfo := *info
+		copiedInfo := proto.Clone(info).(*daemonv1.DaemonInfo)
 		copiedInfo.MachineId = machineID
-		snapshot.Machines[machineID] = &copiedInfo
+		snapshot.Machines[machineID] = copiedInfo
 		if inventory != nil {
 			snapshot.Inventories[machineID] = inventory
 		}
@@ -154,9 +155,9 @@ func MachineStatuses(snapshot *Snapshot) []MachineStatus {
 		if info == nil {
 			continue
 		}
-		cloned := *info
+		cloned := proto.Clone(info).(*daemonv1.DaemonInfo)
 		cloned.Status = DeriveMachineStatus(info, now)
-		status := MachineStatus{Info: &cloned}
+		status := MachineStatus{Info: cloned}
 		if inv, ok := snapshot.Inventories[id]; ok && inv != nil {
 			status.WorkspaceCount = len(inv.Workspaces)
 			status.RuntimeCount = len(inv.Runtimes)
