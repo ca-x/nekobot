@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -955,6 +959,74 @@ func (s *Service) evaluateCriteria(ctx context.Context, run GoalRun, set criteri
 				continue
 			}
 			item.Status = criteria.StatusPassed
+		case criteria.TypeHTTPCheck:
+			targetURL, _ := item.Definition["url"].(string)
+			if strings.TrimSpace(targetURL) == "" {
+				item.Status = criteria.StatusFailed
+				item.LastError = "url is required"
+				allPassed = false
+				continue
+			}
+			if err := criteria.ValidateHTTPURL(strings.TrimSpace(targetURL)); err != nil {
+				item.Status = criteria.StatusFailed
+				item.LastError = err.Error()
+				allPassed = false
+				continue
+			}
+			if run.SelectedScope != nil && run.SelectedScope.Kind == ScopeDaemon {
+				item.Status = criteria.StatusNeedsHuman
+				item.LastError = "automatic daemon http verification is not available yet"
+				needsHuman = true
+				allPassed = false
+				continue
+			}
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(targetURL), nil)
+			if err != nil {
+				item.Status = criteria.StatusFailed
+				item.LastError = err.Error()
+				allPassed = false
+				continue
+			}
+			resolvedIPs, err := resolveAndValidateHTTPHost(ctx, req.URL)
+			if err != nil {
+				item.Status = criteria.StatusFailed
+				item.LastError = err.Error()
+				allPassed = false
+				continue
+			}
+			resp, err := goalRunHTTPClient(resolvedIPs).Do(req)
+			if err != nil {
+				item.Status = criteria.StatusFailed
+				item.LastError = err.Error()
+				allPassed = false
+				continue
+			}
+			bodyBytes, readErr := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if readErr != nil {
+				item.Status = criteria.StatusFailed
+				item.LastError = readErr.Error()
+				allPassed = false
+				continue
+			}
+			if expectStatus, ok := item.Definition["expect_status"]; ok {
+				statusCode := intFromAny(expectStatus)
+				if resp.StatusCode != statusCode {
+					item.Status = criteria.StatusFailed
+					item.LastError = fmt.Sprintf("expected status %d, got %d", statusCode, resp.StatusCode)
+					allPassed = false
+					continue
+				}
+			}
+			if bodyContains, ok := item.Definition["body_contains"].(string); ok && strings.TrimSpace(bodyContains) != "" {
+				if !strings.Contains(string(bodyBytes), bodyContains) {
+					item.Status = criteria.StatusFailed
+					item.LastError = fmt.Sprintf("response body does not contain %q", bodyContains)
+					allPassed = false
+					continue
+				}
+			}
+			item.Status = criteria.StatusPassed
 		default:
 			item.Status = criteria.StatusFailed
 			item.LastError = fmt.Sprintf("unsupported criterion type %q", item.Type)
@@ -1069,6 +1141,70 @@ func remoteReadFile(ctx context.Context, kv state.KV, machineID string, itemScop
 		return "", err
 	}
 	return resp.Content, nil
+}
+
+func intFromAny(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int32:
+		return int(typed)
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	default:
+		return 0
+	}
+}
+
+func goalRunHTTPClient(allowedIPs []string) *http.Client {
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			_, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			if len(allowedIPs) == 0 {
+				return nil, fmt.Errorf("no verified IPs available for dial")
+			}
+			var d net.Dialer
+			return d.DialContext(ctx, network, net.JoinHostPort(allowedIPs[0], port))
+		},
+	}
+	return &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func resolveAndValidateHTTPHost(ctx context.Context, target *neturl.URL) ([]string, error) {
+	if target == nil {
+		return nil, fmt.Errorf("url is required")
+	}
+	host := strings.TrimSpace(target.Hostname())
+	if host == "" {
+		return nil, fmt.Errorf("host is required")
+	}
+	resolver := net.Resolver{}
+	ips, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve host %s: %w", host, err)
+	}
+	out := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if criteria.IsBlockedIP(ip.IP) {
+			return nil, fmt.Errorf("resolved host %s to blocked IP %s", host, ip.String())
+		}
+		out = append(out, ip.IP.String())
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("host %s resolved to no usable IPs", host)
+	}
+	return out, nil
 }
 
 func workspaceIDForScope(inventory *daemonv1.RuntimeInventory, itemScope shared.ExecutionScope) (string, error) {

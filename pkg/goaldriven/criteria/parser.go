@@ -37,6 +37,31 @@ func (p *Parser) Parse(_ context.Context, in ParseInput) (Set, error) {
 
 	items := make([]Item, 0, 3)
 
+	if targetURL, statusCode, bodyContains := inferHTTPCheck(in.Natural); targetURL != "" {
+		definition := map[string]any{
+			"url": targetURL,
+		}
+		title := "HTTP success check"
+		if statusCode != 0 {
+			definition["expect_status"] = statusCode
+			title = "HTTP status check"
+		}
+		if bodyContains != "" {
+			definition["body_contains"] = bodyContains
+			title = "HTTP response content check"
+		}
+		items = append(items, Item{
+			ID:         "http-check-1",
+			Title:      title,
+			Type:       TypeHTTPCheck,
+			Scope:      *in.Scope,
+			Required:   true,
+			Status:     StatusPending,
+			Definition: definition,
+			UpdatedAt:  time.Now().UTC(),
+		})
+	}
+
 	if path := inferFileExists(in.Natural); path != "" {
 		items = append(items, Item{
 			ID:       "file-exists-1",
@@ -145,4 +170,43 @@ func inferFileContains(natural string) (string, string) {
 	path := strings.TrimSpace(rest[:idx])
 	needle := strings.TrimSpace(rest[idx+len(marker):])
 	return strings.Trim(path, "`\"'"), strings.Trim(needle, "`\"'")
+}
+
+func inferHTTPCheck(natural string) (targetURL string, statusCode int, bodyContains string) {
+	trimmed := strings.TrimSpace(natural)
+	lower := strings.ToLower(trimmed)
+
+	if strings.HasPrefix(lower, "ensure url ") {
+		rest := strings.TrimSpace(trimmed[len("ensure url "):])
+		lowerRest := strings.ToLower(rest)
+		if idx := strings.Index(lowerRest, " returns "); idx >= 0 {
+			targetURL = strings.Trim(rest[:idx], "`\"'")
+			if _, err := fmt.Sscanf(strings.TrimSpace(rest[idx+len(" returns "):]), "%d", &statusCode); err == nil {
+				return targetURL, statusCode, ""
+			}
+		}
+		if idx := strings.Index(lowerRest, " contains "); idx >= 0 {
+			targetURL = strings.Trim(rest[:idx], "`\"'")
+			bodyContains = strings.TrimSpace(rest[idx+len(" contains "):])
+			return strings.Trim(targetURL, "`\"'"), 0, strings.Trim(bodyContains, "`\"'")
+		}
+	}
+
+	if strings.HasPrefix(lower, "check url ") {
+		rest := strings.TrimSpace(trimmed[len("check url "):])
+		lowerRest := strings.ToLower(rest)
+		if idx := strings.Index(lowerRest, " returns "); idx >= 0 {
+			targetURL = strings.Trim(rest[:idx], "`\"'")
+			if _, err := fmt.Sscanf(strings.TrimSpace(rest[idx+len(" returns "):]), "%d", &statusCode); err == nil {
+				return targetURL, statusCode, ""
+			}
+		}
+		if idx := strings.Index(lowerRest, " contains "); idx >= 0 {
+			targetURL = strings.Trim(rest[:idx], "`\"'")
+			bodyContains = strings.TrimSpace(rest[idx+len(" contains "):])
+			return strings.Trim(targetURL, "`\"'"), 0, strings.Trim(bodyContains, "`\"'")
+		}
+	}
+
+	return "", 0, ""
 }

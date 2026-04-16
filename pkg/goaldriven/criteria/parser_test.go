@@ -83,3 +83,104 @@ func TestParseDoesNotInferCommandInsideFileContainsAssertion(t *testing.T) {
 		t.Fatalf("expected file_contains needle to keep full text, got %+v", item.Definition)
 	}
 }
+
+func TestParseGeneratesHTTPStatusCriterion(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser()
+	set, err := parser.Parse(t.Context(), ParseInput{
+		Goal:      "verify health endpoint",
+		Natural:   "ensure url https://example.com/health returns 200",
+		Scope:     &shared.ExecutionScope{Kind: shared.ScopeServer, Source: "manual"},
+		RiskLevel: shared.RiskBalanced,
+	})
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(set.Criteria) != 1 {
+		t.Fatalf("expected 1 criterion, got %+v", set.Criteria)
+	}
+	item := set.Criteria[0]
+	if item.Type != TypeHTTPCheck {
+		t.Fatalf("expected http_check criterion, got %q", item.Type)
+	}
+	if targetURL, _ := item.Definition["url"].(string); targetURL != "https://example.com/health" {
+		t.Fatalf("unexpected url definition: %+v", item.Definition)
+	}
+	if statusCode, _ := item.Definition["expect_status"].(int); statusCode != 200 {
+		t.Fatalf("unexpected status definition: %+v", item.Definition)
+	}
+}
+
+func TestParseGeneratesHTTPBodyCriterion(t *testing.T) {
+	t.Parallel()
+
+	parser := NewParser()
+	set, err := parser.Parse(t.Context(), ParseInput{
+		Goal:      "verify status page",
+		Natural:   "ensure url https://example.com/status contains READY",
+		Scope:     &shared.ExecutionScope{Kind: shared.ScopeServer, Source: "manual"},
+		RiskLevel: shared.RiskBalanced,
+	})
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(set.Criteria) != 1 {
+		t.Fatalf("expected 1 criterion, got %+v", set.Criteria)
+	}
+	item := set.Criteria[0]
+	if item.Type != TypeHTTPCheck {
+		t.Fatalf("expected http_check criterion, got %q", item.Type)
+	}
+	if bodyContains, _ := item.Definition["body_contains"].(string); bodyContains != "READY" {
+		t.Fatalf("unexpected body_contains definition: %+v", item.Definition)
+	}
+}
+
+func TestSchemaRejectsLocalHTTPCheckTarget(t *testing.T) {
+	t.Parallel()
+
+	schema := NewSchema()
+	err := schema.Validate(Set{
+		Criteria: []Item{
+			{
+				ID:       "http-1",
+				Title:    "local check",
+				Type:     TypeHTTPCheck,
+				Scope:    shared.ExecutionScope{Kind: shared.ScopeServer, Source: "manual"},
+				Required: true,
+				Definition: map[string]any{
+					"url":           "http://127.0.0.1:8080/health",
+					"expect_status": 200,
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected localhost/private URL to be rejected")
+	}
+}
+
+func TestSchemaRejectsMetadataLikeHTTPHost(t *testing.T) {
+	t.Parallel()
+
+	schema := NewSchema()
+	err := schema.Validate(Set{
+		Criteria: []Item{
+			{
+				ID:       "http-1",
+				Title:    "metadata host",
+				Type:     TypeHTTPCheck,
+				Scope:    shared.ExecutionScope{Kind: shared.ScopeServer, Source: "manual"},
+				Required: true,
+				Definition: map[string]any{
+					"url":           "http://metadata.google.internal/computeMetadata/v1/",
+					"expect_status": 200,
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected metadata-like hostname to be rejected")
+	}
+}

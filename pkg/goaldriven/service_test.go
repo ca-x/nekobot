@@ -3,6 +3,8 @@ package goaldriven
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +52,107 @@ func TestServiceCreateGoalRunCreatesDraftWithCriteria(t *testing.T) {
 	}
 	if got := result.DraftCriteria.Criteria[0].Type; got != goaldrivencriteria.TypeManualConfirmation {
 		t.Fatalf("expected manual confirmation criterion, got %q", got)
+	}
+}
+
+func TestServiceHTTPCheckCriterionFailsForBlockedURL(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(
+		NewMemoryStore(),
+		goaldrivencriteria.NewParser(),
+		goaldrivencriteria.NewSchema(),
+		goaldrivenscope.NewResolver(),
+	)
+
+	run := GoalRun{
+		ID:            "gr-http-blocked",
+		Name:          "http blocked",
+		Goal:          "verify blocked endpoint",
+		Status:        GoalStatusVerifying,
+		RiskLevel:     RiskBalanced,
+		SelectedScope: &ExecutionScope{Kind: ScopeServer, Source: "manual"},
+	}
+	set := goaldrivencriteria.Set{
+		Criteria: []goaldrivencriteria.Item{
+			{
+				ID:       "http-1",
+				Title:    "blocked url",
+				Type:     goaldrivencriteria.TypeHTTPCheck,
+				Scope:    ExecutionScope{Kind: ScopeServer, Source: "manual"},
+				Required: true,
+				Status:   goaldrivencriteria.StatusPending,
+				Definition: map[string]any{
+					"url":           "http://127.0.0.1:8080/health",
+					"expect_status": 200,
+				},
+				UpdatedAt: time.Now().UTC(),
+			},
+		},
+	}
+
+	updatedRun, updatedSet, err := svc.evaluateCriteria(t.Context(), run, set)
+	if err != nil {
+		t.Fatalf("evaluateCriteria failed: %v", err)
+	}
+	if updatedRun.Status != GoalStatusRunning {
+		t.Fatalf("expected still running status, got %q", updatedRun.Status)
+	}
+	if updatedSet.Criteria[0].Status != goaldrivencriteria.StatusFailed {
+		t.Fatalf("expected failed criterion, got %+v", updatedSet.Criteria[0])
+	}
+}
+
+func TestServiceHTTPCheckCriterionFailsForRedirectToBlockedTarget(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://127.0.0.1:8080/health", http.StatusFound)
+	}))
+	defer server.Close()
+
+	svc := NewService(
+		NewMemoryStore(),
+		goaldrivencriteria.NewParser(),
+		goaldrivencriteria.NewSchema(),
+		goaldrivenscope.NewResolver(),
+	)
+
+	run := GoalRun{
+		ID:            "gr-http-redirect-fail",
+		Name:          "http redirect fail",
+		Goal:          "verify redirect endpoint",
+		Status:        GoalStatusVerifying,
+		RiskLevel:     RiskBalanced,
+		SelectedScope: &ExecutionScope{Kind: ScopeServer, Source: "manual"},
+	}
+	set := goaldrivencriteria.Set{
+		Criteria: []goaldrivencriteria.Item{
+			{
+				ID:       "http-1",
+				Title:    "redirect check",
+				Type:     goaldrivencriteria.TypeHTTPCheck,
+				Scope:    ExecutionScope{Kind: ScopeServer, Source: "manual"},
+				Required: true,
+				Status:   goaldrivencriteria.StatusPending,
+				Definition: map[string]any{
+					"url":           server.URL,
+					"expect_status": 200,
+				},
+				UpdatedAt: time.Now().UTC(),
+			},
+		},
+	}
+
+	updatedRun, updatedSet, err := svc.evaluateCriteria(t.Context(), run, set)
+	if err != nil {
+		t.Fatalf("evaluateCriteria failed: %v", err)
+	}
+	if updatedRun.Status != GoalStatusRunning {
+		t.Fatalf("expected still running status, got %q", updatedRun.Status)
+	}
+	if updatedSet.Criteria[0].Status != goaldrivencriteria.StatusFailed {
+		t.Fatalf("expected failed criterion, got %+v", updatedSet.Criteria[0])
 	}
 }
 

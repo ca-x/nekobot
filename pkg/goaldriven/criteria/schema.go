@@ -2,6 +2,8 @@ package criteria
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 )
 
@@ -66,7 +68,76 @@ func (s *Schema) Validate(set Set) error {
 			}
 			continue
 		}
+		if item.Type == TypeHTTPCheck {
+			targetURL, _ := item.Definition["url"].(string)
+			if strings.TrimSpace(targetURL) == "" {
+				return fmt.Errorf("criterion %q url is required", item.ID)
+			}
+			if err := ValidateHTTPURL(strings.TrimSpace(targetURL)); err != nil {
+				return fmt.Errorf("criterion %q url is not allowed: %w", item.ID, err)
+			}
+			returnStatus, hasStatus := item.Definition["expect_status"]
+			returnBody, hasBody := item.Definition["body_contains"]
+			if !hasStatus && !hasBody {
+				return fmt.Errorf("criterion %q http_check requires expect_status or body_contains", item.ID)
+			}
+			if hasStatus {
+				switch returnStatus.(type) {
+				case int, int32, int64, float64:
+				default:
+					return fmt.Errorf("criterion %q expect_status must be numeric", item.ID)
+				}
+			}
+			if hasBody {
+				if bodyText, _ := returnBody.(string); strings.TrimSpace(bodyText) == "" {
+					return fmt.Errorf("criterion %q body_contains must be non-empty", item.ID)
+				}
+			}
+			continue
+		}
 		return fmt.Errorf("criterion %q has unsupported type %q", item.ID, item.Type)
 	}
 	return nil
+}
+
+// ValidateHTTPURL rejects non-http(s) and local/private targets for http_check.
+func ValidateHTTPURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("parse url: %w", err)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+	default:
+		return fmt.Errorf("scheme must be http or https")
+	}
+	host := strings.TrimSpace(parsed.Hostname())
+	if host == "" {
+		return fmt.Errorf("host is required")
+	}
+	if strings.EqualFold(host, "localhost") {
+		return fmt.Errorf("localhost is not allowed")
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		if strings.Contains(strings.ToLower(host), "localhost") || strings.Contains(strings.ToLower(host), "metadata") {
+			return fmt.Errorf("local or metadata hostnames are not allowed")
+		}
+		return nil
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return fmt.Errorf("private or local IPs are not allowed")
+	}
+	if host == "169.254.169.254" {
+		return fmt.Errorf("metadata IP is not allowed")
+	}
+	return nil
+}
+
+// IsBlockedIP reports whether an IP target is unsafe for server-side HTTP checks.
+func IsBlockedIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }

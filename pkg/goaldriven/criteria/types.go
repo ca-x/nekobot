@@ -16,6 +16,7 @@ const (
 	TypeCommand            CriterionType = "command"
 	TypeFileExists         CriterionType = "file_exists"
 	TypeFileContains       CriterionType = "file_contains"
+	TypeHTTPCheck          CriterionType = "http_check"
 	TypeManualConfirmation CriterionType = "manual_confirmation"
 )
 
