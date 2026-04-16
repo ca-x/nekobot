@@ -28,6 +28,7 @@ func TestManagerCRUDAndResolution(t *testing.T) {
 	if _, err := providerMgr.Create(ctx, config.ProviderProfile{
 		Name:          "openai-main",
 		ProviderKind:  "openai",
+		APIKey:        "openai-main-key",
 		DefaultWeight: 7,
 		Enabled:       true,
 	}); err != nil {
@@ -36,6 +37,7 @@ func TestManagerCRUDAndResolution(t *testing.T) {
 	if _, err := providerMgr.Create(ctx, config.ProviderProfile{
 		Name:          "openai-backup",
 		ProviderKind:  "openai",
+		APIKey:        "openai-backup-key",
 		DefaultWeight: 3,
 		Enabled:       true,
 	}); err != nil {
