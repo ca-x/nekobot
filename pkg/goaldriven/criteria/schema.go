@@ -7,6 +7,41 @@ import (
 	"strings"
 )
 
+var blockedCIDRs = mustParseCIDRs(
+	"0.0.0.0/8",
+	"10.0.0.0/8",
+	"100.64.0.0/10",
+	"127.0.0.0/8",
+	"169.254.0.0/16",
+	"172.16.0.0/12",
+	"192.0.0.0/24",
+	"192.0.2.0/24",
+	"192.31.196.0/24",
+	"192.52.193.0/24",
+	"192.88.99.0/24",
+	"192.175.48.0/24",
+	"192.168.0.0/16",
+	"198.18.0.0/15",
+	"198.51.100.0/24",
+	"203.0.113.0/24",
+	"224.0.0.0/4",
+	"240.0.0.0/4",
+	"::/128",
+	"::1/128",
+	"100::/64",
+	"64:ff9b::/96",
+	"64:ff9b:1::/48",
+	"2001::/32",
+	"2001:2::/48",
+	"2001:3::/32",
+	"2001:4:112::/48",
+	"2002::/16",
+	"fc00::/7",
+	"fe80::/10",
+	"ff00::/8",
+	"2001:db8::/32",
+)
+
 // Schema validates criteria sets.
 type Schema struct{}
 
@@ -125,13 +160,7 @@ func ValidateHTTPURL(raw string) error {
 		}
 		return nil
 	}
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
-		return fmt.Errorf("private or local IPs are not allowed")
-	}
-	if host == "169.254.169.254" {
-		return fmt.Errorf("metadata IP is not allowed")
-	}
-	return nil
+	return fmt.Errorf("literal IP targets are not allowed")
 }
 
 // IsBlockedIP reports whether an IP target is unsafe for server-side HTTP checks.
@@ -139,5 +168,25 @@ func IsBlockedIP(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+	for _, cidr := range blockedCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+}
+
+func mustParseCIDRs(values ...string) []*net.IPNet {
+	result := make([]*net.IPNet, 0, len(values))
+	for _, value := range values {
+		_, cidr, err := net.ParseCIDR(value)
+		if err != nil {
+			panic(fmt.Sprintf("parse CIDR %s: %v", value, err))
+		}
+		result = append(result, cidr)
+	}
+	return result
 }

@@ -1196,13 +1196,17 @@ func resolveAndValidateHTTPHost(ctx context.Context, target *neturl.URL) ([]stri
 	}
 	out := make([]string, 0, len(ips))
 	for _, ip := range ips {
-		if criteria.IsBlockedIP(ip.IP) {
+		ip4 := ip.IP.To4()
+		if ip4 == nil {
+			continue
+		}
+		if criteria.IsBlockedIP(ip4) {
 			return nil, fmt.Errorf("resolved host %s to blocked IP %s", host, ip.String())
 		}
-		out = append(out, ip.IP.String())
+		out = append(out, ip4.String())
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("host %s resolved to no usable IPs", host)
+		return nil, fmt.Errorf("host %s resolved to no usable public IPv4 addresses", host)
 	}
 	return out, nil
 }

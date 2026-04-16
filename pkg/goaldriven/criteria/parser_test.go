@@ -184,3 +184,72 @@ func TestSchemaRejectsMetadataLikeHTTPHost(t *testing.T) {
 		t.Fatal("expected metadata-like hostname to be rejected")
 	}
 }
+
+func TestSchemaRejectsSpecialUseIPv4Targets(t *testing.T) {
+	t.Parallel()
+
+	schema := NewSchema()
+	for _, targetURL := range []string{
+		"http://100.64.0.1/health",
+		"http://192.31.196.1/",
+		"http://192.52.193.1/",
+		"http://192.175.48.1/",
+		"http://192.88.99.1/",
+		"http://198.18.0.1/health",
+		"http://100.100.100.200/latest/meta-data/",
+	} {
+		err := schema.Validate(Set{
+			Criteria: []Item{
+				{
+					ID:       "http-1",
+					Title:    "special use IP",
+					Type:     TypeHTTPCheck,
+					Scope:    shared.ExecutionScope{Kind: shared.ScopeServer, Source: "manual"},
+					Required: true,
+					Definition: map[string]any{
+						"url":           targetURL,
+						"expect_status": 200,
+					},
+				},
+			},
+		})
+		if err == nil {
+			t.Fatalf("expected %s to be rejected", targetURL)
+		}
+	}
+}
+
+func TestSchemaRejectsSpecialUseIPv6Targets(t *testing.T) {
+	t.Parallel()
+
+	schema := NewSchema()
+	for _, targetURL := range []string{
+		"http://[100::1]/",
+		"http://[2001::1]/",
+		"http://[64:ff9b::1]/",
+		"http://[2002::1]/",
+		"http://[2001:2::1]/",
+		"http://[2001:3::1]/",
+		"http://[2001:4:112::1]/",
+		"http://[64:ff9b:1::1]/",
+	} {
+		err := schema.Validate(Set{
+			Criteria: []Item{
+				{
+					ID:       "http-1",
+					Title:    "special use ipv6",
+					Type:     TypeHTTPCheck,
+					Scope:    shared.ExecutionScope{Kind: shared.ScopeServer, Source: "manual"},
+					Required: true,
+					Definition: map[string]any{
+						"url":           targetURL,
+						"expect_status": 200,
+					},
+				},
+			},
+		})
+		if err == nil {
+			t.Fatalf("expected %s to be rejected", targetURL)
+		}
+	}
+}
