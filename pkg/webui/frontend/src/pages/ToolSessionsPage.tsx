@@ -235,34 +235,50 @@ export default function ToolSessionsPage() {
               sidebarCollapsed ? 'w-full lg:w-12' : 'w-full lg:w-80',
             )}
           >
-            <div className="flex items-center justify-between gap-2 border-b border-border p-2">
+            <div className="border-b border-border p-2">
               {!sidebarCollapsed && (
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <Button size="sm" className="h-8 flex-1 sm:flex-none" onClick={handleNewSession}>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <Button size="sm" className="h-10 w-full justify-center sm:h-8 sm:w-auto sm:flex-none" onClick={handleNewSession}>
                     <Plus className="mr-1 h-3.5 w-3.5" />
                     {t('newToolSession')}
                   </Button>
+                  <div className="flex items-center justify-between gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-10 flex-1 justify-center sm:h-8 sm:flex-none"
+                      onClick={handleCleanup}
+                      disabled={terminatedCount === 0 || cleanupMutation.isPending}
+                      title={t('cleanupTerminatedCount', String(terminatedCount))}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5 sm:mr-0" />
+                      <span className="sm:hidden">{t('cleanupTerminated')}</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 sm:h-8 sm:w-8"
+                      onClick={() => setSidebarCollapsed((current) => !current)}
+                      aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    >
+                      {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {sidebarCollapsed && (
+                <div className="flex justify-end">
                   <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 shrink-0"
-                    onClick={handleCleanup}
-                    disabled={terminatedCount === 0 || cleanupMutation.isPending}
-                    title={t('cleanupTerminatedCount', String(terminatedCount))}
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 shrink-0 sm:h-8 sm:w-8"
+                    onClick={() => setSidebarCollapsed((current) => !current)}
+                    aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
                   </Button>
                 </div>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={() => setSidebarCollapsed((current) => !current)}
-                aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              >
-                {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-              </Button>
             </div>
 
             {!sidebarCollapsed && (

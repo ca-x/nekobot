@@ -2096,12 +2096,12 @@ export default function ConfigPage() {
     <div className="config-page flex h-full flex-col">
       <Header title={t('tabConfig')} />
       <div className="grid min-h-0 flex-1 gap-4 px-4 pb-4 md:px-5 md:pb-5 xl:grid-cols-[252px_minmax(0,1fr)]">
-        <Card className="overflow-hidden border-border/70 bg-card/92 shadow-[0_24px_60px_-42px_rgba(120,55,75,0.28)]">
-          <CardHeader className="border-b border-border/70 pb-5">
-            <CardTitle className="text-xl text-foreground">{t('configControlTitle')}</CardTitle>
-            <CardDescription>{t('configPageDescription')}</CardDescription>
+        <Card className="overflow-hidden border-border/70 bg-card/92 shadow-[0_24px_60px_-42px_rgba(120,55,75,0.28)] xl:block">
+          <CardHeader className="border-b border-border/70 pb-4 sm:pb-5">
+            <CardTitle className="text-lg text-foreground sm:text-xl">{t('configControlTitle')}</CardTitle>
+            <CardDescription className="text-sm leading-6">{t('configPageDescription')}</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-1">
+          <CardContent className="grid auto-cols-[minmax(180px,1fr)] grid-flow-col gap-3 overflow-x-auto p-4 md:grid-cols-2 md:grid-flow-row xl:grid-cols-1 xl:grid-flow-row">
             {CONFIG_SECTIONS.map((item) => (
               <button
                 key={item}
@@ -2109,15 +2109,15 @@ export default function ConfigPage() {
                 onClick={() => handleSectionChange(item)}
                 className={
                   item === section
-                    ? 'min-h-[88px] w-full rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-left shadow-[0_18px_36px_-28px_rgba(120,55,75,0.24)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-                    : 'min-h-[88px] w-full rounded-2xl border border-transparent bg-muted/35 px-4 py-3 text-left transition hover:border-border/70 hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+                    ? 'min-h-[80px] w-full rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-left shadow-[0_18px_36px_-28px_rgba(120,55,75,0.24)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+                    : 'min-h-[80px] w-full rounded-2xl border border-transparent bg-muted/35 px-4 py-3 text-left transition hover:border-border/70 hover:bg-muted/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
                 }
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold text-foreground">{sectionLabel(item)}</div>
                   <DirtyDot dirty={sectionDirty[item]} />
                 </div>
-                <div className="mt-1 text-xs leading-5 text-muted-foreground">{sectionDescription(item)}</div>
+                <div className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{sectionDescription(item)}</div>
               </button>
             ))}
           </CardContent>
@@ -2135,8 +2135,8 @@ export default function ConfigPage() {
                 <CardDescription>{sectionDescription(section)}</CardDescription>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-0 flex-1 sm:min-w-[220px]">
+              <div className="grid w-full gap-2 sm:flex sm:flex-wrap sm:items-center xl:w-auto">
+                <div className="relative min-w-0 w-full sm:min-w-[220px] sm:flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     aria-label={t('configSearchPlaceholder')}
@@ -2147,7 +2147,7 @@ export default function ConfigPage() {
                   />
                 </div>
                 <Select value={mode} onValueChange={(value) => value !== mode && handleToggleMode()}>
-                  <SelectTrigger className="h-10 w-[120px] rounded-full border-border/70 bg-background/80">
+                  <SelectTrigger className="h-10 w-full sm:w-[120px] rounded-full border-border/70 bg-background/80">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -2165,19 +2165,19 @@ export default function ConfigPage() {
                     </SelectItem>
                   </SelectContent>
                 </Select>
-                <Button variant="outline" size="sm" className="rounded-full" onClick={handleReset} disabled={!sectionDirty[section]}>
+                <Button variant="outline" size="sm" className="h-10 rounded-full justify-center" onClick={handleReset} disabled={!sectionDirty[section]}>
                   <RotateCcw className="mr-1.5 h-4 w-4" />
                   {t('reset')}
                 </Button>
-                <Button size="sm" className="rounded-full" onClick={handleSave} disabled={saveConfig.isPending || !sectionDirty[section]}>
+                <Button size="sm" className="h-10 rounded-full justify-center" onClick={handleSave} disabled={saveConfig.isPending || !sectionDirty[section]}>
                   <Save className="mr-1.5 h-4 w-4" />
                   {t('save')}
                 </Button>
-                <Button variant="outline" size="sm" className="rounded-full" onClick={() => exportConfig.mutate()} disabled={exportConfig.isPending}>
+                <Button variant="outline" size="sm" className="h-10 rounded-full justify-center" onClick={() => exportConfig.mutate()} disabled={exportConfig.isPending}>
                   <Download className="mr-1.5 h-4 w-4" />
                   {t('exportConfig')}
                 </Button>
-                <Button variant="outline" size="sm" className="rounded-full" onClick={() => fileInputRef.current?.click()} disabled={importConfig.isPending}>
+                <Button variant="outline" size="sm" className="h-10 rounded-full justify-center" onClick={() => fileInputRef.current?.click()} disabled={importConfig.isPending}>
                   <Upload className="mr-1.5 h-4 w-4" />
                   {t('importConfig')}
                 </Button>
