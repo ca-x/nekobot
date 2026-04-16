@@ -6282,6 +6282,10 @@ func (s *Server) handleStatus(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	workspaceStatus, err := workspace.NewManager(s.config.WorkspacePath(), s.logger).Inspect()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
 	taskSnapshots := s.listTaskSnapshots()
 	recentTasks, stateCounts := summarizeTasks(taskSnapshots, 5)
 	recentCronJobs := s.listRecentCronJobs(5)
@@ -6309,6 +6313,7 @@ func (s *Server) handleStatus(c *echo.Context) error {
 		"database_dir":       s.config.Storage.DBDir,
 		"runtime_db_path":    runtimeDBPath,
 		"workspace_path":     s.config.Agents.Defaults.Workspace,
+		"workspace_contract": workspaceStatus.Contract,
 		"task_count":         len(taskSnapshots),
 		"task_state_counts":  stateCounts,
 		"recent_tasks":       recentTasks,
@@ -8255,6 +8260,7 @@ func (s *Server) handleApproveRequest(c *echo.Context) error {
 		if mode, ok := s.approval.GetSessionMode(req.SessionID); ok {
 			s.taskStore.SetSessionPermissionMode(req.SessionID, string(mode))
 		}
+		s.taskStore.SetSessionLifecycleState(req.SessionID, tasks.SessionLifecycleIdle, "")
 	}
 	body := map[string]any{"status": "approved", "id": id}
 	if req != nil {
@@ -8279,6 +8285,7 @@ func (s *Server) handleDenyRequest(c *echo.Context) error {
 	approval.ClearPendingToolCall(id)
 	if req != nil && s.taskStore != nil {
 		s.taskStore.ClearSessionPendingAction(req.SessionID)
+		s.taskStore.SetSessionLifecycleState(req.SessionID, tasks.SessionLifecycleIdle, "")
 	}
 	response := map[string]any{"status": "denied", "id": id}
 	if req != nil {

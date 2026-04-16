@@ -879,6 +879,15 @@ func (a *Agent) chatWithLegacyOrchestrator(
 		}
 
 		// Execute tool calls
+		trackedSessionID := strings.TrimSpace(promptCtx.SessionID)
+		if a.taskStore != nil && trackedSessionID != "" {
+			a.taskStore.EnsureSessionToolRoundLimit(trackedSessionID, a.maxIterations)
+			if !a.taskStore.CanStartSessionToolRound(trackedSessionID) {
+				state, _ := a.taskStore.GetSessionState(trackedSessionID)
+				return "", routeResult, fmt.Errorf("max tool rounds (%d) reached for session %s", state.MaxToolRounds, trackedSessionID)
+			}
+			a.taskStore.RecordSessionToolRound(trackedSessionID)
+		}
 		for _, toolCall := range resp.ToolCalls {
 			result, err := a.executeToolCall(ctx, toolCall)
 			if err != nil {
@@ -1315,6 +1324,14 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 	sessionID := ctxStringValue(ctx, promptContextSessionKey)
 	runtimeID := ctxStringValue(ctx, promptContextRuntimeKey)
 	skipApproval := false
+	if a.taskStore != nil && sessionID != "" {
+		if !a.taskStore.CanExecuteSessionToolCall(sessionID, toolCall.Name) {
+			state, _ := a.taskStore.GetSessionState(sessionID)
+			limit := state.PerToolLimits[strings.TrimSpace(toolCall.Name)]
+			return "", fmt.Errorf("tool %s reached per-session call limit (%d) for session %s", toolCall.Name, limit, sessionID)
+		}
+		a.taskStore.RecordSessionToolCall(sessionID, toolCall.Name)
+	}
 
 	if a.permissionRules != nil {
 		result, err := a.permissionRules.Evaluate(ctx, permissionrules.Input{
@@ -1327,10 +1344,11 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 		}
 		if result.Matched {
 			switch result.Action {
-			case permissionrules.ActionDeny:
-				if a.taskStore != nil {
-					a.taskStore.ClearSessionPendingAction(sessionID)
-				}
+		case permissionrules.ActionDeny:
+			if a.taskStore != nil {
+				a.taskStore.ClearSessionPendingAction(sessionID)
+				a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleIdle, "")
+			}
 				return "Tool call denied by permission rule", nil
 			case permissionrules.ActionAsk:
 				if a.approval == nil {
@@ -1347,11 +1365,12 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 					a.taskStore.SetSessionPendingAction(sessionID, toolCall.Name, requestID)
 				}
 				return "Tool call pending approval", nil
-			case permissionrules.ActionAllow:
-				if a.taskStore != nil {
-					a.taskStore.ClearSessionPendingAction(sessionID)
-				}
-				skipApproval = true
+		case permissionrules.ActionAllow:
+			if a.taskStore != nil {
+				a.taskStore.ClearSessionPendingAction(sessionID)
+				a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleProcessing, toolCall.Name)
+			}
+			skipApproval = true
 			}
 		}
 	}
@@ -1370,6 +1389,7 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 		case approval.Denied:
 			if a.taskStore != nil {
 				a.taskStore.ClearSessionPendingAction(sessionID)
+				a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleIdle, "")
 			}
 			return "Tool call denied by approval policy", nil
 		case approval.Pending:
@@ -1386,9 +1406,14 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 		case approval.Approved:
 			if a.taskStore != nil {
 				a.taskStore.ClearSessionPendingAction(sessionID)
+				a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleProcessing, toolCall.Name)
 			}
 			// continue
 		}
+	}
+
+	if a.taskStore != nil && sessionID != "" {
+		a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleProcessing, toolCall.Name)
 	}
 
 	if toolCall.Name == "spawn" {
@@ -1408,7 +1433,13 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 
 	result, err := a.tools.Execute(ctx, toolCall.Name, toolCall.Arguments)
 	if err != nil {
+		if a.taskStore != nil {
+			a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleIdle, "")
+		}
 		return "", err
+	}
+	if a.taskStore != nil {
+		a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleIdle, "")
 	}
 
 	return result, nil

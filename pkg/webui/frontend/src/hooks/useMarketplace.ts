@@ -135,6 +135,20 @@ export interface WorkspaceStatus {
   path: string;
   exists: boolean;
   bootstrapped: boolean;
+  contract?: {
+    kind: string;
+    validation?: {
+      on_turn_end?: string[];
+      on_source_change?: string[];
+      on_completion?: string[];
+    };
+    artifacts?: Record<string, string>;
+    spawn_tasks?: Record<string, {
+      artifacts?: string[];
+      on_verify?: string[];
+      on_failure?: string[];
+    }>;
+  };
   bootstrap_files: string[];
   missing_bootstrap: string[];
   today_log_path: string;

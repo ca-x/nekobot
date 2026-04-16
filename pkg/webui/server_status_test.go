@@ -601,6 +601,10 @@ func TestHandleStatus_IncludesSessionRuntimeStates(t *testing.T) {
 	store := tasks.NewStore()
 	store.SetSessionPermissionMode("sess-1", "manual")
 	store.SetSessionPendingAction("sess-1", "exec", "approval-1")
+	store.SetSessionToolRoundLimit("sess-1", 7)
+	store.SetSessionToolCallLimit("sess-1", "exec", 2)
+	store.RecordSessionToolRound("sess-1")
+	store.RecordSessionToolCall("sess-1", "exec")
 
 	s := &Server{
 		config:    cfg,
@@ -621,6 +625,9 @@ func TestHandleStatus_IncludesSessionRuntimeStates(t *testing.T) {
 	}
 
 	var payload struct {
+		WorkspaceContract   struct {
+			Kind string `json:"kind"`
+		} `json:"workspace_contract"`
 		SessionRuntimeStates []tasks.SessionState `json:"session_runtime_states"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
@@ -635,8 +642,26 @@ func TestHandleStatus_IncludesSessionRuntimeStates(t *testing.T) {
 	if payload.SessionRuntimeStates[0].PermissionMode != "manual" {
 		t.Fatalf("expected manual permission mode, got %q", payload.SessionRuntimeStates[0].PermissionMode)
 	}
+	if payload.SessionRuntimeStates[0].LifecycleState != tasks.SessionLifecycleAwaitingInput {
+		t.Fatalf("expected awaiting_input lifecycle, got %q", payload.SessionRuntimeStates[0].LifecycleState)
+	}
 	if payload.SessionRuntimeStates[0].PendingRequestID != "approval-1" {
 		t.Fatalf("expected approval request id approval-1, got %q", payload.SessionRuntimeStates[0].PendingRequestID)
+	}
+	if payload.SessionRuntimeStates[0].MaxToolRounds != 7 {
+		t.Fatalf("expected max_tool_rounds 7, got %d", payload.SessionRuntimeStates[0].MaxToolRounds)
+	}
+	if payload.SessionRuntimeStates[0].ToolRounds != 1 {
+		t.Fatalf("expected tool_rounds 1, got %d", payload.SessionRuntimeStates[0].ToolRounds)
+	}
+	if payload.SessionRuntimeStates[0].ToolCalls["exec"] != 1 {
+		t.Fatalf("expected tool call count for exec, got %+v", payload.SessionRuntimeStates[0].ToolCalls)
+	}
+	if payload.SessionRuntimeStates[0].PerToolLimits["exec"] != 2 {
+		t.Fatalf("expected per-tool limit for exec, got %+v", payload.SessionRuntimeStates[0].PerToolLimits)
+	}
+	if payload.WorkspaceContract.Kind != "session" {
+		t.Fatalf("expected workspace contract kind session in status payload, got %+v", payload.WorkspaceContract)
 	}
 }
 

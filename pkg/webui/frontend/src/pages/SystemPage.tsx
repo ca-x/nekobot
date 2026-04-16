@@ -203,6 +203,28 @@ export default function SystemPage() {
                   value={status?.workspace_path || "-"}
                 />
               </div>
+              {status?.workspace_contract ? (
+                <div className="mt-4 rounded-2xl border border-border/70 bg-muted/35 p-4">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    Workspace contract
+                  </div>
+                  <div className="mt-2 text-sm font-semibold text-foreground">
+                    {status.workspace_contract.kind}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(status.workspace_contract.validation?.on_turn_end ?? []).map((item) => (
+                      <span key={`turn-${item}`} className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] text-muted-foreground">
+                        turn_end: {item}
+                      </span>
+                    ))}
+                    {(status.workspace_contract.validation?.on_completion ?? []).map((item) => (
+                      <span key={`done-${item}`} className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] text-muted-foreground">
+                        completion: {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </Card>
           ) : null}
 
@@ -1128,6 +1150,11 @@ function SessionStateCard({ state }: { state: SessionRuntimeState }) {
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            {state.lifecycle_state ? (
+              <span className="rounded-full bg-violet-500/15 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-violet-700 dark:text-violet-300">
+                {state.lifecycle_state}
+              </span>
+            ) : null}
             {state.permission_mode ? (
               <span className="rounded-full bg-sky-500/15 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-sky-700 dark:text-sky-300">
                 {t("systemSessionPermissionMode", state.permission_mode)}
@@ -1142,6 +1169,11 @@ function SessionStateCard({ state }: { state: SessionRuntimeState }) {
           <div className="mt-3 text-sm font-semibold text-foreground">
             {state.session_id}
           </div>
+          {state.lifecycle_detail ? (
+            <div className="mt-1 text-xs text-muted-foreground">
+              {state.lifecycle_detail}
+            </div>
+          ) : null}
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <Clock3 className="h-3.5 w-3.5" />
@@ -1150,12 +1182,33 @@ function SessionStateCard({ state }: { state: SessionRuntimeState }) {
                 formatTaskTimestamp(state.updated_at),
               )}
             </span>
+            {typeof state.tool_rounds === "number" && state.tool_rounds > 0 ? (
+              <span>
+                Tool rounds: {state.tool_rounds}
+                {typeof state.max_tool_rounds === "number" && state.max_tool_rounds > 0
+                  ? ` / ${state.max_tool_rounds}`
+                  : ""}
+              </span>
+            ) : null}
             {state.pending_request_id ? (
               <span>
                 {t("systemSessionPendingRequest", state.pending_request_id)}
               </span>
             ) : null}
           </div>
+          {state.tool_calls && Object.keys(state.tool_calls).length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {Object.entries(state.tool_calls).map(([toolName, count]) => (
+                <span
+                  key={toolName}
+                  className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground"
+                >
+                  {toolName}: {count}
+                  {state.per_tool_limits?.[toolName] ? ` / ${state.per_tool_limits[toolName]}` : ""}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

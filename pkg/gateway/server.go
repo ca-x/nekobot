@@ -965,6 +965,7 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 		if mode, ok := s.approval.GetSessionMode(req.SessionID); ok {
 			s.taskStore.SetSessionPermissionMode(req.SessionID, string(mode))
 		}
+		s.taskStore.SetSessionLifecycleState(req.SessionID, tasks.SessionLifecycleIdle, "")
 	}
 	body := map[string]any{"status": "approved", "id": id}
 	if req != nil {
@@ -997,6 +998,7 @@ func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
 	approval.ClearPendingToolCall(id)
 	if req != nil && s.taskStore != nil {
 		s.taskStore.ClearSessionPendingAction(req.SessionID)
+		s.taskStore.SetSessionLifecycleState(req.SessionID, tasks.SessionLifecycleIdle, "")
 	}
 	response := map[string]any{"status": "denied", "id": id}
 	if req != nil {

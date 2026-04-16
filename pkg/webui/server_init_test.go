@@ -72,6 +72,9 @@ func TestHandleInitStatusIncludesBootstrapSummary(t *testing.T) {
 			WorkspaceStatus struct {
 				Path             string   `json:"path"`
 				Bootstrapped     bool     `json:"bootstrapped"`
+				Contract         struct {
+					Kind string `json:"kind"`
+				} `json:"contract"`
 				MissingBootstrap []string `json:"missing_bootstrap"`
 			} `json:"workspace_status"`
 		} `json:"bootstrap"`
@@ -106,6 +109,9 @@ func TestHandleInitStatusIncludesBootstrapSummary(t *testing.T) {
 	}
 	if payload.Bootstrap.WorkspaceStatus.Path != cfg.Agents.Defaults.Workspace {
 		t.Fatalf("unexpected workspace status path: %+v", payload.Bootstrap.WorkspaceStatus)
+	}
+	if payload.Bootstrap.WorkspaceStatus.Contract.Kind != "session" {
+		t.Fatalf("expected workspace contract kind session, got %+v", payload.Bootstrap.WorkspaceStatus.Contract)
 	}
 	if payload.Bootstrap.WorkspaceStatus.Bootstrapped {
 		t.Fatalf("expected workspace to start unbootstrapped in init status, got %+v", payload.Bootstrap.WorkspaceStatus)

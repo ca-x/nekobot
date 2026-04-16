@@ -13,6 +13,7 @@ type Status struct {
 	Path                 string   `json:"path"`
 	Exists               bool     `json:"exists"`
 	Bootstrapped         bool     `json:"bootstrapped"`
+	Contract             Contract `json:"contract"`
 	BootstrapFiles       []string `json:"bootstrap_files"`
 	MissingBootstrap     []string `json:"missing_bootstrap"`
 	TodayLogPath         string   `json:"today_log_path"`
@@ -28,6 +29,7 @@ type Status struct {
 func (m *Manager) Inspect() (*Status, error) {
 	status := &Status{
 		Path:               m.workspaceDir,
+		Contract:           DefaultSessionContract(),
 		BootstrapFiles:     append([]string(nil), BootstrapFiles...),
 		TodayLogPath:       filepath.Join(m.workspaceDir, "memory", time.Now().Format("2006-01-02")+".md"),
 		HeartbeatStatePath: filepath.Join(m.workspaceDir, "memory", "heartbeat-state.json"),

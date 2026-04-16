@@ -377,6 +377,24 @@ export default function MarketplacePage() {
             <p className="mt-4 break-all text-xs leading-6 text-muted-foreground">
               {t('marketplaceDailyLog')}: {workspaceStatus?.today_log_path || '-'}
             </p>
+            {workspaceStatus?.contract ? (
+              <div className="mt-4 border-t border-border/70 pt-4">
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Workspace contract</div>
+                <div className="mt-2 text-sm font-semibold text-foreground">{workspaceStatus.contract.kind}</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(workspaceStatus.contract.validation?.on_turn_end ?? []).map((item) => (
+                    <span key={`turn-${item}`} className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] text-muted-foreground">
+                      turn_end: {item}
+                    </span>
+                  ))}
+                  {(workspaceStatus.contract.validation?.on_completion ?? []).map((item) => (
+                    <span key={`done-${item}`} className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] text-muted-foreground">
+                      completion: {item}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </Card>
 

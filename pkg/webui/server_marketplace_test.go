@@ -862,6 +862,9 @@ Inventory body.
 	if bootstrapped, _ := beforeRepair["bootstrapped"].(bool); bootstrapped {
 		t.Fatalf("expected workspace to be unbootstrapped before repair")
 	}
+	if contract, ok := beforeRepair["contract"].(map[string]interface{}); !ok || contract["kind"] != "session" {
+		t.Fatalf("expected workspace contract kind session, got %+v", beforeRepair["contract"])
+	}
 
 	repairReq := httptest.NewRequest(http.MethodPost, "/api/workspace/repair", nil)
 	repairRec := httptest.NewRecorder()
