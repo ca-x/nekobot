@@ -625,6 +625,68 @@ func TestServiceResumeActiveRunsRestartsLoop(t *testing.T) {
 	t.Fatalf("expected resumed run to reach needs_human_confirmation, got %+v", detail.GoalRun)
 }
 
+func TestServiceStartGoalRunSkipsExecutionForManualOnlyCriteria(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(
+		NewMemoryStore(),
+		goaldrivencriteria.NewParser(),
+		goaldrivencriteria.NewSchema(),
+		goaldrivenscope.NewResolver(),
+	)
+
+	created, err := svc.CreateGoalRun(t.Context(), CreateGoalRunInput{
+		Name:                    "manual only",
+		Goal:                    "confirm manually",
+		NaturalLanguageCriteria: "confirm manually",
+		RiskLevel:               RiskBalanced,
+		AllowAutoScope:          true,
+		CreatedBy:               "alice",
+	})
+	if err != nil {
+		t.Fatalf("CreateGoalRun failed: %v", err)
+	}
+
+	_, err = svc.ConfirmCriteria(t.Context(), created.GoalRun.ID, goaldrivencriteria.Set{
+		Criteria: []goaldrivencriteria.Item{
+			{
+				ID:       "manual-1",
+				Title:    "Manual confirmation",
+				Type:     goaldrivencriteria.TypeManualConfirmation,
+				Scope:    ExecutionScope{Kind: ScopeServer, Source: "manual"},
+				Required: true,
+				Status:   goaldrivencriteria.StatusPending,
+				Definition: map[string]any{
+					"prompt": "Confirm success",
+				},
+				UpdatedAt: time.Now().UTC(),
+			},
+		},
+	}, &ExecutionScope{Kind: ScopeServer, Source: "manual"})
+	if err != nil {
+		t.Fatalf("ConfirmCriteria failed: %v", err)
+	}
+
+	started, err := svc.StartGoalRun(t.Context(), created.GoalRun.ID)
+	if err != nil {
+		t.Fatalf("StartGoalRun failed: %v", err)
+	}
+	if started.Status != GoalStatusRunning {
+		t.Fatalf("expected immediate running transition, got %q", started.Status)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		detail, ok, err := svc.GetGoalRunDetail(t.Context(), created.GoalRun.ID)
+		if err == nil && ok && detail.GoalRun.Status == GoalStatusNeedsHumanConfirmation {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	detail, _, _ := svc.GetGoalRunDetail(t.Context(), created.GoalRun.ID)
+	t.Fatalf("expected manual-only run to reach needs_human_confirmation, got %+v", detail.GoalRun)
+}
+
 func TestServiceResumeVerifyingRunDoesNotReexecuteWorker(t *testing.T) {
 	t.Parallel()
 

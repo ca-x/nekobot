@@ -112,6 +112,16 @@ function describeScope(scope?: GoalRunScope | null): string {
   return t('goalRunsScopeServer', source);
 }
 
+function describeSelectedScope(run: GoalRun): string {
+  if (run.selected_scope) {
+    return describeScope(run.selected_scope);
+  }
+  if (run.recommended_scope) {
+    return t('goalRunsScopePendingSelection');
+  }
+  return t('goalRunsScopeUnknown');
+}
+
 function buildScopeSelection(
   run: GoalRun,
   selectedKind: GoalRunScopeKind,
@@ -152,7 +162,7 @@ function GoalRunMeta({ run }: { run: GoalRun }) {
       <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetaItem label={t('goalRunsFieldNaturalCriteria')} value={run.natural_language_criteria} />
         <MetaItem label={t('goalRunsFieldRiskLevel')} value={t(`goalRunsRisk_${run.risk_level}`)} />
-        <MetaItem label={t('goalRunsSelectedScope')} value={describeScope(run.selected_scope)} />
+        <MetaItem label={t('goalRunsSelectedScope')} value={describeSelectedScope(run)} />
         <MetaItem label={t('goalRunsRecommendedScope')} value={describeScope(run.recommended_scope)} />
         <MetaItem label={t('goalRunsCreatedBy')} value={run.created_by || '-'} />
         <MetaItem label={t('goalRunsCreatedAt')} value={formatDateTime(run.created_at)} />

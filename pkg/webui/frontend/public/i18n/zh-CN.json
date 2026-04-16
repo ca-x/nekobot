@@ -1351,6 +1351,7 @@
   "goalRunsStatus_failed": "失败",
   "goalRunsStatus_canceled": "已取消",
   "goalRunsScopeUnknown": "范围不可用",
+  "goalRunsScopePendingSelection": "尚未确认",
   "goalRunsScopeManual": "手动",
   "goalRunsScopeAuto": "自动",
   "goalRunsScopeDaemon": "Daemon 主机 · {0}",

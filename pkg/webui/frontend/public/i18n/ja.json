@@ -1351,6 +1351,7 @@
   "goalRunsStatus_failed": "失敗",
   "goalRunsStatus_canceled": "キャンセル",
   "goalRunsScopeUnknown": "スコープ未設定",
+  "goalRunsScopePendingSelection": "まだ確認されていません",
   "goalRunsScopeManual": "手動",
   "goalRunsScopeAuto": "自動",
   "goalRunsScopeDaemon": "Daemon ホスト · {0}",

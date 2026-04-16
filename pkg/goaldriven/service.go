@@ -620,25 +620,36 @@ func (s *Service) runGoalLoop(ctx context.Context, goalRunID string) {
 			return
 		}
 
-		worker, err := s.executeAttempt(ctx, run)
-		if err == nil {
-			_ = s.store.SaveWorkers(ctx, run.ID, []WorkerRef{worker})
-		}
-		if err != nil {
-			run.Status = GoalStatusFailed
-			run.UpdatedAt = s.now().UTC()
-			run.CompletedAt = s.now().UTC()
-			_, _ = s.store.UpdateGoalRun(ctx, run)
-			return
-		}
+		if hasAutomaticCriteria(set) {
+			worker, err := s.executeAttempt(ctx, run)
+			if err == nil {
+				_ = s.store.SaveWorkers(ctx, run.ID, []WorkerRef{worker})
+			}
+			if err != nil {
+				run.Status = GoalStatusFailed
+				run.UpdatedAt = s.now().UTC()
+				run.CompletedAt = s.now().UTC()
+				_, _ = s.store.UpdateGoalRun(ctx, run)
+				return
+			}
 
-		run.Status = GoalStatusVerifying
-		run.UpdatedAt = s.now().UTC()
-		run.LastActivityAt = s.now().UTC()
-		run.CurrentWorkerIDs = []string{worker.ID}
-		run, err = s.store.UpdateGoalRun(ctx, run)
-		if err != nil {
-			return
+			run.Status = GoalStatusVerifying
+			run.UpdatedAt = s.now().UTC()
+			run.LastActivityAt = s.now().UTC()
+			run.CurrentWorkerIDs = []string{worker.ID}
+			run, err = s.store.UpdateGoalRun(ctx, run)
+			if err != nil {
+				return
+			}
+		} else {
+			run.Status = GoalStatusVerifying
+			run.UpdatedAt = s.now().UTC()
+			run.LastActivityAt = s.now().UTC()
+			run.CurrentWorkerIDs = nil
+			run, err = s.store.UpdateGoalRun(ctx, run)
+			if err != nil {
+				return
+			}
 		}
 
 		evalRun, evalCriteria, err := s.evaluateCriteria(ctx, run, set)
@@ -660,6 +671,16 @@ func (s *Service) runGoalLoop(ctx context.Context, goalRunID string) {
 		_, _ = s.store.UpdateGoalRun(ctx, run)
 		time.Sleep(250 * time.Millisecond)
 	}
+}
+
+
+func hasAutomaticCriteria(set criteria.Set) bool {
+	for _, item := range set.Criteria {
+		if item.Type != criteria.TypeManualConfirmation {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) executeAttempt(ctx context.Context, run GoalRun) (WorkerRef, error) {

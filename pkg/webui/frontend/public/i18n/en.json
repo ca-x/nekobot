@@ -1351,6 +1351,7 @@
   "goalRunsStatus_failed": "Failed",
   "goalRunsStatus_canceled": "Canceled",
   "goalRunsScopeUnknown": "Scope unavailable",
+  "goalRunsScopePendingSelection": "Not confirmed yet",
   "goalRunsScopeManual": "manual",
   "goalRunsScopeAuto": "auto",
   "goalRunsScopeDaemon": "Daemon · {0}",
