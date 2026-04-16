@@ -8480,19 +8480,18 @@ func resolveWebUIChatRuntimeAlias(sessionID string) (string, bool) {
 	}
 
 	prefix := inboundrouter.SessionPrefix + ":"
-	if !strings.HasPrefix(sessionID, prefix) {
+	rest, ok := strings.CutPrefix(sessionID, prefix)
+	if !ok {
 		return "", false
 	}
-
-	parts := strings.Split(sessionID, ":")
-	if len(parts) != 3 {
+	runtimeID, suffix, ok := strings.Cut(rest, ":")
+	if !ok {
 		return "", false
 	}
-	if parts[0] != inboundrouter.SessionPrefix || parts[2] != "webui-chat" {
+	if suffix != "webui-chat" {
 		return "", false
 	}
-
-	runtimeID := strings.TrimSpace(parts[1])
+	runtimeID = strings.TrimSpace(runtimeID)
 	if runtimeID == "" {
 		return "", false
 	}
