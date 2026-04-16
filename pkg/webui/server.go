@@ -6314,6 +6314,7 @@ func (s *Server) handleStatus(c *echo.Context) error {
 		"runtime_db_path":    runtimeDBPath,
 		"workspace_path":     s.config.Agents.Defaults.Workspace,
 		"workspace_contract": workspaceStatus.Contract,
+		"workspace_validation_summary": workspaceStatus.ValidationSummary,
 		"task_count":         len(taskSnapshots),
 		"task_state_counts":  stateCounts,
 		"recent_tasks":       recentTasks,

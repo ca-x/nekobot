@@ -628,6 +628,16 @@ func TestHandleStatus_IncludesSessionRuntimeStates(t *testing.T) {
 		WorkspaceContract   struct {
 			Kind string `json:"kind"`
 		} `json:"workspace_contract"`
+		WorkspaceValidationSummary struct {
+			OnTurnEnd []struct {
+				Name   string `json:"name"`
+				Passed bool   `json:"passed"`
+			} `json:"on_turn_end"`
+			OnCompletion []struct {
+				Name   string `json:"name"`
+				Passed bool   `json:"passed"`
+			} `json:"on_completion"`
+		} `json:"workspace_validation_summary"`
 		SessionRuntimeStates []tasks.SessionState `json:"session_runtime_states"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
@@ -662,6 +672,12 @@ func TestHandleStatus_IncludesSessionRuntimeStates(t *testing.T) {
 	}
 	if payload.WorkspaceContract.Kind != "session" {
 		t.Fatalf("expected workspace contract kind session in status payload, got %+v", payload.WorkspaceContract)
+	}
+	if len(payload.WorkspaceValidationSummary.OnTurnEnd) == 0 {
+		t.Fatalf("expected workspace validation summary on_turn_end checks, got %+v", payload.WorkspaceValidationSummary)
+	}
+	if payload.WorkspaceValidationSummary.OnTurnEnd[0].Name == "" {
+		t.Fatalf("expected named workspace validation checks, got %+v", payload.WorkspaceValidationSummary.OnTurnEnd)
 	}
 }
 

@@ -13,6 +13,18 @@ type ValidationContract struct {
 	OnCompletion  []string `json:"on_completion,omitempty"`
 }
 
+type ValidationCheckResult struct {
+	Name    string `json:"name"`
+	Passed  bool   `json:"passed"`
+	Detail  string `json:"detail,omitempty"`
+}
+
+type ValidationSummary struct {
+	OnTurnEnd     []ValidationCheckResult `json:"on_turn_end,omitempty"`
+	OnSourceChange []ValidationCheckResult `json:"on_source_change,omitempty"`
+	OnCompletion  []ValidationCheckResult `json:"on_completion,omitempty"`
+}
+
 type SpawnTaskContract struct {
 	Artifacts []string `json:"artifacts,omitempty"`
 	OnVerify  []string `json:"on_verify,omitempty"`
@@ -55,4 +67,49 @@ func DefaultSessionContract() Contract {
 			},
 		},
 	}
+}
+
+func EvaluateContract(contract Contract, status *Status) ValidationSummary {
+	if status == nil {
+		return ValidationSummary{}
+	}
+	return ValidationSummary{
+		OnTurnEnd:      evaluateChecks(contract.Validation.OnTurnEnd, status),
+		OnSourceChange: evaluateChecks(contract.Validation.OnSourceChange, status),
+		OnCompletion:   evaluateChecks(contract.Validation.OnCompletion, status),
+	}
+}
+
+func evaluateChecks(checks []string, status *Status) []ValidationCheckResult {
+	results := make([]ValidationCheckResult, 0, len(checks))
+	for _, check := range checks {
+		name := check
+		passed := false
+		detail := ""
+		switch check {
+		case "workspace_bootstrapped":
+			passed = status.Bootstrapped
+			if !passed {
+				detail = "missing bootstrap files"
+			}
+		case "daily_log_present":
+			passed = status.TodayLogExists
+			if !passed {
+				detail = status.TodayLogPath
+			}
+		case "heartbeat_state_present":
+			passed = status.HeartbeatStateExists
+			if !passed {
+				detail = status.HeartbeatStatePath
+			}
+		default:
+			detail = "not evaluated"
+		}
+		results = append(results, ValidationCheckResult{
+			Name:   name,
+			Passed: passed,
+			Detail: detail,
+		})
+	}
+	return results
 }

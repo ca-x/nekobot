@@ -149,6 +149,11 @@ export interface WorkspaceStatus {
       on_failure?: string[];
     }>;
   };
+  validation_summary?: {
+    on_turn_end?: Array<{ name: string; passed: boolean; detail?: string }>;
+    on_source_change?: Array<{ name: string; passed: boolean; detail?: string }>;
+    on_completion?: Array<{ name: string; passed: boolean; detail?: string }>;
+  };
   bootstrap_files: string[];
   missing_bootstrap: string[];
   today_log_path: string;

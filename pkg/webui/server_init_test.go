@@ -75,6 +75,12 @@ func TestHandleInitStatusIncludesBootstrapSummary(t *testing.T) {
 				Contract         struct {
 					Kind string `json:"kind"`
 				} `json:"contract"`
+				ValidationSummary struct {
+					OnTurnEnd []struct {
+						Name   string `json:"name"`
+						Passed bool   `json:"passed"`
+					} `json:"on_turn_end"`
+				} `json:"validation_summary"`
 				MissingBootstrap []string `json:"missing_bootstrap"`
 			} `json:"workspace_status"`
 		} `json:"bootstrap"`
@@ -112,6 +118,9 @@ func TestHandleInitStatusIncludesBootstrapSummary(t *testing.T) {
 	}
 	if payload.Bootstrap.WorkspaceStatus.Contract.Kind != "session" {
 		t.Fatalf("expected workspace contract kind session, got %+v", payload.Bootstrap.WorkspaceStatus.Contract)
+	}
+	if len(payload.Bootstrap.WorkspaceStatus.ValidationSummary.OnTurnEnd) == 0 {
+		t.Fatalf("expected workspace validation summary in init status, got %+v", payload.Bootstrap.WorkspaceStatus.ValidationSummary)
 	}
 	if payload.Bootstrap.WorkspaceStatus.Bootstrapped {
 		t.Fatalf("expected workspace to start unbootstrapped in init status, got %+v", payload.Bootstrap.WorkspaceStatus)
