@@ -54,7 +54,7 @@ func TestRegisterAndPollProcessesFetchedTasks(t *testing.T) {
 		tasks:   []*daemonv1.Task{{TaskId: "task-1", RuntimeId: "runtime-a", Summary: "run tests"}},
 		fetchCh: make(chan struct{}, 1),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	go func() {
 		<-client.fetchCh

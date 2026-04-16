@@ -289,8 +289,8 @@ func normalizeInventoryMachine(info *daemonv1.DaemonInfo, inventory *daemonv1.Ru
 		newWorkspaceID := oldWorkspaceID
 		if workspace.IsDefault || oldWorkspaceID == "" {
 			newWorkspaceID = machineID + ":default"
-		} else if parts := strings.Split(oldWorkspaceID, ":"); len(parts) > 1 {
-			newWorkspaceID = machineID + ":" + strings.Join(parts[1:], ":")
+		} else if _, rest, ok := strings.Cut(oldWorkspaceID, ":"); ok {
+			newWorkspaceID = machineID + ":" + rest
 		}
 		workspaceIDMap[oldWorkspaceID] = newWorkspaceID
 		workspace.WorkspaceId = newWorkspaceID
