@@ -123,12 +123,13 @@ export default function SystemPage() {
   return (
     <div className="system-page flex h-full flex-col">
       <Header title={t("tabStatus")} />
-      <div className="flex flex-wrap items-center gap-2 pb-4">
+      <div className="grid grid-cols-2 gap-2 pb-4 sm:flex sm:flex-wrap sm:items-center">
         <Button
           variant="outline"
           size="sm"
           onClick={() => refetch()}
           disabled={isFetching}
+          className="justify-center sm:justify-start"
         >
           <RefreshCw
             className={`h-4 w-4 mr-1 ${isFetching ? "animate-spin" : ""}`}
@@ -140,6 +141,7 @@ export default function SystemPage() {
           size="sm"
           onClick={() => refetchService()}
           disabled={serviceFetching}
+          className="justify-center sm:justify-start"
         >
           <RefreshCw
             className={`h-4 w-4 mr-1 ${serviceFetching ? "animate-spin" : ""}`}
@@ -151,6 +153,7 @@ export default function SystemPage() {
           size="sm"
           onClick={() => refetchQMD()}
           disabled={qmdFetching}
+          className="justify-center sm:justify-start"
         >
           <DatabaseZap
             className={`h-4 w-4 mr-1 ${qmdFetching ? "animate-spin" : ""}`}
@@ -162,6 +165,7 @@ export default function SystemPage() {
           size="sm"
           onClick={() => refetchDaemonBootstrap()}
           disabled={daemonBootstrapFetching}
+          className="col-span-2 justify-center sm:col-auto sm:justify-start"
         >
           <RefreshCw
             className={`h-4 w-4 mr-1 ${daemonBootstrapFetching ? "animate-spin" : ""}`}
@@ -1155,7 +1159,7 @@ function StatusMetric({ label, value }: { label: string; value: string }) {
       <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
         {label}
       </div>
-      <div className="mt-2 break-all text-sm font-semibold text-foreground">
+      <div className="mt-2 break-words text-sm font-semibold leading-6 text-foreground">
         {value}
       </div>
     </div>
