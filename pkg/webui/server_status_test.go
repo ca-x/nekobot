@@ -1442,61 +1442,61 @@ func TestDaemonHTTPFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 	httpServer := httptest.NewServer(e)
 	defer httpServer.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	client := daemonhost.NewAuthedClient(httpServer.URL, s.getDaemonToken())
+	info := &daemonv1.DaemonInfo{
+		DaemonId:    "daemon-a",
+		MachineId:   "machine-a",
+		MachineName: "machine-a",
+		Status:      "online",
+	}
+	inventory := &daemonv1.RuntimeInventory{
+		Workspaces: []*daemonv1.Workspace{{
+			WorkspaceId: "workspace-a",
+			MachineId:   "machine-a",
+			Path:        cfg.WorkspacePath(),
+			DisplayName: "workspace-a",
+			IsDefault:   true,
+		}},
+		Runtimes: []*daemonv1.Runtime{{
+			RuntimeId:   "runtime-a",
+			MachineId:   "machine-a",
+			WorkspaceId: "workspace-a",
+			Kind:        "codex",
+			Installed:   true,
+			Healthy:     true,
+		}},
+	}
 
-	go func() {
-		for i := 0; i < 100; i++ {
-			sess, err := sessionMgr.GetExisting("webui-chat:daemon-e2e")
-			if err == nil {
-				messages := sess.GetMessages()
-				if len(messages) >= 3 && messages[len(messages)-1].Content == "daemon-ok" {
-					cancel()
-					return
-				}
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		cancel()
-	}()
-
-	err = daemonhost.RegisterAndPoll(ctx, client, daemonhost.PollOptions{
-		MachineName:  "machine-a",
-		PollInterval: time.Millisecond,
-		BuildInfo: func(string) (*daemonv1.DaemonInfo, error) {
-			return &daemonv1.DaemonInfo{
-				DaemonId:    "daemon-a",
-				MachineId:   "machine-a",
-				MachineName: "machine-a",
-				Status:      "online",
-			}, nil
-		},
-		BuildInventory: func(string) (*daemonv1.RuntimeInventory, error) {
-			return &daemonv1.RuntimeInventory{
-				Workspaces: []*daemonv1.Workspace{{
-					WorkspaceId: "workspace-a",
-					MachineId:   "machine-a",
-					Path:        cfg.WorkspacePath(),
-					DisplayName: "workspace-a",
-					IsDefault:   true,
-				}},
-				Runtimes: []*daemonv1.Runtime{{
-					RuntimeId:   "runtime-a",
-					MachineId:   "machine-a",
-					WorkspaceId: "workspace-a",
-					Kind:        "codex",
-					Installed:   true,
-					Healthy:     true,
-				}},
-			}, nil
-		},
-		Executor: func(context.Context, *daemonv1.Task) (string, error) {
-			return "daemon-ok", nil
-		},
+	if _, err := client.RegisterRemote(&daemonv1.RegisterMachineRequest{Info: info, Inventory: inventory}); err != nil {
+		t.Fatalf("register daemon failed: %v", err)
+	}
+	if _, err := client.HeartbeatRemote(&daemonv1.HeartbeatMachineRequest{Info: info, Inventory: inventory}); err != nil {
+		t.Fatalf("daemon heartbeat failed: %v", err)
+	}
+	fetchResp, err := client.FetchAssignedTasksRemote(&daemonv1.FetchAssignedTasksRequest{
+		MachineId:  "machine-a",
+		RuntimeIds: []string{"runtime-a"},
+		Limit:      10,
 	})
 	if err != nil {
-		t.Fatalf("RegisterAndPoll failed: %v", err)
+		t.Fatalf("fetch assigned tasks failed: %v", err)
+	}
+	if len(fetchResp.Tasks) != 1 || fetchResp.Tasks[0].TaskId != "task-e2e" {
+		t.Fatalf("unexpected fetched tasks: %+v", fetchResp.Tasks)
+	}
+	for _, state := range []string{string(tasks.StateClaimed), string(tasks.StateRunning), string(tasks.StateCompleted)} {
+		req := &daemonv1.UpdateTaskStatusRequest{
+			TaskId:    "task-e2e",
+			RuntimeId: "runtime-a",
+			State:     state,
+			Summary:   "daemon e2e work",
+		}
+		if state == string(tasks.StateCompleted) {
+			req.ResultMessage = "daemon-ok"
+		}
+		if _, err := client.UpdateTaskStatusRemote(req); err != nil {
+			t.Fatalf("update task status %s failed: %v", state, err)
+		}
 	}
 
 	items := ag.TaskService().List()

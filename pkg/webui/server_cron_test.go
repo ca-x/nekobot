@@ -241,8 +241,8 @@ func TestHandleCreateCronJob_AcceptsRouteOverrides(t *testing.T) {
 	cfg.Storage.DBDir = t.TempDir()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
 	cfg.Providers = []config.ProviderProfile{
-		{Name: "primary", ProviderKind: "openai"},
-		{Name: "backup", ProviderKind: "openai"},
+		{Name: "primary", ProviderKind: "openai", APIKey: "primary-key"},
+		{Name: "backup", ProviderKind: "openai", APIKey: "backup-key"},
 	}
 	cfg.Agents.Defaults.ProviderGroups = []config.ProviderGroupConfig{
 		{

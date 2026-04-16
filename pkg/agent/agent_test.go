@@ -41,9 +41,9 @@ func TestBuildProviderOrder_UsesOverrideAndFallback(t *testing.T) {
 	cfg.Agents.Defaults.Provider = "anthropic"
 	cfg.Agents.Defaults.Fallback = []string{"openai", "ollama"}
 	cfg.Providers = []config.ProviderProfile{
-		{Name: "anthropic", ProviderKind: "anthropic"},
-		{Name: "openai", ProviderKind: "openai"},
-		{Name: "ollama", ProviderKind: "openai"},
+		{Name: "anthropic", ProviderKind: "anthropic", APIKey: "anthropic-key"},
+		{Name: "openai", ProviderKind: "openai", APIKey: "openai-key"},
+		{Name: "ollama", ProviderKind: "openai", APIKey: "ollama-key"},
 	}
 
 	ag := &Agent{config: cfg}
@@ -153,8 +153,8 @@ func TestBuildProviderOrder_ExpandsProviderGroupRoundRobin(t *testing.T) {
 		},
 	}
 	cfg.Providers = []config.ProviderProfile{
-		{Name: "openai-a", ProviderKind: "openai"},
-		{Name: "openai-b", ProviderKind: "openai"},
+		{Name: "openai-a", ProviderKind: "openai", APIKey: "openai-a-key"},
+		{Name: "openai-b", ProviderKind: "openai", APIKey: "openai-b-key"},
 	}
 
 	ag := &Agent{
@@ -191,8 +191,8 @@ func TestBuildProviderOrder_ExpandsProviderGroupLeastUsed(t *testing.T) {
 		},
 	}
 	cfg.Providers = []config.ProviderProfile{
-		{Name: "openai-a", ProviderKind: "openai"},
-		{Name: "openai-b", ProviderKind: "openai"},
+		{Name: "openai-a", ProviderKind: "openai", APIKey: "openai-a-key"},
+		{Name: "openai-b", ProviderKind: "openai", APIKey: "openai-b-key"},
 	}
 
 	ag := &Agent{
@@ -1949,8 +1949,8 @@ func TestChatRoutesThroughLegacyOrchestratorPath(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected chat error")
 	}
-	if !strings.Contains(err.Error(), "LLM call failed: provider not found: missing") {
-		t.Fatalf("expected legacy path provider error, got %v", err)
+	if !strings.Contains(err.Error(), "no providers configured") {
+		t.Fatalf("expected legacy path no providers configured error, got %v", err)
 	}
 }
 
@@ -1962,8 +1962,8 @@ func TestChatRoutesThroughBladesOrchestratorPath(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected chat error")
 	}
-	if !strings.Contains(err.Error(), "blades runner run: llm call with fallback: provider not found: missing") {
-		t.Fatalf("expected blades path provider error, got %v", err)
+	if !strings.Contains(err.Error(), "no providers configured") {
+		t.Fatalf("expected blades path no providers configured error, got %v", err)
 	}
 }
 

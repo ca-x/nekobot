@@ -102,8 +102,8 @@ func TestPersistChatRoutingPersistsModel(t *testing.T) {
 	cfg.Agents.Defaults.Model = "old-model"
 	cfg.Agents.Defaults.Fallback = []string{"openai"}
 	cfg.Providers = []config.ProviderProfile{
-		{Name: "anthropic", ProviderKind: "anthropic"},
-		{Name: "openai", ProviderKind: "openai"},
+		{Name: "anthropic", ProviderKind: "anthropic", APIKey: "anthropic-key"},
+		{Name: "openai", ProviderKind: "openai", APIKey: "openai-key"},
 	}
 
 	s := &Server{config: cfg}

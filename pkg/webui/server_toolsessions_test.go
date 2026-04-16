@@ -667,6 +667,9 @@ func TestHandleRestartToolSessionPersistsLaunchMetadata(t *testing.T) {
 }
 
 func TestHandleSpawnToolSessionAcceptsExplicitZellijTransport(t *testing.T) {
+	if !runtimeagents.TransportByName(runtimeagents.TransportZellij).Available() {
+		t.Skip("zellij not available")
+	}
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
@@ -730,6 +733,9 @@ func TestHandleSpawnToolSessionAcceptsExplicitZellijTransport(t *testing.T) {
 }
 
 func TestHandleRestartToolSessionAcceptsExplicitZellijTransport(t *testing.T) {
+	if !runtimeagents.TransportByName(runtimeagents.TransportZellij).Available() {
+		t.Skip("zellij not available")
+	}
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
@@ -808,6 +814,9 @@ func TestHandleRestartToolSessionAcceptsExplicitZellijTransport(t *testing.T) {
 }
 
 func TestHandleSpawnToolSessionUsesConfiguredDefaultRuntimeTransport(t *testing.T) {
+	if !runtimeagents.TransportByName(runtimeagents.TransportZellij).Available() {
+		t.Skip("zellij not available")
+	}
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
