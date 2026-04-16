@@ -490,6 +490,7 @@ func (s *Server) setup() {
 	api.POST("/tool-sessions/:id/attach-token", s.handleCreateToolSessionAttachToken)
 	api.POST("/tool-sessions/consume-token", s.handleConsumeToolSessionAttachToken)
 	api.POST("/tool-sessions/spawn", s.handleSpawnToolSession)
+	api.GET("/tool-sessions/runtime-transports", s.handleListToolSessionRuntimeTransports)
 	api.POST("/external-agents/resolve-session", s.handleResolveExternalAgentSession)
 	api.GET("/external-agents/catalog", s.handleGetExternalAgentCatalog)
 	api.GET("/daemon/registry", s.handleGetDaemonRegistry)
@@ -1930,14 +1931,14 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	}
 	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
 
-	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", map[string]interface{}{
+	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"command":         command,
 		"launch_cmd":      launchCommand,
-		"runtime_session": runtimeSession,
-		"tmux_session":    runtimeSession,
 		"workdir":         workdir,
 		"proxy_mode":      proxyMode,
-	})
+	}, transport.Name(), runtimeSession)
+	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
+	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", eventPayload)
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"session":         sess,
 		"access_mode":     sess.AccessMode,
@@ -2776,14 +2777,14 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	}
 	updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
 
-	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", map[string]interface{}{
+	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"command":         command,
 		"launch_cmd":      launchCommand,
-		"runtime_session": runtimeSession,
-		"tmux_session":    runtimeSession,
 		"workdir":         workdir,
 		"proxy_mode":      proxyMode,
-	})
+	}, transport.Name(), runtimeSession)
+	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
+	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", eventPayload)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"session":         updatedSession,
@@ -3356,12 +3357,12 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 		)
 	}
 
-	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", map[string]interface{}{
+	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"launch_cmd":      attachCmd,
-		"runtime_session": runtimeSession,
-		"tmux_session":    runtimeSession,
 		"workdir":         workdir,
-	})
+	}, transport.Name(), runtimeSession)
+	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
+	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", eventPayload)
 	_ = s.toolSess.TouchSession(context.Background(), id, toolsessions.StateRunning)
 	s.logger.Info("Restored tool session runtime",
 		zap.String("session_id", id),
@@ -3410,6 +3411,23 @@ func metadataString(values map[string]interface{}, key string) string {
 
 func runtimeTransportFromName(name string) runtimeagents.RuntimeTransport {
 	return runtimeagents.TransportByName(name)
+}
+
+func (s *Server) handleListToolSessionRuntimeTransports(c *echo.Context) error {
+	defaultName := s.defaultRuntimeTransport().Name()
+	items := []map[string]interface{}{
+		{
+			"name":       runtimeagents.TransportTmux,
+			"available":  runtimeagents.TransportByName(runtimeagents.TransportTmux).Available(),
+			"is_default": defaultName == runtimeagents.TransportTmux,
+		},
+		{
+			"name":       runtimeagents.TransportZellij,
+			"available":  runtimeagents.TransportByName(runtimeagents.TransportZellij).Available(),
+			"is_default": defaultName == runtimeagents.TransportZellij,
+		},
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{"items": items})
 }
 
 func (s *Server) defaultRuntimeTransport() runtimeagents.RuntimeTransport {

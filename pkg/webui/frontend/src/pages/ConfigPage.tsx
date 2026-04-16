@@ -13,6 +13,7 @@ import {
   useImportConfig,
   useSaveConfig,
 } from '@/hooks/useConfig';
+import { useToolSessionRuntimeTransports } from '@/hooks/useToolSessions';
 import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
 import { useProviders } from '@/hooks/useProviders';
 import { useCleanupQMDExports, useInstallQMD, useQMDStatus, useUpdateQMD } from '@/hooks/useQMD';
@@ -1669,6 +1670,7 @@ function WatchSectionForm({
 
 function WebUISectionForm({
   data,
+  runtimeTransports,
   onChange,
   onCleanupToolSessionEvents,
   cleanupEventsPending,
@@ -1676,6 +1678,7 @@ function WebUISectionForm({
   cleanupSkillVersionsPending,
 }: {
   data: Record<string, unknown>;
+  runtimeTransports: Array<{ name: string; available: boolean; is_default: boolean }>;
   onChange: (key: string, value: unknown) => void;
   onCleanupToolSessionEvents: () => void;
   cleanupEventsPending: boolean;
@@ -1735,6 +1738,33 @@ function WebUISectionForm({
                 <SelectItem value="zellij">{t('runtimeTransportZellij')}</SelectItem>
               </SelectContent>
             </Select>
+            {runtimeTransports.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {runtimeTransports.map((item) => (
+                  <span
+                    key={item.name}
+                    className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                      item.available
+                        ? 'bg-emerald-500/10 text-emerald-700'
+                        : 'bg-amber-500/12 text-amber-700'
+                    }`}
+                  >
+                    {item.name} · {item.available ? t('runtimeTransportAvailable') : t('runtimeTransportUnavailable')}
+                    {item.is_default ? ' · default' : ''}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {(() => {
+              const selected = runtimeTransports.find(
+                (item) => item.name === (readString('tool_session_runtime_transport') || 'tmux'),
+              );
+              return selected && !selected.available ? (
+                <div className="mt-3 text-xs text-amber-700">
+                  {t('runtimeTransportUnavailableWarning', selected.name)}
+                </div>
+              ) : null;
+            })()}
           </div>
 
           <Card className="border-white/70 bg-white/80 shadow-none">
@@ -1862,6 +1892,7 @@ export default function ConfigPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const configQuery = useConfig();
+  const runtimeTransportsQuery = useToolSessionRuntimeTransports();
   const { data: config, isLoading } = configQuery;
   const saveConfig = useSaveConfig();
   const exportConfig = useExportConfig();
@@ -2194,6 +2225,7 @@ export default function ConfigPage() {
               ) : section === 'webui' ? (
                 <WebUISectionForm
                   data={currentData}
+                  runtimeTransports={runtimeTransportsQuery.data ?? []}
                   onChange={handleFieldChange}
                   onCleanupToolSessionEvents={() => cleanupToolSessionEvents.mutate()}
                   cleanupEventsPending={cleanupToolSessionEvents.isPending}

@@ -43,6 +43,48 @@ func TestApplyLaunchMetadataDoesNotInventTmuxCompatibilityForZellij(t *testing.T
 	}
 }
 
+func TestApplyLaunchMetadataClearsStaleTmuxCompatibilityWhenSwitchingTransports(t *testing.T) {
+	metadata := ApplyLaunchMetadata(map[string]interface{}{
+		MetadataRuntimeTransport: TransportTmux,
+		MetadataRuntimeSession:   "nekobot_old",
+		MetadataTmuxSession:      "nekobot_old",
+	}, LaunchInfo{
+		TransportName: TransportZellij,
+		SessionName:   "nekobot_new",
+		LaunchCommand: "zellij attach nekobot_new",
+	})
+
+	if got, _ := metadata[MetadataRuntimeTransport].(string); got != TransportZellij {
+		t.Fatalf("expected runtime transport %q, got %q", TransportZellij, got)
+	}
+	if got, _ := metadata[MetadataRuntimeSession].(string); got != "nekobot_new" {
+		t.Fatalf("expected runtime session to be updated, got %q", got)
+	}
+	if _, exists := metadata[MetadataTmuxSession]; exists {
+		t.Fatalf("expected stale tmux compatibility field to be removed, got %+v", metadata)
+	}
+}
+
+func TestApplyRuntimeSessionPayloadUsesTransportAwareCompatibilityField(t *testing.T) {
+	tmuxPayload := ApplyRuntimeSessionPayload(map[string]interface{}{}, TransportTmux, "nekobot_tmux")
+	if got, _ := tmuxPayload[MetadataRuntimeSession].(string); got != "nekobot_tmux" {
+		t.Fatalf("expected runtime session for tmux payload, got %+v", tmuxPayload)
+	}
+	if got, _ := tmuxPayload[MetadataTmuxSession].(string); got != "nekobot_tmux" {
+		t.Fatalf("expected tmux compatibility field for tmux payload, got %+v", tmuxPayload)
+	}
+
+	zellijPayload := ApplyRuntimeSessionPayload(map[string]interface{}{
+		MetadataTmuxSession: "stale",
+	}, TransportZellij, "nekobot_zellij")
+	if got, _ := zellijPayload[MetadataRuntimeSession].(string); got != "nekobot_zellij" {
+		t.Fatalf("expected runtime session for zellij payload, got %+v", zellijPayload)
+	}
+	if _, exists := zellijPayload[MetadataTmuxSession]; exists {
+		t.Fatalf("did not expect tmux compatibility field for zellij payload, got %+v", zellijPayload)
+	}
+}
+
 func TestTransportByNameResolvesKnownBackends(t *testing.T) {
 	if got := TransportByName(TransportTmux).Name(); got != TransportTmux {
 		t.Fatalf("expected tmux transport, got %q", got)

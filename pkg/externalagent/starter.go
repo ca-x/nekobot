@@ -73,13 +73,13 @@ func EnsureProcess(
 	if _, err := sessionMgr.UpdateSessionLaunch(ctx, sessionID, strings.TrimSpace(sess.Tool), strings.TrimSpace(sess.Title), command, workdir); err != nil {
 		return fmt.Errorf("update external agent launch session: %w", err)
 	}
-	_ = sessionMgr.AppendEvent(context.Background(), sessionID, "process_started", map[string]interface{}{
+	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"command":         command,
 		"launch_cmd":      launchCommand,
-		"runtime_session": launchInfo.SessionName,
-		"tmux_session":    launchInfo.SessionName,
 		"workdir":         workdir,
-	})
+	}, launchInfo.TransportName, launchInfo.SessionName)
+	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(launchInfo.TransportName)
+	_ = sessionMgr.AppendEvent(context.Background(), sessionID, "process_started", eventPayload)
 	return nil
 }
 
