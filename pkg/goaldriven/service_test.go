@@ -698,6 +698,109 @@ func TestServiceResumeVerifyingRunFallsBackToReadyWhenVerificationStillUnmet(t *
 	t.Fatalf("expected resumed verifying-running path to fall back to ready, got %+v", detail.GoalRun)
 }
 
+func TestServiceResumeActiveRunsAcrossServiceRestart(t *testing.T) {
+	t.Parallel()
+
+	log, err := logger.New(&logger.Config{Level: logger.LevelInfo, Development: true})
+	if err != nil {
+		t.Fatalf("logger.New failed: %v", err)
+	}
+	kv, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: t.TempDir() + "/state.json"})
+	if err != nil {
+		t.Fatalf("NewFileStore failed: %v", err)
+	}
+	defer func() { _ = kv.Close() }()
+
+	store := NewPersistentStore(kv)
+	creator := NewService(
+		store,
+		goaldrivencriteria.NewParser(),
+		goaldrivencriteria.NewSchema(),
+		goaldrivenscope.NewResolver(),
+	)
+	created, err := creator.CreateGoalRun(t.Context(), CreateGoalRunInput{
+		Name:                    "restart integration",
+		Goal:                    "resume after restart",
+		NaturalLanguageCriteria: "confirm manually",
+		RiskLevel:               RiskBalanced,
+		AllowAutoScope:          true,
+		CreatedBy:               "alice",
+	})
+	if err != nil {
+		t.Fatalf("CreateGoalRun failed: %v", err)
+	}
+	_, err = creator.ConfirmCriteria(t.Context(), created.GoalRun.ID, goaldrivencriteria.Set{
+		Criteria: []goaldrivencriteria.Item{
+			{
+				ID:       "manual-1",
+				Title:    "Manual confirmation",
+				Type:     goaldrivencriteria.TypeManualConfirmation,
+				Scope:    ExecutionScope{Kind: ScopeServer, Source: "manual"},
+				Required: true,
+				Status:   goaldrivencriteria.StatusPending,
+				Definition: map[string]any{
+					"prompt": "Confirm success",
+				},
+				UpdatedAt: time.Now().UTC(),
+			},
+		},
+	}, &ExecutionScope{Kind: ScopeServer, Source: "manual"})
+	if err != nil {
+		t.Fatalf("ConfirmCriteria failed: %v", err)
+	}
+	_, err = store.UpdateGoalRun(t.Context(), GoalRun{
+		ID:                      created.GoalRun.ID,
+		Name:                    created.GoalRun.Name,
+		Goal:                    created.GoalRun.Goal,
+		NaturalLanguageCriteria: created.GoalRun.NaturalLanguageCriteria,
+		Status:                  GoalStatusRunning,
+		RiskLevel:               created.GoalRun.RiskLevel,
+		AllowAutoScope:          true,
+		SelectedScope:           &ExecutionScope{Kind: ScopeServer, Source: "manual"},
+		CreatedBy:               created.GoalRun.CreatedBy,
+		CreatedAt:               created.GoalRun.CreatedAt,
+		UpdatedAt:               time.Now().UTC(),
+		StartedAt:               time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("force running state failed: %v", err)
+	}
+
+	// Simulate service restart by constructing a brand-new service instance over the same KV-backed store.
+	restarted := NewService(
+		NewPersistentStore(kv),
+		goaldrivencriteria.NewParser(),
+		goaldrivencriteria.NewSchema(),
+		goaldrivenscope.NewResolver(),
+	)
+	restarted.SetServerRunner(func(_ context.Context, run GoalRun) (WorkerRef, error) {
+		return WorkerRef{
+			ID:              "gw-restarted",
+			Name:            "server-worker",
+			Status:          "completed",
+			Scope:           *run.SelectedScope,
+			TaskID:          "task-restarted",
+			LastHeartbeatAt: time.Now().UTC(),
+			LastProgressAt:  time.Now().UTC(),
+			LeaseExpiresAt:  time.Now().UTC().Add(5 * time.Minute),
+		}, nil
+	})
+
+	if err := restarted.ResumeActiveRuns(t.Context()); err != nil {
+		t.Fatalf("ResumeActiveRuns failed: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		detail, ok, err := restarted.GetGoalRunDetail(t.Context(), created.GoalRun.ID)
+		if err == nil && ok && detail.GoalRun.Status == GoalStatusNeedsHumanConfirmation {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	detail, _, _ := restarted.GetGoalRunDetail(t.Context(), created.GoalRun.ID)
+	t.Fatalf("expected restarted service to recover active run into needs_human_confirmation, got %+v", detail.GoalRun)
+}
+
 func TestPersistentStoreListsActiveRunForResume(t *testing.T) {
 	t.Parallel()
 
