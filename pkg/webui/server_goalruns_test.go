@@ -4,8 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +23,7 @@ import (
 	goaldrivencriteria "nekobot/pkg/goaldriven/criteria"
 	goaldrivenscope "nekobot/pkg/goaldriven/scope"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/state"
 )
 
 func TestHandleCreateGoalRunAndGetAndList(t *testing.T) {
@@ -350,4 +357,303 @@ func waitForGoalStatus(t *testing.T, svc *goaldriven.Service, goalRunID string, 
 	}
 	detail, _, _ := svc.GetGoalRunDetail(t.Context(), goalRunID)
 	t.Fatalf("goal run %s never reached status %s, got %+v", goalRunID, want, detail.GoalRun)
+}
+
+func TestGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustPort(t, reserveGoalRunTCPAddr(t))
+	cfg.WebUI.Port = mustPort(t, reserveGoalRunTCPAddr(t))
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("SaveToFile failed: %v", err)
+	}
+
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	binPath := filepath.Join(t.TempDir(), "nekobot-goalrun-e2e")
+	buildCmd := exec.Command("go", "build", "-o", binPath, "./cmd/nekobot")
+	buildCmd.Dir = repoRoot
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("build binary failed: %v\n%s", err, string(output))
+	}
+
+	startProcess := func(t *testing.T) *exec.Cmd {
+		t.Helper()
+		cmd := exec.Command(binPath, "--config", configPath, "gateway")
+		cmd.Dir = repoRoot
+		cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start gateway process: %v", err)
+		}
+		waitForHTTPOK(t, "http://127.0.0.1:"+itoa(cfg.WebUI.Port)+"/api/auth/init-status", 15*time.Second)
+		return cmd
+	}
+
+	stopProcess := func(t *testing.T, cmd *exec.Cmd) {
+		t.Helper()
+		if cmd == nil || cmd.Process == nil {
+			return
+		}
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	}
+
+	cmdA := startProcess(t)
+	defer stopProcess(t, cmdA)
+
+	token := initAdminAndGetToken(t, cfg.WebUI.Port)
+
+	stopProcess(t, cmdA)
+	cmdA = nil
+
+	log, err := logger.New(&logger.Config{Level: logger.LevelInfo, Development: true})
+	if err != nil {
+		t.Fatalf("logger.New failed: %v", err)
+	}
+	loader := config.NewLoader()
+	loadedCfg, err := loader.LoadFromFile(configPath)
+	if err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+	kvStore, err := state.NewFileStore(log, &state.FileStoreConfig{
+		FilePath: filepath.Join(loadedCfg.WorkspacePath(), "state.json"),
+		AutoSave: true,
+	})
+	if err != nil {
+		t.Fatalf("NewFileStore failed: %v", err)
+	}
+	goalStore := goaldriven.NewPersistentStore(kvStore)
+	goalRunID := "gr-process-restart"
+	now := time.Now().UTC()
+	if _, err := goalStore.CreateGoalRun(t.Context(), goaldriven.GoalRun{
+		ID:                      goalRunID,
+		Name:                    "restart recovery e2e",
+		Goal:                    "resume through real process restart",
+		NaturalLanguageCriteria: "confirm manually",
+		Status:                  goaldriven.GoalStatusVerifying,
+		RiskLevel:               goaldriven.RiskBalanced,
+		AllowAutoScope:          true,
+		SelectedScope:           &goaldriven.ExecutionScope{Kind: goaldriven.ScopeServer, Source: "manual"},
+		CreatedBy:               "admin",
+		CreatedAt:               now,
+		UpdatedAt:               now,
+		StartedAt:               now,
+	}); err != nil {
+		t.Fatalf("CreateGoalRun failed: %v", err)
+	}
+	if err := goalStore.SaveCriteria(t.Context(), goalRunID, goaldrivencriteria.Set{
+		Criteria: []goaldrivencriteria.Item{
+			{
+				ID:       "manual-1",
+				Title:    "Manual confirmation",
+				Type:     goaldrivencriteria.TypeManualConfirmation,
+				Scope:    goaldriven.ExecutionScope{Kind: goaldriven.ScopeServer, Source: "manual"},
+				Required: true,
+				Status:   goaldrivencriteria.StatusPending,
+				Definition: map[string]any{
+					"prompt": "Confirm success",
+				},
+				UpdatedAt: now,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCriteria failed: %v", err)
+	}
+	if err := kvStore.Close(); err != nil {
+		t.Fatalf("Close kv store failed: %v", err)
+	}
+
+	cmdB := startProcess(t)
+	defer stopProcess(t, cmdB)
+
+	token = loginAndGetToken(t, cfg.WebUI.Port, "admin", "admin123456")
+	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusNeedsHumanConfirmation), 15*time.Second)
+	confirmManualCriterionHTTP(t, cfg.WebUI.Port, token, goalRunID, map[string]any{
+		"criterion_id": "manual-1",
+		"approved":     true,
+		"note":         "restart recovery e2e confirmed",
+	})
+	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusCompleted), 15*time.Second)
+}
+
+func reserveGoalRunTCPAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve tcp addr: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().String()
+}
+
+func mustPort(t *testing.T, addr string) int {
+	t.Helper()
+	_, portText, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split host port: %v", err)
+	}
+	var port int
+	if _, err := fmt.Sscanf(portText, "%d", &port); err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+	return port
+}
+
+func itoa(v int) string {
+	return fmt.Sprintf("%d", v)
+}
+
+func waitForHTTPOK(t *testing.T, url string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(url)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("endpoint never became ready: %s", url)
+}
+
+func initAdminAndGetToken(t *testing.T, webuiPort int) string {
+	t.Helper()
+	body := map[string]any{
+		"username": "admin",
+		"password": "admin123456",
+	}
+	resp := postJSON(t, "http://127.0.0.1:"+itoa(webuiPort)+"/api/auth/init", "", body)
+	return stringField(t, resp, "token")
+}
+
+func loginAndGetToken(t *testing.T, webuiPort int, username, password string) string {
+	t.Helper()
+	resp := postJSON(t, "http://127.0.0.1:"+itoa(webuiPort)+"/api/auth/login", "", map[string]any{
+		"username": username,
+		"password": password,
+	})
+	return stringField(t, resp, "token")
+}
+
+func createGoalRunHTTP(t *testing.T, webuiPort int, token string, body map[string]any) map[string]any {
+	t.Helper()
+	return postJSON(t, "http://127.0.0.1:"+itoa(webuiPort)+"/api/goal-runs", token, body)
+}
+
+func confirmGoalRunCriteriaHTTP(t *testing.T, webuiPort int, token, goalRunID string, body map[string]any) map[string]any {
+	t.Helper()
+	return postJSON(t, "http://127.0.0.1:"+itoa(webuiPort)+"/api/goal-runs/"+goalRunID+"/confirm-criteria", token, body)
+}
+
+func startGoalRunHTTP(t *testing.T, webuiPort int, token, goalRunID string) map[string]any {
+	t.Helper()
+	return postJSON(t, "http://127.0.0.1:"+itoa(webuiPort)+"/api/goal-runs/"+goalRunID+"/start", token, map[string]any{})
+}
+
+func confirmManualCriterionHTTP(t *testing.T, webuiPort int, token, goalRunID string, body map[string]any) map[string]any {
+	t.Helper()
+	return postJSON(t, "http://127.0.0.1:"+itoa(webuiPort)+"/api/goal-runs/"+goalRunID+"/confirm-manual", token, body)
+}
+
+func waitForGoalRunStatusHTTP(t *testing.T, webuiPort int, token, goalRunID, want string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp := getJSON(t, "http://127.0.0.1:"+itoa(webuiPort)+"/api/goal-runs/"+goalRunID, token)
+		got := nestedString(t, resp, "goal_run", "status")
+		if got == want {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("goal run %s never reached status %s", goalRunID, want)
+}
+
+func postJSON(t *testing.T, url, token string, body map[string]any) map[string]any {
+	t.Helper()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post %s failed: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		var text bytes.Buffer
+		_, _ = text.ReadFrom(resp.Body)
+		t.Fatalf("post %s status %d: %s", url, resp.StatusCode, text.String())
+	}
+	var decoded map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return decoded
+}
+
+func getJSON(t *testing.T, url, token string) map[string]any {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("get %s failed: %v", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		var text bytes.Buffer
+		_, _ = text.ReadFrom(resp.Body)
+		t.Fatalf("get %s status %d: %s", url, resp.StatusCode, text.String())
+	}
+	var decoded map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return decoded
+}
+
+func stringField(t *testing.T, payload map[string]any, key string) string {
+	t.Helper()
+	value, _ := payload[key].(string)
+	if strings.TrimSpace(value) == "" {
+		t.Fatalf("expected string field %q in payload: %+v", key, payload)
+	}
+	return value
+}
+
+func nestedString(t *testing.T, payload map[string]any, path ...string) string {
+	t.Helper()
+	var current any = payload
+	for _, key := range path {
+		node, ok := current.(map[string]any)
+		if !ok {
+			t.Fatalf("expected map at %q in payload: %+v", key, payload)
+		}
+		current = node[key]
+	}
+	value, _ := current.(string)
+	if strings.TrimSpace(value) == "" {
+		t.Fatalf("expected non-empty string at %v in payload: %+v", path, payload)
+	}
+	return value
 }
