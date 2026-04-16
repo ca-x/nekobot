@@ -2,6 +2,7 @@ package goaldriven
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -131,6 +132,10 @@ func (s *Service) CreateGoalRun(ctx context.Context, in CreateGoalRunInput) (Cre
 		return CreateGoalRunOutput{}, fmt.Errorf("create goal run: %w", err)
 	}
 	if err := s.store.SaveCriteria(ctx, created.ID, draftCriteria); err != nil {
+		rollbackErr := cleanupPartialCreate(ctx, s.store, created.ID)
+		if rollbackErr != nil {
+			return CreateGoalRunOutput{}, fmt.Errorf("save draft criteria: %w (rollback failed: %v)", err, rollbackErr)
+		}
 		return CreateGoalRunOutput{}, fmt.Errorf("save draft criteria: %w", err)
 	}
 	return CreateGoalRunOutput{GoalRun: created, DraftCriteria: draftCriteria}, nil
@@ -246,6 +251,37 @@ func (s *Service) SetDaemonRunner(fn func(context.Context, GoalRun) (WorkerRef, 
 		return
 	}
 	s.daemonRunner = fn
+}
+
+// ResumeActiveRuns restarts execution loops for persisted active GoalRuns.
+func (s *Service) ResumeActiveRuns(ctx context.Context) error {
+	if s == nil {
+		return fmt.Errorf("service is nil")
+	}
+	items, err := s.store.ListGoalRuns(ctx)
+	if err != nil {
+		return fmt.Errorf("list goal runs: %w", err)
+	}
+	for _, run := range items {
+		if run.Status != GoalStatusRunning && run.Status != GoalStatusVerifying {
+			continue
+		}
+		runCtx, cancel := context.WithCancel(context.Background())
+		s.mu.Lock()
+		if _, exists := s.active[run.ID]; exists {
+			s.mu.Unlock()
+			cancel()
+			continue
+		}
+		s.active[run.ID] = cancel
+		s.mu.Unlock()
+		if run.Status == GoalStatusVerifying {
+			go s.resumeVerificationLoop(runCtx, run.ID)
+			continue
+		}
+		go s.runGoalLoop(runCtx, run.ID)
+	}
+	return nil
 }
 
 // StartGoalRun transitions one ready GoalRun into running and starts its orchestration loop.
@@ -517,6 +553,38 @@ func (s *Service) stopActiveRun(goalRunID string) {
 	}
 	cancel()
 	delete(s.active, goalRunID)
+}
+
+func (s *Service) resumeVerificationLoop(ctx context.Context, goalRunID string) {
+	defer s.stopActiveRun(goalRunID)
+	run, ok, err := s.store.GetGoalRun(ctx, goalRunID)
+	if err != nil || !ok {
+		return
+	}
+	set, ok, err := s.store.LoadCriteria(ctx, goalRunID)
+	if err != nil || !ok {
+		return
+	}
+	evalRun, evalCriteria, err := s.evaluateCriteria(ctx, run, set)
+	if err != nil {
+		run.Status = GoalStatusFailed
+		run.UpdatedAt = s.now().UTC()
+		run.CompletedAt = s.now().UTC()
+		_, _ = s.store.UpdateGoalRun(ctx, run)
+		return
+	}
+	if err := s.store.SaveCriteria(ctx, goalRunID, evalCriteria); err != nil {
+		return
+	}
+	updatedRun, err := s.store.UpdateGoalRun(ctx, evalRun)
+	if err != nil {
+		return
+	}
+	if updatedRun.Status == GoalStatusRunning {
+		updatedRun.Status = GoalStatusReady
+		updatedRun.UpdatedAt = s.now().UTC()
+		_, _ = s.store.UpdateGoalRun(ctx, updatedRun)
+	}
 }
 
 func (s *Service) runGoalLoop(ctx context.Context, goalRunID string) {
@@ -1040,4 +1108,21 @@ func chooseDaemonRuntime(inventory *daemonv1.RuntimeInventory) (string, string, 
 		return "", "", fmt.Errorf("no workspace available in daemon inventory")
 	}
 	return "", "", fmt.Errorf("no installed healthy daemon runtime available for workspace %s", workspaceID)
+}
+
+func cleanupPartialCreate(ctx context.Context, store Store, goalRunID string) error {
+	var errs []string
+	if err := store.DeleteCriteria(ctx, goalRunID); err != nil {
+		errs = append(errs, "delete criteria: "+err.Error())
+	}
+	if err := store.DeleteWorkers(ctx, goalRunID); err != nil {
+		errs = append(errs, "delete workers: "+err.Error())
+	}
+	if err := store.DeleteGoalRun(ctx, goalRunID); err != nil {
+		errs = append(errs, "delete goal run: "+err.Error())
+	}
+	if len(errs) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(errs, "; "))
 }
