@@ -91,6 +91,12 @@ export interface StatusTask {
 
 export interface SessionRuntimeState {
   session_id: string;
+  lifecycle_state?: string;
+  lifecycle_detail?: string;
+  max_tool_rounds?: number;
+  tool_rounds?: number;
+  tool_calls?: Record<string, number>;
+  per_tool_limits?: Record<string, number>;
   permission_mode?: string;
   pending_action?: string;
   pending_request_id?: string;
@@ -189,6 +195,20 @@ export interface StatusData {
   database_dir: string;
   runtime_db_path: string;
   workspace_path: string;
+  workspace_contract?: {
+    kind: string;
+    validation?: {
+      on_turn_end?: string[];
+      on_source_change?: string[];
+      on_completion?: string[];
+    };
+    artifacts?: Record<string, string>;
+    spawn_tasks?: Record<string, {
+      artifacts?: string[];
+      on_verify?: string[];
+      on_failure?: string[];
+    }>;
+  };
   task_count: number;
   task_state_counts: Record<string, number>;
   recent_tasks: StatusTask[];

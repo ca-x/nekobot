@@ -2726,6 +2726,8 @@ type failoverTestAdaptor struct {
 	content   string
 	err       error
 	onRequest func(*providers.UnifiedRequest)
+	responses []*providers.UnifiedResponse
+	responseN int
 }
 
 func (a *failoverTestAdaptor) Init(info *providers.RelayInfo) error {
@@ -2785,6 +2787,14 @@ func (a *failoverTestAdaptor) DoRequest(ctx context.Context, req *http.Request) 
 func (a *failoverTestAdaptor) DoResponse(body []byte, info *providers.RelayInfo) (*providers.UnifiedResponse, error) {
 	_ = body
 	_ = info
+	if len(a.responses) > 0 {
+		idx := a.responseN
+		if idx >= len(a.responses) {
+			idx = len(a.responses) - 1
+		}
+		a.responseN++
+		return a.responses[idx], nil
+	}
 	return &providers.UnifiedResponse{
 		Content:      a.content,
 		FinishReason: "stop",
@@ -2835,6 +2845,26 @@ func registerFailoverTestProviderWithCapture(
 	})
 }
 
+func registerFailoverTestProviderWithResponses(
+	t *testing.T,
+	providerKind string,
+	callCount *int,
+	responses []*providers.UnifiedResponse,
+	onRequest func(*providers.UnifiedRequest),
+) {
+	t.Helper()
+	providers.Register(providerKind, func() providers.Adaptor {
+		return &failoverTestAdaptor{
+			callCount: callCount,
+			onRequest: onRequest,
+			responses: responses,
+		}
+	})
+	t.Cleanup(func() {
+		providers.Unregister(providerKind)
+	})
+}
+
 func newFailoverTestAgent(t *testing.T, cfg *config.Config) *Agent {
 	t.Helper()
 
@@ -2859,6 +2889,112 @@ func newFailoverTestAgent(t *testing.T, cfg *config.Config) *Agent {
 	}
 	ag.context.SetToolDescriptionsFunc(ag.tools.GetDescriptions)
 	return ag
+}
+
+func TestChatEnforcesMaxToolRoundsPerSession(t *testing.T) {
+	providerKind := failoverTestProviderKind(t, "tool-round-limit")
+	callCount := new(int)
+	registerFailoverTestProviderWithResponses(t, providerKind, callCount, []*providers.UnifiedResponse{
+		{
+			ToolCalls: []providers.UnifiedToolCall{{
+				ID:        "call-1",
+				Name:      "stub_tool",
+				Arguments: map[string]interface{}{},
+			}},
+			FinishReason: "tool_calls",
+		},
+		{
+			ToolCalls: []providers.UnifiedToolCall{{
+				ID:        "call-2",
+				Name:      "stub_tool",
+				Arguments: map[string]interface{}{},
+			}},
+			FinishReason: "tool_calls",
+		},
+	}, nil)
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Orchestrator = orchestratorLegacy
+	cfg.Agents.Defaults.Provider = "primary"
+	cfg.Agents.Defaults.Model = "test-model"
+	cfg.Providers = []config.ProviderProfile{{
+		Name:         "primary",
+		ProviderKind: providerKind,
+		Models:       []string{"test-model"},
+		DefaultModel: "test-model",
+	}}
+
+	ag := newFailoverTestAgent(t, cfg)
+	ag.maxIterations = 3
+	stubTool := &toolExecutionResultStubTool{
+		name:        "stub_tool",
+		description: "stub tool",
+	}
+	ag.tools.MustRegister(stubTool)
+	ag.taskStore = tasks.NewStore()
+	ag.taskStore.SetSessionToolRoundLimit("sess-1", 1)
+
+	sess := &testSession{}
+	_, _, err := ag.ChatWithPromptContextDetailed(context.Background(), sess, "hello", PromptContext{
+		SessionID:         "sess-1",
+		RequestedProvider: "primary",
+		RequestedModel:    "test-model",
+	})
+	if err == nil {
+		t.Fatal("expected tool round limit error")
+	}
+	if !strings.Contains(err.Error(), "max tool rounds (1) reached for session sess-1") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stubTool.callCount() != 1 {
+		t.Fatalf("expected exactly one executed tool call before enforcement, got %d", stubTool.callCount())
+	}
+	state, ok := ag.taskStore.GetSessionState("sess-1")
+	if !ok {
+		t.Fatal("expected session state to exist")
+	}
+	if state.ToolRounds != 1 {
+		t.Fatalf("expected tool rounds to stop at 1, got %d", state.ToolRounds)
+	}
+	if state.ToolCalls["stub_tool"] != 1 {
+		t.Fatalf("expected tool call count to stop at 1, got %+v", state.ToolCalls)
+	}
+}
+
+func TestExecuteToolCallEnforcesPerToolLimitsPerSession(t *testing.T) {
+	cfg := config.DefaultConfig()
+	log := testLogger(t)
+	ag, err := New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New agent failed: %v", err)
+	}
+	stubTool := &toolExecutionResultStubTool{
+		name:        "stub_tool",
+		description: "stub tool",
+	}
+	ag.tools.MustRegister(stubTool)
+	ag.taskStore = tasks.NewStore()
+	ag.taskStore.SetSessionToolCallLimit("sess-1", "stub_tool", 1)
+
+	ctx := context.WithValue(context.Background(), promptContextSessionKey, "sess-1")
+
+	if _, err := ag.executeToolCall(ctx, providers.UnifiedToolCall{
+		Name:      "stub_tool",
+		Arguments: map[string]interface{}{},
+	}); err != nil {
+		t.Fatalf("expected first tool call to succeed, got %v", err)
+	}
+	if _, err := ag.executeToolCall(ctx, providers.UnifiedToolCall{
+		Name:      "stub_tool",
+		Arguments: map[string]interface{}{},
+	}); err == nil {
+		t.Fatal("expected second tool call to be blocked by per-tool limit")
+	} else if !strings.Contains(err.Error(), "tool stub_tool reached per-session call limit (1) for session sess-1") {
+		t.Fatalf("unexpected per-tool limit error: %v", err)
+	}
+	if stubTool.callCount() != 1 {
+		t.Fatalf("expected only one actual tool execution, got %d", stubTool.callCount())
+	}
 }
 
 func testLogger(t *testing.T) *logger.Logger {

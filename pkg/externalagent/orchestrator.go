@@ -164,6 +164,7 @@ func (o *ResolveOrchestrator) HandleLaunchApproval(
 			case string(permissionrules.ActionDeny):
 				if o != nil && o.taskStore != nil {
 					o.taskStore.ClearSessionPendingAction(sessionID)
+					o.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleIdle, "")
 				}
 				return ApprovalResult{
 					Status: http.StatusForbidden,
@@ -211,6 +212,7 @@ func (o *ResolveOrchestrator) HandleLaunchApproval(
 	case approval.Denied:
 		if o.taskStore != nil {
 			o.taskStore.ClearSessionPendingAction(sessionID)
+			o.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleIdle, "")
 		}
 		return ApprovalResult{
 			Status: http.StatusForbidden,
@@ -238,6 +240,7 @@ func (o *ResolveOrchestrator) HandleLaunchApproval(
 	case approval.Approved:
 		if o.taskStore != nil {
 			o.taskStore.ClearSessionPendingAction(sessionID)
+			o.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleProcessing, toolName)
 		}
 	}
 	return ApprovalResult{}, false, nil
