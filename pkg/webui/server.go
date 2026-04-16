@@ -330,6 +330,10 @@ func (s *Server) setup() {
 	e.GET("/api/auth/init-status", s.handleInitStatus)
 	e.POST("/api/auth/init", s.handleInitPassword)
 	e.POST("/api/auth/init/repair-workspace", s.handleInitRepairWorkspace)
+	e.POST("/api/daemon/register", s.handleRegisterDaemon)
+	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
+	e.POST("/api/daemon/tasks/fetch", s.handleFetchDaemonTasks)
+	e.POST("/api/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
 
 	// Chat WebSocket (auth handled inside via token query param)
 	e.GET("/api/chat/ws", s.handleChatWS)
@@ -495,10 +499,6 @@ func (s *Server) setup() {
 	api.GET("/external-agents/catalog", s.handleGetExternalAgentCatalog)
 	api.GET("/daemon/registry", s.handleGetDaemonRegistry)
 	api.GET("/daemon/bootstrap", s.handleGetDaemonBootstrap)
-	api.POST("/daemon/register", s.handleRegisterDaemon)
-	api.POST("/daemon/heartbeat", s.handleHeartbeatDaemon)
-	api.POST("/daemon/tasks/fetch", s.handleFetchDaemonTasks)
-	api.POST("/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
 	api.GET("/daemon/explorer/workspaces", s.handleDaemonExplorerWorkspaces)
 	api.POST("/daemon/explorer/tree", s.handleDaemonExplorerTree)
 	api.POST("/daemon/explorer/file", s.handleDaemonExplorerFile)
@@ -1932,10 +1932,10 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
 
 	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
-		"command":         command,
-		"launch_cmd":      launchCommand,
-		"workdir":         workdir,
-		"proxy_mode":      proxyMode,
+		"command":    command,
+		"launch_cmd": launchCommand,
+		"workdir":    workdir,
+		"proxy_mode": proxyMode,
 	}, transport.Name(), runtimeSession)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
 	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", eventPayload)
@@ -2778,10 +2778,10 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
 
 	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
-		"command":         command,
-		"launch_cmd":      launchCommand,
-		"workdir":         workdir,
-		"proxy_mode":      proxyMode,
+		"command":    command,
+		"launch_cmd": launchCommand,
+		"workdir":    workdir,
+		"proxy_mode": proxyMode,
 	}, transport.Name(), runtimeSession)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
 	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", eventPayload)
@@ -3358,8 +3358,8 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 	}
 
 	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
-		"launch_cmd":      attachCmd,
-		"workdir":         workdir,
+		"launch_cmd": attachCmd,
+		"workdir":    workdir,
 	}, transport.Name(), runtimeSession)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
 	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", eventPayload)

@@ -479,6 +479,160 @@ func TestGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusCompleted), 15*time.Second)
 }
 
+func TestDaemonBackedGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = filepath.Join(t.TempDir(), "workspace")
+	cfg.Gateway.Host = "127.0.0.1"
+	cfg.Gateway.Port = mustPort(t, reserveGoalRunTCPAddr(t))
+	cfg.WebUI.Port = mustPort(t, reserveGoalRunTCPAddr(t))
+
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	if err := config.SaveToFile(cfg, configPath); err != nil {
+		t.Fatalf("SaveToFile failed: %v", err)
+	}
+
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	binPath := filepath.Join(t.TempDir(), "nekobot-goalrun-daemon-e2e")
+	buildCmd := exec.Command("go", "build", "-o", binPath, "./cmd/nekobot")
+	buildCmd.Dir = repoRoot
+	if output, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("build binary failed: %v\n%s", err, string(output))
+	}
+
+	startGateway := func(t *testing.T) *exec.Cmd {
+		t.Helper()
+		cmd := exec.Command(binPath, "--config", configPath, "gateway")
+		cmd.Dir = repoRoot
+		cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start gateway process: %v", err)
+		}
+		waitForHTTPOK(t, "http://127.0.0.1:"+itoa(cfg.WebUI.Port)+"/api/auth/init-status", 15*time.Second)
+		return cmd
+	}
+	stopProcess := func(t *testing.T, cmd *exec.Cmd) {
+		t.Helper()
+		if cmd == nil || cmd.Process == nil {
+			return
+		}
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	}
+
+	cmdA := startGateway(t)
+	defer stopProcess(t, cmdA)
+	token := initAdminAndGetToken(t, cfg.WebUI.Port)
+	bootstrap := getJSON(t, "http://127.0.0.1:"+itoa(cfg.WebUI.Port)+"/api/daemon/bootstrap", token)
+	daemonToken := stringField(t, bootstrap, "daemon_token")
+
+	registerDaemonMachineHTTP(t, cfg.WebUI.Port, daemonToken, map[string]any{
+		"info": map[string]any{
+			"daemon_id":      "daemon-goalrun",
+			"machine_id":     "machine-goalrun",
+			"machine_name":   "machine-goalrun",
+			"status":         "online",
+			"last_seen_unix": time.Now().Unix(),
+			"daemon_url":     "http://127.0.0.1:9999",
+		},
+		"inventory": map[string]any{
+			"workspaces": []map[string]any{
+				{
+					"workspace_id": "machine-goalrun:default",
+					"machine_id":   "machine-goalrun",
+					"path":         filepath.Join(t.TempDir(), "daemon-workspace"),
+					"display_name": "default",
+					"is_default":   true,
+				},
+			},
+			"runtimes": []map[string]any{
+				{
+					"runtime_id":   "machine-goalrun:default:claude",
+					"machine_id":   "machine-goalrun",
+					"workspace_id": "machine-goalrun:default",
+					"kind":         "claude",
+					"display_name": "Claude",
+					"installed":    true,
+					"healthy":      true,
+				},
+			},
+		},
+	})
+	waitForDaemonMachineHTTP(t, cfg.WebUI.Port, token, "machine-goalrun", 15*time.Second)
+
+	stopProcess(t, cmdA)
+	cmdA = nil
+
+	log, err := logger.New(&logger.Config{Level: logger.LevelInfo, Development: true})
+	if err != nil {
+		t.Fatalf("logger.New failed: %v", err)
+	}
+	loader := config.NewLoader()
+	loadedCfg, err := loader.LoadFromFile(configPath)
+	if err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+	kvStore, err := state.NewFileStore(log, &state.FileStoreConfig{
+		FilePath: filepath.Join(loadedCfg.WorkspacePath(), "state.json"),
+		AutoSave: true,
+	})
+	if err != nil {
+		t.Fatalf("NewFileStore failed: %v", err)
+	}
+	goalStore := goaldriven.NewPersistentStore(kvStore)
+	goalRunID := "gr-daemon-process-restart"
+	now := time.Now().UTC()
+	if _, err := goalStore.CreateGoalRun(t.Context(), goaldriven.GoalRun{
+		ID:                      goalRunID,
+		Name:                    "daemon restart recovery e2e",
+		Goal:                    "resume daemon-backed goal through real process restart",
+		NaturalLanguageCriteria: "confirm manually",
+		Status:                  goaldriven.GoalStatusVerifying,
+		RiskLevel:               goaldriven.RiskBalanced,
+		AllowAutoScope:          true,
+		SelectedScope:           &goaldriven.ExecutionScope{Kind: goaldriven.ScopeDaemon, MachineID: "machine-goalrun", Source: "manual"},
+		CreatedBy:               "admin",
+		CreatedAt:               now,
+		UpdatedAt:               now,
+		StartedAt:               now,
+	}); err != nil {
+		t.Fatalf("CreateGoalRun failed: %v", err)
+	}
+	if err := goalStore.SaveCriteria(t.Context(), goalRunID, goaldrivencriteria.Set{
+		Criteria: []goaldrivencriteria.Item{
+			{
+				ID:       "manual-1",
+				Title:    "Manual confirmation",
+				Type:     goaldrivencriteria.TypeManualConfirmation,
+				Scope:    goaldriven.ExecutionScope{Kind: goaldriven.ScopeDaemon, MachineID: "machine-goalrun", Source: "manual"},
+				Required: true,
+				Status:   goaldrivencriteria.StatusPending,
+				Definition: map[string]any{
+					"prompt": "Confirm success",
+				},
+				UpdatedAt: now,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveCriteria failed: %v", err)
+	}
+	if err := kvStore.Close(); err != nil {
+		t.Fatalf("Close kv store failed: %v", err)
+	}
+
+	cmdB := startGateway(t)
+	defer stopProcess(t, cmdB)
+
+	token = loginAndGetToken(t, cfg.WebUI.Port, "admin", "admin123456")
+	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusNeedsHumanConfirmation), 15*time.Second)
+	confirmManualCriterionHTTP(t, cfg.WebUI.Port, token, goalRunID, map[string]any{
+		"criterion_id": "manual-1",
+		"approved":     true,
+		"note":         "daemon restart recovery e2e confirmed",
+	})
+	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusCompleted), 15*time.Second)
+}
+
 func reserveGoalRunTCPAddr(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -573,6 +727,30 @@ func waitForGoalRunStatusHTTP(t *testing.T, webuiPort int, token, goalRunID, wan
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("goal run %s never reached status %s", goalRunID, want)
+}
+
+func waitForDaemonMachineHTTP(t *testing.T, webuiPort int, token, machineID string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp := getJSON(t, "http://127.0.0.1:"+itoa(webuiPort)+"/api/status", token)
+		items, _ := resp["daemon_machines"].([]any)
+		for _, item := range items {
+			machine, _ := item.(map[string]any)
+			info, _ := machine["info"].(map[string]any)
+			gotID, _ := info["machine_id"].(string)
+			if gotID == machineID {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("daemon machine %s never appeared in status", machineID)
+}
+
+func registerDaemonMachineHTTP(t *testing.T, webuiPort int, daemonToken string, body map[string]any) {
+	t.Helper()
+	postJSON(t, "http://127.0.0.1:"+itoa(webuiPort)+"/api/daemon/register", daemonToken, body)
 }
 
 func postJSON(t *testing.T, url, token string, body map[string]any) map[string]any {
