@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"google.golang.org/protobuf/proto"
+	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 )
 
 type stubRemoteRegistryClient struct {
@@ -40,7 +40,9 @@ func (s *stubRemoteRegistryClient) FetchAssignedTasksRemote(req *daemonv1.FetchA
 		default:
 		}
 	}
-	return &daemonv1.FetchAssignedTasksResponse{Tasks: s.tasks}, nil
+	tasks := s.tasks
+	s.tasks = nil
+	return &daemonv1.FetchAssignedTasksResponse{Tasks: tasks}, nil
 }
 
 func (s *stubRemoteRegistryClient) UpdateTaskStatusRemote(req *daemonv1.UpdateTaskStatusRequest) (*daemonv1.UpdateTaskStatusResponse, error) {
