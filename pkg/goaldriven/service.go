@@ -25,6 +25,8 @@ import (
 	"nekobot/pkg/logger"
 	"nekobot/pkg/state"
 	"nekobot/pkg/tasks"
+
+	"go.uber.org/zap"
 )
 
 // Service manages GoalRun CRUD and criteria confirmation for the first vertical slice.
@@ -255,6 +257,14 @@ func (s *Service) SetDaemonRunner(fn func(context.Context, GoalRun) (WorkerRef, 
 		return
 	}
 	s.daemonRunner = fn
+}
+
+func (s *Service) logBackgroundError(msg string, err error, fields ...zap.Field) {
+	if err == nil || s == nil || s.log == nil {
+		return
+	}
+	fields = append(fields, zap.Error(err))
+	s.log.Warn(msg, fields...)
 }
 
 // ResumeActiveRuns restarts execution loops for persisted active GoalRuns.
@@ -574,7 +584,9 @@ func (s *Service) resumeVerificationLoop(ctx context.Context, goalRunID string) 
 		run.Status = GoalStatusFailed
 		run.UpdatedAt = s.now().UTC()
 		run.CompletedAt = s.now().UTC()
-		_, _ = s.store.UpdateGoalRun(ctx, run)
+		if _, updateErr := s.store.UpdateGoalRun(ctx, run); updateErr != nil {
+			s.logBackgroundError("persist failed resumed goal run", updateErr, zap.String("goal_run_id", goalRunID))
+		}
 		return
 	}
 	if err := s.store.SaveCriteria(ctx, goalRunID, evalCriteria); err != nil {
@@ -587,7 +599,9 @@ func (s *Service) resumeVerificationLoop(ctx context.Context, goalRunID string) 
 	if updatedRun.Status == GoalStatusRunning {
 		updatedRun.Status = GoalStatusReady
 		updatedRun.UpdatedAt = s.now().UTC()
-		_, _ = s.store.UpdateGoalRun(ctx, updatedRun)
+		if _, updateErr := s.store.UpdateGoalRun(ctx, updatedRun); updateErr != nil {
+			s.logBackgroundError("persist resumed goal run ready state", updateErr, zap.String("goal_run_id", goalRunID))
+		}
 	}
 }
 
@@ -616,20 +630,26 @@ func (s *Service) runGoalLoop(ctx context.Context, goalRunID string) {
 			run.Status = GoalStatusFailed
 			run.UpdatedAt = s.now().UTC()
 			run.CompletedAt = s.now().UTC()
-			_, _ = s.store.UpdateGoalRun(ctx, run)
+			if _, updateErr := s.store.UpdateGoalRun(ctx, run); updateErr != nil {
+				s.logBackgroundError("persist failed goal run without scope", updateErr, zap.String("goal_run_id", goalRunID))
+			}
 			return
 		}
 
 		if hasAutomaticCriteria(set) {
 			worker, err := s.executeAttempt(ctx, run)
 			if err == nil {
-				_ = s.store.SaveWorkers(ctx, run.ID, []WorkerRef{worker})
+				if saveErr := s.store.SaveWorkers(ctx, run.ID, []WorkerRef{worker}); saveErr != nil {
+					s.logBackgroundError("persist goal run workers", saveErr, zap.String("goal_run_id", run.ID))
+				}
 			}
 			if err != nil {
 				run.Status = GoalStatusFailed
 				run.UpdatedAt = s.now().UTC()
 				run.CompletedAt = s.now().UTC()
-				_, _ = s.store.UpdateGoalRun(ctx, run)
+				if _, updateErr := s.store.UpdateGoalRun(ctx, run); updateErr != nil {
+					s.logBackgroundError("persist failed goal run execution state", updateErr, zap.String("goal_run_id", goalRunID))
+				}
 				return
 			}
 
@@ -657,7 +677,9 @@ func (s *Service) runGoalLoop(ctx context.Context, goalRunID string) {
 			run.Status = GoalStatusFailed
 			run.UpdatedAt = s.now().UTC()
 			run.CompletedAt = s.now().UTC()
-			_, _ = s.store.UpdateGoalRun(ctx, run)
+			if _, updateErr := s.store.UpdateGoalRun(ctx, run); updateErr != nil {
+				s.logBackgroundError("persist failed goal run criteria evaluation", updateErr, zap.String("goal_run_id", goalRunID))
+			}
 			return
 		}
 		run = evalRun
@@ -665,14 +687,18 @@ func (s *Service) runGoalLoop(ctx context.Context, goalRunID string) {
 			return
 		}
 		if run.Status == GoalStatusCompleted || run.Status == GoalStatusNeedsHumanConfirmation {
-			_, _ = s.store.UpdateGoalRun(ctx, run)
+			if _, updateErr := s.store.UpdateGoalRun(ctx, run); updateErr != nil {
+				s.logBackgroundError("persist terminal goal run state", updateErr, zap.String("goal_run_id", goalRunID))
+			}
 			return
 		}
-		_, _ = s.store.UpdateGoalRun(ctx, run)
+		if _, updateErr := s.store.UpdateGoalRun(ctx, run); updateErr != nil {
+			s.logBackgroundError("persist goal run loop state", updateErr, zap.String("goal_run_id", goalRunID))
+			return
+		}
 		time.Sleep(250 * time.Millisecond)
 	}
 }
-
 
 func hasAutomaticCriteria(set criteria.Set) bool {
 	for _, item := range set.Criteria {
@@ -748,13 +774,17 @@ func (s *Service) executeServerAttempt(ctx context.Context, run GoalRun) (Worker
 	if chatErr != nil {
 		worker.Status = "failed"
 		worker.LastError = chatErr.Error()
-		_, _ = s.agent.TaskService().Fail(taskID, chatErr.Error())
+		if _, failErr := s.agent.TaskService().Fail(taskID, chatErr.Error()); failErr != nil {
+			s.logBackgroundError("mark goal task failed", failErr, zap.String("goal_run_id", run.ID), zap.String("task_id", taskID))
+		}
 		return worker, fmt.Errorf("server goal execution failed: %w", chatErr)
 	}
 	worker.Status = "completed"
 	worker.LastHeartbeatAt = s.now().UTC()
 	worker.LastProgressAt = s.now().UTC()
-	_, _ = s.agent.TaskService().Complete(taskID)
+	if _, completeErr := s.agent.TaskService().Complete(taskID); completeErr != nil {
+		s.logBackgroundError("mark goal task completed", completeErr, zap.String("goal_run_id", run.ID), zap.String("task_id", taskID))
+	}
 	return worker, nil
 }
 
@@ -863,7 +893,9 @@ func (s *Service) heartbeatWorker(ctx context.Context, goalRunID, workerID strin
 				workers[i].LastHeartbeatAt = s.now().UTC()
 				workers[i].LeaseExpiresAt = s.now().UTC().Add(5 * time.Minute)
 			}
-			_ = s.store.SaveWorkers(context.Background(), goalRunID, workers)
+			if saveErr := s.store.SaveWorkers(context.Background(), goalRunID, workers); saveErr != nil {
+				s.logBackgroundError("persist goal worker heartbeat", saveErr, zap.String("goal_run_id", goalRunID), zap.String("worker_id", workerID))
+			}
 		}
 	}
 }
