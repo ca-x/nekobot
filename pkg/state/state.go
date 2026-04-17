@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -31,6 +32,7 @@ type FileStore struct {
 	saveTicker    *time.Ticker
 	stopSave      chan struct{}
 	pendingWrites bool
+	closed        atomic.Bool
 }
 
 // FileStoreConfig configures the file store.
@@ -257,6 +259,10 @@ func (s *FileStore) startAutoSave() {
 
 // Close stops auto-save and performs a final save.
 func (s *FileStore) Close() error {
+	if s.closed.Swap(true) {
+		return nil
+	}
+
 	if s.autoSave && s.saveTicker != nil {
 		s.saveTicker.Stop()
 		close(s.stopSave)

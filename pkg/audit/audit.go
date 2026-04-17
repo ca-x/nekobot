@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -22,6 +23,9 @@ type Logger struct {
 	mu       sync.Mutex
 	file     *os.File
 	filePath string
+
+	cleanupRunning atomic.Bool
+	lastCleanupAt  atomic.Int64
 }
 
 // NewLogger creates a new audit logger.
@@ -57,8 +61,24 @@ func (l *Logger) Log(entry *Entry) {
 
 	// Clean up old entries if configured
 	if l.config.MaxResults > 0 || l.config.RetentionDays > 0 {
-		go l.maybeCleanup()
+		l.scheduleCleanup()
 	}
+}
+
+func (l *Logger) scheduleCleanup() {
+	now := time.Now()
+	last := time.Unix(0, l.lastCleanupAt.Load())
+	if !last.IsZero() && now.Sub(last) < time.Minute {
+		return
+	}
+	if !l.cleanupRunning.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer l.cleanupRunning.Store(false)
+		l.lastCleanupAt.Store(time.Now().UnixNano())
+		l.maybeCleanup()
+	}()
 }
 
 // appendEntry appends a single entry to the JSONL file.
@@ -138,14 +158,6 @@ func (l *Logger) truncateValue(v interface{}) interface{} {
 func (l *Logger) maybeCleanup() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	// Don't cleanup too often (at most once per minute)
-	// Check file modification time
-	if info, err := os.Stat(l.filePath); err == nil {
-		if time.Since(info.ModTime()) < time.Minute {
-			return
-		}
-	}
 
 	// Read all entries
 	data, err := os.ReadFile(l.filePath)

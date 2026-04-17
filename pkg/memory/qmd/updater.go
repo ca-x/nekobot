@@ -3,6 +3,7 @@ package qmd
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -16,6 +17,7 @@ type Updater struct {
 	config   UpdateConfig
 	stopChan chan struct{}
 	interval time.Duration
+	stopped  atomic.Bool
 }
 
 // NewUpdater creates a new QMD updater.
@@ -63,6 +65,9 @@ func (u *Updater) Start(ctx context.Context) error {
 
 // Stop stops the updater.
 func (u *Updater) Stop() error {
+	if u.stopped.Swap(true) {
+		return nil
+	}
 	close(u.stopChan)
 	u.log.Info("QMD updater stopped")
 	return nil
