@@ -86,45 +86,47 @@ import (
 
 // Server is the WebUI HTTP server.
 type Server struct {
-	echo               *echo.Echo
-	httpServer         *http.Server
-	config             *config.Config
-	loader             *config.Loader
-	logger             *logger.Logger
-	agent              *agent.Agent
-	approval           *approval.Manager
-	channels           *channels.Manager
-	bus                bus.Bus
-	commands           *commands.Registry
-	prefs              *userprefs.Manager
-	toolSess           *toolsessions.Manager
-	externalAgent      *externalagent.Manager
-	sessionMgr         *session.Manager
-	processMgr         *process.Manager
-	prompts            *prompts.Manager
-	providers          *providerstore.Manager
-	runtimeMgr         *runtimeagents.Manager
-	accountMgr         *channelaccounts.Manager
-	bindingMgr         *accountbindings.Manager
-	topologySvc        *runtimetopology.Service
-	cronMgr            *cron.Manager
-	skillsMgr          *skills.Manager
-	workspace          *workspace.Manager
-	entClient          *ent.Client
-	snapshotMgr        *session.SnapshotManager
-	auditLogger        *audit.Logger
-	ilinkAuth          *ilinkauth.Service
-	serviceCtrl        serviceController
-	taskStore          *tasks.Store
-	kvStore            state.KV
-	threads            *threads.Manager
-	goalSvc            *goaldriven.Service
-	chatEventMu        sync.RWMutex
-	chatEventSubs      map[string]map[chan chatEvent]struct{}
-	watcher            *watch.Watcher
-	webhookTestHandler func(ctx context.Context, username, message string) (string, error)
-	port               int
-	startedAt          time.Time
+	echo                *echo.Echo
+	httpServer          *http.Server
+	config              *config.Config
+	loader              *config.Loader
+	logger              *logger.Logger
+	agent               *agent.Agent
+	approval            *approval.Manager
+	channels            *channels.Manager
+	bus                 bus.Bus
+	commands            *commands.Registry
+	prefs               *userprefs.Manager
+	toolSess            *toolsessions.Manager
+	externalAgent       *externalagent.Manager
+	sessionMgr          *session.Manager
+	processMgr          *process.Manager
+	prompts             *prompts.Manager
+	providers           *providerstore.Manager
+	runtimeMgr          *runtimeagents.Manager
+	accountMgr          *channelaccounts.Manager
+	bindingMgr          *accountbindings.Manager
+	topologySvc         *runtimetopology.Service
+	cronMgr             *cron.Manager
+	skillsMgr           *skills.Manager
+	workspace           *workspace.Manager
+	entClient           *ent.Client
+	snapshotMgr         *session.SnapshotManager
+	auditLogger         *audit.Logger
+	ilinkAuth           *ilinkauth.Service
+	serviceCtrl         serviceController
+	taskStore           *tasks.Store
+	kvStore             state.KV
+	threads             *threads.Manager
+	goalSvc             *goaldriven.Service
+	chatEventMu         sync.RWMutex
+	chatEventSubs       map[string]map[chan chatEvent]struct{}
+	watcher             *watch.Watcher
+	jwtFallbackSecret   string
+	daemonFallbackToken string
+	webhookTestHandler  func(ctx context.Context, username, message string) (string, error)
+	port                int
+	startedAt           time.Time
 }
 
 type chatEvent struct {
@@ -352,6 +354,7 @@ func (s *Server) setup() {
 			return []byte(s.getJWTSecret()), nil
 		},
 	}))
+	api.Use(s.requirePrivilegedAPIUser())
 
 	// Provider routes
 	api.GET("/provider-types", s.handleGetProviderTypes)
@@ -2280,7 +2283,7 @@ func (s *Server) handleGetDaemonBootstrap(c *echo.Context) error {
 	}
 	token := s.getDaemonToken()
 	machineName := strings.TrimSpace(s.currentUsername(c))
-	command := fmt.Sprintf("nekobot daemon run --server-url %s --token %s --machine-name %s", serverURL, token, machineName)
+	command := fmt.Sprintf("nekobot daemon run --server-url %s --token %s --machine-name %s", strconv.Quote(serverURL), strconv.Quote(token), strconv.Quote(machineName))
 	return c.JSON(http.StatusOK, map[string]any{
 		"server_url":   serverURL,
 		"daemon_token": token,
@@ -3168,6 +3171,34 @@ func (s *Server) currentUsername(c *echo.Context) string {
 	}
 	sub, _ := claims["sub"].(string)
 	return strings.TrimSpace(sub)
+}
+
+func (s *Server) currentUserRole(c *echo.Context) string {
+	user := c.Get("user")
+	token, ok := user.(*jwt.Token)
+	if !ok || token == nil {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	role, _ := claims["role"].(string)
+	return strings.TrimSpace(role)
+}
+
+func (s *Server) requirePrivilegedAPIUser() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			role := s.currentUserRole(c)
+			switch role {
+			case "admin", "owner":
+				return next(c)
+			default:
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient role for privileged api"})
+			}
+		}
+	}
 }
 
 func resolveToolCommand(toolName, command string) string {
@@ -6300,29 +6331,29 @@ func (s *Server) handleStatus(c *echo.Context) error {
 	sessionStates := s.listSessionStates()
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"version":            version.GetVersion(),
-		"commit":             version.GitCommit,
-		"build_time":         version.BuildTime,
-		"os":                 runtime.GOOS,
-		"arch":               runtime.GOARCH,
-		"go_version":         runtime.Version(),
-		"pid":                os.Getpid(),
-		"uptime":             uptime.Round(time.Second).String(),
-		"uptime_seconds":     int64(uptime.Seconds()),
-		"memory_alloc_bytes": mem.Alloc,
-		"memory_sys_bytes":   mem.Sys,
-		"provider_count":     len(s.config.Providers),
-		"config_path":        configPath,
-		"database_dir":       s.config.Storage.DBDir,
-		"runtime_db_path":    runtimeDBPath,
-		"workspace_path":     s.config.Agents.Defaults.Workspace,
-		"workspace_contract": workspaceStatus.Contract,
+		"version":                      version.GetVersion(),
+		"commit":                       version.GitCommit,
+		"build_time":                   version.BuildTime,
+		"os":                           runtime.GOOS,
+		"arch":                         runtime.GOARCH,
+		"go_version":                   runtime.Version(),
+		"pid":                          os.Getpid(),
+		"uptime":                       uptime.Round(time.Second).String(),
+		"uptime_seconds":               int64(uptime.Seconds()),
+		"memory_alloc_bytes":           mem.Alloc,
+		"memory_sys_bytes":             mem.Sys,
+		"provider_count":               len(s.config.Providers),
+		"config_path":                  configPath,
+		"database_dir":                 s.config.Storage.DBDir,
+		"runtime_db_path":              runtimeDBPath,
+		"workspace_path":               s.config.Agents.Defaults.Workspace,
+		"workspace_contract":           workspaceStatus.Contract,
 		"workspace_validation_summary": workspaceStatus.ValidationSummary,
-		"task_count":         len(taskSnapshots),
-		"task_state_counts":  stateCounts,
-		"recent_tasks":       recentTasks,
-		"recent_cron_jobs":   recentCronJobs,
-		"runtime_states":     runtimeStates,
+		"task_count":                   len(taskSnapshots),
+		"task_state_counts":            stateCounts,
+		"recent_tasks":                 recentTasks,
+		"recent_cron_jobs":             recentCronJobs,
+		"runtime_states":               runtimeStates,
 		"daemon_machines": func() interface{} {
 			if s.kvStore == nil {
 				return []daemonhost.MachineStatus{}
@@ -8507,18 +8538,28 @@ func runtimePromptIDs(promptID string) []string {
 }
 
 func (s *Server) getJWTSecret() string {
+	if s == nil {
+		return config.GenerateJWTSecret()
+	}
 	secret, err := config.GetJWTSecret(s.entClient)
 	if err == nil && strings.TrimSpace(secret) != "" {
 		return secret
 	}
-	// No credential stored yet — generate an ephemeral secret.
-	// It will be replaced once the admin initializes their password.
-	return "nekobot-ephemeral-secret"
+	if strings.TrimSpace(s.jwtFallbackSecret) == "" {
+		s.jwtFallbackSecret = config.GenerateJWTSecret()
+	}
+	return s.jwtFallbackSecret
 }
 
 func (s *Server) getDaemonToken() string {
-	if s == nil || s.kvStore == nil {
-		return "nekobot-daemon-ephemeral-token"
+	if s == nil {
+		return "daemon-" + config.GenerateJWTSecret()
+	}
+	if s.kvStore == nil {
+		if strings.TrimSpace(s.daemonFallbackToken) == "" {
+			s.daemonFallbackToken = "daemon-" + config.GenerateJWTSecret()
+		}
+		return s.daemonFallbackToken
 	}
 	ctx := context.Background()
 	if value, ok, err := s.kvStore.GetString(ctx, "daemonhost.auth.token"); err == nil && ok && strings.TrimSpace(value) != "" {

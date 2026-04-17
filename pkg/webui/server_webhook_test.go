@@ -52,7 +52,7 @@ func TestConfiguredWebhookPathIsRegisteredAndRoutesToHandler(t *testing.T) {
 	}
 	server.setup()
 
-	token, err := server.generateToken(&config.AuthProfile{Username: "alice"})
+	token, err := server.generateToken(&config.AuthProfile{Username: "alice", Role: "owner"})
 	if err != nil {
 		t.Fatalf("generateToken failed: %v", err)
 	}

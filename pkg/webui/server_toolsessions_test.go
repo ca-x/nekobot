@@ -477,7 +477,8 @@ func TestToolSessionHandlers_SmokeFlow(t *testing.T) {
 func newAuthedContext(e *echo.Echo, req *http.Request, rec *httptest.ResponseRecorder, username string) *echo.Context {
 	ctx := e.NewContext(req, rec)
 	ctx.Set("user", jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": username,
+		"sub":  username,
+		"role": "owner",
 	}))
 	return ctx
 }
