@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -327,16 +328,25 @@ func TestWatcherStatusTracksLastExecution(t *testing.T) {
 }
 
 type captureWatchPreparer struct {
+	mu   sync.Mutex
 	last execenv.StartSpec
 }
 
 func (c *captureWatchPreparer) Prepare(_ context.Context, spec execenv.StartSpec) (execenv.Prepared, error) {
+	c.mu.Lock()
 	c.last = spec
+	c.mu.Unlock()
 	return execenv.Prepared{
 		Workdir: spec.Workdir,
 		Env:     append([]string{}, spec.Env...),
 		Cleanup: func() error { return nil },
 	}, nil
+}
+
+func (c *captureWatchPreparer) Snapshot() execenv.StartSpec {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.last
 }
 
 func TestWatcherExecuteCommandUsesExecenvPreparation(t *testing.T) {
@@ -365,12 +375,13 @@ func TestWatcherExecuteCommandUsesExecenvPreparation(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if preparer.last.Command != "" {
-			if preparer.last.Command != "printf 'watch-ok'" {
-				t.Fatalf("unexpected prepared command: %+v", preparer.last)
+		last := preparer.Snapshot()
+		if last.Command != "" {
+			if last.Command != "printf 'watch-ok'" {
+				t.Fatalf("unexpected prepared command: %+v", last)
 			}
-			if preparer.last.Workdir != cfg.WorkspacePath() {
-				t.Fatalf("expected workspace workdir %q, got %q", cfg.WorkspacePath(), preparer.last.Workdir)
+			if last.Workdir != cfg.WorkspacePath() {
+				t.Fatalf("expected workspace workdir %q, got %q", cfg.WorkspacePath(), last.Workdir)
 			}
 			return
 		}
