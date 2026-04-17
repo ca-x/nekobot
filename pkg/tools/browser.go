@@ -400,21 +400,32 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 		return "", fmt.Errorf("failed to get client: %w", err)
 	}
 
+	// Subscribe before navigation so a fast page load cannot race past the listener.
+	domLoaded, domErr := client.Page.DOMContentEventFired(ctx)
+	if domErr != nil {
+		b.log.Warn("Failed to subscribe to DOMContentLoaded",
+			zap.Error(domErr))
+	}
+
 	nav, err := client.Page.Navigate(ctx, page.NewNavigateArgs(urlStr))
 	if err != nil {
+		if domLoaded != nil {
+			_ = domLoaded.Close()
+		}
 		return "", fmt.Errorf("failed to navigate: %w", err)
 	}
 
 	// Wait for page load
-	domLoaded, err := client.Page.DOMContentEventFired(ctx)
-	if err != nil {
-		b.log.Warn("Failed to wait for DOMContentLoaded",
-			zap.Error(err))
-	} else {
+	if domLoaded != nil {
 		defer func() {
 			_ = domLoaded.Close()
 		}()
-		_, _ = domLoaded.Recv()
+		waitCtx, cancel := context.WithTimeout(ctx, b.timeout)
+		defer cancel()
+		if err := domLoaded.RecvMsg(waitCtx); err != nil {
+			b.log.Warn("Failed to wait for DOMContentLoaded",
+				zap.Error(err))
+		}
 	}
 
 	return fmt.Sprintf("Navigated to: %s\nFrame ID: %s", urlStr, nav.FrameID), nil
