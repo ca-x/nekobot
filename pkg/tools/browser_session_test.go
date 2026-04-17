@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"errors"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -306,5 +308,95 @@ func TestBrowserSessionGetDevToolsReturnsFactoryForEndpoint(t *testing.T) {
 	}
 	if called != 1 {
 		t.Fatalf("expected devtools factory to be called once, got %d", called)
+	}
+}
+
+func TestBrowserSessionStartWithModeAutoCleansUpAfterLaunchFailure(t *testing.T) {
+	session := &BrowserSession{timeout: 5 * time.Second, log: newToolsTestLogger(t)}
+	session.connectFn = func(port int, timeout time.Duration) error {
+		return errors.New("not running")
+	}
+	cmd := exec.Command("bash", "-lc", "sleep 30")
+	session.launchFn = func(timeout time.Duration) error {
+		_, cancel := context.WithTimeout(context.Background(), timeout)
+		session.cancel = cancel
+		session.cmd = cmd
+		if err := session.cmd.Start(); err != nil {
+			return err
+		}
+		if err := session.stopLocked(); err != nil {
+			return err
+		}
+		return errors.New("failed to connect after launch")
+	}
+
+	err := session.StartWithMode(2*time.Second, BrowserModeAuto)
+	if err == nil {
+		t.Fatal("expected launch failure")
+	}
+	if session.cmd != nil || session.cancel != nil || session.conn != nil || session.client != nil || session.ready {
+		t.Fatalf("expected failed launch cleanup, got %+v", session.Status())
+	}
+}
+
+func TestBrowserSessionConnectWithRetryEventuallySucceeds(t *testing.T) {
+	session := &BrowserSession{timeout: 2 * time.Second, log: newToolsTestLogger(t)}
+	attempts := 0
+	session.connectFn = func(port int, timeout time.Duration) error {
+		attempts++
+		if attempts < 3 {
+			return errors.New("not ready")
+		}
+		session.ready = true
+		return nil
+	}
+
+	err := session.connectWithRetry(9222, 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("connectWithRetry returned error: %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("expected 3 attempts before success, got %d", attempts)
+	}
+}
+
+func TestBrowserSessionConnectEndpointWithRetryEventuallySucceeds(t *testing.T) {
+	session := &BrowserSession{timeout: 2 * time.Second, log: newToolsTestLogger(t)}
+	attempts := 0
+	session.connectEndpointFn = func(endpoint string, timeout time.Duration) error {
+		attempts++
+		if endpoint != "http://chrome.internal:9222" {
+			t.Fatalf("unexpected endpoint: %s", endpoint)
+		}
+		if attempts < 3 {
+			return errors.New("not ready")
+		}
+		session.ready = true
+		return nil
+	}
+
+	err := session.connectEndpointWithRetry("http://chrome.internal:9222", 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("connectEndpointWithRetry returned error: %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("expected 3 attempts before success, got %d", attempts)
+	}
+}
+
+func TestBrowserSessionLaunchWithoutChromeCleansUpCancel(t *testing.T) {
+	session := &BrowserSession{timeout: 5 * time.Second, log: newToolsTestLogger(t)}
+	session.findChromeFn = func() string { return "" }
+
+	err := session.launch(2 * time.Second)
+	if err == nil {
+		t.Fatal("expected chrome-not-found failure")
+	}
+	if !strings.Contains(err.Error(), "chrome not found in PATH") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if session.cancel != nil || session.cmd != nil || session.conn != nil || session.client != nil || session.ready {
+		t.Fatalf("expected launch failure without chrome to leave no session state, got ready=%v cmd=%v cancel=%v conn=%v client=%v",
+			session.ready, session.cmd, session.cancel, session.conn, session.client)
 	}
 }
