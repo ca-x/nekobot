@@ -647,17 +647,14 @@ func TestGoalRunBrowserToolManualFlowE2E(t *testing.T) {
 
 	steps := []map[string]interface{}{
 		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('New goal run'))?.click(); true;`},
-		{"action": "type", "selector": "#goal-run-name", "text": "Browser tool e2e"},
-		{"action": "type", "selector": "#goal-run-goal", "text": "Verify browser-tool Goal Runs flow"},
-		{"action": "type", "selector": "#goal-run-criteria", "text": "confirm manually"},
+		{"action": "execute_script", "script": `(function(){ const set = (selector, value) => { const el = document.querySelector(selector); if (!el) throw new Error('missing '+selector); el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); }; set('#goal-run-name', 'Browser tool e2e'); set('#goal-run-goal', 'Verify browser-tool Goal Runs flow'); set('#goal-run-criteria', 'confirm manually'); return true; })();`},
 		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Create run'))?.click(); true;`},
 		{"action": "wait", "duration": float64(1200)},
 		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Confirm criteria'))?.click(); true;`},
 		{"action": "wait", "duration": float64(600)},
 		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Start run'))?.click(); true;`},
 		{"action": "wait", "duration": float64(1200)},
-		{"action": "execute_script", "script": `const areas = Array.from(document.querySelectorAll('textarea')); if (areas.length > 0) { areas[areas.length - 1].focus(); } true;`},
-		{"action": "type", "selector": "textarea", "text": "browser tool e2e confirmed"},
+		{"action": "execute_script", "script": `(function(){ const areas = Array.from(document.querySelectorAll('textarea')); if (areas.length === 0) throw new Error('missing textarea'); const el = areas[areas.length - 1]; el.value = 'browser tool e2e confirmed'; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })();`},
 		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Approve criterion'))?.click(); true;`},
 		{"action": "wait", "duration": float64(1200)},
 	}
