@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -84,13 +85,13 @@ func TestBusMultipleHandlers(t *testing.T) {
 	})
 
 	// Register multiple handlers
-	count := 0
+	var count atomic.Int32
 	bus.RegisterInboundHandler("test", func(ctx context.Context, msg *Message) error {
-		count++
+		count.Add(1)
 		return nil
 	})
 	bus.RegisterInboundHandler("test", func(ctx context.Context, msg *Message) error {
-		count++
+		count.Add(1)
 		return nil
 	})
 
@@ -107,8 +108,8 @@ func TestBusMultipleHandlers(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond)
 
-	if count != 2 {
-		t.Errorf("Expected 2 handler calls, got %d", count)
+	if got := count.Load(); got != 2 {
+		t.Errorf("Expected 2 handler calls, got %d", got)
 	}
 }
 

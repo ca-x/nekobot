@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -71,6 +72,7 @@ type SubagentManager struct {
 	taskQueue  chan *SubagentTask
 	onComplete NotifyFunc
 	taskSvc    taskLifecycle
+	stopped    atomic.Bool
 }
 
 // NewSubagentManager creates a new subagent manager.
@@ -272,16 +274,10 @@ func (sm *SubagentManager) Stop() {
 	if sm == nil {
 		return
 	}
-
-	sm.mu.Lock()
-	defer sm.mu.Unlock()
-
-	if sm.taskQueue == nil {
+	if sm.stopped.Swap(true) {
 		return
 	}
-
 	close(sm.taskQueue)
-	sm.taskQueue = nil
 }
 
 // PruneTasks removes completed tasks older than the specified duration.
