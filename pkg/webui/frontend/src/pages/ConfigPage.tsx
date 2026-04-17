@@ -2136,15 +2136,20 @@ export default function ConfigPage() {
               </div>
 
               <div className="grid w-full gap-2 sm:flex sm:flex-wrap sm:items-center xl:w-auto">
-                <div className="relative min-w-0 w-full sm:min-w-[220px] sm:flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    aria-label={t('configSearchPlaceholder')}
-                    className="h-10 rounded-full border-border/70 bg-background/80 pl-9"
-                    placeholder={t('configSearchPlaceholder')}
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
+                <div className="min-w-0 w-full space-y-1.5 sm:min-w-[220px] sm:flex-1">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    {t('configSearchPlaceholder')}
+                  </div>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      aria-label={t('configSearchPlaceholder')}
+                      className="h-10 rounded-full border-border/70 bg-background/80 pl-9"
+                      placeholder={t('configSearchPlaceholder')}
+                      value={search}
+                      onChange={(event) => setSearch(event.target.value)}
+                    />
+                  </div>
                 </div>
                 <Select value={mode} onValueChange={(value) => value !== mode && handleToggleMode()}>
                   <SelectTrigger className="h-10 w-full sm:w-[120px] rounded-full border-border/70 bg-background/80">
