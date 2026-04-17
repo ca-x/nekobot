@@ -228,10 +228,7 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 		return fmt.Errorf("failed to start chrome: %w", err)
 	}
 
-	// Wait for Chrome to be ready
-	time.Sleep(2 * time.Second)
-
-	if err := s.connect(9222, timeout); err != nil {
+	if err := s.connectWithRetry(9222, timeout); err != nil {
 		if stopErr := s.stopLocked(); stopErr != nil {
 			s.log.Warn("Failed to stop browser session after launch failure", zap.Error(stopErr))
 		}
@@ -243,6 +240,28 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 		zap.String("debug_url", s.debugURL))
 
 	return nil
+}
+
+func (s *BrowserSession) connectWithRetry(port int, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = s.timeout
+	}
+	connectFn := s.connectFn
+	if connectFn == nil {
+		connectFn = s.connect
+	}
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		lastErr = connectFn(port, timeout)
+		if lastErr == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func (s *BrowserSession) connect(port int, timeout time.Duration) error {

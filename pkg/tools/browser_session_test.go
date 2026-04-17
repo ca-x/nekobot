@@ -339,6 +339,27 @@ func TestBrowserSessionStartWithModeAutoCleansUpAfterLaunchFailure(t *testing.T)
 	}
 }
 
+func TestBrowserSessionConnectWithRetryEventuallySucceeds(t *testing.T) {
+	session := &BrowserSession{timeout: 2 * time.Second, log: newToolsTestLogger(t)}
+	attempts := 0
+	session.connectFn = func(port int, timeout time.Duration) error {
+		attempts++
+		if attempts < 3 {
+			return errors.New("not ready")
+		}
+		session.ready = true
+		return nil
+	}
+
+	err := session.connectWithRetry(9222, 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("connectWithRetry returned error: %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("expected 3 attempts before success, got %d", attempts)
+	}
+}
+
 func TestBrowserSessionLaunchWithoutChromeCleansUpCancel(t *testing.T) {
 	session := &BrowserSession{timeout: 5 * time.Second, log: newToolsTestLogger(t)}
 	session.findChromeFn = func() string { return "" }
