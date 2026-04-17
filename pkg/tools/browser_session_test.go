@@ -341,6 +341,7 @@ func TestBrowserSessionStartWithModeAutoCleansUpAfterLaunchFailure(t *testing.T)
 
 func TestBrowserSessionLaunchWithoutChromeCleansUpCancel(t *testing.T) {
 	session := &BrowserSession{timeout: 5 * time.Second, log: newToolsTestLogger(t)}
+	session.findChromeFn = func() string { return "" }
 
 	err := session.launch(2 * time.Second)
 	if err == nil {

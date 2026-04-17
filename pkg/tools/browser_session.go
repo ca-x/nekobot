@@ -46,6 +46,7 @@ type BrowserSession struct {
 	connectFn         func(port int, timeout time.Duration) error
 	connectEndpointFn func(endpoint string, timeout time.Duration) error
 	launchFn          func(timeout time.Duration) error
+	findChromeFn      func() string
 	devtoolsFactory   func(endpoint string) browserDevTools
 }
 
@@ -95,6 +96,7 @@ func GetBrowserSession(log *logger.Logger) *BrowserSession {
 		browserSession.connectFn = browserSession.connect
 		browserSession.connectEndpointFn = browserSession.connectEndpoint
 		browserSession.launchFn = browserSession.launch
+		browserSession.findChromeFn = findChrome
 		browserSession.devtoolsFactory = func(endpoint string) browserDevTools {
 			return devtool.New(endpoint)
 		}
@@ -135,6 +137,9 @@ func (s *BrowserSession) StartWithOptions(timeout time.Duration, opts BrowserSta
 	}
 	if s.launchFn == nil {
 		s.launchFn = s.launch
+	}
+	if s.findChromeFn == nil {
+		s.findChromeFn = findChrome
 	}
 	if s.devtoolsFactory == nil {
 		s.devtoolsFactory = func(endpoint string) browserDevTools {
@@ -190,7 +195,7 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 	s.cancel = cancel
 
 	// Try to find Chrome executable
-	chromePath := findChrome()
+	chromePath := s.findChromeFn()
 	if chromePath == "" {
 		cancel()
 		s.cancel = nil
