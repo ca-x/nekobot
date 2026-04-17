@@ -314,7 +314,7 @@ func (s *KVStore) ListGoalRuns(ctx context.Context) ([]GoalRun, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := s.kv.Set(ctx, goalRunIndexKey, mustJSONString(ids)); err != nil {
+		if err := s.kv.Set(ctx, goalRunIndexKey, ids); err != nil {
 			return nil, fmt.Errorf("persist discovered goal run index: %w", err)
 		}
 	}
@@ -367,7 +367,7 @@ func (s *KVStore) DeleteGoalRun(ctx context.Context, goalRunID string) error {
 				out = append(out, item)
 			}
 		}
-		return mustJSONString(out)
+		return out
 	}); err != nil {
 		return fmt.Errorf("update goal run index: %w", err)
 	}
@@ -415,7 +415,7 @@ func (s *KVStore) AppendEvent(ctx context.Context, evt Event) error {
 	return s.kv.UpdateFunc(ctx, key, func(current interface{}) interface{} {
 		items := decodeEvents(current)
 		items = append(items, evt)
-		return mustJSONString(items)
+		return items
 	})
 }
 
@@ -509,26 +509,29 @@ func goalRunEventsKey(id string) string   { return "goaldriven.events." + string
 func goalRunWorkersKey(id string) string  { return "goaldriven.workers." + strings.TrimSpace(id) }
 
 func setJSON(ctx context.Context, kv state.KV, key string, value any) error {
-	return kv.Set(ctx, key, mustJSONString(value))
+	return kv.Set(ctx, key, value)
 }
 
 func getJSON(ctx context.Context, kv state.KV, key string, target any) (bool, error) {
-	raw, ok, err := kv.GetString(ctx, key)
+	raw, ok, err := kv.Get(ctx, key)
 	if err != nil || !ok {
 		return ok, err
 	}
-	if err := json.Unmarshal([]byte(raw), target); err != nil {
+
+	var data []byte
+	switch value := raw.(type) {
+	case string:
+		data = []byte(value)
+	default:
+		data, err = json.Marshal(value)
+		if err != nil {
+			return false, fmt.Errorf("encode key %s: %w", key, err)
+		}
+	}
+	if err := json.Unmarshal(data, target); err != nil {
 		return false, fmt.Errorf("decode key %s: %w", key, err)
 	}
 	return true, nil
-}
-
-func mustJSONString(value any) string {
-	data, err := json.Marshal(value)
-	if err != nil {
-		panic(fmt.Sprintf("marshal json: %v", err))
-	}
-	return string(data)
 }
 
 func decodeIndex(current interface{}) []string {

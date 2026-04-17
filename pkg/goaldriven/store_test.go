@@ -3,7 +3,6 @@ package goaldriven
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -110,7 +109,7 @@ func TestKVStoreListGoalRunsDiscoversRunWithoutIndex(t *testing.T) {
 		CreatedAt:               time.Now().UTC(),
 		UpdatedAt:               time.Now().UTC(),
 	}
-	if err := kv.Set(t.Context(), goalRunKey(run.ID), mustJSONString(run)); err != nil {
+	if err := kv.Set(t.Context(), goalRunKey(run.ID), run); err != nil {
 		t.Fatalf("seed raw goal run failed: %v", err)
 	}
 
@@ -148,7 +147,7 @@ func TestKVStoreDiscoveryPersistsIndexWhenMissing(t *testing.T) {
 		CreatedAt:               time.Now().UTC(),
 		UpdatedAt:               time.Now().UTC(),
 	}
-	if err := kv.Set(t.Context(), goalRunKey(run.ID), mustJSONString(run)); err != nil {
+	if err := kv.Set(t.Context(), goalRunKey(run.ID), run); err != nil {
 		t.Fatalf("seed goal run failed: %v", err)
 	}
 
@@ -156,12 +155,13 @@ func TestKVStoreDiscoveryPersistsIndexWhenMissing(t *testing.T) {
 	if _, err := store.ListGoalRuns(t.Context()); err != nil {
 		t.Fatalf("ListGoalRuns failed: %v", err)
 	}
-	index, ok, err := kv.GetString(t.Context(), goalRunIndexKey)
+	indexValue, ok, err := kv.Get(t.Context(), goalRunIndexKey)
 	if err != nil || !ok {
 		t.Fatalf("expected discovered index to persist, ok=%v err=%v", ok, err)
 	}
-	if !strings.Contains(index, run.ID) {
-		t.Fatalf("expected persisted index to include %s, got %s", run.ID, index)
+	index := decodeIndex(indexValue)
+	if len(index) != 1 || index[0] != run.ID {
+		t.Fatalf("expected persisted index to include %s, got %+v", run.ID, index)
 	}
 }
 
