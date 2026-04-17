@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mafredri/cdp"
 	"github.com/mafredri/cdp/devtool"
 	"github.com/mafredri/cdp/protocol/dom"
 	"github.com/mafredri/cdp/protocol/emulation"
@@ -405,19 +406,44 @@ func (b *BrowserTool) navigate(ctx context.Context, params map[string]interface{
 		return "", fmt.Errorf("failed to navigate: %w", err)
 	}
 
-	// Wait for page load
-	domLoaded, err := client.Page.DOMContentEventFired(ctx)
-	if err != nil {
-		b.log.Warn("Failed to wait for DOMContentLoaded",
+	// Wait for page load using a bounded readyState poll rather than a CDP event
+	// stream. This avoids CI flakes where the event listener can hang indefinitely.
+	if err := waitForPageReadyState(ctx, client, b.timeout); err != nil {
+		b.log.Warn("Failed to wait for readyState after navigation",
 			zap.Error(err))
-	} else {
-		defer func() {
-			_ = domLoaded.Close()
-		}()
-		_, _ = domLoaded.Recv()
 	}
 
 	return fmt.Sprintf("Navigated to: %s\nFrame ID: %s", urlStr, nav.FrameID), nil
+}
+
+func waitForPageReadyState(parent context.Context, client *cdp.Client, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	waitCtx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+
+	for {
+		evalArgs := runtime.NewEvaluateArgs("document.readyState").SetReturnByValue(true)
+		result, err := client.Runtime.Evaluate(waitCtx, evalArgs)
+		if err == nil && result.ExceptionDetails == nil {
+			var state string
+			if unmarshalErr := json.Unmarshal(result.Result.Value, &state); unmarshalErr == nil {
+				if state == "interactive" || state == "complete" {
+					return nil
+				}
+			}
+		}
+
+		select {
+		case <-waitCtx.Done():
+			if err != nil {
+				return err
+			}
+			return waitCtx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 func (b *BrowserTool) startMode(params map[string]interface{}) (BrowserConnectionMode, error) {

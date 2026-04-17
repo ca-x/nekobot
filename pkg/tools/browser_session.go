@@ -46,6 +46,7 @@ type BrowserSession struct {
 	connectFn         func(port int, timeout time.Duration) error
 	connectEndpointFn func(endpoint string, timeout time.Duration) error
 	launchFn          func(timeout time.Duration) error
+	findChromeFn      func() string
 	devtoolsFactory   func(endpoint string) browserDevTools
 }
 
@@ -95,6 +96,7 @@ func GetBrowserSession(log *logger.Logger) *BrowserSession {
 		browserSession.connectFn = browserSession.connect
 		browserSession.connectEndpointFn = browserSession.connectEndpoint
 		browserSession.launchFn = browserSession.launch
+		browserSession.findChromeFn = findChrome
 		browserSession.devtoolsFactory = func(endpoint string) browserDevTools {
 			return devtool.New(endpoint)
 		}
@@ -135,6 +137,9 @@ func (s *BrowserSession) StartWithOptions(timeout time.Duration, opts BrowserSta
 	}
 	if s.launchFn == nil {
 		s.launchFn = s.launch
+	}
+	if s.findChromeFn == nil {
+		s.findChromeFn = findChrome
 	}
 	if s.devtoolsFactory == nil {
 		s.devtoolsFactory = func(endpoint string) browserDevTools {
@@ -190,8 +195,10 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 	s.cancel = cancel
 
 	// Try to find Chrome executable
-	chromePath := findChrome()
+	chromePath := s.findChromeFn()
 	if chromePath == "" {
+		cancel()
+		s.cancel = nil
 		return fmt.Errorf("chrome not found in PATH")
 	}
 
@@ -217,14 +224,12 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 
 	if err := s.cmd.Start(); err != nil {
 		cancel()
+		s.cancel = nil
 		return fmt.Errorf("failed to start chrome: %w", err)
 	}
 
-	// Wait for Chrome to be ready
-	time.Sleep(2 * time.Second)
-
-	if err := s.connect(9222, timeout); err != nil {
-		if stopErr := s.Stop(); stopErr != nil {
+	if err := s.connectWithRetry(9222, timeout); err != nil {
+		if stopErr := s.stopLocked(); stopErr != nil {
 			s.log.Warn("Failed to stop browser session after launch failure", zap.Error(stopErr))
 		}
 		return err
@@ -235,6 +240,28 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 		zap.String("debug_url", s.debugURL))
 
 	return nil
+}
+
+func (s *BrowserSession) connectWithRetry(port int, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = s.timeout
+	}
+	connectFn := s.connectFn
+	if connectFn == nil {
+		connectFn = s.connect
+	}
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		lastErr = connectFn(port, timeout)
+		if lastErr == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 func (s *BrowserSession) connect(port int, timeout time.Duration) error {
@@ -264,12 +291,8 @@ func (s *BrowserSession) connectEndpoint(endpoint string, timeout time.Duration)
 	return nil
 }
 
-// Stop stops the browser session.
-func (s *BrowserSession) Stop() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.ready {
+func (s *BrowserSession) stopLocked() error {
+	if s.conn == nil && s.cancel == nil && s.cmd == nil && !s.ready {
 		return nil
 	}
 
@@ -292,11 +315,19 @@ func (s *BrowserSession) Stop() error {
 	s.client = nil
 	s.conn = nil
 	s.cmd = nil
+	s.cancel = nil
 	s.debugURL = ""
 	s.mode = BrowserModeAuto
 	s.endpoint = ""
 
 	return nil
+}
+
+// Stop stops the browser session.
+func (s *BrowserSession) Stop() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stopLocked()
 }
 
 // IsReady returns whether the session is ready.
