@@ -647,7 +647,7 @@ func TestGoalRunBrowserToolManualFlowE2E(t *testing.T) {
 
 	steps := []map[string]interface{}{
 		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('New goal run'))?.click(); true;`},
-		{"action": "wait", "duration": float64(300)},
+		{"action": "execute_script", "script": `(async function waitForDialogFields(deadline){ while (Date.now() < deadline) { if (document.querySelector('#goal-run-name') && document.querySelector('#goal-run-goal') && document.querySelector('#goal-run-criteria')) { return true; } await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error('goal run dialog fields did not render in time'); })(Date.now() + 2000);`},
 		{"action": "execute_script", "script": `(function(){ const el = document.querySelector('#goal-run-name'); if (!el) throw new Error('missing #goal-run-name'); el.value = 'Browser tool e2e'; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })();`},
 		{"action": "execute_script", "script": `(function(){ const el = document.querySelector('#goal-run-goal'); if (!el) throw new Error('missing #goal-run-goal'); el.value = 'Verify browser-tool Goal Runs flow'; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })();`},
 		{"action": "execute_script", "script": `(function(){ const el = document.querySelector('#goal-run-criteria'); if (!el) throw new Error('missing #goal-run-criteria'); el.value = 'confirm manually'; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })();`},
