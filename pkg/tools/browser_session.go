@@ -192,6 +192,8 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 	// Try to find Chrome executable
 	chromePath := findChrome()
 	if chromePath == "" {
+		cancel()
+		s.cancel = nil
 		return fmt.Errorf("chrome not found in PATH")
 	}
 

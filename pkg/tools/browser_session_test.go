@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"os/exec"
 	"errors"
 	"testing"
@@ -335,5 +336,21 @@ func TestBrowserSessionStartWithModeAutoCleansUpAfterLaunchFailure(t *testing.T)
 	}
 	if session.cmd != nil || session.cancel != nil || session.conn != nil || session.client != nil || session.ready {
 		t.Fatalf("expected failed launch cleanup, got %+v", session.Status())
+	}
+}
+
+func TestBrowserSessionLaunchWithoutChromeCleansUpCancel(t *testing.T) {
+	session := &BrowserSession{timeout: 5 * time.Second, log: newToolsTestLogger(t)}
+
+	err := session.launch(2 * time.Second)
+	if err == nil {
+		t.Fatal("expected chrome-not-found failure")
+	}
+	if !strings.Contains(err.Error(), "chrome not found in PATH") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if session.cancel != nil || session.cmd != nil || session.conn != nil || session.client != nil || session.ready {
+		t.Fatalf("expected launch failure without chrome to leave no session state, got ready=%v cmd=%v cancel=%v conn=%v client=%v",
+			session.ready, session.cmd, session.cancel, session.conn, session.client)
 	}
 }
