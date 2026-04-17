@@ -217,6 +217,7 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 
 	if err := s.cmd.Start(); err != nil {
 		cancel()
+		s.cancel = nil
 		return fmt.Errorf("failed to start chrome: %w", err)
 	}
 
@@ -224,7 +225,7 @@ func (s *BrowserSession) launch(timeout time.Duration) error {
 	time.Sleep(2 * time.Second)
 
 	if err := s.connect(9222, timeout); err != nil {
-		if stopErr := s.Stop(); stopErr != nil {
+		if stopErr := s.stopLocked(); stopErr != nil {
 			s.log.Warn("Failed to stop browser session after launch failure", zap.Error(stopErr))
 		}
 		return err
@@ -264,12 +265,8 @@ func (s *BrowserSession) connectEndpoint(endpoint string, timeout time.Duration)
 	return nil
 }
 
-// Stop stops the browser session.
-func (s *BrowserSession) Stop() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.ready {
+func (s *BrowserSession) stopLocked() error {
+	if s.conn == nil && s.cancel == nil && s.cmd == nil && !s.ready {
 		return nil
 	}
 
@@ -292,11 +289,19 @@ func (s *BrowserSession) Stop() error {
 	s.client = nil
 	s.conn = nil
 	s.cmd = nil
+	s.cancel = nil
 	s.debugURL = ""
 	s.mode = BrowserModeAuto
 	s.endpoint = ""
 
 	return nil
+}
+
+// Stop stops the browser session.
+func (s *BrowserSession) Stop() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stopLocked()
 }
 
 // IsReady returns whether the session is ready.

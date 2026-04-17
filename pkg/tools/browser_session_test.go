@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"os/exec"
 	"errors"
 	"testing"
 	"time"
@@ -306,5 +307,33 @@ func TestBrowserSessionGetDevToolsReturnsFactoryForEndpoint(t *testing.T) {
 	}
 	if called != 1 {
 		t.Fatalf("expected devtools factory to be called once, got %d", called)
+	}
+}
+
+func TestBrowserSessionStartWithModeAutoCleansUpAfterLaunchFailure(t *testing.T) {
+	session := &BrowserSession{timeout: 5 * time.Second, log: newToolsTestLogger(t)}
+	session.connectFn = func(port int, timeout time.Duration) error {
+		return errors.New("not running")
+	}
+	cmd := exec.Command("bash", "-lc", "sleep 30")
+	session.launchFn = func(timeout time.Duration) error {
+		_, cancel := context.WithTimeout(context.Background(), timeout)
+		session.cancel = cancel
+		session.cmd = cmd
+		if err := session.cmd.Start(); err != nil {
+			return err
+		}
+		if err := session.stopLocked(); err != nil {
+			return err
+		}
+		return errors.New("failed to connect after launch")
+	}
+
+	err := session.StartWithMode(2*time.Second, BrowserModeAuto)
+	if err == nil {
+		t.Fatal("expected launch failure")
+	}
+	if session.cmd != nil || session.cancel != nil || session.conn != nil || session.client != nil || session.ready {
+		t.Fatalf("expected failed launch cleanup, got %+v", session.Status())
 	}
 }
