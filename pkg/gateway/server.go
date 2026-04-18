@@ -7,7 +7,9 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sort"
@@ -534,7 +536,9 @@ func (s *Server) processMessage(client *Client, wsMsg WSMessage) {
 			Content:   wsMsg.Content,
 			Timestamp: time.Now(),
 		}
-		_ = s.bus.SendInbound(busMsg)
+		if err := s.bus.SendInbound(busMsg); err != nil {
+			s.logger.Warn("Failed to publish inbound bus message", zap.Error(err))
+		}
 		var err error
 		response, err = s.agent.Chat(context.Background(), client.session, wsMsg.Content)
 		if err != nil {
@@ -776,7 +780,9 @@ func (s *Server) handleDeleteConnections(w http.ResponseWriter, r *http.Request)
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]int{"deleted": len(targets), "remaining": remaining})
+	if err := json.NewEncoder(w).Encode(map[string]int{"deleted": len(targets), "remaining": remaining}); err != nil {
+		s.logger.Warn("Failed to encode deleted connection response", zap.Error(err))
+	}
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
@@ -919,7 +925,9 @@ func (s *Server) handleGetApprovals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(s.approval.GetPending())
+	if err := json.NewEncoder(w).Encode(s.approval.GetPending()); err != nil {
+		s.logger.Warn("Failed to encode approvals response", zap.Error(err))
+	}
 }
 
 func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
@@ -974,7 +982,9 @@ func (s *Server) handleApproveRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(body)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		s.logger.Warn("Failed to encode approval response", zap.Error(err))
+	}
 }
 
 func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
@@ -988,7 +998,10 @@ func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, "invalid request"), http.StatusBadRequest)
+		return
+	}
 	id := strings.TrimSpace(r.PathValue("id"))
 	req, _ := s.approval.GetRequest(id)
 	if err := s.approval.Deny(id, body.Reason); err != nil {
@@ -1007,7 +1020,9 @@ func (s *Server) handleDenyRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Warn("Failed to encode deny response", zap.Error(err))
+	}
 }
 
 func (s *Server) currentSessionRuntimeState(sessionID string) *tasks.SessionState {
