@@ -1,1 +1,0 @@
-import{j as m}from"./shader-gradient-vendor-CV5A_bmv.js";import{c as o}from"./index-G596h71e.js";function n({className:e,...t}){return m.jsx("div",{className:o("animate-pulse rounded-md bg-muted",e),...t})}export{n as S};

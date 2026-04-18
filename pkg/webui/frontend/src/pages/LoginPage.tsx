@@ -68,9 +68,9 @@ export default function LoginPage() {
     <AuthGradientShell variant="login">
       <div className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
         <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[1.05fr_440px]">
-          <section className="hidden flex-col justify-between rounded-[2rem] border border-white/45 bg-white/35 p-8 text-foreground shadow-[0_32px_120px_-48px_rgba(15,23,42,0.45)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/5 lg:flex">
+          <section className="hidden flex-col justify-between rounded-[2rem] border border-white/45 bg-white/40 p-8 text-foreground shadow-[0_32px_120px_-48px_rgba(15,23,42,0.45)] backdrop-blur-2xl dark:border-white/10 dark:bg-slate-950/40 lg:flex">
             <div>
-              <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-background/70 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
+              <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-background/80 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-foreground/75">
                 {t('loginHeroBadge')}
               </div>
               <div className="mt-8 flex items-center gap-4">
@@ -83,12 +83,12 @@ export default function LoginPage() {
                   <h1 className="text-3xl font-semibold tracking-tight text-foreground">
                     Nekobot
                   </h1>
-                  <p className="mt-1 text-sm text-muted-foreground">
+                  <p className="mt-1 text-sm text-foreground/70">
                     {t('loginHeroSubtitle')}
                   </p>
                 </div>
               </div>
-              <p className="mt-8 max-w-xl text-sm leading-7 text-muted-foreground">
+              <p className="mt-8 max-w-xl text-sm leading-7 text-foreground/75">
                 {t('loginHeroDescription')}
               </p>
             </div>
@@ -101,10 +101,10 @@ export default function LoginPage() {
               ].map(([title, desc]) => (
                 <div
                   key={title}
-                  className="rounded-2xl border border-border/60 bg-background/60 p-4 backdrop-blur-xl"
+                  className="rounded-2xl border border-border/60 bg-background/75 p-4 backdrop-blur-xl"
                 >
                   <div className="text-sm font-semibold text-foreground">{title}</div>
-                  <div className="mt-1 text-xs leading-5 text-muted-foreground">{desc}</div>
+                  <div className="mt-1 text-xs leading-5 text-foreground/70">{desc}</div>
                 </div>
               ))}
             </div>
