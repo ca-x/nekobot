@@ -614,6 +614,44 @@ func TestGoalRunBrowserToolManualFlowE2E(t *testing.T) {
 	waitForHTTPOK(t, "http://127.0.0.1:"+itoa(cfg.WebUI.Port)+"/api/auth/init-status", 15*time.Second)
 	token := initAdminAndGetToken(t, cfg.WebUI.Port)
 
+	created := createGoalRunHTTP(t, cfg.WebUI.Port, token, map[string]any{
+		"name":                      "Browser tool e2e",
+		"goal":                      "Verify browser tool Goal Runs final confirmation flow",
+		"natural_language_criteria": "confirm manually",
+		"risk_level":                "balanced",
+		"allow_auto_scope":          true,
+	})
+	goalRunID := nestedString(t, created, "goal_run", "id")
+	if goalRunID == "" {
+		t.Fatalf("expected created goal run id, got %+v", created)
+	}
+
+	confirmGoalRunCriteriaHTTP(t, cfg.WebUI.Port, token, goalRunID, map[string]any{
+		"criteria": map[string]any{
+			"criteria": []map[string]any{
+				{
+					"id":       "manual-1",
+					"title":    "Manual confirmation",
+					"type":     "manual_confirmation",
+					"required": true,
+					"scope": map[string]any{
+						"kind":   "server",
+						"source": "manual",
+					},
+					"definition": map[string]any{
+						"prompt": "Confirm success",
+					},
+				},
+			},
+		},
+		"selected_scope": map[string]any{
+			"kind":   "server",
+			"source": "manual",
+		},
+	})
+	startGoalRunHTTP(t, cfg.WebUI.Port, token, goalRunID)
+	waitForGoalRunStatusHTTP(t, cfg.WebUI.Port, token, goalRunID, string(goaldriven.GoalStatusNeedsHumanConfirmation), 15*time.Second)
+
 	tool := tools.NewBrowserTool(logOrFatal(t), true, 30, t.TempDir())
 	if _, err := tool.Execute(t.Context(), map[string]interface{}{
 		"action": "start_session",
@@ -628,9 +666,9 @@ func TestGoalRunBrowserToolManualFlowE2E(t *testing.T) {
 	baseURL := "http://127.0.0.1:" + itoa(cfg.WebUI.Port)
 	if _, err := tool.Execute(t.Context(), map[string]interface{}{
 		"action": "navigate",
-		"url":    baseURL + "/goal-runs",
+		"url":    baseURL + "/goal-runs/" + goalRunID,
 	}); err != nil {
-		t.Fatalf("navigate goal-runs: %v", err)
+		t.Fatalf("navigate goal-run detail: %v", err)
 	}
 	if _, err := tool.Execute(t.Context(), map[string]interface{}{
 		"action": "execute_script",
@@ -640,22 +678,13 @@ func TestGoalRunBrowserToolManualFlowE2E(t *testing.T) {
 	}
 	if _, err := tool.Execute(t.Context(), map[string]interface{}{
 		"action": "navigate",
-		"url":    baseURL + "/goal-runs",
+		"url":    baseURL + "/goal-runs/" + goalRunID,
 	}); err != nil {
-		t.Fatalf("reload goal-runs after auth: %v", err)
+		t.Fatalf("reload goal-run detail after auth: %v", err)
 	}
 
 	steps := []map[string]interface{}{
-		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('New goal run'))?.click(); true;`},
-		{"action": "execute_script", "script": `(async function waitForDialog(deadline){ while (Date.now() < deadline) { if (document.querySelector('[role=\"dialog\"]')) { return true; } await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error('goal run dialog did not render in time'); })(Date.now() + 4000);`},
-		{"action": "execute_script", "script": `(async function(){ const waitFor = async (selector) => { const deadline = Date.now() + 4000; while (Date.now() < deadline) { const el = document.querySelector(selector); if (el) return el; await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error('missing ' + selector); }; const set = async (selector, value) => { const el = await waitFor(selector); el.value = value; el.dispatchEvent(new Event('input', { bubbles: true })); }; await set('#goal-run-name', 'Browser tool e2e'); await set('#goal-run-goal', 'Verify browser-tool Goal Runs flow'); await set('#goal-run-criteria', 'confirm manually'); return true; })();`},
-		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Create run'))?.click(); true;`},
-		{"action": "wait", "duration": float64(1200)},
-		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Confirm criteria'))?.click(); true;`},
-		{"action": "wait", "duration": float64(600)},
-		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Start run'))?.click(); true;`},
-		{"action": "wait", "duration": float64(1200)},
-		{"action": "execute_script", "script": `(function(){ const areas = Array.from(document.querySelectorAll('textarea')); if (areas.length === 0) throw new Error('missing textarea'); const el = areas[areas.length - 1]; el.value = 'browser tool e2e confirmed'; el.dispatchEvent(new Event('input', { bubbles: true })); return true; })();`},
+		{"action": "execute_script", "script": `(async function(){ const deadline = Date.now() + 4000; while (Date.now() < deadline) { const areas = Array.from(document.querySelectorAll('textarea')); if (areas.length > 0) { const el = areas[areas.length - 1]; el.value = 'browser tool e2e confirmed'; el.dispatchEvent(new Event('input', { bubbles: true })); return true; } await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error('manual confirmation textarea did not render in time'); })();`},
 		{"action": "execute_script", "script": `Array.from(document.querySelectorAll('button')).find(btn => btn.textContent?.includes('Approve criterion'))?.click(); true;`},
 		{"action": "wait", "duration": float64(1200)},
 	}
