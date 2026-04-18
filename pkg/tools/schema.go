@@ -22,16 +22,25 @@ type ParamSchema struct {
 
 func intPtr(v int) *int { return &v }
 
-// MustSchemaMap converts typed schema structs to map form expected by providers.
-func MustSchemaMap[T any](schema T) map[string]interface{} {
+// SchemaMap converts typed schema structs to the map form expected by providers.
+func SchemaMap[T any](schema T) (map[string]interface{}, error) {
 	raw, err := json.Marshal(schema)
 	if err != nil {
-		panic(fmt.Sprintf("marshal schema: %v", err))
+		return nil, fmt.Errorf("marshal schema: %w", err)
 	}
 
 	var out map[string]interface{}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		panic(fmt.Sprintf("unmarshal schema: %v", err))
+		return nil, fmt.Errorf("unmarshal schema: %w", err)
+	}
+	return out, nil
+}
+
+// MustSchemaMap converts typed schema structs to map form expected by providers.
+func MustSchemaMap[T any](schema T) map[string]interface{} {
+	out, err := SchemaMap(schema)
+	if err != nil {
+		panic(fmt.Sprintf("schema map: %v", err))
 	}
 	return out
 }
