@@ -156,6 +156,14 @@ export interface MarketplaceEvolutionReview {
   suggestions: MarketplaceEvolutionSuggestion[];
 }
 
+
+export interface MarketplaceWorkspaceDraftResponse {
+  status: string;
+  created: boolean;
+  file_path: string;
+  skill: MarketplaceSkill;
+}
+
 export interface WorkspaceStatus {
   path: string;
   exists: boolean;
@@ -526,5 +534,23 @@ export function useMarketplaceSkillEvolutionReview() {
     queryKey: [...marketplaceKeys.all, 'evolution-review'],
     queryFn: () => api.get('/api/marketplace/skills/evolution-review'),
     staleTime: 10_000,
+  });
+}
+
+
+export function useCreateMarketplaceWorkspaceDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ skillID, content }: { skillID: string; content: string }) =>
+      api.post<MarketplaceWorkspaceDraftResponse>(
+        `/api/marketplace/skills/items/${encodeURIComponent(skillID)}/workspace-draft`,
+        { content },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.item('') });
+      toast.success('Workspace skill draft saved.');
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 }

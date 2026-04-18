@@ -465,6 +465,7 @@ func (s *Server) setup() {
 	api.GET("/marketplace/skills/search", s.handleSearchMarketplaceSkills)
 	api.GET("/marketplace/skills/items/:id", s.handleGetMarketplaceSkillItem)
 	api.GET("/marketplace/skills/items/:id/content", s.handleGetMarketplaceSkillContent)
+	api.POST("/marketplace/skills/items/:id/workspace-draft", s.handleCreateMarketplaceSkillWorkspaceDraft)
 	api.POST("/marketplace/skills/install", s.handleInstallMarketplaceSkill)
 	api.GET("/marketplace/skills/inventory", s.handleGetMarketplaceInventory)
 	api.GET("/marketplace/skills/evolution-review", s.handleGetMarketplaceSkillEvolutionReview)

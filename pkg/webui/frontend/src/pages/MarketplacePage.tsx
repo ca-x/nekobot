@@ -26,6 +26,7 @@ import {
   useMarketplaceInventory,
   useMarketplaceSkillContent,
   useMarketplaceSkillItem,
+  useCreateMarketplaceWorkspaceDraft,
   useMarketplaceSnapshots,
   useMarketplaceSkillEvolutionReview,
   useMarketplaceSkills,
@@ -69,6 +70,7 @@ export default function MarketplacePage() {
   const { data: skills, isLoading } = useMarketplaceSkills();
   const { data: installed } = useInstalledMarketplaceSkills();
   const installSkill = useInstallMarketplaceSkill();
+  const createWorkspaceDraft = useCreateMarketplaceWorkspaceDraft();
   const enableSkill = useEnableMarketplaceSkill();
   const disableSkill = useDisableMarketplaceSkill();
   const installDependencies = useInstallMarketplaceSkillDependencies();
@@ -187,6 +189,17 @@ export default function MarketplacePage() {
       selectedContent?.body_raw || '',
     ].join('\n');
   }, [selectedContent?.body_raw, selectedEvolutionSuggestion?.reasons, selectedSkill, selectedSkillID]);
+
+  const handleCreateWorkspaceDraft = () => {
+    if (!selectedSkillID || !skillPatchDraft.trim()) {
+      return;
+    }
+    createWorkspaceDraft.mutate({
+      skillID: selectedSkillID,
+      content: skillPatchDraft,
+    });
+  };
+
 
   const handleCreateSnapshot = () => {
     createSnapshot.mutate(
@@ -939,8 +952,19 @@ export default function MarketplacePage() {
 
                     <section className="rounded-[24px] border border-border/70 bg-card">
                       <div className="border-b border-border/70 px-4 py-3">
-                        <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                          Patch draft
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                            Patch draft
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="rounded-xl"
+                            disabled={!selectedSkillID || !skillPatchDraft.trim() || createWorkspaceDraft.isPending}
+                            onClick={handleCreateWorkspaceDraft}
+                          >
+                            {createWorkspaceDraft.isPending ? 'Saving…' : 'Save as workspace draft'}
+                          </Button>
                         </div>
                       </div>
                       <div className="max-h-[260px] overflow-auto px-4 py-4">
