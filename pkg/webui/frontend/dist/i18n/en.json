@@ -1488,5 +1488,8 @@
   "proxyAddressPlaceholder": "http://127.0.0.1:7890",
   "durationSecondsCompact": "{0}s",
   "durationMinutesCompact": "{0}m",
-  "durationMinutesSecondsCompact": "{0}m {1}s"
+  "durationMinutesSecondsCompact": "{0}m {1}s",
+  "modelsFieldModelIdExample": "gpt-4.1",
+  "modelsFieldDisplayNameExample": "GPT-4.1",
+  "apiEndpointExample": "https://api.example.com/v1"
 }

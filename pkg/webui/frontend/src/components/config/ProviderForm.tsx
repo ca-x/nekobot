@@ -379,7 +379,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                     </Label>
                     <Input
                       id="pf-api-base"
-                      placeholder={selectedType?.default_api_base || 'https://api.example.com/v1'}
+                      placeholder={selectedType?.default_api_base || t('apiEndpointExample')}
                       {...register('api_base')}
                       className="h-11 rounded-2xl bg-card/90"
                     />

@@ -180,7 +180,7 @@ export default function ModelsPage() {
               id="new-model-id"
               value={newModelID}
               onChange={(event) => setNewModelID(event.target.value)}
-              placeholder="gpt-4.1"
+              placeholder={t('modelsFieldModelIdExample')}
               className="h-11 rounded-2xl bg-card/90"
             />
           </div>
@@ -190,7 +190,7 @@ export default function ModelsPage() {
               id="new-model-display-name"
               value={newDisplayName}
               onChange={(event) => setNewDisplayName(event.target.value)}
-              placeholder="GPT-4.1"
+              placeholder={t('modelsFieldDisplayNameExample')}
               className="h-11 rounded-2xl bg-card/90"
             />
           </div>
