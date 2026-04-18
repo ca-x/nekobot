@@ -70,22 +70,22 @@ func (t *WebSearchTool) Description() string {
 }
 
 func (t *WebSearchTool) Parameters() map[string]interface{} {
-	return MustSchemaMap(webSearchParameterSchema{
-		Type: "object",
-		Properties: webSearchSchemaProps{
-			Query: ParamSchema{
-				Type:        "string",
-				Description: "Search query",
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"query": map[string]interface{}{
+				"type":        "string",
+				"description": "Search query",
 			},
-			Count: ParamSchema{
-				Type:        "integer",
-				Description: "Number of results to return (1-10, default: 5)",
-				Minimum:     intPtr(1),
-				Maximum:     intPtr(10),
+			"count": map[string]interface{}{
+				"type":        "integer",
+				"description": "Number of results to return (1-10, default: 5)",
+				"minimum":     1,
+				"maximum":     10,
 			},
 		},
-		Required: []string{"query"},
-	})
+		"required": []string{"query"},
+	}
 }
 
 func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}) (string, error) {
