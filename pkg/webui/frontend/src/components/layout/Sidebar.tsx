@@ -168,10 +168,7 @@ export default function Sidebar() {
       >
         <Languages className="h-4 w-4 shrink-0" />
         {sidebarOpen ? (
-          <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-            <span className="truncate text-left">{t('language')}</span>
-            <span className="shrink-0 rounded-full border border-border/60 bg-background/80 px-2 py-0.5 text-[11px] text-muted-foreground">{langLabel}</span>
-          </div>
+          <span className="min-w-0 flex-1 truncate text-left">{`${t('language')} · ${langLabel}`}</span>
         ) : (
           <span className="sr-only">{`${t('language')}: ${langLabel}`}</span>
         )}
