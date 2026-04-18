@@ -13,6 +13,7 @@ export interface CronJob {
   at_time?: string;
   every_duration?: string;
   prompt: string;
+  skills?: string[];
   provider?: string;
   model?: string;
   fallback?: string[];
@@ -33,6 +34,7 @@ export interface CreateCronJobInput {
   at_time?: string;
   every_duration?: string;
   prompt: string;
+  skills?: string[];
   provider?: string;
   model?: string;
   fallback?: string[];

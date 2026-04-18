@@ -268,7 +268,7 @@ func TestHandleCreateCronJob_AcceptsRouteOverrides(t *testing.T) {
 	}
 	e := echo.New()
 
-	body := `{"name":"cron-route","schedule_kind":"cron","schedule":"*/5 * * * *","prompt":"hello cron","provider":"pool-a","model":"gpt-4.1","fallback":["backup","pool-a"]}`
+	body := `{"name":"cron-route","schedule_kind":"cron","schedule":"*/5 * * * *","prompt":"hello cron","skills":["ops-skill","reporting-skill"],"provider":"pool-a","model":"gpt-4.1","fallback":["backup","pool-a"]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/cron/jobs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -298,6 +298,9 @@ func TestHandleCreateCronJob_AcceptsRouteOverrides(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(createdResp.Job.Fallback, ","), "pool-a") {
 		t.Fatalf("expected fallback to include route targets, got %v", createdResp.Job.Fallback)
+	}
+	if len(createdResp.Job.Skills) != 2 || createdResp.Job.Skills[0] != "ops-skill" {
+		t.Fatalf("expected skills to persist, got %v", createdResp.Job.Skills)
 	}
 }
 

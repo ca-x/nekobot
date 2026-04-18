@@ -596,6 +596,12 @@ export default function CronPage() {
                       <div className="mt-1 break-all font-mono text-foreground">{job.model || t('cronModelDefault')}</div>
                     </div>
                     <div className="rounded-md bg-muted/40 px-3 py-2 md:col-span-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">Skills</div>
+                      <div className="mt-1 break-all text-foreground">
+                        {job.skills && job.skills.length > 0 ? job.skills.join(' · ') : '-'}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2 md:col-span-2">
                       <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronFallback')}</div>
                       <div className="mt-1 break-all text-foreground">
                         {job.fallback && job.fallback.length > 0 ? job.fallback.join(' -> ') : t('cronFallbackEmpty')}
