@@ -49,6 +49,9 @@ func TestCooldownTrackerSnapshot_TracksCooldownAndFailureCounts(t *testing.T) {
 	if snapshot.LastFailure != now {
 		t.Fatalf("expected last failure %v, got %v", now, snapshot.LastFailure)
 	}
+	if snapshot.CooldownRemaining != 5*time.Second {
+		t.Fatalf("expected first failure cooldown to be 5s, got %s", snapshot.CooldownRemaining)
+	}
 }
 
 func TestCooldownTrackerSnapshot_TracksBillingDisable(t *testing.T) {
@@ -70,5 +73,24 @@ func TestCooldownTrackerSnapshot_TracksBillingDisable(t *testing.T) {
 	}
 	if snapshot.CooldownRemaining < 5*time.Hour {
 		t.Fatalf("expected billing cooldown around five hours, got %s", snapshot.CooldownRemaining)
+	}
+}
+
+func TestCalculateStandardCooldown_UsesShortEscalation(t *testing.T) {
+	cases := []struct {
+		count int
+		want  time.Duration
+	}{
+		{count: 1, want: 5 * time.Second},
+		{count: 2, want: 30 * time.Second},
+		{count: 3, want: 2 * time.Minute},
+		{count: 4, want: 5 * time.Minute},
+		{count: 9, want: 5 * time.Minute},
+	}
+
+	for _, tc := range cases {
+		if got := calculateStandardCooldown(tc.count); got != tc.want {
+			t.Fatalf("count=%d: want %s, got %s", tc.count, tc.want, got)
+		}
 	}
 }

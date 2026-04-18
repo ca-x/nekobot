@@ -30,15 +30,15 @@ type cooldownEntry struct {
 
 // CooldownSnapshot captures the current runtime state of a provider cooldown entry.
 type CooldownSnapshot struct {
-	Available                bool
-	InCooldown               bool
-	ErrorCount               int
-	FailureCounts            map[FailoverReason]int
-	CooldownRemaining        time.Duration
-	CooldownEnd              time.Time
-	DisabledUntil            time.Time
-	DisabledReason           FailoverReason
-	LastFailure              time.Time
+	Available         bool
+	InCooldown        bool
+	ErrorCount        int
+	FailureCounts     map[FailoverReason]int
+	CooldownRemaining time.Duration
+	CooldownEnd       time.Time
+	DisabledUntil     time.Time
+	DisabledReason    FailoverReason
+	LastFailure       time.Time
 }
 
 // NewCooldownTracker creates a tracker with default 24h failure window.
@@ -230,18 +230,24 @@ func (ct *CooldownTracker) getOrCreate(provider string) *cooldownEntry {
 }
 
 // calculateStandardCooldown computes standard exponential backoff.
-// Formula: min(1h, 1min * 5^min(n-1, 3))
+// Keep early failures short so transient upstream incidents do not block chat
+// for long periods.
 //
-//	1 error  -> 1 min
-//	2 errors -> 5 min
-//	3 errors -> 25 min
-//	4+ errors -> 1 hour (cap)
+//	1 error  -> 5 seconds
+//	2 errors -> 30 seconds
+//	3 errors -> 2 minutes
+//	4+ errors -> 5 minutes (cap)
 func calculateStandardCooldown(errorCount int) time.Duration {
-	n := max(1, errorCount)
-	exp := min(n-1, 3)
-	ms := 60_000 * int(math.Pow(5, float64(exp)))
-	ms = min(3_600_000, ms) // cap at 1 hour
-	return time.Duration(ms) * time.Millisecond
+	switch max(1, errorCount) {
+	case 1:
+		return 5 * time.Second
+	case 2:
+		return 30 * time.Second
+	case 3:
+		return 2 * time.Minute
+	default:
+		return 5 * time.Minute
+	}
 }
 
 // calculateBillingCooldown computes billing-specific exponential backoff.

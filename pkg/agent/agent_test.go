@@ -1865,6 +1865,56 @@ func TestCallLLMWithFallback_SkipsProviderInCooldownOnSubsequentAttempt(t *testi
 	}
 }
 
+func TestCallLLMWithFallback_AllProvidersInCooldownReturnsExhaustedError(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Model = "primary-model"
+	cfg.Providers = []config.ProviderProfile{
+		{
+			Name:         "primary",
+			ProviderKind: failoverTestProviderKind(t, "primary-cooldown"),
+			Models:       []string{"primary-model"},
+			DefaultModel: "primary-model",
+		},
+		{
+			Name:         "fallback",
+			ProviderKind: failoverTestProviderKind(t, "fallback-cooldown"),
+			Models:       []string{"fallback-model"},
+			DefaultModel: "fallback-model",
+		},
+	}
+
+	ag := newFailoverTestAgent(t, cfg)
+	tracker := ag.getFailoverCooldown()
+	tracker.MarkFailure("primary", providers.FailoverReasonRateLimit)
+	tracker.MarkFailure("fallback", providers.FailoverReasonRateLimit)
+
+	_, _, _, err := ag.callLLMWithFallback(
+		context.Background(),
+		&providers.UnifiedRequest{Model: "primary-model"},
+		"primary",
+		[]string{"primary", "fallback"},
+		"primary-model",
+		map[string]*providers.Client{},
+	)
+	if err == nil {
+		t.Fatal("expected fallback exhausted error")
+	}
+
+	exhaustedErr, ok := errors.AsType[*providers.FallbackExhaustedError](err)
+	if !ok {
+		t.Fatalf("expected fallback exhausted error, got %T: %v", err, err)
+	}
+	if len(exhaustedErr.Attempts) != 2 {
+		t.Fatalf("expected two cooldown skips, got %d", len(exhaustedErr.Attempts))
+	}
+	if strings.Contains(err.Error(), "temporarily unavailable") == false {
+		t.Fatalf("expected user-safe cooldown aggregate error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "provider primary in cooldown") {
+		t.Fatalf("expected final error not to expose raw cooldown line, got %v", err)
+	}
+}
+
 func TestChatWithProviderModelDetailed_ReturnsActualRouteOnFailure(t *testing.T) {
 	primaryKind := failoverTestProviderKind(t, "primary")
 	registerFailoverTestProvider(t, primaryKind, new(int), "", errors.New("status 400: invalid request format"))

@@ -153,10 +153,9 @@ func (a *Adaptor) DoRequest(ctx context.Context, req *http.Request) ([]byte, err
 
 // DoResponse parses the provider-specific response into UnifiedResponse.
 func (a *Adaptor) DoResponse(body []byte, info *providers.RelayInfo) (*providers.UnifiedResponse, error) {
-	// Unmarshal the response
 	var providerResp interface{}
-	if err := json.Unmarshal(body, &providerResp); err != nil {
-		return nil, fmt.Errorf("unmarshaling response: %w", err)
+	if err := providers.UnmarshalJSONResponse(body, &providerResp); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
 	// Use converter to transform to unified format
@@ -247,10 +246,10 @@ func parseError(statusCode int, body []byte) error {
 		} `json:"error"`
 	}
 
-	if err := json.Unmarshal(body, &errResp); err != nil {
+	if err := providers.UnmarshalJSONResponse(body, &errResp); err != nil {
 		return &providers.ErrorResponse{
 			StatusCode: statusCode,
-			Message:    string(body),
+			Message:    err.Error(),
 		}
 	}
 

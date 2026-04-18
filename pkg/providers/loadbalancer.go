@@ -243,6 +243,21 @@ type FallbackExhaustedError struct {
 }
 
 func (e *FallbackExhaustedError) Error() string {
+	allSkipped := len(e.Attempts) > 0
+	for _, attempt := range e.Attempts {
+		if !attempt.Skipped {
+			allSkipped = false
+			break
+		}
+	}
+
+	if allSkipped {
+		return fmt.Sprintf(
+			"all %d providers are temporarily unavailable; retry after the cooldown window",
+			len(e.Attempts),
+		)
+	}
+
 	var sb strings.Builder
 	_, _ = fmt.Fprintf(&sb, "all %d providers failed:", len(e.Attempts))
 	for i, a := range e.Attempts {

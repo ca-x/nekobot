@@ -1094,6 +1094,7 @@ func (a *Agent) callLLMWithFallback(
 	var lastErr error
 	var lastProviderUsed string
 	var lastModelUsed string
+	var attempts []providers.FallbackAttempt
 
 	for _, providerName := range providerOrder {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -1103,6 +1104,12 @@ func (a *Agent) callLLMWithFallback(
 		if !tracker.IsAvailable(providerName) {
 			remaining := tracker.CooldownRemaining(providerName)
 			lastErr = fmt.Errorf("provider %s in cooldown (%s remaining)", providerName, remaining.Round(time.Second))
+			attempts = append(attempts, providers.FallbackAttempt{
+				Provider: providerName,
+				Skipped:  true,
+				Reason:   providers.FailoverReasonRateLimit,
+				Error:    lastErr,
+			})
 			a.logger.Warn("Provider skipped due to cooldown",
 				zap.String("provider", providerName),
 				zap.Duration("remaining", remaining),
@@ -1153,6 +1160,12 @@ func (a *Agent) callLLMWithFallback(
 				loggedErr = failoverErr
 			}
 			lastErr = loggedErr
+			attempts = append(attempts, providers.FallbackAttempt{
+				Provider: providerName,
+				Model:    model,
+				Error:    loggedErr,
+				Reason:   reason,
+			})
 
 			a.logger.Warn("Provider request failed",
 				zap.String("provider", providerName),
@@ -1182,6 +1195,9 @@ func (a *Agent) callLLMWithFallback(
 
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no provider attempt made")
+	}
+	if len(attempts) > 0 {
+		lastErr = &providers.FallbackExhaustedError{Attempts: attempts}
 	}
 	return nil, lastProviderUsed, lastModelUsed, lastErr
 }
@@ -1344,11 +1360,11 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 		}
 		if result.Matched {
 			switch result.Action {
-		case permissionrules.ActionDeny:
-			if a.taskStore != nil {
-				a.taskStore.ClearSessionPendingAction(sessionID)
-				a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleIdle, "")
-			}
+			case permissionrules.ActionDeny:
+				if a.taskStore != nil {
+					a.taskStore.ClearSessionPendingAction(sessionID)
+					a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleIdle, "")
+				}
 				return "Tool call denied by permission rule", nil
 			case permissionrules.ActionAsk:
 				if a.approval == nil {
@@ -1365,12 +1381,12 @@ func (a *Agent) executeToolCall(ctx context.Context, toolCall providers.UnifiedT
 					a.taskStore.SetSessionPendingAction(sessionID, toolCall.Name, requestID)
 				}
 				return "Tool call pending approval", nil
-		case permissionrules.ActionAllow:
-			if a.taskStore != nil {
-				a.taskStore.ClearSessionPendingAction(sessionID)
-				a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleProcessing, toolCall.Name)
-			}
-			skipApproval = true
+			case permissionrules.ActionAllow:
+				if a.taskStore != nil {
+					a.taskStore.ClearSessionPendingAction(sessionID)
+					a.taskStore.SetSessionLifecycleState(sessionID, tasks.SessionLifecycleProcessing, toolCall.Name)
+				}
+				skipApproval = true
 			}
 		}
 	}

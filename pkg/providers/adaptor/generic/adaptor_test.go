@@ -2,6 +2,7 @@ package generic
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"nekobot/pkg/providers"
@@ -82,5 +83,23 @@ func TestGetRequestURLTrimsTrailingSlash(t *testing.T) {
 
 	if url != "https://example.com/v1/chat/completions" {
 		t.Fatalf("expected normalized request URL, got %q", url)
+	}
+}
+
+func TestParseError_HTMLBodyReturnsStructuredProviderError(t *testing.T) {
+	err := parseError(403, []byte("<html><body>403 Forbidden</body></html>"))
+	if err == nil {
+		t.Fatal("expected provider error")
+	}
+
+	resp, ok := err.(*providers.ErrorResponse)
+	if !ok {
+		t.Fatalf("expected ErrorResponse, got %T", err)
+	}
+	if strings.Contains(resp.Message, "invalid character <") {
+		t.Fatalf("expected upgraded message, got %q", resp.Message)
+	}
+	if !strings.Contains(resp.Message, "HTML error page") {
+		t.Fatalf("expected HTML error page hint, got %q", resp.Message)
 	}
 }

@@ -2,6 +2,7 @@ package openai
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"nekobot/pkg/providers"
@@ -52,5 +53,23 @@ func TestGetRequestURLTrimsTrailingSlash(t *testing.T) {
 
 	if url != "https://api.openai.com/v1/chat/completions" {
 		t.Fatalf("expected normalized request URL, got %q", url)
+	}
+}
+
+func TestDoResponse_HTMLBodyReturnsUsefulError(t *testing.T) {
+	adaptor := New()
+
+	_, err := adaptor.DoResponse([]byte("<html><title>502 Bad Gateway</title></html>"), &providers.RelayInfo{})
+	if err == nil {
+		t.Fatal("expected HTML response error")
+	}
+	if strings.Contains(err.Error(), "invalid character <") {
+		t.Fatalf("expected upgraded error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "HTML error page") {
+		t.Fatalf("expected HTML error page hint, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "502") {
+		t.Fatalf("expected status hint in error, got %v", err)
 	}
 }

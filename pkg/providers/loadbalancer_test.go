@@ -246,6 +246,9 @@ func TestLoadBalancerChatAllProvidersInCooldown(t *testing.T) {
 			t.Fatalf("attempt %d expected cooldown error, got %v", i, attempt.Error)
 		}
 	}
+	if !strings.Contains(err.Error(), "temporarily unavailable") {
+		t.Fatalf("expected user-safe aggregate error, got %v", err)
+	}
 }
 
 func TestCooldownTrackerResetsAfterFailureWindow(t *testing.T) {
