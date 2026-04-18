@@ -79,6 +79,15 @@ export interface ApplyDiscoveredModelsInput {
   models: string[];
 }
 
+
+export interface TestProviderResponse {
+  status: string;
+  provider: string;
+  model: string;
+  api_format: string;
+  preview: string;
+}
+
 export const PROVIDERS_KEY = ['providers'] as const;
 export const PROVIDER_RUNTIME_KEY = ['providers', 'runtime'] as const;
 
@@ -169,6 +178,17 @@ export function useClearProviderCooldown() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [...PROVIDER_RUNTIME_KEY] });
       toast.success(t('providerCooldownCleared'));
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+
+export function useTestProvider() {
+  return useMutation({
+    mutationFn: (name: string) => api.post<TestProviderResponse>(`/api/providers/${encodeURIComponent(name)}/test`, {}),
+    onSuccess: (result) => {
+      toast.success(`Provider test ok: ${result.provider} → ${result.model}`);
     },
     onError: (err: Error) => toast.error(err.message),
   });

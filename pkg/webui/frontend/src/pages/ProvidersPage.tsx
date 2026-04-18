@@ -18,6 +18,7 @@ import {
   useClearProviderCooldown,
   useProviderRuntime,
   useProviders,
+  useTestProvider,
   type Provider,
   type ProviderRuntime,
 } from '@/hooks/useProviders';
@@ -34,6 +35,7 @@ import {
   Globe,
   KeyRound,
   Plus,
+  Play,
   Search,
   ShieldCheck,
   Sparkles,
@@ -103,6 +105,7 @@ export default function ProvidersPage() {
   const { data: runtimeConfig } = useConfig();
   const saveConfig = useSaveConfig();
   const clearProviderCooldown = useClearProviderCooldown();
+  const testProvider = useTestProvider();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
@@ -395,6 +398,8 @@ export default function ProvidersPage() {
               onClick={() => openEdit(provider)}
               onClearCooldown={(providerName) => clearProviderCooldown.mutate(providerName)}
               onShowRuntimeDetails={(runtime) => setRuntimeDetailProvider(runtime)}
+              onTestProvider={(providerName) => testProvider.mutate(providerName)}
+              testingProvider={testProvider.isPending}
               clearingCooldown={clearProviderCooldown.isPending}
             />
           ))}
@@ -490,7 +495,7 @@ function MetricCard({ label, value, muted }: { label: string; value: string; mut
   );
 }
 
-function ProviderPanel({ provider, runtime, typeMeta, onClick, onClearCooldown, onShowRuntimeDetails, clearingCooldown }: { provider: Provider; runtime?: ProviderRuntime; typeMeta?: { display_name: string; description: string; default_api_base?: string; icon: string }; onClick: () => void; onClearCooldown: (providerName: string) => void; onShowRuntimeDetails: (runtime: ProviderRuntime) => void; clearingCooldown: boolean; }) {
+function ProviderPanel({ provider, runtime, typeMeta, onClick, onClearCooldown, onShowRuntimeDetails, onTestProvider, testingProvider, clearingCooldown }: { provider: Provider; runtime?: ProviderRuntime; typeMeta?: { display_name: string; description: string; default_api_base?: string; icon: string }; onClick: () => void; onClearCooldown: (providerName: string) => void; onShowRuntimeDetails: (runtime: ProviderRuntime) => void; onTestProvider: (providerName: string) => void; testingProvider: boolean; clearingCooldown: boolean; }) {
   const state = getConnectionState(provider, runtime);
   const logo = getProviderLogo(typeMeta?.icon || provider.provider_kind);
   const tint = getKindTint(provider.provider_kind);
@@ -557,12 +562,13 @@ function ProviderPanel({ provider, runtime, typeMeta, onClick, onClearCooldown, 
             {runtime?.disabled_reason && <span className="rounded-full border border-rose-200 bg-card px-3 py-1.5 text-xs text-rose-700">{t('providerRuntimeReason', runtime.disabled_reason)}</span>}
           </div>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">{formatFailureSummary(runtime)}</p>
-          {runtime ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {runtime.error_count > 0 ? <Button type="button" variant="outline" className="rounded-full" onClick={(event) => { event.stopPropagation(); onShowRuntimeDetails(runtime); }}>{t('providerRuntimeViewErrors', String(runtime.error_count))}</Button> : null}
-              {runtime.in_cooldown ? <Button type="button" variant="outline" className="rounded-full" onClick={(event) => { event.stopPropagation(); onClearCooldown(provider.name); }} disabled={clearingCooldown}><TimerReset className="mr-2 h-4 w-4" />{t('providerCooldownClear')}</Button> : null}
-            </div>
-          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" variant="outline" className="rounded-full" onClick={(event) => { event.stopPropagation(); onTestProvider(provider.name); }} disabled={testingProvider}>
+              <Play className="mr-2 h-4 w-4" />Test provider
+            </Button>
+            {runtime && runtime.error_count > 0 ? <Button type="button" variant="outline" className="rounded-full" onClick={(event) => { event.stopPropagation(); onShowRuntimeDetails(runtime); }}>{t('providerRuntimeViewErrors', String(runtime.error_count))}</Button> : null}
+            {runtime?.in_cooldown ? <Button type="button" variant="outline" className="rounded-full" onClick={(event) => { event.stopPropagation(); onClearCooldown(provider.name); }} disabled={clearingCooldown}><TimerReset className="mr-2 h-4 w-4" />{t('providerCooldownClear')}</Button> : null}
+          </div>
         </div>
       </div>
     </Card>

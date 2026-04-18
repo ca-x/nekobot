@@ -363,6 +363,7 @@ func (s *Server) setup() {
 	api.GET("/providers/runtime", s.handleGetProviderRuntime)
 	api.POST("/providers", s.handleCreateProvider)
 	api.POST("/providers/discover-models", s.handleDiscoverProviderModels)
+	api.POST("/providers/:name/test", s.handleTestProvider)
 	api.POST("/providers/:name/clear-cooldown", s.handleClearProviderCooldown)
 	api.POST("/providers/apply-discovered-models", s.handleApplyDiscoveredProviderModels)
 	api.PUT("/providers/:name", s.handleUpdateProvider)
