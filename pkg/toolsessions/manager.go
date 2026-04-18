@@ -580,9 +580,11 @@ func (m *Manager) GenerateSessionOTP(ctx context.Context, id string, ttl time.Du
 	}
 	expiresAt := time.Now().Add(ttl)
 	m.storeSessionOTP(id, hashAccessSecret(code), expiresAt)
-	_ = m.appendEvent(ctx, id, "otp_issued", map[string]interface{}{
+	if err := m.appendEvent(ctx, id, "otp_issued", map[string]interface{}{
 		"expires_at": expiresAt.Unix(),
-	})
+	}); err != nil {
+		m.log.Warn("Failed to record tool session event", zap.String("session_id", id), zap.Error(err))
+	}
 	return code, expiresAt, nil
 }
 
