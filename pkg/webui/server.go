@@ -54,6 +54,7 @@ import (
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/memory"
 	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/modelroute"
 	"nekobot/pkg/modelstore"
@@ -4139,6 +4140,10 @@ func (s *Server) handleListMarketplaceSkillSnapshots(c *echo.Context) error {
 		"auto_prune": snapshotPolicy.AutoPrune,
 		"max_count":  snapshotPolicy.MaxCount,
 	})
+}
+
+func (s *Server) handleCreateMarketplaceSkillWorkspaceDraft(c *echo.Context) error {
+	return c.JSON(http.StatusNotImplemented, map[string]string{"error": "workspace draft creation is not implemented yet"})
 }
 
 func (s *Server) handleCreateMarketplaceSkillSnapshot(c *echo.Context) error {
