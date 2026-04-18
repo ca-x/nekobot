@@ -1423,5 +1423,7 @@
   "goalRunsManualConfirmApprove": "批准条件",
   "goalRunsManualConfirmReject": "拒绝条件",
   "goalRunsManualConfirmSuccess": "人工条件已批准",
-  "goalRunsManualRejectSuccess": "人工条件已拒绝"
+  "goalRunsManualRejectSuccess": "人工条件已拒绝",
+  "webuiUiSoundsEnabled": "界面音效",
+  "webuiUiSoundsEnabledDesc": "为成功、错误、通知和开关点击播放轻量程序化音效。仅保存在当前浏览器中，默认关闭。"
 }

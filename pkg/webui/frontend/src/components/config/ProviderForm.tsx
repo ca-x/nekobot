@@ -24,7 +24,7 @@ import { MaskedInput } from '@/components/common/MaskedInput';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 import { getProviderLogo } from '@/lib/provider-logos';
 import {
   useCreateProvider,

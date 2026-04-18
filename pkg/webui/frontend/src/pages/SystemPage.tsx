@@ -26,7 +26,7 @@ import {
   DatabaseZap,
   RefreshCw,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from '@/lib/notify';
 
 export default function SystemPage() {
   const { data: status, isLoading, refetch, isFetching } = useStatus();

@@ -3,7 +3,7 @@ import Header from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { t } from '@/lib/i18n';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import {
   useCleanupTerminated,

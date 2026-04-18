@@ -1423,5 +1423,7 @@
   "goalRunsManualConfirmApprove": "条件を承認",
   "goalRunsManualConfirmReject": "条件を却下",
   "goalRunsManualConfirmSuccess": "手動条件を承認しました",
-  "goalRunsManualRejectSuccess": "手動条件を却下しました"
+  "goalRunsManualRejectSuccess": "手動条件を却下しました",
+  "webuiUiSoundsEnabled": "UIサウンド",
+  "webuiUiSoundsEnabledDesc": "成功・エラー・通知・トグル操作時に軽量なプロシージャル音を再生します。設定はこのブラウザにのみ保存され、初期状態では無効です。"
 }

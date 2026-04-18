@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 import Header from '@/components/layout/Header';
 import { useConfig } from '@/hooks/useConfig';
 import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';

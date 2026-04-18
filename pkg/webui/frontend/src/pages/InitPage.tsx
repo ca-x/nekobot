@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { api, setToken } from '@/api/client';
 import { t } from '@/lib/i18n';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Button } from '@/components/ui/button';
 import AuthGradientShell from '@/components/layout/AuthGradientShell';

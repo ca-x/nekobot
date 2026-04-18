@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2, AlertCircle, ArrowRight, RotateCcw, Eye, EyeOff, ShieldCheck, Settings2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 
 import { api } from '@/api/client';
 import Header from '@/components/layout/Header';

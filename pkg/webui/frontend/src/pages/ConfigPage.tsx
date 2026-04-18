@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useUiStore } from '@/stores/ui.store';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 import Header from '@/components/layout/Header';
 import {
   useWatchStatus,
@@ -1688,6 +1689,8 @@ function WebUISectionForm({
   const readBool = (path: string) => Boolean(getNestedValue(data, path));
   const readNumber = (path: string) => Number(getNestedValue(data, path) ?? 0);
   const readString = (path: string) => String(getNestedValue(data, path) ?? '');
+  const uiSoundEnabled = useUiStore((state) => state.uiSoundEnabled);
+  const setUiSoundEnabled = useUiStore((state) => state.setUiSoundEnabled);
 
   return (
     <div className="space-y-5">
@@ -1721,6 +1724,14 @@ function WebUISectionForm({
                 onChange={(event) => onChange('tool_session_otp_ttl_seconds', Number(event.target.value || 0))}
               />
             </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+            <div>
+              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiUiSoundsEnabled')}</Label>
+              <div className="mt-1 text-xs text-muted-foreground">{t('webuiUiSoundsEnabledDesc')}</div>
+            </div>
+            <Switch checked={uiSoundEnabled} onCheckedChange={setUiSoundEnabled} />
           </div>
 
           <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">

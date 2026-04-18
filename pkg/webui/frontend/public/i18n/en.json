@@ -1423,5 +1423,7 @@
   "goalRunsManualConfirmApprove": "Approve criterion",
   "goalRunsManualConfirmReject": "Reject criterion",
   "goalRunsManualConfirmSuccess": "Manual criterion approved",
-  "goalRunsManualRejectSuccess": "Manual criterion rejected"
+  "goalRunsManualRejectSuccess": "Manual criterion rejected",
+  "webuiUiSoundsEnabled": "UI sounds",
+  "webuiUiSoundsEnabledDesc": "Play lightweight procedural sounds for success, errors, notifications, and toggle clicks. Stored locally in this browser and disabled by default."
 }

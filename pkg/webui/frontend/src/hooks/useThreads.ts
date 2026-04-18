@@ -1,6 +1,6 @@
 import { api } from '@/api/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 import { t } from '@/lib/i18n';
 
 export interface ThreadSummary {

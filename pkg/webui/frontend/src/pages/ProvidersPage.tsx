@@ -23,7 +23,7 @@ import { useProviderTypes } from '@/hooks/useProviderTypes';
 import { getProviderLogo } from '@/lib/provider-logos';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 import {
   ArrowUpRight,
   BadgeCheck,

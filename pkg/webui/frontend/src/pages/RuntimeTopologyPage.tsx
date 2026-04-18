@@ -47,7 +47,7 @@ import { t } from '@/lib/i18n';
 import { ApiError } from '@/api/client';
 import { getChannelAccountValidationMessage } from './runtimeTopologyAccountValidation';
 import { AlertTriangle, Bot, Link2, Pencil, Plus, RadioTower, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 
 type RuntimeDialogState = {
   id?: string;

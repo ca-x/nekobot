@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Bot, Plus, Sparkles, Trash2, Wand2, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 import { useNavigate } from 'react-router-dom';
 
 import Header from '@/components/layout/Header';

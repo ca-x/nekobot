@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useUpdateChannel, type ChannelConfig } from '@/hooks/useChannels';
 import { t } from '@/lib/i18n';
-import { toast } from 'sonner';
+import { toast } from '@/lib/notify';
 
 interface ChannelFormProps {
   open: boolean;
