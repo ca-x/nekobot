@@ -79,16 +79,12 @@ func init() {
 	authLoginCmd.Flags().StringVarP(&authProvider, "provider", "p", "", "API provider (openai, anthropic, google, etc.)")
 	authLoginCmd.Flags().BoolVar(&authDeviceCode, "device-code", false, "Use device code flow (headless)")
 	authLoginCmd.Flags().BoolVar(&authPaste, "paste", false, "Manually paste API key")
-	if err := authLoginCmd.MarkFlagRequired("provider"); err != nil {
-		panic(fmt.Sprintf("mark auth provider flag required: %v", err))
-	}
+	cobra.CheckErr(authLoginCmd.MarkFlagRequired("provider"))
 
 	authLogoutCmd.Flags().StringVarP(&authProvider, "provider", "p", "", "API provider to logout from")
 	authLogoutCmd.Flags().BoolVar(&authLogoutAll, "all", false, "Logout from all providers")
 	authRefreshCmd.Flags().StringVarP(&authProvider, "provider", "p", "", "API provider to refresh")
-	if err := authRefreshCmd.MarkFlagRequired("provider"); err != nil {
-		panic(fmt.Sprintf("mark auth refresh provider flag required: %v", err))
-	}
+	cobra.CheckErr(authRefreshCmd.MarkFlagRequired("provider"))
 
 	// Add subcommands
 	authCmd.AddCommand(authLoginCmd)
