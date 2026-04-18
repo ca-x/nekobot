@@ -27,6 +27,8 @@ func (Provider) Fields() []ent.Field {
 		field.String("proxy").Default(""),
 		field.Int("default_weight").Default(1),
 		field.Bool("enabled").Default(true),
+		field.String("default_test_model").Default(""),
+		field.String("api_format").Default("openai/chat_completions"),
 		field.Int("timeout").Default(60),
 		field.Time("created_at").Default(time.Now).Immutable(),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),

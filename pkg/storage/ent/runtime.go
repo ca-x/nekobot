@@ -542,16 +542,24 @@ func init() {
 	providerDescEnabled := providerFields[7].Descriptor()
 	// provider.DefaultEnabled holds the default value on creation for the enabled field.
 	provider.DefaultEnabled = providerDescEnabled.Default.(bool)
+	// providerDescDefaultTestModel is the schema descriptor for default_test_model field.
+	providerDescDefaultTestModel := providerFields[8].Descriptor()
+	// provider.DefaultDefaultTestModel holds the default value on creation for the default_test_model field.
+	provider.DefaultDefaultTestModel = providerDescDefaultTestModel.Default.(string)
+	// providerDescAPIFormat is the schema descriptor for api_format field.
+	providerDescAPIFormat := providerFields[9].Descriptor()
+	// provider.DefaultAPIFormat holds the default value on creation for the api_format field.
+	provider.DefaultAPIFormat = providerDescAPIFormat.Default.(string)
 	// providerDescTimeout is the schema descriptor for timeout field.
-	providerDescTimeout := providerFields[8].Descriptor()
+	providerDescTimeout := providerFields[10].Descriptor()
 	// provider.DefaultTimeout holds the default value on creation for the timeout field.
 	provider.DefaultTimeout = providerDescTimeout.Default.(int)
 	// providerDescCreatedAt is the schema descriptor for created_at field.
-	providerDescCreatedAt := providerFields[9].Descriptor()
+	providerDescCreatedAt := providerFields[11].Descriptor()
 	// provider.DefaultCreatedAt holds the default value on creation for the created_at field.
 	provider.DefaultCreatedAt = providerDescCreatedAt.Default.(func() time.Time)
 	// providerDescUpdatedAt is the schema descriptor for updated_at field.
-	providerDescUpdatedAt := providerFields[10].Descriptor()
+	providerDescUpdatedAt := providerFields[12].Descriptor()
 	// provider.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	provider.DefaultUpdatedAt = providerDescUpdatedAt.Default.(func() time.Time)
 	// provider.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

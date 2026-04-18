@@ -1086,9 +1086,11 @@ func providerProfileToMap(p config.ProviderProfile) map[string]interface{} {
 		"api_key":        p.APIKey,
 		"api_base":       p.APIBase,
 		"proxy":          p.Proxy,
-		"default_weight": p.DefaultWeight,
-		"enabled":        p.Enabled,
-		"timeout":        p.Timeout,
+		"default_weight":     p.DefaultWeight,
+		"enabled":            p.Enabled,
+		"default_test_model": strings.TrimSpace(p.DefaultTestModel),
+		"api_format":         strings.TrimSpace(p.APIFormat),
+		"timeout":            p.Timeout,
 	}
 }
 
@@ -1103,6 +1105,8 @@ func (s *Server) providerProfileToView(p config.ProviderProfile) map[string]inte
 		"proxy":              strings.TrimSpace(p.Proxy),
 		"default_weight":     p.DefaultWeight,
 		"enabled":            p.Enabled,
+		"default_test_model": strings.TrimSpace(p.DefaultTestModel),
+		"api_format":         strings.TrimSpace(p.APIFormat),
 		"is_routing_default": strings.TrimSpace(s.config.Agents.Defaults.Provider) == strings.TrimSpace(p.Name),
 		"supports_discovery": providerKindSupportsDiscovery(p.ProviderKind),
 		"summary":            summarizeProviderProfile(p),

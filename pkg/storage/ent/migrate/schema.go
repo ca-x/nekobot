@@ -495,6 +495,8 @@ var (
 		{Name: "proxy", Type: field.TypeString, Default: ""},
 		{Name: "default_weight", Type: field.TypeInt, Default: 1},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "default_test_model", Type: field.TypeString, Default: ""},
+		{Name: "api_format", Type: field.TypeString, Default: "openai/chat_completions"},
 		{Name: "timeout", Type: field.TypeInt, Default: 60},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},

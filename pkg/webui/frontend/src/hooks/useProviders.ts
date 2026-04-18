@@ -11,6 +11,8 @@ export interface Provider {
   proxy: string;
   default_weight: number;
   enabled: boolean;
+  default_test_model: string;
+  api_format: string;
   is_routing_default: boolean;
   supports_discovery: boolean;
   summary: string;
@@ -39,6 +41,8 @@ export interface CreateProviderInput {
   timeout?: number;
   default_weight?: number;
   enabled?: boolean;
+  default_test_model?: string;
+  api_format?: string;
 }
 
 export interface UpdateProviderInput {
@@ -49,6 +53,8 @@ export interface UpdateProviderInput {
   timeout?: number;
   default_weight?: number;
   enabled?: boolean;
+  default_test_model?: string;
+  api_format?: string;
 }
 
 export interface DiscoverModelsInput {

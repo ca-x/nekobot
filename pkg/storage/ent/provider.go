@@ -31,6 +31,10 @@ type Provider struct {
 	DefaultWeight int `json:"default_weight,omitempty"`
 	// Enabled holds the value of the "enabled" field.
 	Enabled bool `json:"enabled,omitempty"`
+	// DefaultTestModel holds the value of the "default_test_model" field.
+	DefaultTestModel string `json:"default_test_model,omitempty"`
+	// APIFormat holds the value of the "api_format" field.
+	APIFormat string `json:"api_format,omitempty"`
 	// Timeout holds the value of the "timeout" field.
 	Timeout int `json:"timeout,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -49,7 +53,7 @@ func (*Provider) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case provider.FieldDefaultWeight, provider.FieldTimeout:
 			values[i] = new(sql.NullInt64)
-		case provider.FieldID, provider.FieldName, provider.FieldProviderKind, provider.FieldAPIKey, provider.FieldAPIBase, provider.FieldProxy:
+		case provider.FieldID, provider.FieldName, provider.FieldProviderKind, provider.FieldAPIKey, provider.FieldAPIBase, provider.FieldProxy, provider.FieldDefaultTestModel, provider.FieldAPIFormat:
 			values[i] = new(sql.NullString)
 		case provider.FieldCreatedAt, provider.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -115,6 +119,18 @@ func (_m *Provider) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field enabled", values[i])
 			} else if value.Valid {
 				_m.Enabled = value.Bool
+			}
+		case provider.FieldDefaultTestModel:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field default_test_model", values[i])
+			} else if value.Valid {
+				_m.DefaultTestModel = value.String
+			}
+		case provider.FieldAPIFormat:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field api_format", values[i])
+			} else if value.Valid {
+				_m.APIFormat = value.String
 			}
 		case provider.FieldTimeout:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -190,6 +206,12 @@ func (_m *Provider) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Enabled))
+	builder.WriteString(", ")
+	builder.WriteString("default_test_model=")
+	builder.WriteString(_m.DefaultTestModel)
+	builder.WriteString(", ")
+	builder.WriteString("api_format=")
+	builder.WriteString(_m.APIFormat)
 	builder.WriteString(", ")
 	builder.WriteString("timeout=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Timeout))

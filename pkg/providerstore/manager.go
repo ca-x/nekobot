@@ -141,9 +141,11 @@ func (m *Manager) Update(ctx context.Context, name string, profile config.Provid
 		APIKey:        strings.TrimSpace(profile.APIKey),
 		APIBase:       strings.TrimSpace(profile.APIBase),
 		Proxy:         strings.TrimSpace(profile.Proxy),
-		DefaultWeight: profile.DefaultWeight,
-		Enabled:       profile.Enabled,
-		Timeout:       profile.Timeout,
+		DefaultWeight:    profile.DefaultWeight,
+		Enabled:          profile.Enabled,
+		DefaultTestModel: strings.TrimSpace(profile.DefaultTestModel),
+		APIFormat:        strings.TrimSpace(profile.APIFormat),
+		Timeout:          profile.Timeout,
 	}
 	if merged.Name == "" {
 		merged.Name = current.Name
@@ -162,6 +164,12 @@ func (m *Manager) Update(ctx context.Context, name string, profile config.Provid
 	}
 	if merged.DefaultWeight == 0 {
 		merged.DefaultWeight = current.DefaultWeight
+	}
+	if merged.DefaultTestModel == "" {
+		merged.DefaultTestModel = current.DefaultTestModel
+	}
+	if merged.APIFormat == "" {
+		merged.APIFormat = current.APIFormat
 	}
 	if merged.Timeout == 0 {
 		merged.Timeout = current.Timeout
@@ -190,6 +198,8 @@ func (m *Manager) Update(ctx context.Context, name string, profile config.Provid
 		SetProxy(normalized.Proxy).
 		SetDefaultWeight(normalized.DefaultWeight).
 		SetEnabled(normalized.Enabled).
+		SetDefaultTestModel(normalized.DefaultTestModel).
+		SetAPIFormat(normalized.APIFormat).
 		SetTimeout(normalized.Timeout).
 		Save(ctx)
 	if err != nil {
@@ -291,6 +301,8 @@ func (m *Manager) insertLocked(ctx context.Context, profile config.ProviderProfi
 		SetProxy(profile.Proxy).
 		SetDefaultWeight(profile.DefaultWeight).
 		SetEnabled(profile.Enabled).
+		SetDefaultTestModel(profile.DefaultTestModel).
+		SetAPIFormat(profile.APIFormat).
 		SetTimeout(profile.Timeout).
 		Save(ctx)
 	if err != nil {
@@ -312,9 +324,11 @@ func toConfigProvider(rec *ent.Provider) (config.ProviderProfile, error) {
 		APIKey:        rec.APIKey,
 		APIBase:       rec.APIBase,
 		Proxy:         rec.Proxy,
-		DefaultWeight: rec.DefaultWeight,
-		Enabled:       rec.Enabled,
-		Timeout:       rec.Timeout,
+		DefaultWeight:    rec.DefaultWeight,
+		Enabled:          rec.Enabled,
+		DefaultTestModel: rec.DefaultTestModel,
+		APIFormat:        rec.APIFormat,
+		Timeout:          rec.Timeout,
 	}, nil
 }
 
@@ -332,10 +346,15 @@ func normalizeProvider(profile config.ProviderProfile) (config.ProviderProfile, 
 	profile.APIKey = strings.TrimSpace(profile.APIKey)
 	profile.APIBase = strings.TrimSpace(profile.APIBase)
 	profile.Proxy = strings.TrimSpace(profile.Proxy)
+	profile.DefaultTestModel = strings.TrimSpace(profile.DefaultTestModel)
+	profile.APIFormat = strings.TrimSpace(profile.APIFormat)
 	profile.Models = []string{}
 	profile.DefaultModel = ""
 	if profile.DefaultWeight <= 0 {
 		profile.DefaultWeight = 1
+	}
+	if profile.APIFormat == "" {
+		profile.APIFormat = "openai/chat_completions"
 	}
 	if !profile.Enabled {
 		// false is a valid explicit value; keep as-is.
@@ -370,6 +389,8 @@ func cloneProviders(src []config.ProviderProfile) []config.ProviderProfile {
 		dst[i] = src[i]
 		dst[i].Models = []string{}
 		dst[i].DefaultModel = ""
+		dst[i].DefaultTestModel = src[i].DefaultTestModel
+		dst[i].APIFormat = src[i].APIFormat
 	}
 	return dst
 }

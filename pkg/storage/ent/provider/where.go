@@ -99,6 +99,16 @@ func Enabled(v bool) predicate.Provider {
 	return predicate.Provider(sql.FieldEQ(FieldEnabled, v))
 }
 
+// DefaultTestModel applies equality check predicate on the "default_test_model" field. It's identical to DefaultTestModelEQ.
+func DefaultTestModel(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldEQ(FieldDefaultTestModel, v))
+}
+
+// APIFormat applies equality check predicate on the "api_format" field. It's identical to APIFormatEQ.
+func APIFormat(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldEQ(FieldAPIFormat, v))
+}
+
 // Timeout applies equality check predicate on the "timeout" field. It's identical to TimeoutEQ.
 func Timeout(v int) predicate.Provider {
 	return predicate.Provider(sql.FieldEQ(FieldTimeout, v))
@@ -487,6 +497,136 @@ func EnabledEQ(v bool) predicate.Provider {
 // EnabledNEQ applies the NEQ predicate on the "enabled" field.
 func EnabledNEQ(v bool) predicate.Provider {
 	return predicate.Provider(sql.FieldNEQ(FieldEnabled, v))
+}
+
+// DefaultTestModelEQ applies the EQ predicate on the "default_test_model" field.
+func DefaultTestModelEQ(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldEQ(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelNEQ applies the NEQ predicate on the "default_test_model" field.
+func DefaultTestModelNEQ(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldNEQ(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelIn applies the In predicate on the "default_test_model" field.
+func DefaultTestModelIn(vs ...string) predicate.Provider {
+	return predicate.Provider(sql.FieldIn(FieldDefaultTestModel, vs...))
+}
+
+// DefaultTestModelNotIn applies the NotIn predicate on the "default_test_model" field.
+func DefaultTestModelNotIn(vs ...string) predicate.Provider {
+	return predicate.Provider(sql.FieldNotIn(FieldDefaultTestModel, vs...))
+}
+
+// DefaultTestModelGT applies the GT predicate on the "default_test_model" field.
+func DefaultTestModelGT(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldGT(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelGTE applies the GTE predicate on the "default_test_model" field.
+func DefaultTestModelGTE(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldGTE(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelLT applies the LT predicate on the "default_test_model" field.
+func DefaultTestModelLT(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldLT(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelLTE applies the LTE predicate on the "default_test_model" field.
+func DefaultTestModelLTE(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldLTE(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelContains applies the Contains predicate on the "default_test_model" field.
+func DefaultTestModelContains(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldContains(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelHasPrefix applies the HasPrefix predicate on the "default_test_model" field.
+func DefaultTestModelHasPrefix(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldHasPrefix(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelHasSuffix applies the HasSuffix predicate on the "default_test_model" field.
+func DefaultTestModelHasSuffix(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldHasSuffix(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelEqualFold applies the EqualFold predicate on the "default_test_model" field.
+func DefaultTestModelEqualFold(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldEqualFold(FieldDefaultTestModel, v))
+}
+
+// DefaultTestModelContainsFold applies the ContainsFold predicate on the "default_test_model" field.
+func DefaultTestModelContainsFold(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldContainsFold(FieldDefaultTestModel, v))
+}
+
+// APIFormatEQ applies the EQ predicate on the "api_format" field.
+func APIFormatEQ(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldEQ(FieldAPIFormat, v))
+}
+
+// APIFormatNEQ applies the NEQ predicate on the "api_format" field.
+func APIFormatNEQ(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldNEQ(FieldAPIFormat, v))
+}
+
+// APIFormatIn applies the In predicate on the "api_format" field.
+func APIFormatIn(vs ...string) predicate.Provider {
+	return predicate.Provider(sql.FieldIn(FieldAPIFormat, vs...))
+}
+
+// APIFormatNotIn applies the NotIn predicate on the "api_format" field.
+func APIFormatNotIn(vs ...string) predicate.Provider {
+	return predicate.Provider(sql.FieldNotIn(FieldAPIFormat, vs...))
+}
+
+// APIFormatGT applies the GT predicate on the "api_format" field.
+func APIFormatGT(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldGT(FieldAPIFormat, v))
+}
+
+// APIFormatGTE applies the GTE predicate on the "api_format" field.
+func APIFormatGTE(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldGTE(FieldAPIFormat, v))
+}
+
+// APIFormatLT applies the LT predicate on the "api_format" field.
+func APIFormatLT(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldLT(FieldAPIFormat, v))
+}
+
+// APIFormatLTE applies the LTE predicate on the "api_format" field.
+func APIFormatLTE(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldLTE(FieldAPIFormat, v))
+}
+
+// APIFormatContains applies the Contains predicate on the "api_format" field.
+func APIFormatContains(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldContains(FieldAPIFormat, v))
+}
+
+// APIFormatHasPrefix applies the HasPrefix predicate on the "api_format" field.
+func APIFormatHasPrefix(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldHasPrefix(FieldAPIFormat, v))
+}
+
+// APIFormatHasSuffix applies the HasSuffix predicate on the "api_format" field.
+func APIFormatHasSuffix(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldHasSuffix(FieldAPIFormat, v))
+}
+
+// APIFormatEqualFold applies the EqualFold predicate on the "api_format" field.
+func APIFormatEqualFold(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldEqualFold(FieldAPIFormat, v))
+}
+
+// APIFormatContainsFold applies the ContainsFold predicate on the "api_format" field.
+func APIFormatContainsFold(v string) predicate.Provider {
+	return predicate.Provider(sql.FieldContainsFold(FieldAPIFormat, v))
 }
 
 // TimeoutEQ applies the EQ predicate on the "timeout" field.

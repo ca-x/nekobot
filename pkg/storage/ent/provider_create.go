@@ -102,6 +102,34 @@ func (_c *ProviderCreate) SetNillableEnabled(v *bool) *ProviderCreate {
 	return _c
 }
 
+// SetDefaultTestModel sets the "default_test_model" field.
+func (_c *ProviderCreate) SetDefaultTestModel(v string) *ProviderCreate {
+	_c.mutation.SetDefaultTestModel(v)
+	return _c
+}
+
+// SetNillableDefaultTestModel sets the "default_test_model" field if the given value is not nil.
+func (_c *ProviderCreate) SetNillableDefaultTestModel(v *string) *ProviderCreate {
+	if v != nil {
+		_c.SetDefaultTestModel(*v)
+	}
+	return _c
+}
+
+// SetAPIFormat sets the "api_format" field.
+func (_c *ProviderCreate) SetAPIFormat(v string) *ProviderCreate {
+	_c.mutation.SetAPIFormat(v)
+	return _c
+}
+
+// SetNillableAPIFormat sets the "api_format" field if the given value is not nil.
+func (_c *ProviderCreate) SetNillableAPIFormat(v *string) *ProviderCreate {
+	if v != nil {
+		_c.SetAPIFormat(*v)
+	}
+	return _c
+}
+
 // SetTimeout sets the "timeout" field.
 func (_c *ProviderCreate) SetTimeout(v int) *ProviderCreate {
 	_c.mutation.SetTimeout(v)
@@ -213,6 +241,14 @@ func (_c *ProviderCreate) defaults() {
 		v := provider.DefaultEnabled
 		_c.mutation.SetEnabled(v)
 	}
+	if _, ok := _c.mutation.DefaultTestModel(); !ok {
+		v := provider.DefaultDefaultTestModel
+		_c.mutation.SetDefaultTestModel(v)
+	}
+	if _, ok := _c.mutation.APIFormat(); !ok {
+		v := provider.DefaultAPIFormat
+		_c.mutation.SetAPIFormat(v)
+	}
 	if _, ok := _c.mutation.Timeout(); !ok {
 		v := provider.DefaultTimeout
 		_c.mutation.SetTimeout(v)
@@ -263,6 +299,12 @@ func (_c *ProviderCreate) check() error {
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "Provider.enabled"`)}
+	}
+	if _, ok := _c.mutation.DefaultTestModel(); !ok {
+		return &ValidationError{Name: "default_test_model", err: errors.New(`ent: missing required field "Provider.default_test_model"`)}
+	}
+	if _, ok := _c.mutation.APIFormat(); !ok {
+		return &ValidationError{Name: "api_format", err: errors.New(`ent: missing required field "Provider.api_format"`)}
 	}
 	if _, ok := _c.mutation.Timeout(); !ok {
 		return &ValidationError{Name: "timeout", err: errors.New(`ent: missing required field "Provider.timeout"`)}
@@ -335,6 +377,14 @@ func (_c *ProviderCreate) createSpec() (*Provider, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Enabled(); ok {
 		_spec.SetField(provider.FieldEnabled, field.TypeBool, value)
 		_node.Enabled = value
+	}
+	if value, ok := _c.mutation.DefaultTestModel(); ok {
+		_spec.SetField(provider.FieldDefaultTestModel, field.TypeString, value)
+		_node.DefaultTestModel = value
+	}
+	if value, ok := _c.mutation.APIFormat(); ok {
+		_spec.SetField(provider.FieldAPIFormat, field.TypeString, value)
+		_node.APIFormat = value
 	}
 	if value, ok := _c.mutation.Timeout(); ok {
 		_spec.SetField(provider.FieldTimeout, field.TypeInt, value)

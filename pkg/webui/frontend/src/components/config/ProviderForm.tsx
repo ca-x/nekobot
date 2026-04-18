@@ -55,6 +55,8 @@ interface ProviderFormData {
   proxy: string;
   timeout: string;
   default_weight: string;
+  default_test_model: string;
+  api_format: string;
   enabled: boolean;
 }
 
@@ -63,6 +65,11 @@ interface ProviderFormProps {
   onOpenChange: (open: boolean) => void;
   provider: Provider | null;
 }
+
+const API_FORMAT_OPTIONS = [
+  { value: 'openai/chat_completions', label: 'Chat Completions' },
+  { value: 'openai/responses', label: 'Responses' },
+] as const;
 
 const PROVIDER_KINDS_REQUIRING_API_KEY = new Set([
   'openai',
@@ -80,6 +87,8 @@ function toFormData(provider: Provider | null): ProviderFormData {
     proxy: provider?.proxy ?? '',
     timeout: provider?.timeout ? String(provider.timeout) : '',
     default_weight: String(provider?.default_weight ?? 1),
+    default_test_model: provider?.default_test_model ?? '',
+    api_format: provider?.api_format || 'openai/chat_completions',
     enabled: provider?.enabled ?? true,
   };
 }
@@ -122,6 +131,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
   const selectedKind = watch('provider_kind');
   const draftName = watch('name');
   const draftAPIKey = watch('api_key');
+  const selectedAPIFormat = watch('api_format');
   const selectedType = useMemo(
     () => providerTypes.find((item) => item.id === selectedKind) ?? providerTypes[0] ?? null,
     [providerTypes, selectedKind],
@@ -202,6 +212,9 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
       toast.error(t('providerDiscoverSaveProviderFirst'));
       return;
     }
+    if (!values.default_test_model.trim() && selectedDiscoveredModels.length > 0) {
+      setValue('default_test_model', selectedDiscoveredModels[0], { shouldDirty: true });
+    }
     applyDiscoveredModels.mutate({
       profile: {
         name: providerName,
@@ -218,6 +231,8 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
       proxy: data.proxy.trim() || undefined,
       timeout: data.timeout.trim() ? Number(data.timeout) : undefined,
       default_weight: data.default_weight.trim() ? Number(data.default_weight) : 1,
+      default_test_model: data.default_test_model.trim() || undefined,
+      api_format: data.api_format.trim() || 'openai/chat_completions',
       enabled: data.enabled,
     };
 
@@ -416,6 +431,36 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                       className="h-11 rounded-2xl bg-card/90"
                     />
                   </div>
+
+                  <div className="space-y-2">
+                    <Label>{t('providerDiscoverLabel')} API</Label>
+                    <Controller
+                      name="api_format"
+                      control={control}
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger className="h-11 rounded-2xl bg-card/90">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {API_FORMAT_OPTIONS.map((item) => (
+                              <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pf-default-test-model">{t('modelsFieldModelId')}</Label>
+                    <Input
+                      id="pf-default-test-model"
+                      placeholder={t('providerDiscoverApply')}
+                      {...register('default_test_model')}
+                      className="h-11 rounded-2xl bg-card/90"
+                    />
+                  </div>
                 </section>
 
                 <section className="rounded-[24px] border border-border/70 bg-card/70 p-4">
@@ -471,6 +516,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                       <div className="space-y-1">
                         <div className="text-sm font-semibold text-foreground">{t('providerDiscoverTitle')}</div>
                         <p className="text-sm leading-6 text-muted-foreground">{t('providerDiscoverSelectionHint')}</p>
+                        <p className="text-xs text-muted-foreground">{selectedAPIFormat === 'openai/responses' ? 'Responses API enabled for this provider.' : 'Chat Completions API enabled for this provider.'}</p>
                       </div>
 
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

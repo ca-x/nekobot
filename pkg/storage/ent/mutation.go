@@ -9640,25 +9640,27 @@ func (m *PromptBindingMutation) ResetEdge(name string) error {
 // ProviderMutation represents an operation that mutates the Provider nodes in the graph.
 type ProviderMutation struct {
 	config
-	op                Op
-	typ               string
-	id                *string
-	name              *string
-	provider_kind     *string
-	api_key           *string
-	api_base          *string
-	proxy             *string
-	default_weight    *int
-	adddefault_weight *int
-	enabled           *bool
-	timeout           *int
-	addtimeout        *int
-	created_at        *time.Time
-	updated_at        *time.Time
-	clearedFields     map[string]struct{}
-	done              bool
-	oldValue          func(context.Context) (*Provider, error)
-	predicates        []predicate.Provider
+	op                 Op
+	typ                string
+	id                 *string
+	name               *string
+	provider_kind      *string
+	api_key            *string
+	api_base           *string
+	proxy              *string
+	default_weight     *int
+	adddefault_weight  *int
+	enabled            *bool
+	default_test_model *string
+	api_format         *string
+	timeout            *int
+	addtimeout         *int
+	created_at         *time.Time
+	updated_at         *time.Time
+	clearedFields      map[string]struct{}
+	done               bool
+	oldValue           func(context.Context) (*Provider, error)
+	predicates         []predicate.Provider
 }
 
 var _ ent.Mutation = (*ProviderMutation)(nil)
@@ -10037,6 +10039,78 @@ func (m *ProviderMutation) ResetEnabled() {
 	m.enabled = nil
 }
 
+// SetDefaultTestModel sets the "default_test_model" field.
+func (m *ProviderMutation) SetDefaultTestModel(s string) {
+	m.default_test_model = &s
+}
+
+// DefaultTestModel returns the value of the "default_test_model" field in the mutation.
+func (m *ProviderMutation) DefaultTestModel() (r string, exists bool) {
+	v := m.default_test_model
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDefaultTestModel returns the old "default_test_model" field's value of the Provider entity.
+// If the Provider object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProviderMutation) OldDefaultTestModel(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDefaultTestModel is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDefaultTestModel requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDefaultTestModel: %w", err)
+	}
+	return oldValue.DefaultTestModel, nil
+}
+
+// ResetDefaultTestModel resets all changes to the "default_test_model" field.
+func (m *ProviderMutation) ResetDefaultTestModel() {
+	m.default_test_model = nil
+}
+
+// SetAPIFormat sets the "api_format" field.
+func (m *ProviderMutation) SetAPIFormat(s string) {
+	m.api_format = &s
+}
+
+// APIFormat returns the value of the "api_format" field in the mutation.
+func (m *ProviderMutation) APIFormat() (r string, exists bool) {
+	v := m.api_format
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAPIFormat returns the old "api_format" field's value of the Provider entity.
+// If the Provider object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProviderMutation) OldAPIFormat(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAPIFormat is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAPIFormat requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAPIFormat: %w", err)
+	}
+	return oldValue.APIFormat, nil
+}
+
+// ResetAPIFormat resets all changes to the "api_format" field.
+func (m *ProviderMutation) ResetAPIFormat() {
+	m.api_format = nil
+}
+
 // SetTimeout sets the "timeout" field.
 func (m *ProviderMutation) SetTimeout(i int) {
 	m.timeout = &i
@@ -10199,7 +10273,7 @@ func (m *ProviderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ProviderMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 12)
 	if m.name != nil {
 		fields = append(fields, provider.FieldName)
 	}
@@ -10220,6 +10294,12 @@ func (m *ProviderMutation) Fields() []string {
 	}
 	if m.enabled != nil {
 		fields = append(fields, provider.FieldEnabled)
+	}
+	if m.default_test_model != nil {
+		fields = append(fields, provider.FieldDefaultTestModel)
+	}
+	if m.api_format != nil {
+		fields = append(fields, provider.FieldAPIFormat)
 	}
 	if m.timeout != nil {
 		fields = append(fields, provider.FieldTimeout)
@@ -10252,6 +10332,10 @@ func (m *ProviderMutation) Field(name string) (ent.Value, bool) {
 		return m.DefaultWeight()
 	case provider.FieldEnabled:
 		return m.Enabled()
+	case provider.FieldDefaultTestModel:
+		return m.DefaultTestModel()
+	case provider.FieldAPIFormat:
+		return m.APIFormat()
 	case provider.FieldTimeout:
 		return m.Timeout()
 	case provider.FieldCreatedAt:
@@ -10281,6 +10365,10 @@ func (m *ProviderMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldDefaultWeight(ctx)
 	case provider.FieldEnabled:
 		return m.OldEnabled(ctx)
+	case provider.FieldDefaultTestModel:
+		return m.OldDefaultTestModel(ctx)
+	case provider.FieldAPIFormat:
+		return m.OldAPIFormat(ctx)
 	case provider.FieldTimeout:
 		return m.OldTimeout(ctx)
 	case provider.FieldCreatedAt:
@@ -10344,6 +10432,20 @@ func (m *ProviderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetEnabled(v)
+		return nil
+	case provider.FieldDefaultTestModel:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDefaultTestModel(v)
+		return nil
+	case provider.FieldAPIFormat:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAPIFormat(v)
 		return nil
 	case provider.FieldTimeout:
 		v, ok := value.(int)
@@ -10462,6 +10564,12 @@ func (m *ProviderMutation) ResetField(name string) error {
 		return nil
 	case provider.FieldEnabled:
 		m.ResetEnabled()
+		return nil
+	case provider.FieldDefaultTestModel:
+		m.ResetDefaultTestModel()
+		return nil
+	case provider.FieldAPIFormat:
+		m.ResetAPIFormat()
 		return nil
 	case provider.FieldTimeout:
 		m.ResetTimeout()

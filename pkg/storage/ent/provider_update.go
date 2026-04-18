@@ -133,6 +133,34 @@ func (_u *ProviderUpdate) SetNillableEnabled(v *bool) *ProviderUpdate {
 	return _u
 }
 
+// SetDefaultTestModel sets the "default_test_model" field.
+func (_u *ProviderUpdate) SetDefaultTestModel(v string) *ProviderUpdate {
+	_u.mutation.SetDefaultTestModel(v)
+	return _u
+}
+
+// SetNillableDefaultTestModel sets the "default_test_model" field if the given value is not nil.
+func (_u *ProviderUpdate) SetNillableDefaultTestModel(v *string) *ProviderUpdate {
+	if v != nil {
+		_u.SetDefaultTestModel(*v)
+	}
+	return _u
+}
+
+// SetAPIFormat sets the "api_format" field.
+func (_u *ProviderUpdate) SetAPIFormat(v string) *ProviderUpdate {
+	_u.mutation.SetAPIFormat(v)
+	return _u
+}
+
+// SetNillableAPIFormat sets the "api_format" field if the given value is not nil.
+func (_u *ProviderUpdate) SetNillableAPIFormat(v *string) *ProviderUpdate {
+	if v != nil {
+		_u.SetAPIFormat(*v)
+	}
+	return _u
+}
+
 // SetTimeout sets the "timeout" field.
 func (_u *ProviderUpdate) SetTimeout(v int) *ProviderUpdate {
 	_u.mutation.ResetTimeout()
@@ -251,6 +279,12 @@ func (_u *ProviderUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(provider.FieldEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.DefaultTestModel(); ok {
+		_spec.SetField(provider.FieldDefaultTestModel, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.APIFormat(); ok {
+		_spec.SetField(provider.FieldAPIFormat, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Timeout(); ok {
 		_spec.SetField(provider.FieldTimeout, field.TypeInt, value)
@@ -382,6 +416,34 @@ func (_u *ProviderUpdateOne) SetEnabled(v bool) *ProviderUpdateOne {
 func (_u *ProviderUpdateOne) SetNillableEnabled(v *bool) *ProviderUpdateOne {
 	if v != nil {
 		_u.SetEnabled(*v)
+	}
+	return _u
+}
+
+// SetDefaultTestModel sets the "default_test_model" field.
+func (_u *ProviderUpdateOne) SetDefaultTestModel(v string) *ProviderUpdateOne {
+	_u.mutation.SetDefaultTestModel(v)
+	return _u
+}
+
+// SetNillableDefaultTestModel sets the "default_test_model" field if the given value is not nil.
+func (_u *ProviderUpdateOne) SetNillableDefaultTestModel(v *string) *ProviderUpdateOne {
+	if v != nil {
+		_u.SetDefaultTestModel(*v)
+	}
+	return _u
+}
+
+// SetAPIFormat sets the "api_format" field.
+func (_u *ProviderUpdateOne) SetAPIFormat(v string) *ProviderUpdateOne {
+	_u.mutation.SetAPIFormat(v)
+	return _u
+}
+
+// SetNillableAPIFormat sets the "api_format" field if the given value is not nil.
+func (_u *ProviderUpdateOne) SetNillableAPIFormat(v *string) *ProviderUpdateOne {
+	if v != nil {
+		_u.SetAPIFormat(*v)
 	}
 	return _u
 }
@@ -534,6 +596,12 @@ func (_u *ProviderUpdateOne) sqlSave(ctx context.Context) (_node *Provider, err 
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(provider.FieldEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.DefaultTestModel(); ok {
+		_spec.SetField(provider.FieldDefaultTestModel, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.APIFormat(); ok {
+		_spec.SetField(provider.FieldAPIFormat, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Timeout(); ok {
 		_spec.SetField(provider.FieldTimeout, field.TypeInt, value)

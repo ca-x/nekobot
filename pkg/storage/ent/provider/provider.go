@@ -27,6 +27,10 @@ const (
 	FieldDefaultWeight = "default_weight"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
+	// FieldDefaultTestModel holds the string denoting the default_test_model field in the database.
+	FieldDefaultTestModel = "default_test_model"
+	// FieldAPIFormat holds the string denoting the api_format field in the database.
+	FieldAPIFormat = "api_format"
 	// FieldTimeout holds the string denoting the timeout field in the database.
 	FieldTimeout = "timeout"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -47,6 +51,8 @@ var Columns = []string{
 	FieldProxy,
 	FieldDefaultWeight,
 	FieldEnabled,
+	FieldDefaultTestModel,
+	FieldAPIFormat,
 	FieldTimeout,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -77,6 +83,10 @@ var (
 	DefaultDefaultWeight int
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
+	// DefaultDefaultTestModel holds the default value on creation for the "default_test_model" field.
+	DefaultDefaultTestModel string
+	// DefaultAPIFormat holds the default value on creation for the "api_format" field.
+	DefaultAPIFormat string
 	// DefaultTimeout holds the default value on creation for the "timeout" field.
 	DefaultTimeout int
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
@@ -130,6 +140,16 @@ func ByDefaultWeight(opts ...sql.OrderTermOption) OrderOption {
 // ByEnabled orders the results by the enabled field.
 func ByEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldEnabled, opts...).ToFunc()
+}
+
+// ByDefaultTestModel orders the results by the default_test_model field.
+func ByDefaultTestModel(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDefaultTestModel, opts...).ToFunc()
+}
+
+// ByAPIFormat orders the results by the api_format field.
+func ByAPIFormat(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAPIFormat, opts...).ToFunc()
 }
 
 // ByTimeout orders the results by the timeout field.
