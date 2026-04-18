@@ -74,12 +74,14 @@ func EnsureProcess(
 		return fmt.Errorf("update external agent launch session: %w", err)
 	}
 	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
-		"command":         command,
-		"launch_cmd":      launchCommand,
-		"workdir":         workdir,
+		"command":    command,
+		"launch_cmd": launchCommand,
+		"workdir":    workdir,
 	}, launchInfo.TransportName, launchInfo.SessionName)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(launchInfo.TransportName)
-	_ = sessionMgr.AppendEvent(context.Background(), sessionID, "process_started", eventPayload)
+	if err := sessionMgr.AppendEvent(context.Background(), sessionID, "process_started", eventPayload); err != nil {
+		return fmt.Errorf("append external agent process_started event: %w", err)
+	}
 	return nil
 }
 
