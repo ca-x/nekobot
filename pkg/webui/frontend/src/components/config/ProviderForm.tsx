@@ -95,6 +95,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
   const [selectedDiscoveredModels, setSelectedDiscoveredModels] = useState<string[]>([]);
+  const [discoveredModelQuery, setDiscoveredModelQuery] = useState('');
 
   const {
     register,
@@ -115,6 +116,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
     reset(toFormData(provider));
     setDiscoveredModels([]);
     setSelectedDiscoveredModels([]);
+    setDiscoveredModelQuery('');
   }, [open, provider, reset]);
 
   const selectedKind = watch('provider_kind');
@@ -155,6 +157,14 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
     selectedDiscoveredModels.length === 0 ||
     !(provider?.name || draftName.trim());
   const logo = getProviderLogo(selectedType?.icon ?? selectedKind);
+
+  const filteredDiscoveredModels = useMemo(() => {
+    const keyword = discoveredModelQuery.trim().toLowerCase();
+    if (!keyword) {
+      return discoveredModels;
+    }
+    return discoveredModels.filter((modelID) => modelID.toLowerCase().includes(keyword));
+  }, [discoveredModelQuery, discoveredModels]);
 
   const applyDiscover = () => {
     const values = watch();
@@ -462,26 +472,66 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                         <div className="text-sm font-semibold text-foreground">{t('providerDiscoverTitle')}</div>
                         <p className="text-sm leading-6 text-muted-foreground">{t('providerDiscoverSelectionHint')}</p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {discoveredModels.map((modelID) => {
-                          const selected = selectedDiscoveredModels.includes(modelID);
-                          return (
-                            <button
-                              key={modelID}
-                              type="button"
-                              onClick={() => toggleDiscoveredModel(modelID)}
-                              className={cn(
-                                'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                                selected
-                                  ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
-                                  : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
-                              )}
-                            >
-                              {modelID}
-                            </button>
-                          );
-                        })}
+
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="relative w-full lg:max-w-sm">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            value={discoveredModelQuery}
+                            onChange={(event) => setDiscoveredModelQuery(event.target.value)}
+                            placeholder={t('modelsSearchPlaceholder')}
+                            className="h-10 rounded-xl bg-card pl-9"
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-full"
+                            onClick={() => setSelectedDiscoveredModels(discoveredModels)}
+                          >
+                            {t('selectAll')}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-full"
+                            onClick={() => setSelectedDiscoveredModels([])}
+                          >
+                            {t('clear')}
+                          </Button>
+                        </div>
                       </div>
+
+                      <ScrollArea className="h-64 rounded-2xl border border-border/70 bg-card/70">
+                        <div className="space-y-2 p-3">
+                          {filteredDiscoveredModels.map((modelID) => {
+                            const selected = selectedDiscoveredModels.includes(modelID);
+                            return (
+                              <button
+                                key={modelID}
+                                type="button"
+                                onClick={() => toggleDiscoveredModel(modelID)}
+                                className={cn(
+                                  'flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm transition-colors',
+                                  selected
+                                    ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))]/80 text-[hsl(var(--brand-900))]'
+                                    : 'border-border/70 bg-background text-foreground hover:border-border hover:bg-muted/50',
+                                )}
+                              >
+                                <span className="min-w-0 flex-1 break-all font-mono text-xs sm:text-sm">{modelID}</span>
+                                {selected ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : null}
+                              </button>
+                            );
+                          })}
+                          {filteredDiscoveredModels.length === 0 ? (
+                            <div className="rounded-xl border border-dashed border-border/70 px-3 py-6 text-center text-sm text-muted-foreground">
+                              {t('modelsEmptyTitle')}
+                            </div>
+                          ) : null}
+                        </div>
+                      </ScrollArea>
+
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-xs text-muted-foreground">
                           {t('providerDiscoveredModelsSelected', String(selectedDiscoveredModels.length), String(discoveredModels.length))}
