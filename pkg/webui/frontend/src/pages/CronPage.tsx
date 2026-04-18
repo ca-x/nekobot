@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from '@/lib/notify';
 import Header from '@/components/layout/Header';
 import { useConfig } from '@/hooks/useConfig';
-import { usePrompts } from '@/hooks/usePrompts';
+import { useMarketplaceSkills } from '@/hooks/useMarketplace';
 import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
 import { useProviders } from '@/hooks/useProviders';
 import { Button } from '@/components/ui/button';
@@ -115,7 +115,7 @@ function renderLastResult(job: CronJob): string {
 export default function CronPage() {
   const [form, setForm] = useState<CronFormState>(DEFAULT_FORM);
   const { data: providers = [] } = useProviders();
-  const { data: prompts = [] } = usePrompts();
+  const { data: availableSkills = [] } = useMarketplaceSkills();
   const { data: modelCatalog = [] } = useModels();
   const modelRoutesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
   const { data: config } = useConfig();
@@ -408,24 +408,24 @@ export default function CronPage() {
               <Label>Skills</Label>
               <div className="rounded-md border border-input bg-background px-3 py-3">
                 <div className="mb-3 text-xs text-muted-foreground">Preload selected skill instructions before this cron job runs.</div>
-                {prompts.length === 0 ? (
+                {availableSkills.length === 0 ? (
                   <div className="rounded-md border border-dashed border-input px-3 py-3 text-sm text-muted-foreground">
                     No prompts/skills available.
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {prompts.filter((item) => item.enabled).map((prompt) => {
-                      const selected = form.skills.includes(prompt.id);
+                    {availableSkills.filter((item) => item.enabled).map((skill) => {
+                      const selected = form.skills.includes(skill.id);
                       return (
                         <button
-                          key={prompt.id}
+                          key={skill.id}
                           type="button"
-                          onClick={() => handleToggleSkill(prompt.id)}
+                          onClick={() => handleToggleSkill(skill.id)}
                           className={selected
                             ? 'max-w-full rounded-full border border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] px-3 py-1.5 text-left text-xs font-medium text-[hsl(var(--brand-800))]'
                             : 'max-w-full rounded-full border border-input bg-white px-3 py-1.5 text-left text-xs font-medium text-muted-foreground'}
                         >
-                          <span className="break-all">{prompt.name || prompt.key || prompt.id}</span>
+                          <span className="break-all">{skill.name || skill.id}</span>
                         </button>
                       );
                     })}
