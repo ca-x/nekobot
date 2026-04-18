@@ -91,11 +91,22 @@ func runApprovalList(cmd *cobra.Command, args []string) {
 		}
 	}()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Error reading response: %v\n", err)
+		os.Exit(1)
+	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		fmt.Println("Authentication required. The approval API requires a valid JWT token.")
 		fmt.Println("This will be improved in a future release with API key support.")
+		os.Exit(1)
+	}
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Approval API returned %s\n", resp.Status)
+		if trimmed := strings.TrimSpace(string(body)); trimmed != "" {
+			fmt.Println(trimmed)
+		}
 		os.Exit(1)
 	}
 
@@ -162,8 +173,25 @@ func runApprovalApprove(cmd *cobra.Command, args []string) {
 		}
 	}()
 
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		fmt.Printf("Error reading response: %v\n", readErr)
+		os.Exit(1)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		fmt.Println("Authentication required. The approval API requires a valid JWT token.")
+		os.Exit(1)
+	}
 	if resp.StatusCode == http.StatusNotFound {
 		fmt.Printf("Request not found: %s\n", id)
+		os.Exit(1)
+	}
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Approval request failed: %s\n", resp.Status)
+		if trimmed := strings.TrimSpace(string(body)); trimmed != "" {
+			fmt.Println(trimmed)
+		}
 		os.Exit(1)
 	}
 
@@ -190,8 +218,25 @@ func runApprovalDeny(cmd *cobra.Command, args []string) {
 		}
 	}()
 
+	responseBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		fmt.Printf("Error reading response: %v\n", readErr)
+		os.Exit(1)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		fmt.Println("Authentication required. The approval API requires a valid JWT token.")
+		os.Exit(1)
+	}
 	if resp.StatusCode == http.StatusNotFound {
 		fmt.Printf("Request not found: %s\n", id)
+		os.Exit(1)
+	}
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Approval request failed: %s\n", resp.Status)
+		if trimmed := strings.TrimSpace(string(responseBody)); trimmed != "" {
+			fmt.Println(trimmed)
+		}
 		os.Exit(1)
 	}
 
