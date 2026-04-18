@@ -5,6 +5,7 @@
 package webui
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -1018,6 +1019,160 @@ func (s *Server) handleGetProviderRuntime(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, items)
+}
+
+func (s *Server) handleTestProvider(c *echo.Context) error {
+	name := strings.TrimSpace(c.Param("name"))
+	if name == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "provider name is required"})
+	}
+	if s.providers == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "provider store unavailable"})
+	}
+	profile, err := s.providers.Get(c.Request().Context(), name)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	}
+	if strings.TrimSpace(profile.DefaultTestModel) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "default_test_model is required before testing this provider"})
+	}
+	apiFormat := strings.TrimSpace(profile.APIFormat)
+	if apiFormat == "" {
+		apiFormat = "openai/chat_completions"
+	}
+	kind := strings.TrimSpace(profile.ProviderKind)
+	if kind == "" {
+		kind = name
+	}
+	if apiFormat == "openai/responses" {
+		preview, err := s.testOpenAIResponsesProvider(c.Request().Context(), kind, profile)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("provider test failed: %v", err)})
+		}
+		return c.JSON(http.StatusOK, map[string]any{
+			"status":     "ok",
+			"provider":   profile.Name,
+			"model":      profile.DefaultTestModel,
+			"api_format": apiFormat,
+			"preview":    preview,
+		})
+	}
+	if apiFormat != "openai/chat_completions" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("provider test for api_format %s is not supported yet", apiFormat)})
+	}
+	client, err := providers.NewClient(kind, &providers.RelayInfo{
+		ProviderName: kind,
+		APIKey:       profile.APIKey,
+		APIBase:      profile.APIBase,
+		Proxy:        profile.Proxy,
+		Model:        profile.DefaultTestModel,
+		Timeout:      profile.GetTimeout(),
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("init provider client failed: %v", err)})
+	}
+	resp, err := client.Chat(c.Request().Context(), &providers.UnifiedRequest{
+		Model: profile.DefaultTestModel,
+		Messages: []providers.UnifiedMessage{{
+			Role:    "user",
+			Content: "Reply with exactly: provider test ok",
+		}},
+		MaxTokens: 32,
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("provider test failed: %v", err)})
+	}
+	preview := strings.TrimSpace(resp.Content)
+	if len(preview) > 160 {
+		preview = preview[:160] + "..."
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"status":     "ok",
+		"provider":   profile.Name,
+		"model":      profile.DefaultTestModel,
+		"api_format": apiFormat,
+		"preview":    preview,
+	})
+}
+
+func (s *Server) testOpenAIResponsesProvider(ctx context.Context, kind string, profile *config.ProviderProfile) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(profile.APIBase), "/")
+	if base == "" {
+		return "", fmt.Errorf("api_base is required")
+	}
+	client, err := providers.NewHTTPClientWithProxy(profile.Proxy)
+	if err != nil {
+		return "", fmt.Errorf("setup proxy failed: %w", err)
+	}
+	client.Timeout = time.Duration(profile.GetTimeout()) * time.Second
+	payload := map[string]any{"model": profile.DefaultTestModel, "input": "Reply with exactly: provider test ok"}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal request failed: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/responses", bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("build request failed: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if strings.TrimSpace(profile.APIKey) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(profile.APIKey))
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("execute request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response failed: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", fmt.Errorf("decode response failed: %w", err)
+	}
+	preview := strings.TrimSpace(extractResponsesText(parsed))
+	if preview == "" {
+		preview = strings.TrimSpace(string(body))
+	}
+	if len(preview) > 160 {
+		preview = preview[:160] + "..."
+	}
+	return preview, nil
+}
+
+func extractResponsesText(payload map[string]any) string {
+	output, ok := payload["output"].([]any)
+	if !ok {
+		if text, ok := payload["output_text"].(string); ok {
+			return text
+		}
+		return ""
+	}
+	parts := make([]string, 0)
+	for _, item := range output {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		content, ok := obj["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, raw := range content {
+			chunk, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if text, ok := chunk["text"].(string); ok && strings.TrimSpace(text) != "" {
+				parts = append(parts, text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 func (s *Server) handleClearProviderCooldown(c *echo.Context) error {
