@@ -93,6 +93,7 @@ export default function MarketplacePage() {
   const { data: remoteSearch, isFetching: isSearchingRemote } = useSearchMarketplaceSkills(remoteQuery);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteSnapshotId, setDeleteSnapshotId] = useState<string>('');
+  const [editablePatchDraft, setEditablePatchDraft] = useState('');
 
   const marketplaceSkills = skills ?? [];
   const filteredSkills = useMemo(() => {
@@ -190,13 +191,17 @@ export default function MarketplacePage() {
     ].join('\n');
   }, [selectedContent?.body_raw, selectedEvolutionSuggestion?.reasons, selectedSkill, selectedSkillID]);
 
+  useEffect(() => {
+    setEditablePatchDraft(skillPatchDraft);
+  }, [skillPatchDraft]);
+
   const handleCreateWorkspaceDraft = () => {
     if (!selectedSkillID || !skillPatchDraft.trim()) {
       return;
     }
     createWorkspaceDraft.mutate({
       skillID: selectedSkillID,
-      content: skillPatchDraft,
+      content: editablePatchDraft,
     });
   };
 
@@ -967,10 +972,12 @@ export default function MarketplacePage() {
                           </Button>
                         </div>
                       </div>
-                      <div className="max-h-[260px] overflow-auto px-4 py-4">
-                        <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6 text-foreground">
-                          {skillPatchDraft}
-                        </pre>
+                      <div className="px-4 py-4">
+                        <textarea
+                          className="min-h-[260px] w-full rounded-2xl border border-border/70 bg-background px-3 py-3 font-mono text-xs leading-6 text-foreground"
+                          value={editablePatchDraft}
+                          onChange={(event) => setEditablePatchDraft(event.target.value)}
+                        />
                       </div>
                     </section>
 
