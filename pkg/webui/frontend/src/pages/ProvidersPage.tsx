@@ -527,10 +527,11 @@ function ProviderPanel({ provider, runtime, typeMeta, onClick, onClearCooldown, 
       </div>
 
       <div className="space-y-5 p-5">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <InfoTile icon={<KeyRound className="h-4 w-4" />} label={t('providerPanelCredentials')} value={provider.api_key_set ? t('providerPanelConfigured') : t('providerPanelMissing')} detail={provider.enabled ? credentialsReady ? t('providerPanelCredentialsReadyDetail') : t('providerPanelCredentialsMissingDetail') : t('providerPanelDisabledDetail')} />
           <InfoTile icon={<Waypoints className="h-4 w-4" />} label={t('providerDiscoverLabel')} value={provider.supports_discovery ? discoveryReady ? t('providerPanelDiscoveryReady') : t('providerPanelDiscoveryBlocked') : t('providerPanelDiscoveryManual')} detail={provider.supports_discovery ? discoveryReady ? t('providerPanelDiscoveryReadyDetail') : t('providerPanelDiscoveryBlockedDetail') : t('providerPanelDiscoveryManualDetail')} />
           <InfoTile icon={<BadgeCheck className="h-4 w-4" />} label={t('providerPanelTimeout')} value={`${provider.timeout || 0}s`} detail={provider.proxy?.trim() ? t('providerPanelProxyEnabled') : t('providerPanelDirect')} />
+          <InfoTile icon={<Globe className="h-4 w-4" />} label="API format" value={provider.api_format || 'openai/chat_completions'} detail={provider.default_test_model ? `Test model: ${provider.default_test_model}` : 'No default test model'} />
         </div>
 
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
