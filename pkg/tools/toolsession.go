@@ -148,7 +148,9 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 		taskID = sess.ID
 		metadata[execenv.MetadataTaskID] = taskID
 		if err := t.toolSessionMgr.UpdateSessionMetadata(ctx, sess.ID, metadata); err != nil {
-			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist task metadata: "+err.Error())
+			if terminateErr := t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist task metadata: "+err.Error()); terminateErr != nil {
+				return "", fmt.Errorf("failed to persist tool session metadata: %w (terminate session: %v)", err, terminateErr)
+			}
 			return "", fmt.Errorf("failed to persist tool session metadata: %w", err)
 		}
 	}
@@ -164,7 +166,9 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 			t.runtimeTransport,
 			sess,
 		); err != nil {
-			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
+			if terminateErr := t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error()); terminateErr != nil {
+				return "", fmt.Errorf("failed to start tool process: %w (terminate session: %v)", err, terminateErr)
+			}
 			return "", fmt.Errorf("failed to start tool process: %w", err)
 		}
 		refreshed, err := t.toolSessionMgr.GetSession(ctx, sess.ID)
@@ -189,14 +193,18 @@ func (t *ToolSessionTool) handleSpawn(ctx context.Context, args map[string]inter
 		tmuxSession = launchInfo.SessionName
 		metadata = runtimeagents.ApplyLaunchMetadata(metadata, launchInfo)
 		if err := t.toolSessionMgr.UpdateSessionMetadata(ctx, sess.ID, metadata); err != nil {
-			_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist runtime metadata: "+err.Error())
+			if terminateErr := t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to persist runtime metadata: "+err.Error()); terminateErr != nil {
+				return "", fmt.Errorf("failed to persist runtime metadata: %w (terminate session: %v)", err, terminateErr)
+			}
 			return "", fmt.Errorf("failed to persist runtime metadata: %w", err)
 		}
 	}
 
 	spec := execenv.StartSpecFromContext(ctx, sess.ID, launchCommand, workdir, metadata)
 	if err := t.processMgr.StartWithSpec(context.Background(), spec); err != nil {
-		_ = t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
+		if terminateErr := t.toolSessionMgr.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error()); terminateErr != nil {
+			return "", fmt.Errorf("failed to start tool process: %w (terminate session: %v)", err, terminateErr)
+		}
 		return "", fmt.Errorf("failed to start tool process: %w", err)
 	}
 
@@ -238,11 +246,14 @@ func (t *ToolSessionTool) handleTerminate(ctx context.Context, args map[string]i
 		return "", fmt.Errorf("session_id is required for terminate action")
 	}
 
-	// Kill the process first
-	_ = t.processMgr.Kill(sessionID)
+	// Kill the process first. If it is already gone, still terminate the session record.
+	killErr := t.processMgr.Kill(sessionID)
 
 	if err := t.toolSessionMgr.TerminateSession(ctx, sessionID, "terminated by agent"); err != nil {
 		return "", fmt.Errorf("failed to terminate session %s: %w", sessionID, err)
+	}
+	if killErr != nil {
+		return fmt.Sprintf("Session %s terminated (process stop warning: %v).", sessionID, killErr), nil
 	}
 
 	return fmt.Sprintf("Session %s terminated.", sessionID), nil
