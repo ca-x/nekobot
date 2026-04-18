@@ -282,19 +282,19 @@ function ConfigLoadErrorState({
 }) {
   return (
     <div className="flex min-h-[360px] items-center justify-center px-4 pb-4 md:px-5 md:pb-5">
-      <Card className="w-full max-w-2xl border-rose-200/80 bg-rose-50/60 shadow-[0_24px_60px_-42px_rgba(160,60,70,0.35)]">
+      <Card className="w-full max-w-2xl border-rose-200/80 bg-rose-50/70 shadow-sm dark:border-rose-500/30 dark:bg-rose-500/10">
         <CardHeader className="pb-3">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-rose-700">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-rose-700 dark:bg-rose-500/15 dark:text-rose-200">
             <AlertTriangle className="h-3.5 w-3.5" />
             {t('configLoadFailedTitle')}
           </div>
-          <CardTitle className="text-xl text-rose-950">{t('configLoadFailedTitle')}</CardTitle>
-          <CardDescription className="text-rose-900/80">
+          <CardTitle className="text-xl text-rose-950 dark:text-rose-100">{t('configLoadFailedTitle')}</CardTitle>
+          <CardDescription className="text-rose-900/80 dark:text-rose-100/80">
             {t('configLoadFailedDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-2xl border border-rose-200/80 bg-white/85 px-4 py-3 text-sm text-rose-900">
+          <div className="rounded-2xl border border-rose-200/80 bg-background/90 px-4 py-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-background/70 dark:text-rose-100">
             {message}
           </div>
           <div className="flex justify-end">
@@ -323,12 +323,12 @@ function FormField({
   onOpenJSONMode: () => void;
 }) {
   const containerClassName =
-    'rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4 shadow-[0_18px_40px_-34px_rgba(120,55,75,0.35)]';
+    'rounded-2xl border border-border/70 bg-card/92 p-4 shadow-sm';
 
   const header = (
     <div className="mb-3 flex items-start justify-between gap-3">
       <div className="space-y-1">
-        <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{field.label}</Label>
+        <Label className="text-sm font-semibold text-foreground">{field.label}</Label>
         <div className="text-xs font-mono text-muted-foreground">{field.key}</div>
       </div>
       {field.type === 'secret' ? (
@@ -351,7 +351,7 @@ function FormField({
         <div className={containerClassName}>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{field.label}</Label>
+              <Label className="text-sm font-semibold text-foreground">{field.label}</Label>
               <div className="mt-1 text-xs font-mono text-muted-foreground">{field.key}</div>
             </div>
             <Switch checked={Boolean(field.value)} onCheckedChange={(next) => onChange(field.key, next)} />
@@ -364,7 +364,7 @@ function FormField({
           {header}
           <Input
             type="number"
-            className="h-11 rounded-xl bg-white"
+            className="h-11 rounded-xl bg-background"
             value={field.value != null ? String(field.value) : ''}
             onChange={(event) => onChange(field.key, event.target.value === '' ? 0 : Number(event.target.value))}
           />
@@ -375,7 +375,7 @@ function FormField({
         <div className={containerClassName}>
           {header}
           <textarea
-            className="min-h-[96px] w-full rounded-xl border border-input bg-white px-3 py-2 text-sm leading-6"
+            className="min-h-[96px] w-full rounded-xl border border-input bg-background px-3 py-2 text-sm leading-6"
             rows={4}
             value={Array.isArray(field.value) ? field.value.map((item) => String(item)).join('\n') : ''}
             onChange={(event) =>
@@ -392,11 +392,11 @@ function FormField({
       return (
         <div className={containerClassName}>
           {header}
-          <pre className="max-h-[220px] overflow-auto rounded-xl border border-amber-200 bg-[rgba(255,248,239,0.9)] px-3 py-3 font-mono text-xs leading-6 text-amber-950">
+          <pre className="max-h-[220px] overflow-auto rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-3 font-mono text-xs leading-6 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
             {stableStringify(field.value)}
           </pre>
           <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs text-amber-700">
+            <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-200">
               <AlertTriangle className="h-3.5 w-3.5" />
               {t('configJsonFieldHint')}
             </div>
@@ -415,7 +415,7 @@ function FormField({
           {header}
           <Input
             type={field.type === 'secret' && !secretVisible ? 'password' : 'text'}
-            className="h-11 rounded-xl bg-white"
+            className="h-11 rounded-xl bg-background"
             value={field.value != null ? String(field.value) : ''}
             onChange={(event) => onChange(field.key, event.target.value)}
             spellCheck={false}
@@ -435,9 +435,9 @@ function MemoryField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4 shadow-[0_18px_40px_-34px_rgba(120,55,75,0.35)]">
+    <div className="rounded-2xl border border-border/70 bg-card/92 p-4 shadow-sm">
       <div className="mb-3">
-        <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{label}</Label>
+        <Label className="text-sm font-semibold text-foreground">{label}</Label>
         {hint ? <div className="mt-1 text-xs leading-5 text-muted-foreground">{hint}</div> : null}
       </div>
       {children}
@@ -453,9 +453,9 @@ function QMDMetric({
   value: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
-      <div className="eyebrow-label text-slate-400">{label}</div>
-      <div className="mono-data mt-2 break-all text-sm font-semibold text-slate-900">{value}</div>
+    <div className="rounded-2xl border border-border/70 bg-muted/40 p-4">
+      <div className="eyebrow-label text-muted-foreground">{label}</div>
+      <div className="mono-data mt-2 break-all text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
 }
@@ -561,20 +561,20 @@ function AgentsSectionForm({
 
   return (
     <div className="space-y-5">
-      <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(255,250,247,0.95),rgba(255,244,248,0.9))] shadow-[0_24px_60px_-42px_rgba(120,55,75,0.45)]">
+      <Card className="border-border/70 bg-card/92 shadow-sm">
         <CardHeader className="pb-4">
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
             <Route className="h-3.5 w-3.5" />
             {t('agentsRoutingTitle')}
           </div>
-          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('agentsRoutingHeadline')}</CardTitle>
+          <CardTitle className="text-xl text-foreground">{t('agentsRoutingHeadline')}</CardTitle>
           <CardDescription>{t('agentsRoutingDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 xl:grid-cols-2">
             <MemoryField label={t('agentsDefaultProvider')} hint={t('agentsDefaultProviderHint')}>
               <Select value={selectedProvider || '__default__'} onValueChange={handleProviderChange}>
-                <SelectTrigger className="h-11 rounded-xl bg-white">
+                <SelectTrigger className="h-11 rounded-xl bg-background">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -595,7 +595,7 @@ function AgentsSectionForm({
                 value={selectedModel || '__default__'}
                 onValueChange={(value) => onChange('defaults.model', value === '__default__' ? '' : value)}
               >
-                <SelectTrigger className="h-11 rounded-xl bg-white">
+                <SelectTrigger className="h-11 rounded-xl bg-background">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -621,7 +621,7 @@ function AgentsSectionForm({
                       onClick={() => handleToggleFallback(name)}
                       className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]"
                     >
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] text-[hsl(var(--brand-700))]">
+                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-background text-[10px] text-[hsl(var(--brand-700))] dark:text-[hsl(var(--brand-200))]">
                         {index + 1}
                       </span>
                       {name}
@@ -644,7 +644,7 @@ function AgentsSectionForm({
                       className={
                         selected
                           ? 'rounded-full border border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]'
-                          : 'rounded-full border border-[hsl(var(--gray-200))] bg-white px-3 py-1.5 text-xs font-medium text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]'
+                          : 'rounded-full border border-border/70 bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:border-border hover:bg-muted'
                       }
                     >
                       {target.type === 'group'
@@ -659,7 +659,7 @@ function AgentsSectionForm({
         </CardContent>
       </Card>
 
-      <Card className="border-white/70 bg-white/80 shadow-none">
+      <Card className="border-border/70 bg-card/92 shadow-none">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t('agentsRuntimeTitle')}</CardTitle>
           <CardDescription>{t('agentsRuntimeDescription')}</CardDescription>
@@ -667,14 +667,14 @@ function AgentsSectionForm({
         <CardContent className="grid gap-4 xl:grid-cols-2">
           <MemoryField label={t('agentsWorkspace')}>
             <Input
-              className="h-11 rounded-xl bg-white"
+              className="h-11 rounded-xl bg-background"
               value={readString('defaults.workspace')}
               onChange={(event) => onChange('defaults.workspace', event.target.value)}
             />
           </MemoryField>
           <MemoryField label={t('agentsOrchestrator')}>
             <Select value={readString('defaults.orchestrator') || 'blades'} onValueChange={(value) => onChange('defaults.orchestrator', value)}>
-              <SelectTrigger className="h-11 rounded-xl bg-white">
+              <SelectTrigger className="h-11 rounded-xl bg-background">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -686,7 +686,7 @@ function AgentsSectionForm({
           <MemoryField label={t('agentsMaxTokens')}>
             <Input
               type="number"
-              className="h-11 rounded-xl bg-white"
+              className="h-11 rounded-xl bg-background"
               value={String(readNumber('defaults.max_tokens'))}
               onChange={(event) => onChange('defaults.max_tokens', Number(event.target.value || 0))}
             />
@@ -695,7 +695,7 @@ function AgentsSectionForm({
             <Input
               type="number"
               step="0.1"
-              className="h-11 rounded-xl bg-white"
+              className="h-11 rounded-xl bg-background"
               value={String(readNumber('defaults.temperature'))}
               onChange={(event) => onChange('defaults.temperature', Number(event.target.value || 0))}
             />
@@ -703,27 +703,27 @@ function AgentsSectionForm({
           <MemoryField label={t('agentsMaxToolIterations')}>
             <Input
               type="number"
-              className="h-11 rounded-xl bg-white"
+              className="h-11 rounded-xl bg-background"
               value={String(readNumber('defaults.max_tool_iterations'))}
               onChange={(event) => onChange('defaults.max_tool_iterations', Number(event.target.value || 0))}
             />
           </MemoryField>
           <MemoryField label={t('agentsSkillsProxy')}>
             <Input
-              className="h-11 rounded-xl bg-white"
+              className="h-11 rounded-xl bg-background"
               value={readString('defaults.skills_proxy')}
               onChange={(event) => onChange('defaults.skills_proxy', event.target.value)}
             />
           </MemoryField>
-          <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+          <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
             <div>
-              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('agentsRestrictWorkspace')}</Label>
+              <Label className="text-sm font-semibold text-foreground">{t('agentsRestrictWorkspace')}</Label>
             </div>
             <Switch checked={readBool('defaults.restrict_to_workspace')} onCheckedChange={(next) => onChange('defaults.restrict_to_workspace', next)} />
           </div>
-          <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+          <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
             <div>
-              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('agentsSkillsAutoReload')}</Label>
+              <Label className="text-sm font-semibold text-foreground">{t('agentsSkillsAutoReload')}</Label>
             </div>
             <Switch checked={readBool('defaults.skills_auto_reload')} onCheckedChange={(next) => onChange('defaults.skills_auto_reload', next)} />
           </div>
@@ -788,27 +788,27 @@ function MemorySectionForm({
   return (
     <div className="space-y-5">
       <div className="grid gap-4 xl:grid-cols-2">
-        <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(255,250,247,0.95),rgba(255,244,248,0.9))] shadow-[0_24px_60px_-42px_rgba(120,55,75,0.45)]">
+        <Card className="border-border/70 bg-card/92 shadow-sm">
           <CardHeader className="pb-4">
             <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
               <LibraryBig className="h-3.5 w-3.5" />
               {t('memoryBasicTitle')}
             </div>
-            <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('memoryBasicHeadline')}</CardTitle>
+            <CardTitle className="text-xl text-foreground">{t('memoryBasicHeadline')}</CardTitle>
             <CardDescription>{t('memoryBasicDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+            <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
               <div>
-                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryEnabled')}</Label>
+                <Label className="text-sm font-semibold text-foreground">{t('memoryEnabled')}</Label>
                 <div className="mt-1 text-xs text-muted-foreground">{t('memoryEnabledHint')}</div>
               </div>
               <Switch checked={readBool('enabled')} onCheckedChange={(next) => onChange('enabled', next)} />
             </div>
 
-            <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+            <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
               <div>
-                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryContextEnabled')}</Label>
+                <Label className="text-sm font-semibold text-foreground">{t('memoryContextEnabled')}</Label>
                 <div className="mt-1 text-xs text-muted-foreground">{t('memoryContextEnabledHint')}</div>
               </div>
               <Switch
@@ -818,9 +818,9 @@ function MemorySectionForm({
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">
+                  <Label className="text-sm font-semibold text-foreground">
                     {t('memoryContextIncludeWorkspace')}
                   </Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('memoryContextIncludeWorkspaceHint')}</div>
@@ -830,9 +830,9 @@ function MemorySectionForm({
                   onCheckedChange={(next) => onChange('context.include_workspace_memory', next)}
                 />
               </div>
-              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">
+                  <Label className="text-sm font-semibold text-foreground">
                     {t('memoryContextIncludeLongTerm')}
                   </Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('memoryContextIncludeLongTermHint')}</div>
@@ -846,7 +846,7 @@ function MemorySectionForm({
 
             <MemoryField label={t('memoryBackend')} hint={t('memoryBackendHint')}>
               <Select value={readString('backend') || 'file'} onValueChange={(value) => onChange('backend', value)}>
-                <SelectTrigger className="h-11 rounded-xl bg-white">
+                <SelectTrigger className="h-11 rounded-xl bg-background">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -859,7 +859,7 @@ function MemorySectionForm({
 
             <MemoryField label={t('memoryFilePath')} hint={t('memoryFilePathHint')}>
               <Input
-                className="h-11 rounded-xl bg-white"
+                className="h-11 rounded-xl bg-background"
                 value={readString('file_path')}
                 onChange={(event) => onChange('file_path', event.target.value)}
                 placeholder="workspace/memory"
@@ -869,14 +869,14 @@ function MemorySectionForm({
             <div className="grid gap-4 sm:grid-cols-2">
               <MemoryField label={t('memoryDBPrefix')} hint={t('memoryDBPrefixHint')}>
                 <Input
-                  className="h-11 rounded-xl bg-white"
+                  className="h-11 rounded-xl bg-background"
                   value={readString('db_prefix')}
                   onChange={(event) => onChange('db_prefix', event.target.value)}
                 />
               </MemoryField>
               <MemoryField label={t('memoryKVPrefix')} hint={t('memoryKVPrefixHint')}>
                 <Input
-                  className="h-11 rounded-xl bg-white"
+                  className="h-11 rounded-xl bg-background"
                   value={readString('kv_prefix')}
                   onChange={(event) => onChange('kv_prefix', event.target.value)}
                 />
@@ -887,7 +887,7 @@ function MemorySectionForm({
               <MemoryField label={t('memoryContextRecentDays')} hint={t('memoryContextRecentDaysHint')}>
                 <Input
                   type="number"
-                  className="h-11 rounded-xl bg-white"
+                  className="h-11 rounded-xl bg-background"
                   value={String(readNumber('context.recent_daily_note_days'))}
                   onChange={(event) => onChange('context.recent_daily_note_days', Number(event.target.value || 0))}
                 />
@@ -895,43 +895,43 @@ function MemorySectionForm({
               <MemoryField label={t('memoryContextMaxChars')} hint={t('memoryContextMaxCharsHint')}>
                 <Input
                   type="number"
-                  className="h-11 rounded-xl bg-white"
+                  className="h-11 rounded-xl bg-background"
                   value={String(readNumber('context.max_chars'))}
                   onChange={(event) => onChange('context.max_chars', Number(event.target.value || 0))}
                 />
               </MemoryField>
             </div>
 
-            <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] bg-white/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
+            <div className="rounded-2xl border border-dashed border-border/70 bg-card/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
               {t('memoryPromptHint')}
             </div>
-            <div className="rounded-2xl border border-amber-200 bg-[rgba(255,248,239,0.9)] px-4 py-3 text-xs leading-6 text-amber-800">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-xs leading-6 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
               {t('memoryNoMigrationHint')}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(243,250,255,0.95),rgba(239,246,255,0.92))] shadow-[0_24px_60px_-42px_rgba(54,92,140,0.35)]">
+        <Card className="border-border/70 bg-card/92 shadow-sm">
           <CardHeader className="pb-4">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
               <Layers3 className="h-3.5 w-3.5" />
               {t('memoryRetrievalTitle')}
             </div>
-            <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('memoryRetrievalHeadline')}</CardTitle>
+            <CardTitle className="text-xl text-foreground">{t('memoryRetrievalHeadline')}</CardTitle>
             <CardDescription>{t('memoryRetrievalDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex items-center justify-between rounded-2xl border border-sky-100 bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-sky-200/60 bg-card/92 p-4 dark:border-sky-500/25">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memorySemanticEnabled')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('memorySemanticEnabled')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('memorySemanticEnabledHint')}</div>
                 </div>
                 <Switch checked={readBool('semantic.enabled')} onCheckedChange={(next) => onChange('semantic.enabled', next)} />
               </div>
-              <div className="flex items-center justify-between rounded-2xl border border-sky-100 bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-sky-200/60 bg-card/92 p-4 dark:border-sky-500/25">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryEpisodicEnabled')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('memoryEpisodicEnabled')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('memoryEpisodicEnabledHint')}</div>
                 </div>
                 <Switch checked={readBool('episodic.enabled')} onCheckedChange={(next) => onChange('episodic.enabled', next)} />
@@ -944,7 +944,7 @@ function MemorySectionForm({
                   value={readString('semantic.search_policy') || 'vector'}
                   onValueChange={(value) => onChange('semantic.search_policy', value)}
                 >
-                  <SelectTrigger className="h-11 rounded-xl bg-white">
+                  <SelectTrigger className="h-11 rounded-xl bg-background">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -967,7 +967,7 @@ function MemorySectionForm({
               <MemoryField label={t('memoryDefaultTopK')}>
                 <Input
                   type="number"
-                  className="h-11 rounded-xl bg-white"
+                  className="h-11 rounded-xl bg-background"
                   value={String(readNumber('semantic.default_top_k'))}
                   onChange={(event) => onChange('semantic.default_top_k', Number(event.target.value || 0))}
                 />
@@ -975,7 +975,7 @@ function MemorySectionForm({
               <MemoryField label={t('memoryMaxTopK')}>
                 <Input
                   type="number"
-                  className="h-11 rounded-xl bg-white"
+                  className="h-11 rounded-xl bg-background"
                   value={String(readNumber('semantic.max_top_k'))}
                   onChange={(event) => onChange('semantic.max_top_k', Number(event.target.value || 0))}
                 />
@@ -983,7 +983,7 @@ function MemorySectionForm({
               <MemoryField label={t('memorySummaryWindow')}>
                 <Input
                   type="number"
-                  className="h-11 rounded-xl bg-white"
+                  className="h-11 rounded-xl bg-background"
                   value={String(readNumber('episodic.summary_window_messages'))}
                   onChange={(event) => onChange('episodic.summary_window_messages', Number(event.target.value || 0))}
                 />
@@ -991,7 +991,7 @@ function MemorySectionForm({
               <MemoryField label={t('memoryMaxSummaries')}>
                 <Input
                   type="number"
-                  className="h-11 rounded-xl bg-white"
+                  className="h-11 rounded-xl bg-background"
                   value={String(readNumber('episodic.max_summaries'))}
                   onChange={(event) => onChange('episodic.max_summaries', Number(event.target.value || 0))}
                 />
@@ -1001,7 +1001,7 @@ function MemorySectionForm({
             <MemoryField label={t('memoryShortTermLimit')} hint={t('memoryShortTermLimitHint')}>
               <Input
                 type="number"
-                className="h-11 rounded-xl bg-white"
+                className="h-11 rounded-xl bg-background"
                 value={String(readNumber('short_term.raw_history_limit'))}
                 onChange={(event) => onChange('short_term.raw_history_limit', Number(event.target.value || 0))}
               />
@@ -1010,23 +1010,23 @@ function MemorySectionForm({
         </Card>
       </div>
 
-      <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(246,255,248,0.96),rgba(239,253,245,0.92))] shadow-[0_24px_60px_-42px_rgba(52,114,84,0.3)]">
+      <Card className="border-border/70 bg-card/92 shadow-sm">
         <CardHeader className="pb-4">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-700">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">
             <FolderKanban className="h-3.5 w-3.5" />
             {t('memoryQMDTitle')}
           </div>
-          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('memoryQMDHeadline')}</CardTitle>
+          <CardTitle className="text-xl text-foreground">{t('memoryQMDHeadline')}</CardTitle>
           <CardDescription>{t('memoryQMDDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="rounded-[24px] border border-emerald-200/80 bg-white/86 p-4">
+          <div className="rounded-[24px] border border-emerald-200/80 bg-card/92 p-4 dark:border-emerald-500/25">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-700">
+                <div className="text-xs font-medium uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-200">
                   {t('memoryQMDRuntimeTitle')}
                 </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   {t('memoryQMDRuntimeDescription')}
                 </p>
               </div>
@@ -1094,11 +1094,11 @@ function MemorySectionForm({
                   <QMDMetric label={t('memoryQMDStatusRetention')} value={String(qmdStatus?.session_retention_days ?? 0)} />
                 </div>
 
-                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
-                  <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
+                <div className="rounded-2xl border border-border/70 bg-muted/40 p-4">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                     {t('memoryQMDCommand')}
                   </div>
-                  <div className="mt-2 break-all font-mono text-sm text-slate-700">
+                  <div className="mt-2 break-all font-mono text-sm text-foreground">
                     {qmdStatus?.command || readString('qmd.command') || 'qmd'}
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1106,10 +1106,10 @@ function MemorySectionForm({
                     <QMDMetric label={t('memoryQMDCommandSource')} value={qmdStatus?.command_source || '-'} />
                   </div>
                   <div className="mt-3">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                       {t('memoryQMDPersistentCommand')}
                     </div>
-                    <div className="mt-2 break-all font-mono text-xs text-slate-600">
+                    <div className="mt-2 break-all font-mono text-xs text-muted-foreground">
                       {qmdStatus?.persistent_command || '-'}
                     </div>
                   </div>
@@ -1121,11 +1121,11 @@ function MemorySectionForm({
                     />
                   </div>
                   {qmdStatus?.error ? (
-                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
                       {qmdStatus.error}
                     </div>
                   ) : null}
-                  <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white/60 px-3 py-2 text-xs leading-6 text-slate-500">
+                  <div className="mt-3 rounded-xl border border-dashed border-border/70 bg-card/70 px-3 py-2 text-xs leading-6 text-muted-foreground">
                     {t('memoryQMDSessionCleanupHint')}
                   </div>
                 </div>
@@ -1134,23 +1134,23 @@ function MemorySectionForm({
                   {(qmdStatus?.collections ?? []).map((collection) => (
                     <div
                       key={`${collection.Name}-${collection.Path}`}
-                      className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4"
+                      className="rounded-2xl border border-border/70 bg-muted/40 p-4"
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-white">
+                        <span className="rounded-full bg-foreground px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-background">
                           {collection.Name}
                         </span>
-                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] text-slate-600">
+                        <span className="rounded-full bg-background px-2.5 py-1 text-[11px] text-muted-foreground">
                           {collection.Pattern}
                         </span>
                       </div>
-                      <div className="mt-3 break-all font-mono text-xs leading-6 text-slate-700">
+                      <div className="mt-3 break-all font-mono text-xs leading-6 text-foreground">
                         {collection.Path}
                       </div>
                     </div>
                   ))}
                   {(qmdStatus?.collections ?? []).length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">
+                    <div className="rounded-2xl border border-dashed border-border/70 px-4 py-6 text-sm text-muted-foreground">
                       {t('memoryQMDCollectionsEmpty')}
                     </div>
                   ) : null}
@@ -1161,30 +1161,30 @@ function MemorySectionForm({
 
           <div className="grid gap-4 xl:grid-cols-2">
             <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-emerald-200/60 bg-card/92 p-4 dark:border-emerald-500/25">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryQMDEnabled')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('memoryQMDEnabled')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('memoryQMDEnabledHint')}</div>
                 </div>
                 <Switch checked={readBool('qmd.enabled')} onCheckedChange={(next) => onChange('qmd.enabled', next)} />
               </div>
-              <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-emerald-200/60 bg-card/92 p-4 dark:border-emerald-500/25">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryQMDIncludeDefault')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('memoryQMDIncludeDefault')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('memoryQMDIncludeDefaultHint')}</div>
                 </div>
                 <Switch checked={readBool('qmd.include_default')} onCheckedChange={(next) => onChange('qmd.include_default', next)} />
               </div>
-              <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-emerald-200/60 bg-card/92 p-4 dark:border-emerald-500/25">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryQMDSessionsEnabled')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('memoryQMDSessionsEnabled')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('memoryQMDSessionsEnabledHint')}</div>
                 </div>
                 <Switch checked={readBool('qmd.sessions.enabled')} onCheckedChange={(next) => onChange('qmd.sessions.enabled', next)} />
               </div>
-              <div className="flex items-center justify-between rounded-2xl border border-emerald-100 bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-emerald-200/60 bg-card/92 p-4 dark:border-emerald-500/25">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('memoryQMDOnBoot')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('memoryQMDOnBoot')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('memoryQMDOnBootHint')}</div>
                 </div>
                 <Switch checked={readBool('qmd.update.on_boot')} onCheckedChange={(next) => onChange('qmd.update.on_boot', next)} />
@@ -1194,7 +1194,7 @@ function MemorySectionForm({
             <div className="space-y-4">
               <MemoryField label={t('memoryQMDCommand')} hint={t('memoryQMDCommandHint')}>
                 <Input
-                  className="h-11 rounded-xl bg-white"
+                  className="h-11 rounded-xl bg-background"
                   value={readString('qmd.command')}
                   onChange={(event) => onChange('qmd.command', event.target.value)}
                   placeholder="qmd"
@@ -1203,7 +1203,7 @@ function MemorySectionForm({
               <div className="grid gap-4 sm:grid-cols-2">
                 <MemoryField label={t('memoryQMDSessionExportDir')}>
                   <Input
-                    className="h-11 rounded-xl bg-white"
+                    className="h-11 rounded-xl bg-background"
                     value={readString('qmd.sessions.export_dir')}
                     onChange={(event) => onChange('qmd.sessions.export_dir', event.target.value)}
                   />
@@ -1211,7 +1211,7 @@ function MemorySectionForm({
                 <MemoryField label={t('memoryQMDSessionRetentionDays')}>
                   <Input
                     type="number"
-                    className="h-11 rounded-xl bg-white"
+                    className="h-11 rounded-xl bg-background"
                     value={String(readNumber('qmd.sessions.retention_days'))}
                     onChange={(event) => onChange('qmd.sessions.retention_days', Number(event.target.value || 0))}
                   />
@@ -1220,21 +1220,21 @@ function MemorySectionForm({
               <div className="grid gap-4 sm:grid-cols-3">
                 <MemoryField label={t('memoryQMDInterval')}>
                   <Input
-                    className="h-11 rounded-xl bg-white"
+                    className="h-11 rounded-xl bg-background"
                     value={readString('qmd.update.interval')}
                     onChange={(event) => onChange('qmd.update.interval', event.target.value)}
                   />
                 </MemoryField>
                 <MemoryField label={t('memoryQMDCommandTimeout')}>
                   <Input
-                    className="h-11 rounded-xl bg-white"
+                    className="h-11 rounded-xl bg-background"
                     value={readString('qmd.update.command_timeout')}
                     onChange={(event) => onChange('qmd.update.command_timeout', event.target.value)}
                   />
                 </MemoryField>
                 <MemoryField label={t('memoryQMDUpdateTimeout')}>
                   <Input
-                    className="h-11 rounded-xl bg-white"
+                    className="h-11 rounded-xl bg-background"
                     value={readString('qmd.update.update_timeout')}
                     onChange={(event) => onChange('qmd.update.update_timeout', event.target.value)}
                   />
@@ -1274,26 +1274,26 @@ function SessionsSectionForm({
 
   return (
     <div className="space-y-5">
-      <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(255,250,247,0.95),rgba(255,244,248,0.9))] shadow-[0_24px_60px_-42px_rgba(120,55,75,0.45)]">
+      <Card className="border-border/70 bg-card/92 shadow-sm">
         <CardHeader className="pb-4">
           <div className="inline-flex w-fit items-center gap-2 rounded-full bg-[hsl(var(--brand-50))] px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[hsl(var(--brand-700))]">
             <LibraryBig className="h-3.5 w-3.5" />
             {t('sessionsPersistenceTitle')}
           </div>
-          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('sessionsPersistenceHeadline')}</CardTitle>
+          <CardTitle className="text-xl text-foreground">{t('sessionsPersistenceHeadline')}</CardTitle>
           <CardDescription>{t('sessionsPersistenceDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+          <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
             <div>
-              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('sessionsEnabled')}</Label>
+              <Label className="text-sm font-semibold text-foreground">{t('sessionsEnabled')}</Label>
               <div className="mt-1 text-xs text-muted-foreground">{t('sessionsEnabledHint')}</div>
             </div>
             <Switch checked={readBool('enabled')} onCheckedChange={(next) => onChange('enabled', next)} />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-2">
-            <Card className="border-white/70 bg-white/80 shadow-none">
+            <Card className="border-border/70 bg-card/92 shadow-none">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">{t('sessionsSourcesTitle')}</CardTitle>
                 <CardDescription>{t('sessionsSourcesHint')}</CardDescription>
@@ -1308,9 +1308,9 @@ function SessionsSectionForm({
                   ['sources.cron', t('sessionsSourceCron'), t('sessionsSourceCronDesc')],
                   ['sources.gateway', t('sessionsSourceGateway'), t('sessionsSourceGatewayDesc')],
                 ].map(([path, label, hint]) => (
-                  <div key={path} className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                  <div key={path} className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
                     <div>
-                      <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{label}</Label>
+                      <Label className="text-sm font-semibold text-foreground">{label}</Label>
                       <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
                     </div>
                     <Switch checked={readBool(path)} onCheckedChange={(next) => onChange(path, next)} />
@@ -1319,7 +1319,7 @@ function SessionsSectionForm({
               </CardContent>
             </Card>
 
-            <Card className="border-white/70 bg-white/80 shadow-none">
+            <Card className="border-border/70 bg-card/92 shadow-none">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">{t('sessionsContentTitle')}</CardTitle>
                 <CardDescription>{t('sessionsContentHint')}</CardDescription>
@@ -1332,9 +1332,9 @@ function SessionsSectionForm({
                   ['content.tool_calls', t('sessionsContentToolCalls'), t('sessionsContentToolCallsDesc')],
                   ['content.tool_results', t('sessionsContentToolResults'), t('sessionsContentToolResultsDesc')],
                 ].map(([path, label, hint]) => (
-                  <div key={path} className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+                  <div key={path} className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
                     <div>
-                      <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{label}</Label>
+                      <Label className="text-sm font-semibold text-foreground">{label}</Label>
                       <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
                     </div>
                     <Switch checked={readBool(path)} onCheckedChange={(next) => onChange(path, next)} />
@@ -1344,15 +1344,15 @@ function SessionsSectionForm({
             </Card>
           </div>
 
-          <Card className="border-white/70 bg-white/80 shadow-none">
+          <Card className="border-border/70 bg-card/92 shadow-none">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">{t('sessionsCleanupTitle')}</CardTitle>
               <CardDescription>{t('sessionsCleanupHint')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('sessionsCleanupEnabled')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('sessionsCleanupEnabled')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('sessionsCleanupEnabledDesc')}</div>
                 </div>
                 <Switch checked={readBool('cleanup.enabled')} onCheckedChange={(next) => onChange('cleanup.enabled', next)} />
@@ -1360,7 +1360,7 @@ function SessionsSectionForm({
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('sessionsCleanupIntervalMinutes')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('sessionsCleanupIntervalMinutes')}</Label>
                   <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('sessionsCleanupIntervalMinutesDesc')}</div>
                   <Input
                     type="number"
@@ -1371,7 +1371,7 @@ function SessionsSectionForm({
                 </div>
 
                 <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('sessionsCleanupMaxAgeDays')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('sessionsCleanupMaxAgeDays')}</Label>
                   <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('sessionsCleanupMaxAgeDaysDesc')}</div>
                   <Input
                     type="number"
@@ -1384,7 +1384,7 @@ function SessionsSectionForm({
             </CardContent>
           </Card>
 
-          <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] bg-white/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
+          <div className="rounded-2xl border border-dashed border-border/70 bg-card/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
             {t('sessionsDiskHint')}
           </div>
           <div className="flex justify-end">
@@ -1412,16 +1412,16 @@ function StorageSectionForm({
     <div className="space-y-5">
       <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(246,249,255,0.95),rgba(242,247,255,0.9))] shadow-[0_24px_60px_-42px_rgba(71,85,132,0.32)]">
         <CardHeader className="pb-4">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
             <FolderKanban className="h-3.5 w-3.5" />
             {t('storageRuntimeTitle')}
           </div>
-          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('storageRuntimeHeadline')}</CardTitle>
+          <CardTitle className="text-xl text-foreground">{t('storageRuntimeHeadline')}</CardTitle>
           <CardDescription>{t('storageRuntimeDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-            <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('storageDatabaseDir')}</Label>
+            <Label className="text-sm font-semibold text-foreground">{t('storageDatabaseDir')}</Label>
             <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('storageDatabaseDirDesc')}</div>
             <Input
               value={readString('db_dir')}
@@ -1435,7 +1435,7 @@ function StorageSectionForm({
             {t('storageMigrationHint')}
           </div>
 
-          <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] bg-white/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
+          <div className="rounded-2xl border border-dashed border-border/70 bg-card/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
             {t('storageMigrationDetail')}
           </div>
         </CardContent>
@@ -1491,18 +1491,18 @@ function WatchSectionForm({
     <div className="space-y-5">
       <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(247,250,255,0.95),rgba(241,246,255,0.9))] shadow-[0_24px_60px_-42px_rgba(71,85,132,0.35)]">
         <CardHeader className="pb-4">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
             <RefreshCw className="h-3.5 w-3.5" />
             {t('configSectionWatch')}
           </div>
-          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('configSectionWatch')}</CardTitle>
+          <CardTitle className="text-xl text-foreground">{t('configSectionWatch')}</CardTitle>
           <CardDescription>{t('configSectionDescWatch')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
               <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t('watchRuntimeState')}</div>
-              <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-[hsl(var(--gray-900))]">
+              <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-foreground">
                 <span className={cn('h-2.5 w-2.5 rounded-full', watchStatus?.enabled && watchStatus?.running ? 'bg-emerald-500' : watchStatus?.enabled ? 'bg-amber-500' : 'bg-slate-400')} />
                 <span>
                   {watchStatus?.enabled
@@ -1515,19 +1515,19 @@ function WatchSectionForm({
             </div>
             <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
               <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t('watchRuntimeLastFile')}</div>
-              <div className="mt-2 break-all text-sm font-semibold text-[hsl(var(--gray-900))]">
+              <div className="mt-2 break-all text-sm font-semibold text-foreground">
                 {watchStatus?.last_file || '-'}
               </div>
             </div>
             <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
               <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t('watchRuntimeLastCommand')}</div>
-              <div className="mt-2 break-all text-sm font-semibold text-[hsl(var(--gray-900))]">
+              <div className="mt-2 break-all text-sm font-semibold text-foreground">
                 {watchStatus?.last_command || '-'}
               </div>
             </div>
             <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
               <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{t('watchRuntimeLastResult')}</div>
-              <div className="mt-2 text-sm font-semibold text-[hsl(var(--gray-900))]">
+              <div className="mt-2 text-sm font-semibold text-foreground">
                 {watchStatus?.last_error
                   ? t('watchRuntimeResultFailed')
                   : watchStatus?.last_result_preview
@@ -1538,7 +1538,7 @@ function WatchSectionForm({
           </div>
 
           {(watchStatus?.last_run_at || watchStatus?.last_error || watchStatus?.last_result_preview) && (
-            <Card className="border-white/70 bg-white/80 shadow-none">
+            <Card className="border-border/70 bg-card/92 shadow-none">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -1575,27 +1575,27 @@ function WatchSectionForm({
           )}
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+            <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
               <div>
-                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchEnabledTitle')}</Label>
+                <Label className="text-sm font-semibold text-foreground">{t('watchEnabledTitle')}</Label>
                 <div className="mt-1 text-xs text-muted-foreground">{t('watchEnabledHint')}</div>
               </div>
               <Switch checked={readBool('enabled')} onCheckedChange={(next) => onChange('enabled', next)} />
             </div>
             <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchDebounceMs')}</Label>
+              <Label className="text-sm font-semibold text-foreground">{t('watchDebounceMs')}</Label>
               <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('watchDebounceMsHint')}</div>
               <Input
                 type="number"
                 min={0}
-                className="h-11 rounded-xl bg-white"
+                className="h-11 rounded-xl bg-background"
                 value={String(readNumber('debounce_ms'))}
                 onChange={(event) => onChange('debounce_ms', Number(event.target.value || 0))}
               />
             </div>
           </div>
 
-          <Card className="border-white/70 bg-white/80 shadow-none">
+          <Card className="border-border/70 bg-card/92 shadow-none">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -1616,7 +1616,7 @@ function WatchSectionForm({
                 patterns.map((pattern, index) => (
                   <div key={index} className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
                     <div className="mb-4 flex items-center justify-between gap-3">
-                      <div className="text-sm font-semibold text-[hsl(var(--gray-900))]">
+                      <div className="text-sm font-semibold text-foreground">
                         {t('watchPatternLabel', String(index + 1))}
                       </div>
                       <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => removePattern(index)}>
@@ -1625,30 +1625,30 @@ function WatchSectionForm({
                     </div>
                     <div className="grid gap-4">
                       <div>
-                        <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchPatternGlob')}</Label>
+                        <Label className="text-sm font-semibold text-foreground">{t('watchPatternGlob')}</Label>
                         <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('watchPatternGlobHint')}</div>
                         <Input
-                          className="h-11 rounded-xl bg-white"
+                          className="h-11 rounded-xl bg-background"
                           value={pattern.file_glob}
                           onChange={(event) => updatePattern(index, { file_glob: event.target.value })}
                           placeholder="pkg/**/*.go"
                         />
                       </div>
                       <div>
-                        <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchPatternCommand')}</Label>
+                        <Label className="text-sm font-semibold text-foreground">{t('watchPatternCommand')}</Label>
                         <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('watchPatternCommandHint')}</div>
                         <Input
-                          className="h-11 rounded-xl bg-white"
+                          className="h-11 rounded-xl bg-background"
                           value={pattern.command}
                           onChange={(event) => updatePattern(index, { command: event.target.value })}
                           placeholder="go test ./..."
                         />
                       </div>
                       <div>
-                        <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('watchPatternFailCommand')}</Label>
+                        <Label className="text-sm font-semibold text-foreground">{t('watchPatternFailCommand')}</Label>
                         <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('watchPatternFailCommandHint')}</div>
                         <Input
-                          className="h-11 rounded-xl bg-white"
+                          className="h-11 rounded-xl bg-background"
                           value={pattern.fail_command}
                           onChange={(event) => updatePattern(index, { fail_command: event.target.value })}
                           placeholder="notify-send 'watch failed'"
@@ -1693,17 +1693,17 @@ function WebUISectionForm({
     <div className="space-y-5">
       <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(247,250,255,0.95),rgba(241,246,255,0.9))] shadow-[0_24px_60px_-42px_rgba(71,85,132,0.35)]">
         <CardHeader className="pb-4">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">
             <Layers3 className="h-3.5 w-3.5" />
             {t('webuiRuntimeTitle')}
           </div>
-          <CardTitle className="text-xl text-[hsl(var(--gray-900))]">{t('webuiRuntimeHeadline')}</CardTitle>
+          <CardTitle className="text-xl text-foreground">{t('webuiRuntimeHeadline')}</CardTitle>
           <CardDescription>{t('webuiRuntimeDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiPublicBaseUrl')}</Label>
+              <Label className="text-sm font-semibold text-foreground">{t('webuiPublicBaseUrl')}</Label>
               <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiPublicBaseUrlDesc')}</div>
               <Input
                 value={readString('public_base_url')}
@@ -1712,7 +1712,7 @@ function WebUISectionForm({
               />
             </div>
             <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiToolSessionOTPSeconds')}</Label>
+              <Label className="text-sm font-semibold text-foreground">{t('webuiToolSessionOTPSeconds')}</Label>
               <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiToolSessionOTPSecondsDesc')}</div>
               <Input
                 type="number"
@@ -1723,22 +1723,22 @@ function WebUISectionForm({
             </div>
           </div>
 
-          <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+          <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
             <div>
-              <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiUiSoundsEnabled')}</Label>
+              <Label className="text-sm font-semibold text-foreground">{t('webuiUiSoundsEnabled')}</Label>
               <div className="mt-1 text-xs text-muted-foreground">{t('webuiUiSoundsEnabledDesc')}</div>
             </div>
             <Switch checked={uiSoundEnabled} onCheckedChange={setUiSoundEnabled} />
           </div>
 
           <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-            <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiToolSessionRuntimeTransport')}</Label>
+            <Label className="text-sm font-semibold text-foreground">{t('webuiToolSessionRuntimeTransport')}</Label>
             <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiToolSessionRuntimeTransportDesc')}</div>
             <Select
               value={readString('tool_session_runtime_transport') || 'tmux'}
               onValueChange={(value) => onChange('tool_session_runtime_transport', value)}
             >
-              <SelectTrigger className="h-11 rounded-xl bg-white">
+              <SelectTrigger className="h-11 rounded-xl bg-background">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1775,22 +1775,22 @@ function WebUISectionForm({
             })()}
           </div>
 
-          <Card className="border-white/70 bg-white/80 shadow-none">
+          <Card className="border-border/70 bg-card/92 shadow-none">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">{t('webuiToolSessionEventsTitle')}</CardTitle>
               <CardDescription>{t('webuiToolSessionEventsDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiToolSessionEventsEnabled')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('webuiToolSessionEventsEnabled')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('webuiToolSessionEventsEnabledDesc')}</div>
                 </div>
                 <Switch checked={readBool('tool_session_events.enabled')} onCheckedChange={(next) => onChange('tool_session_events.enabled', next)} />
               </div>
 
               <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiToolSessionEventsRetentionDays')}</Label>
+                <Label className="text-sm font-semibold text-foreground">{t('webuiToolSessionEventsRetentionDays')}</Label>
                 <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiToolSessionEventsRetentionDaysDesc')}</div>
                 <Input
                   type="number"
@@ -1814,22 +1814,22 @@ function WebUISectionForm({
             </CardContent>
           </Card>
 
-          <Card className="border-white/70 bg-white/80 shadow-none">
+          <Card className="border-border/70 bg-card/92 shadow-none">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">{t('webuiSkillSnapshotsTitle')}</CardTitle>
               <CardDescription>{t('webuiSkillSnapshotsDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiSkillSnapshotsAutoPrune')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('webuiSkillSnapshotsAutoPrune')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('webuiSkillSnapshotsAutoPruneDesc')}</div>
                 </div>
                 <Switch checked={readBool('skill_snapshots.auto_prune')} onCheckedChange={(next) => onChange('skill_snapshots.auto_prune', next)} />
               </div>
 
               <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiSkillSnapshotsMaxCount')}</Label>
+                <Label className="text-sm font-semibold text-foreground">{t('webuiSkillSnapshotsMaxCount')}</Label>
                 <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiSkillSnapshotsMaxCountDesc')}</div>
                 <Input
                   type="number"
@@ -1841,22 +1841,22 @@ function WebUISectionForm({
             </CardContent>
           </Card>
 
-          <Card className="border-white/70 bg-white/80 shadow-none">
+          <Card className="border-border/70 bg-card/92 shadow-none">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">{t('webuiSkillVersionsTitle')}</CardTitle>
               <CardDescription>{t('webuiSkillVersionsDesc')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center justify-between rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
+              <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
                 <div>
-                  <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiSkillVersionsEnabled')}</Label>
+                  <Label className="text-sm font-semibold text-foreground">{t('webuiSkillVersionsEnabled')}</Label>
                   <div className="mt-1 text-xs text-muted-foreground">{t('webuiSkillVersionsEnabledDesc')}</div>
                 </div>
                 <Switch checked={readBool('skill_versions.enabled')} onCheckedChange={(next) => onChange('skill_versions.enabled', next)} />
               </div>
 
               <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-                <Label className="text-sm font-semibold text-[hsl(var(--gray-900))]">{t('webuiSkillVersionsMaxCount')}</Label>
+                <Label className="text-sm font-semibold text-foreground">{t('webuiSkillVersionsMaxCount')}</Label>
                 <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiSkillVersionsMaxCountDesc')}</div>
                 <Input
                   type="number"
@@ -1881,7 +1881,7 @@ function WebUISectionForm({
             </CardContent>
           </Card>
 
-          <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] bg-white/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
+          <div className="rounded-2xl border border-dashed border-border/70 bg-card/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
             {t('webuiDiskHint')}
           </div>
         </CardContent>
