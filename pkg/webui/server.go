@@ -1743,7 +1743,9 @@ func (s *Server) handleTerminateToolSession(c *echo.Context) error {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	_ = c.Bind(&body)
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
 	if s.processMgr != nil {
 		_ = s.processMgr.Kill(id)
 	}
@@ -1793,7 +1795,9 @@ func (s *Server) handleCreateToolSessionAttachToken(c *echo.Context) error {
 	var body struct {
 		TTLSeconds int `json:"ttl_seconds"`
 	}
-	_ = c.Bind(&body)
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
 	ttl := time.Minute
 	if body.TTLSeconds > 0 && body.TTLSeconds <= 600 {
 		ttl = time.Duration(body.TTLSeconds) * time.Second
@@ -3032,7 +3036,9 @@ func (s *Server) handleGenerateToolSessionOTP(c *echo.Context) error {
 	var body struct {
 		TTLSeconds int `json:"ttl_seconds"`
 	}
-	_ = c.Bind(&body)
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
 	var ttl time.Duration
 	if body.TTLSeconds > 0 {
 		ttl = time.Duration(body.TTLSeconds) * time.Second
@@ -6300,29 +6306,29 @@ func (s *Server) handleStatus(c *echo.Context) error {
 	sessionStates := s.listSessionStates()
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"version":            version.GetVersion(),
-		"commit":             version.GitCommit,
-		"build_time":         version.BuildTime,
-		"os":                 runtime.GOOS,
-		"arch":               runtime.GOARCH,
-		"go_version":         runtime.Version(),
-		"pid":                os.Getpid(),
-		"uptime":             uptime.Round(time.Second).String(),
-		"uptime_seconds":     int64(uptime.Seconds()),
-		"memory_alloc_bytes": mem.Alloc,
-		"memory_sys_bytes":   mem.Sys,
-		"provider_count":     len(s.config.Providers),
-		"config_path":        configPath,
-		"database_dir":       s.config.Storage.DBDir,
-		"runtime_db_path":    runtimeDBPath,
-		"workspace_path":     s.config.Agents.Defaults.Workspace,
-		"workspace_contract": workspaceStatus.Contract,
+		"version":                      version.GetVersion(),
+		"commit":                       version.GitCommit,
+		"build_time":                   version.BuildTime,
+		"os":                           runtime.GOOS,
+		"arch":                         runtime.GOARCH,
+		"go_version":                   runtime.Version(),
+		"pid":                          os.Getpid(),
+		"uptime":                       uptime.Round(time.Second).String(),
+		"uptime_seconds":               int64(uptime.Seconds()),
+		"memory_alloc_bytes":           mem.Alloc,
+		"memory_sys_bytes":             mem.Sys,
+		"provider_count":               len(s.config.Providers),
+		"config_path":                  configPath,
+		"database_dir":                 s.config.Storage.DBDir,
+		"runtime_db_path":              runtimeDBPath,
+		"workspace_path":               s.config.Agents.Defaults.Workspace,
+		"workspace_contract":           workspaceStatus.Contract,
 		"workspace_validation_summary": workspaceStatus.ValidationSummary,
-		"task_count":         len(taskSnapshots),
-		"task_state_counts":  stateCounts,
-		"recent_tasks":       recentTasks,
-		"recent_cron_jobs":   recentCronJobs,
-		"runtime_states":     runtimeStates,
+		"task_count":                   len(taskSnapshots),
+		"task_state_counts":            stateCounts,
+		"recent_tasks":                 recentTasks,
+		"recent_cron_jobs":             recentCronJobs,
+		"runtime_states":               runtimeStates,
 		"daemon_machines": func() interface{} {
 			if s.kvStore == nil {
 				return []daemonhost.MachineStatus{}
@@ -8280,7 +8286,9 @@ func (s *Server) handleDenyRequest(c *echo.Context) error {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	_ = c.Bind(&body) // reason is optional
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
 
 	req, _ := s.approval.GetRequest(id)
 	if err := s.approval.Deny(id, body.Reason); err != nil {
@@ -8525,7 +8533,9 @@ func (s *Server) getDaemonToken() string {
 		return strings.TrimSpace(value)
 	}
 	token := "daemon-" + config.GenerateJWTSecret()
-	_ = s.kvStore.Set(ctx, "daemonhost.auth.token", token)
+	if err := s.kvStore.Set(ctx, "daemonhost.auth.token", token); err != nil && s.logger != nil {
+		s.logger.Warn("Failed to persist daemon auth token", zap.Error(err))
+	}
 	return token
 }
 
