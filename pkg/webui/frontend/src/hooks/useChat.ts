@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { getToken } from '@/api/client';
+import { getStreamToken } from '@/api/client';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'error';
@@ -122,9 +122,8 @@ export function useChat(): UseChatReturn {
   }, [activeSessionKey]);
 
   useEffect(() => {
-    const token = getToken();
     const runtimeSessionKey = activeSessionKey.trim();
-    if (!token || !runtimeSessionKey || runtimeSessionKey === 'webui-chat') {
+    if (!runtimeSessionKey || runtimeSessionKey === 'webui-chat') {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -138,16 +137,20 @@ export function useChat(): UseChatReturn {
       eventSourceRef.current = null;
     }
 
+    let cancelled = false;
     setDaemonEventStreamStatus('connecting');
-    const url = `/api/chat/events?token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(runtimeSessionKey)}`;
-    const source = new EventSource(url);
-    eventSourceRef.current = source;
+    getStreamToken('chat_events', runtimeSessionKey)
+      .then((token) => {
+        if (cancelled) return;
+        const url = `/api/chat/events?token=${encodeURIComponent(token)}&session_id=${encodeURIComponent(runtimeSessionKey)}`;
+        const source = new EventSource(url);
+        eventSourceRef.current = source;
 
-    source.onopen = () => {
-      setDaemonEventStreamStatus('connected');
-    };
+        source.onopen = () => {
+          setDaemonEventStreamStatus('connected');
+        };
 
-    source.onmessage = (ev) => {
+        source.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data) as {
           session_id?: string;
@@ -173,50 +176,53 @@ export function useChat(): UseChatReturn {
       }
     };
 
-    source.onerror = () => {
-      setDaemonEventStreamStatus('disconnected');
-      source.close();
-      if (eventSourceRef.current === source) {
-        eventSourceRef.current = null;
-      }
-    };
+        source.onerror = () => {
+          setDaemonEventStreamStatus('disconnected');
+          source.close();
+          if (eventSourceRef.current === source) {
+            eventSourceRef.current = null;
+          }
+        };
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDaemonEventStreamStatus('disconnected');
+        }
+      });
 
     return () => {
+      cancelled = true;
       setDaemonEventStreamStatus('disconnected');
-      source.close();
-      if (eventSourceRef.current === source) {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
     };
   }, [activeSessionKey]);
 
   const connect = useCallback(() => {
-    const token = getToken();
-    if (!token) {
-      setConnectionStatus('disconnected');
-      return;
-    }
-
     cleanup();
     setConnectionStatus('connecting');
 
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${window.location.host}/api/chat/ws?token=${encodeURIComponent(token)}`;
+    getStreamToken('chat_ws')
+      .then((token) => {
+        const url = `${proto}://${window.location.host}/api/chat/ws?token=${encodeURIComponent(token)}`;
 
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url);
-    } catch {
-      setConnectionStatus('disconnected');
-      return;
-    }
-    wsRef.current = ws;
+        let ws: WebSocket;
+        try {
+          ws = new WebSocket(url);
+        } catch {
+          setConnectionStatus('disconnected');
+          return;
+        }
+        wsRef.current = ws;
 
-    ws.onopen = () => {
-      setConnectionStatus('connected');
-    };
+        ws.onopen = () => {
+          setConnectionStatus('connected');
+        };
 
-    ws.onclose = () => {
+        ws.onclose = () => {
       setConnectionStatus('disconnected');
       setAwaitingReplyBySession((prev) => ({
         ...prev,
@@ -225,7 +231,7 @@ export function useChat(): UseChatReturn {
       wsRef.current = null;
     };
 
-    ws.onerror = () => {
+        ws.onerror = () => {
       setConnectionStatus('disconnected');
       setAwaitingReplyBySession((prev) => ({
         ...prev,
@@ -233,7 +239,7 @@ export function useChat(): UseChatReturn {
       }));
     };
 
-    ws.onmessage = (ev: MessageEvent) => {
+        ws.onmessage = (ev: MessageEvent) => {
       let msg: {
         type?: string;
         content?: string;
@@ -334,6 +340,10 @@ export function useChat(): UseChatReturn {
         }));
       }
     };
+      })
+      .catch(() => {
+        setConnectionStatus('disconnected');
+      });
   }, [cleanup]);
 
   const reconnect = useCallback(() => {

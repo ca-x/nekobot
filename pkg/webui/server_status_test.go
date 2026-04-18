@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -625,7 +626,7 @@ func TestHandleStatus_IncludesSessionRuntimeStates(t *testing.T) {
 	}
 
 	var payload struct {
-		WorkspaceContract   struct {
+		WorkspaceContract struct {
 			Kind string `json:"kind"`
 		} `json:"workspace_contract"`
 		WorkspaceValidationSummary struct {
@@ -1973,7 +1974,7 @@ func TestHandleGetDaemonBootstrapReturnsCommand(t *testing.T) {
 	if payload.Token == "" || payload.Command == "" {
 		t.Fatalf("expected bootstrap token and command, got %+v", payload)
 	}
-	if !strings.Contains(payload.Command, "nekobot daemon run") || !strings.Contains(payload.Command, payload.Token) {
+	if !strings.Contains(payload.Command, "nekobot daemon run") || !strings.Contains(payload.Command, strconv.Quote(payload.Token)) || !strings.Contains(payload.Command, strconv.Quote(payload.ServerURL)) {
 		t.Fatalf("unexpected bootstrap command: %q", payload.Command)
 	}
 }
@@ -2000,5 +2001,69 @@ func TestChatEventSubscriberReceivesPublishedEvent(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for chat event")
+	}
+}
+
+func TestPrivilegedAPIRejectsMemberToken(t *testing.T) {
+	cfg := config.DefaultConfig()
+	s := &Server{config: cfg, logger: newTestLogger(t)}
+	s.setup()
+
+	token, err := s.generateToken(&config.AuthProfile{Username: "tool-user", UserID: "sess-owner", Role: "member"})
+	if err != nil {
+		t.Fatalf("generateToken failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusForbidden, rec.Code, rec.Body.String())
+	}
+}
+
+func TestJWTSecretFallbackIsRandomPerServer(t *testing.T) {
+	s1 := &Server{}
+	s2 := &Server{}
+	secret1 := s1.getJWTSecret()
+	secret2 := s2.getJWTSecret()
+	if strings.TrimSpace(secret1) == "" || strings.TrimSpace(secret2) == "" {
+		t.Fatalf("expected non-empty fallback secrets")
+	}
+	if secret1 == secret2 {
+		t.Fatalf("expected per-server fallback secrets to differ, got %q", secret1)
+	}
+}
+
+func TestDaemonTokenFallbackIsRandomPerServer(t *testing.T) {
+	s1 := &Server{}
+	s2 := &Server{}
+	token1 := s1.getDaemonToken()
+	token2 := s2.getDaemonToken()
+	if strings.TrimSpace(token1) == "" || strings.TrimSpace(token2) == "" {
+		t.Fatalf("expected non-empty fallback daemon tokens")
+	}
+	if token1 == token2 {
+		t.Fatalf("expected per-server fallback daemon tokens to differ, got %q", token1)
+	}
+}
+
+func TestPrivilegedAPIAllowsAdminToken(t *testing.T) {
+	cfg := config.DefaultConfig()
+	s := &Server{config: cfg, logger: newTestLogger(t)}
+	s.setup()
+
+	token, err := s.generateToken(&config.AuthProfile{Username: "admin-user", UserID: "admin-id", Role: "admin"})
+	if err != nil {
+		t.Fatalf("generateToken failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	s.echo.ServeHTTP(rec, req)
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("expected admin token to pass privileged middleware, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

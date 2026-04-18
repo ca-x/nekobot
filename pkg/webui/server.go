@@ -86,45 +86,47 @@ import (
 
 // Server is the WebUI HTTP server.
 type Server struct {
-	echo               *echo.Echo
-	httpServer         *http.Server
-	config             *config.Config
-	loader             *config.Loader
-	logger             *logger.Logger
-	agent              *agent.Agent
-	approval           *approval.Manager
-	channels           *channels.Manager
-	bus                bus.Bus
-	commands           *commands.Registry
-	prefs              *userprefs.Manager
-	toolSess           *toolsessions.Manager
-	externalAgent      *externalagent.Manager
-	sessionMgr         *session.Manager
-	processMgr         *process.Manager
-	prompts            *prompts.Manager
-	providers          *providerstore.Manager
-	runtimeMgr         *runtimeagents.Manager
-	accountMgr         *channelaccounts.Manager
-	bindingMgr         *accountbindings.Manager
-	topologySvc        *runtimetopology.Service
-	cronMgr            *cron.Manager
-	skillsMgr          *skills.Manager
-	workspace          *workspace.Manager
-	entClient          *ent.Client
-	snapshotMgr        *session.SnapshotManager
-	auditLogger        *audit.Logger
-	ilinkAuth          *ilinkauth.Service
-	serviceCtrl        serviceController
-	taskStore          *tasks.Store
-	kvStore            state.KV
-	threads            *threads.Manager
-	goalSvc            *goaldriven.Service
-	chatEventMu        sync.RWMutex
-	chatEventSubs      map[string]map[chan chatEvent]struct{}
-	watcher            *watch.Watcher
-	webhookTestHandler func(ctx context.Context, username, message string) (string, error)
-	port               int
-	startedAt          time.Time
+	echo                *echo.Echo
+	httpServer          *http.Server
+	config              *config.Config
+	loader              *config.Loader
+	logger              *logger.Logger
+	agent               *agent.Agent
+	approval            *approval.Manager
+	channels            *channels.Manager
+	bus                 bus.Bus
+	commands            *commands.Registry
+	prefs               *userprefs.Manager
+	toolSess            *toolsessions.Manager
+	externalAgent       *externalagent.Manager
+	sessionMgr          *session.Manager
+	processMgr          *process.Manager
+	prompts             *prompts.Manager
+	providers           *providerstore.Manager
+	runtimeMgr          *runtimeagents.Manager
+	accountMgr          *channelaccounts.Manager
+	bindingMgr          *accountbindings.Manager
+	topologySvc         *runtimetopology.Service
+	cronMgr             *cron.Manager
+	skillsMgr           *skills.Manager
+	workspace           *workspace.Manager
+	entClient           *ent.Client
+	snapshotMgr         *session.SnapshotManager
+	auditLogger         *audit.Logger
+	ilinkAuth           *ilinkauth.Service
+	serviceCtrl         serviceController
+	taskStore           *tasks.Store
+	kvStore             state.KV
+	threads             *threads.Manager
+	goalSvc             *goaldriven.Service
+	chatEventMu         sync.RWMutex
+	chatEventSubs       map[string]map[chan chatEvent]struct{}
+	watcher             *watch.Watcher
+	jwtFallbackSecret   string
+	daemonFallbackToken string
+	webhookTestHandler  func(ctx context.Context, username, message string) (string, error)
+	port                int
+	startedAt           time.Time
 }
 
 type chatEvent struct {
@@ -352,6 +354,7 @@ func (s *Server) setup() {
 			return []byte(s.getJWTSecret()), nil
 		},
 	}))
+	api.Use(s.requirePrivilegedAPIUser())
 
 	// Provider routes
 	api.GET("/provider-types", s.handleGetProviderTypes)
@@ -481,6 +484,7 @@ func (s *Server) setup() {
 	api.GET("/auth/profile", s.handleGetProfile)
 	api.GET("/auth/me", s.handleGetMe)
 	api.PUT("/auth/profile", s.handleUpdateProfile)
+	api.POST("/auth/stream-token", s.handleCreateStreamToken)
 
 	// Tool session routes
 	api.GET("/tool-sessions", s.handleListToolSessions)
@@ -1664,6 +1668,17 @@ func (s *Server) handleListToolSessions(c *echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
 	}
 
+	if sid := s.currentToolSessionID(c); sid != "" {
+		sess, err := s.toolSess.GetSession(c.Request().Context(), sid)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return c.JSON(http.StatusOK, []*toolsessions.Session{})
+			}
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusOK, []*toolsessions.Session{sess})
+	}
+
 	owner := s.currentUsername(c)
 	limit := 100
 	if raw := strings.TrimSpace(c.QueryParam("limit")); raw != "" {
@@ -1743,9 +1758,7 @@ func (s *Server) handleTerminateToolSession(c *echo.Context) error {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	if err := c.Bind(&body); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
+	_ = c.Bind(&body)
 	if s.processMgr != nil {
 		_ = s.processMgr.Kill(id)
 	}
@@ -1795,9 +1808,7 @@ func (s *Server) handleCreateToolSessionAttachToken(c *echo.Context) error {
 	var body struct {
 		TTLSeconds int `json:"ttl_seconds"`
 	}
-	if err := c.Bind(&body); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
+	_ = c.Bind(&body)
 	ttl := time.Minute
 	if body.TTLSeconds > 0 && body.TTLSeconds <= 600 {
 		ttl = time.Duration(body.TTLSeconds) * time.Second
@@ -1910,27 +1921,14 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	}
 	metadata[runtimeagents.MetadataLaunchCommand] = launchCommand
 	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), sess.ID, metadata); err != nil {
-		if terminateErr := s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to persist launch metadata: "+err.Error()); terminateErr != nil {
-			s.logger.Warn("Failed to terminate tool session after metadata persistence error",
-				zap.String("session_id", sess.ID),
-				zap.Error(terminateErr),
-			)
-		}
+		_ = s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to persist launch metadata: "+err.Error())
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to persist tool session metadata: " + err.Error()})
 	}
-	sess, err = s.toolSess.GetSession(c.Request().Context(), sess.ID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
-	}
+	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
 
 	spec := execenv.StartSpecFromContext(c.Request().Context(), sess.ID, launchCommand, workdir, metadata)
 	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
-		if terminateErr := s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error()); terminateErr != nil {
-			s.logger.Warn("Failed to terminate tool session after process start error",
-				zap.String("session_id", sess.ID),
-				zap.Error(terminateErr),
-			)
-		}
+		_ = s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to start tool process: " + err.Error()})
 	}
 	accessMode := strings.TrimSpace(body.AccessMode)
@@ -1940,19 +1938,13 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to configure session access: " + err.Error()})
 		}
-		sess, err = s.toolSess.GetSession(c.Request().Context(), sess.ID)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
-		}
+		sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
 	}
 	accessURL := ""
 	if strings.TrimSpace(sess.AccessMode) != "" && sess.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, sess.ID, strings.TrimSpace(body.PublicBaseURL))
 	}
-	sess, err = s.toolSess.GetSession(c.Request().Context(), sess.ID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
-	}
+	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
 
 	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"command":    command,
@@ -1961,12 +1953,7 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 		"proxy_mode": proxyMode,
 	}, transport.Name(), runtimeSession)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
-	if err := s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", eventPayload); err != nil {
-		s.logger.Warn("Failed to append tool session start event",
-			zap.String("session_id", sess.ID),
-			zap.Error(err),
-		)
-	}
+	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", eventPayload)
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"session":         sess,
 		"access_mode":     sess.AccessMode,
@@ -2308,7 +2295,7 @@ func (s *Server) handleGetDaemonBootstrap(c *echo.Context) error {
 	}
 	token := s.getDaemonToken()
 	machineName := strings.TrimSpace(s.currentUsername(c))
-	command := fmt.Sprintf("nekobot daemon run --server-url %s --token %s --machine-name %s", serverURL, token, machineName)
+	command := fmt.Sprintf("nekobot daemon run --server-url %s --token %s --machine-name %s", strconv.Quote(serverURL), strconv.Quote(token), strconv.Quote(machineName))
 	return c.JSON(http.StatusOK, map[string]any{
 		"server_url":   serverURL,
 		"daemon_token": token,
@@ -2466,7 +2453,7 @@ func (s *Server) handleChatEvents(c *echo.Context) error {
 	if tokenStr == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
 	}
-	username, err := s.parseJWTSubject(tokenStr)
+	username, _, _, err := s.parseScopedStreamToken(tokenStr, streamTokenPurposeChatEvents)
 	if err != nil || strings.TrimSpace(username) == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
@@ -2666,16 +2653,11 @@ func (s *Server) handleUpdateToolSession(c *echo.Context) error {
 	if strings.TrimSpace(updatedSession.AccessMode) != "" && updatedSession.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, id, strings.TrimSpace(body.PublicBaseURL))
 	}
-	if err := s.toolSess.AppendEvent(context.Background(), id, "session_updated", map[string]interface{}{
+	_ = s.toolSess.AppendEvent(context.Background(), id, "session_updated", map[string]interface{}{
 		"command":    command,
 		"workdir":    workdir,
 		"proxy_mode": proxyMode,
-	}); err != nil {
-		s.logger.Warn("Failed to append tool session update event",
-			zap.String("session_id", id),
-			zap.Error(err),
-		)
-	}
+	})
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"session":         updatedSession,
@@ -2773,21 +2755,11 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	}
 	nextMetadata[runtimeagents.MetadataLaunchCommand] = launchCommand
 
-	if err := s.processMgr.Reset(id); err != nil {
-		s.logger.Warn("Failed to reset existing tool process before restart",
-			zap.String("session_id", id),
-			zap.Error(err),
-		)
-	}
+	_ = s.processMgr.Reset(id)
 	s.tryKillRuntimeSession(c.Request().Context(), id)
 	spec := execenv.StartSpecFromContext(c.Request().Context(), id, launchCommand, workdir, nextMetadata)
 	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
-		if terminateErr := s.toolSess.TerminateSession(context.Background(), id, "failed to restart process: "+err.Error()); terminateErr != nil {
-			s.logger.Warn("Failed to terminate tool session after restart error",
-				zap.String("session_id", id),
-				zap.Error(terminateErr),
-			)
-		}
+		_ = s.toolSess.TerminateSession(context.Background(), id, "failed to restart process: "+err.Error())
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to restart tool process: " + err.Error()})
 	}
 
@@ -2798,10 +2770,7 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), id, nextMetadata); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	updatedSession, err := s.toolSess.GetSession(c.Request().Context(), id)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
-	}
+	updatedSession, _ := s.toolSess.GetSession(c.Request().Context(), id)
 
 	accessPassword := ""
 	modeChanged := strings.TrimSpace(body.AccessMode) != "" || strings.TrimSpace(body.AccessPassword) != ""
@@ -2814,20 +2783,14 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to configure session access: " + err.Error()})
 		}
-		updatedSession, err = s.toolSess.GetSession(c.Request().Context(), id)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
-		}
+		updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
 	}
 
 	accessURL := ""
 	if strings.TrimSpace(updatedSession.AccessMode) != "" && updatedSession.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, id, strings.TrimSpace(body.PublicBaseURL))
 	}
-	updatedSession, err = s.toolSess.GetSession(c.Request().Context(), id)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
-	}
+	updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
 
 	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"command":    command,
@@ -2836,12 +2799,7 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 		"proxy_mode": proxyMode,
 	}, transport.Name(), runtimeSession)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
-	if err := s.toolSess.AppendEvent(context.Background(), id, "process_restarted", eventPayload); err != nil {
-		s.logger.Warn("Failed to append tool session restart event",
-			zap.String("session_id", id),
-			zap.Error(err),
-		)
-	}
+	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", eventPayload)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"session":         updatedSession,
@@ -3089,9 +3047,7 @@ func (s *Server) handleGenerateToolSessionOTP(c *echo.Context) error {
 	var body struct {
 		TTLSeconds int `json:"ttl_seconds"`
 	}
-	if err := c.Bind(&body); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
+	_ = c.Bind(&body)
 	var ttl time.Duration
 	if body.TTLSeconds > 0 {
 		ttl = time.Duration(body.TTLSeconds) * time.Second
@@ -3139,16 +3095,23 @@ func (s *Server) handleToolSessionAccessLogin(c *echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
 	}
-	username := strings.TrimSpace(sess.Owner)
-	if username == "" {
-		username = "tool:" + sess.ID
+	username := "tool:" + strings.TrimSpace(sess.ID)
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"sub":  username,
+		"uid":  sess.Owner,
+		"role": "member",
+		"sid":  strings.TrimSpace(sess.ID),
+		"exp":  now.Add(24 * time.Hour).Unix(),
+		"iat":  now.Unix(),
 	}
-	token, err := s.generateToken(&config.AuthProfile{Username: username, UserID: sess.Owner, Role: "member"})
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signedToken, err := token.SignedString([]byte(s.getJWTSecret()))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
 	}
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"token":      token,
+		"token":      signedToken,
 		"session_id": sess.ID,
 	})
 }
@@ -3160,6 +3123,12 @@ func (s *Server) ensureSessionOwner(c *echo.Context, sessionID string) error {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if sid := s.currentToolSessionID(c); sid != "" {
+		if sid != strings.TrimSpace(sessionID) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "session does not belong to current token"})
+		}
+		return nil
 	}
 	owner := s.currentUsername(c)
 	if strings.TrimSpace(sess.Owner) != "" && sess.Owner != owner {
@@ -3227,6 +3196,83 @@ func (s *Server) currentUsername(c *echo.Context) string {
 	}
 	sub, _ := claims["sub"].(string)
 	return strings.TrimSpace(sub)
+}
+
+func (s *Server) currentUserRole(c *echo.Context) string {
+	user := c.Get("user")
+	token, ok := user.(*jwt.Token)
+	if !ok || token == nil {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	role, _ := claims["role"].(string)
+	return strings.TrimSpace(role)
+}
+
+func (s *Server) currentToolSessionID(c *echo.Context) string {
+	user := c.Get("user")
+	token, ok := user.(*jwt.Token)
+	if !ok || token == nil {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	sid, _ := claims["sid"].(string)
+	return strings.TrimSpace(sid)
+}
+
+func (s *Server) allowMemberAPI(c *echo.Context) bool {
+	if strings.TrimSpace(s.currentToolSessionID(c)) == "" {
+		return false
+	}
+	path := strings.TrimSpace(c.Request().URL.Path)
+	method := c.Request().Method
+	if method == http.MethodGet && path == "/api/tool-sessions" {
+		return true
+	}
+	if method == http.MethodGet && path == "/api/tool-sessions/runtime-transports" {
+		return true
+	}
+	if method == http.MethodPost && path == "/api/auth/stream-token" {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/tool-sessions/") {
+		switch {
+		case strings.HasSuffix(path, "/process/status"):
+			return method == http.MethodGet
+		case strings.HasSuffix(path, "/process/output"):
+			return method == http.MethodGet
+		case strings.HasSuffix(path, "/process/input"):
+			return method == http.MethodPost
+		case strings.HasSuffix(path, "/process/kill"):
+			return method == http.MethodPost
+		}
+	}
+	return false
+}
+
+func (s *Server) requirePrivilegedAPIUser() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			role := s.currentUserRole(c)
+			switch role {
+			case "admin", "owner":
+				return next(c)
+			case "member":
+				if s.allowMemberAPI(c) {
+					return next(c)
+				}
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient role for privileged api"})
+			default:
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient role for privileged api"})
+			}
+		}
+	}
 }
 
 func resolveToolCommand(toolName, command string) string {
@@ -3421,18 +3467,8 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 		"workdir":    workdir,
 	}, transport.Name(), runtimeSession)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
-	if err := s.toolSess.AppendEvent(context.Background(), id, "process_restored", eventPayload); err != nil {
-		s.logger.Warn("Failed to append tool session restore event",
-			zap.String("session_id", id),
-			zap.Error(err),
-		)
-	}
-	if err := s.toolSess.TouchSession(context.Background(), id, toolsessions.StateRunning); err != nil {
-		s.logger.Warn("Failed to touch restored tool session",
-			zap.String("session_id", id),
-			zap.Error(err),
-		)
-	}
+	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", eventPayload)
+	_ = s.toolSess.TouchSession(context.Background(), id, toolsessions.StateRunning)
 	s.logger.Info("Restored tool session runtime",
 		zap.String("session_id", id),
 		zap.String("runtime_session", runtimeSession),
@@ -6983,7 +7019,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 	if tokenStr == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
 	}
-	username, err := s.parseJWTSubject(tokenStr)
+	username, _, _, err := s.parseScopedStreamToken(tokenStr, streamTokenPurposeChatWS)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
@@ -7375,7 +7411,7 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 	if tokenStr == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
 	}
-	username, err := s.parseJWTSubject(tokenStr)
+	username, scopedSessionID, _, err := s.parseScopedStreamToken(tokenStr, streamTokenPurposeToolSessionWS)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
@@ -7390,6 +7426,9 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if scopedSessionID != "" && scopedSessionID != sessionID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "session does not belong to current token"})
 	}
 	if strings.TrimSpace(sess.Owner) != "" && sess.Owner != username {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "session does not belong to current user"})
@@ -8349,9 +8388,7 @@ func (s *Server) handleDenyRequest(c *echo.Context) error {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	if err := c.Bind(&body); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
+	_ = c.Bind(&body) // reason is optional
 
 	req, _ := s.approval.GetRequest(id)
 	if err := s.approval.Deny(id, body.Reason); err != nil {
@@ -8501,6 +8538,95 @@ func (s *Server) handleEvaluatePolicy(c *echo.Context) error {
 
 // --- Helpers ---
 
+type streamTokenPurpose string
+
+const (
+	streamTokenPurposeChatEvents    streamTokenPurpose = "chat_events"
+	streamTokenPurposeChatWS        streamTokenPurpose = "chat_ws"
+	streamTokenPurposeToolSessionWS streamTokenPurpose = "tool_session_ws"
+)
+
+func normalizeStreamTokenPurpose(raw string) streamTokenPurpose {
+	switch strings.TrimSpace(raw) {
+	case string(streamTokenPurposeChatEvents):
+		return streamTokenPurposeChatEvents
+	case string(streamTokenPurposeChatWS):
+		return streamTokenPurposeChatWS
+	case string(streamTokenPurposeToolSessionWS):
+		return streamTokenPurposeToolSessionWS
+	default:
+		return ""
+	}
+}
+
+func (s *Server) handleCreateStreamToken(c *echo.Context) error {
+	var body struct {
+		Purpose   string `json:"purpose"`
+		SessionID string `json:"session_id"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	purpose := normalizeStreamTokenPurpose(body.Purpose)
+	if purpose == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid stream token purpose"})
+	}
+	sessionID := strings.TrimSpace(body.SessionID)
+	if purpose == streamTokenPurposeToolSessionWS {
+		if sessionID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "session_id required"})
+		}
+		if err := s.ensureSessionOwner(c, sessionID); err != nil {
+			return err
+		}
+	}
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"sub":  s.currentUsername(c),
+		"uid":  s.currentUserID(c),
+		"role": s.currentUserRole(c),
+		"pur":  string(purpose),
+		"exp":  now.Add(5 * time.Minute).Unix(),
+		"iat":  now.Unix(),
+	}
+	if sessionID != "" {
+		claims["sid"] = sessionID
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString([]byte(s.getJWTSecret()))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"token": signed, "expires_in": 300})
+}
+
+func (s *Server) parseScopedStreamToken(tokenStr string, purpose streamTokenPurpose) (string, string, string, error) {
+	parsed, err := jwt.Parse(strings.TrimSpace(tokenStr), func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(s.getJWTSecret()), nil
+	})
+	if err != nil || parsed == nil || !parsed.Valid {
+		return "", "", "", fmt.Errorf("invalid token")
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", "", "", fmt.Errorf("invalid token claims")
+	}
+	claimedPurpose, _ := claims["pur"].(string)
+	if normalizeStreamTokenPurpose(claimedPurpose) != purpose {
+		return "", "", "", fmt.Errorf("invalid token purpose")
+	}
+	sub, _ := claims["sub"].(string)
+	sid, _ := claims["sid"].(string)
+	role, _ := claims["role"].(string)
+	if strings.TrimSpace(sub) == "" {
+		return "", "", "", fmt.Errorf("subject is empty")
+	}
+	return strings.TrimSpace(sub), strings.TrimSpace(sid), strings.TrimSpace(role), nil
+}
+
 func (s *Server) parseJWTSubject(tokenStr string) (string, error) {
 	parsed, err := jwt.Parse(strings.TrimSpace(tokenStr), func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -8578,27 +8704,35 @@ func runtimePromptIDs(promptID string) []string {
 }
 
 func (s *Server) getJWTSecret() string {
+	if s == nil {
+		return config.GenerateJWTSecret()
+	}
 	secret, err := config.GetJWTSecret(s.entClient)
 	if err == nil && strings.TrimSpace(secret) != "" {
 		return secret
 	}
-	// No credential stored yet — generate an ephemeral secret.
-	// It will be replaced once the admin initializes their password.
-	return "nekobot-ephemeral-secret"
+	if strings.TrimSpace(s.jwtFallbackSecret) == "" {
+		s.jwtFallbackSecret = config.GenerateJWTSecret()
+	}
+	return s.jwtFallbackSecret
 }
 
 func (s *Server) getDaemonToken() string {
-	if s == nil || s.kvStore == nil {
-		return "nekobot-daemon-ephemeral-token"
+	if s == nil {
+		return "daemon-" + config.GenerateJWTSecret()
+	}
+	if s.kvStore == nil {
+		if strings.TrimSpace(s.daemonFallbackToken) == "" {
+			s.daemonFallbackToken = "daemon-" + config.GenerateJWTSecret()
+		}
+		return s.daemonFallbackToken
 	}
 	ctx := context.Background()
 	if value, ok, err := s.kvStore.GetString(ctx, "daemonhost.auth.token"); err == nil && ok && strings.TrimSpace(value) != "" {
 		return strings.TrimSpace(value)
 	}
 	token := "daemon-" + config.GenerateJWTSecret()
-	if err := s.kvStore.Set(ctx, "daemonhost.auth.token", token); err != nil && s.logger != nil {
-		s.logger.Warn("Failed to persist daemon auth token", zap.Error(err))
-	}
+	_ = s.kvStore.Set(ctx, "daemonhost.auth.token", token)
 	return token
 }
 

@@ -477,7 +477,8 @@ func TestToolSessionHandlers_SmokeFlow(t *testing.T) {
 func newAuthedContext(e *echo.Echo, req *http.Request, rec *httptest.ResponseRecorder, username string) *echo.Context {
 	ctx := e.NewContext(req, rec)
 	ctx.Set("user", jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": username,
+		"sub":  username,
+		"role": "owner",
 	}))
 	return ctx
 }
@@ -1337,4 +1338,95 @@ func (c *captureWebUITestPreparer) Prepare(_ context.Context, spec execenv.Start
 		Env:     append([]string{}, spec.Env...),
 		Cleanup: func() error { return nil },
 	}, nil
+}
+
+func TestMemberToolSessionTokenIsScopedToOneSession(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() { _ = client.Close() })
+
+	toolMgr, err := toolsessions.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new tool session manager: %v", err)
+	}
+	server := &Server{config: cfg, logger: log, toolSess: toolMgr, processMgr: process.NewManager(log)}
+	server.setup()
+	e := echo.New()
+
+	makeSession := func(title string) toolsessions.Session {
+		req := httptest.NewRequest(http.MethodPost, "/api/tool-sessions", strings.NewReader(`{"tool":"codex","title":"`+title+`","command":"cat","workdir":"`+cfg.WorkspacePath()+`","access_mode":"permanent","access_password":"perm-pass"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		ctx := newAuthedContext(e, req, rec, "alice")
+		ctx.SetPath("/api/tool-sessions")
+		if err := server.handleCreateToolSession(ctx); err != nil {
+			t.Fatalf("create handler failed: %v", err)
+		}
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
+		}
+		var created toolsessions.Session
+		decodeJSON(t, rec.Body.Bytes(), &created)
+		return created
+	}
+
+	first := makeSession("one")
+	second := makeSession("two")
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/tool-sessions/access-login", strings.NewReader(`{"session_id":"`+first.ID+`","password":"perm-pass"}`))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginRec := httptest.NewRecorder()
+	loginCtx := e.NewContext(loginReq, loginRec)
+	if err := server.handleToolSessionAccessLogin(loginCtx); err != nil {
+		t.Fatalf("access login handler failed: %v", err)
+	}
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, loginRec.Code, loginRec.Body.String())
+	}
+	var loginPayload map[string]string
+	decodeJSON(t, loginRec.Body.Bytes(), &loginPayload)
+	token := strings.TrimSpace(loginPayload["token"])
+	if token == "" {
+		t.Fatalf("expected member token")
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/tool-sessions?limit=200", nil)
+	listReq.Header.Set("Authorization", "Bearer "+token)
+	listRec := httptest.NewRecorder()
+	server.echo.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, listRec.Code, listRec.Body.String())
+	}
+	var listed []toolsessions.Session
+	decodeJSON(t, listRec.Body.Bytes(), &listed)
+	if len(listed) != 1 || listed[0].ID != first.ID {
+		t.Fatalf("expected member token to see only scoped session, got %+v", listed)
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/tool-sessions/"+first.ID+"/process/status", nil)
+	statusReq.Header.Set("Authorization", "Bearer "+token)
+	statusRec := httptest.NewRecorder()
+	server.echo.ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusOK, statusRec.Code, statusRec.Body.String())
+	}
+
+	otherReq := httptest.NewRequest(http.MethodGet, "/api/tool-sessions/"+second.ID+"/process/status", nil)
+	otherReq.Header.Set("Authorization", "Bearer "+token)
+	otherRec := httptest.NewRecorder()
+	server.echo.ServeHTTP(otherRec, otherReq)
+	if otherRec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusForbidden, otherRec.Code, otherRec.Body.String())
+	}
+
+	forbiddenReq := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+	forbiddenReq.Header.Set("Authorization", "Bearer "+token)
+	forbiddenRec := httptest.NewRecorder()
+	server.echo.ServeHTTP(forbiddenRec, forbiddenReq)
+	if forbiddenRec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusForbidden, forbiddenRec.Code, forbiddenRec.Body.String())
+	}
 }
