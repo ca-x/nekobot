@@ -246,6 +246,19 @@ func TestResolveModelForProvider_UsesModelRoute(t *testing.T) {
 	}
 }
 
+func TestClearFailoverCooldown(t *testing.T) {
+	ag := &Agent{failoverCooldown: providers.NewCooldownTracker()}
+	ag.failoverCooldown.MarkFailure("primary", providers.FailoverReasonRateLimit)
+	if ag.failoverCooldown.IsAvailable("primary") {
+		t.Fatalf("expected provider to be unavailable before clear")
+	}
+	ag.ClearFailoverCooldown("primary")
+	snapshot := ag.failoverCooldown.Snapshot("primary")
+	if !snapshot.Available {
+		t.Fatalf("expected provider to be available after clear")
+	}
+}
+
 func TestGetFailoverSnapshots_ReturnsTrackedState(t *testing.T) {
 	cfg := config.DefaultConfig()
 	ag := &Agent{

@@ -10,6 +10,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
 	"nekobot/pkg/modelroute"
 	"nekobot/pkg/modelstore"
@@ -445,5 +446,26 @@ func TestHandleGetModelRoutesBatch(t *testing.T) {
 	}
 	if len(listed["gpt-4.1"]) != 1 || len(listed["claude-sonnet"]) != 1 {
 		t.Fatalf("expected routes for both models, got %+v", listed)
+	}
+}
+
+func TestHandleClearProviderCooldown(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	log := newTestLogger(t)
+	s := &Server{config: cfg, logger: log, agent: &agent.Agent{}}
+	s.agent.ClearFailoverCooldown("primary")
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/api/providers/primary/clear-cooldown", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/api/providers/:name/clear-cooldown")
+	c.SetPathValues(echo.PathValues{{Name: "name", Value: "primary"}})
+	if err := s.handleClearProviderCooldown(c); err != nil {
+		t.Fatalf("handleClearProviderCooldown failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

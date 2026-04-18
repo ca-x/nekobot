@@ -94,3 +94,26 @@ func TestCalculateStandardCooldown_UsesShortEscalation(t *testing.T) {
 		}
 	}
 }
+
+func TestCooldownTrackerClearProvider(t *testing.T) {
+	tracker := NewCooldownTracker()
+	now := time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC)
+	tracker.nowFunc = func() time.Time { return now }
+
+	tracker.MarkFailure("primary", FailoverReasonRateLimit)
+	if tracker.IsAvailable("primary") {
+		t.Fatalf("expected provider to be unavailable before clear")
+	}
+
+	tracker.ClearProvider("primary")
+	snapshot := tracker.Snapshot("primary")
+	if !snapshot.Available {
+		t.Fatalf("expected provider to be available after clear")
+	}
+	if snapshot.ErrorCount != 0 {
+		t.Fatalf("expected error count reset, got %d", snapshot.ErrorCount)
+	}
+	if len(snapshot.FailureCounts) != 0 {
+		t.Fatalf("expected failure counts reset, got %+v", snapshot.FailureCounts)
+	}
+}
