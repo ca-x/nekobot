@@ -247,7 +247,6 @@ func (cb *ContextBuilder) buildSkillsSection() string {
 // These files customize the agent's behavior and personality.
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	bootstrapFiles := []string{
-		"AGENTS.md",   // Information about agent capabilities
 		"SOUL.md",     // Agent personality and values
 		"USER.md",     // User preferences and information
 		"IDENTITY.md", // Custom identity overrides

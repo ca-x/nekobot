@@ -600,15 +600,15 @@ func TestBuildSystemPrompt_CacheRefreshesOnBootstrapFileChange(t *testing.T) {
 	cb.SetToolDescriptionsFunc(func() []string { return nil })
 
 	first := cb.BuildSystemPrompt()
-	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("agent-note"), 0644); err != nil {
-		t.Fatalf("write AGENTS.md: %v", err)
+	if err := os.WriteFile(filepath.Join(workspace, "SOUL.md"), []byte("soul-note"), 0644); err != nil {
+		t.Fatalf("write SOUL.md: %v", err)
 	}
 
 	second := cb.BuildSystemPrompt()
 	if first == second {
 		t.Fatalf("expected prompt to change after bootstrap file update")
 	}
-	if !strings.Contains(second, "agent-note") {
+	if !strings.Contains(second, "soul-note") {
 		t.Fatalf("expected updated bootstrap content in prompt")
 	}
 }
@@ -713,8 +713,8 @@ func TestBuildSystemPrompt_RespectsMemoryContextOptions(t *testing.T) {
 func TestContextBuilderBuildPromptSections_SeparatesStaticAndDynamic(t *testing.T) {
 	workspace := t.TempDir()
 	store := promptmemory.NewStore(workspace)
-	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("bootstrap-note"), 0644); err != nil {
-		t.Fatalf("write AGENTS.md: %v", err)
+	if err := os.WriteFile(filepath.Join(workspace, "SOUL.md"), []byte("bootstrap-note"), 0644); err != nil {
+		t.Fatalf("write SOUL.md: %v", err)
 	}
 	if err := store.WriteLongTerm("long-term-note"); err != nil {
 		t.Fatalf("write long term memory: %v", err)
@@ -871,6 +871,9 @@ func TestPreviewContextSources_IncludesKeySourceTypes(t *testing.T) {
 	}
 	if err := ag.context.GetMemory().WriteLongTerm("long-term-memory"); err != nil {
 		t.Fatalf("write long-term memory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "SOUL.md"), []byte("ops-rules"), 0644); err != nil {
+		t.Fatalf("write SOUL.md: %v", err)
 	}
 
 	preview, err := ag.PreviewContextSources(context.Background(), PromptContext{
@@ -3190,4 +3193,29 @@ func (s *testSession) GetHistorySafe(limit int) []Message {
 
 func (s *testSession) AddMessage(msg Message) {
 	s.messages = append(s.messages, msg)
+}
+
+func TestLoadBootstrapFiles_IgnoresStaticAgentsBootstrap(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "AGENTS.md"), []byte("- **Model:** claude-3-5-sonnet-20241022"), 0644); err != nil {
+		t.Fatalf("write AGENTS.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "SOUL.md"), []byte("soul-note"), 0644); err != nil {
+		t.Fatalf("write SOUL.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "IDENTITY.md"), []byte("identity-note"), 0644); err != nil {
+		t.Fatalf("write IDENTITY.md: %v", err)
+	}
+
+	cb := NewContextBuilder(workspace)
+	content := cb.LoadBootstrapFiles()
+	if strings.Contains(content, "claude-3-5-sonnet-20241022") {
+		t.Fatalf("expected AGENTS.md bootstrap to be ignored, got %q", content)
+	}
+	if !strings.Contains(content, "soul-note") {
+		t.Fatalf("expected SOUL.md content, got %q", content)
+	}
+	if !strings.Contains(content, "identity-note") {
+		t.Fatalf("expected IDENTITY.md content, got %q", content)
+	}
 }
