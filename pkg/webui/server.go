@@ -1667,6 +1667,17 @@ func (s *Server) handleListToolSessions(c *echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "tool session manager not available"})
 	}
 
+	if sid := s.currentToolSessionID(c); sid != "" {
+		sess, err := s.toolSess.GetSession(c.Request().Context(), sid)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return c.JSON(http.StatusOK, []*toolsessions.Session{})
+			}
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusOK, []*toolsessions.Session{sess})
+	}
+
 	owner := s.currentUsername(c)
 	limit := 100
 	if raw := strings.TrimSpace(c.QueryParam("limit")); raw != "" {
@@ -3083,16 +3094,23 @@ func (s *Server) handleToolSessionAccessLogin(c *echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
 	}
-	username := strings.TrimSpace(sess.Owner)
-	if username == "" {
-		username = "tool:" + sess.ID
+	username := "tool:" + strings.TrimSpace(sess.ID)
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"sub":  username,
+		"uid":  sess.Owner,
+		"role": "member",
+		"sid":  strings.TrimSpace(sess.ID),
+		"exp":  now.Add(24 * time.Hour).Unix(),
+		"iat":  now.Unix(),
 	}
-	token, err := s.generateToken(&config.AuthProfile{Username: username, UserID: sess.Owner, Role: "member"})
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signedToken, err := token.SignedString([]byte(s.getJWTSecret()))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
 	}
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"token":      token,
+		"token":      signedToken,
 		"session_id": sess.ID,
 	})
 }
@@ -3104,6 +3122,12 @@ func (s *Server) ensureSessionOwner(c *echo.Context, sessionID string) error {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if sid := s.currentToolSessionID(c); sid != "" {
+		if sid != strings.TrimSpace(sessionID) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "session does not belong to current token"})
+		}
+		return nil
 	}
 	owner := s.currentUsername(c)
 	if strings.TrimSpace(sess.Owner) != "" && sess.Owner != owner {
@@ -3187,6 +3211,47 @@ func (s *Server) currentUserRole(c *echo.Context) string {
 	return strings.TrimSpace(role)
 }
 
+func (s *Server) currentToolSessionID(c *echo.Context) string {
+	user := c.Get("user")
+	token, ok := user.(*jwt.Token)
+	if !ok || token == nil {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	sid, _ := claims["sid"].(string)
+	return strings.TrimSpace(sid)
+}
+
+func (s *Server) allowMemberAPI(c *echo.Context) bool {
+	if strings.TrimSpace(s.currentToolSessionID(c)) == "" {
+		return false
+	}
+	path := strings.TrimSpace(c.Request().URL.Path)
+	method := c.Request().Method
+	if method == http.MethodGet && path == "/api/tool-sessions" {
+		return true
+	}
+	if method == http.MethodGet && path == "/api/tool-sessions/runtime-transports" {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/tool-sessions/") {
+		switch {
+		case strings.HasSuffix(path, "/process/status"):
+			return method == http.MethodGet
+		case strings.HasSuffix(path, "/process/output"):
+			return method == http.MethodGet
+		case strings.HasSuffix(path, "/process/input"):
+			return method == http.MethodPost
+		case strings.HasSuffix(path, "/process/kill"):
+			return method == http.MethodPost
+		}
+	}
+	return false
+}
+
 func (s *Server) requirePrivilegedAPIUser() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -3194,6 +3259,11 @@ func (s *Server) requirePrivilegedAPIUser() echo.MiddlewareFunc {
 			switch role {
 			case "admin", "owner":
 				return next(c)
+			case "member":
+				if s.allowMemberAPI(c) {
+					return next(c)
+				}
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient role for privileged api"})
 			default:
 				return c.JSON(http.StatusForbidden, map[string]string{"error": "insufficient role for privileged api"})
 			}
