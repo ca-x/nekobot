@@ -1304,19 +1304,51 @@ func (s *Server) handleCreateModel(c *echo.Context) error {
 }
 
 func (s *Server) handleGetModelRoutes(c *echo.Context) error {
-	modelID := strings.TrimSpace(c.QueryParam("model_id"))
-	if modelID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "model_id is required"})
+	modelIDs := collectModelRouteQueryIDs(c)
+	if len(modelIDs) == 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "model_id or model_ids is required"})
 	}
 	manager, err := modelroute.NewManager(s.config, s.logger, s.entClient)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	items, err := manager.ListByModel(c.Request().Context(), modelID)
+	if len(modelIDs) == 1 {
+		items, err := manager.ListByModel(c.Request().Context(), modelIDs[0])
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusOK, items)
+	}
+	items, err := manager.ListByModels(c.Request().Context(), modelIDs)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, items)
+}
+
+func collectModelRouteQueryIDs(c *echo.Context) []string {
+	seen := make(map[string]struct{})
+	modelIDs := make([]string, 0)
+	appendModelID := func(value string) {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return
+		}
+		if _, ok := seen[trimmed]; ok {
+			return
+		}
+		seen[trimmed] = struct{}{}
+		modelIDs = append(modelIDs, trimmed)
+	}
+
+	appendModelID(c.QueryParam("model_id"))
+	for _, raw := range c.QueryParams()["model_ids"] {
+		for _, item := range strings.Split(raw, ",") {
+			appendModelID(item)
+		}
+	}
+
+	return modelIDs
 }
 
 func (s *Server) handleUpdateModelRoute(c *echo.Context) error {

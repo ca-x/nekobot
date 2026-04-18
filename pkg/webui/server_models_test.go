@@ -373,3 +373,77 @@ func TestHandleApplyDiscoveredProviderModelsMergesCatalogAndRoutes(t *testing.T)
 		t.Fatalf("expected provider_model_id metadata, got %+v", listedRoutes[0].Metadata)
 	}
 }
+
+func TestHandleGetModelRoutesBatch(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	if _, err := providers.Create(context.Background(), config.ProviderProfile{
+		Name:         "openai-main",
+		ProviderKind: "openai",
+		APIKey:       "secret-key",
+		Enabled:      true,
+	}); err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	models, err := modelstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new model manager: %v", err)
+	}
+	for _, modelID := range []string{"gpt-4.1", "claude-sonnet"} {
+		if _, err := models.Create(context.Background(), modelstore.ModelCatalog{
+			ModelID:       modelID,
+			DisplayName:   modelID,
+			CatalogSource: "builtin",
+			Enabled:       true,
+		}); err != nil {
+			t.Fatalf("seed model %s failed: %v", modelID, err)
+		}
+	}
+
+	routes, err := modelroute.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new route manager: %v", err)
+	}
+	for _, modelID := range []string{"gpt-4.1", "claude-sonnet"} {
+		if _, err := routes.Create(context.Background(), modelroute.ModelRoute{
+			ModelID:      modelID,
+			ProviderName: "openai-main",
+			Enabled:      true,
+		}); err != nil {
+			t.Fatalf("seed route %s failed: %v", modelID, err)
+		}
+	}
+
+	s := &Server{config: cfg, logger: log, providers: providers, entClient: client}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/model-routes?model_ids=gpt-4.1&model_ids=claude-sonnet", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleGetModelRoutes(c); err != nil {
+		t.Fatalf("handleGetModelRoutes failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var listed map[string][]map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("unmarshal routes failed: %v", err)
+	}
+	if len(listed["gpt-4.1"]) != 1 || len(listed["claude-sonnet"]) != 1 {
+		t.Fatalf("expected routes for both models, got %+v", listed)
+	}
+}

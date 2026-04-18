@@ -208,11 +208,8 @@ export default function ChatPage() {
   const channelAccounts = channelAccountsQuery.data ?? [];
   const accountBindings = accountBindingsQuery.data ?? [];
   const routesByModel = useMemo(
-    () =>
-      Object.fromEntries(
-        modelCatalog.map((item, index) => [item.model_id, modelRoutesQueries[index]?.data ?? []]),
-      ),
-    [modelCatalog, modelRoutesQueries],
+    () => modelRoutesQueries.data ?? Object.fromEntries(modelCatalog.map((item) => [item.model_id, []])),
+    [modelCatalog, modelRoutesQueries.data],
   );
   const modelOptions = useMemo(
     () => buildModelOptions(modelCatalog, routesByModel),

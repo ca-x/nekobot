@@ -165,11 +165,8 @@ export default function CronPage() {
   );
 
   const routesByModel = useMemo(
-    () =>
-      Object.fromEntries(
-        modelCatalog.map((item, index) => [item.model_id, modelRoutesQueries[index]?.data ?? []]),
-      ),
-    [modelCatalog, modelRoutesQueries],
+    () => modelRoutesQueries.data ?? Object.fromEntries(modelCatalog.map((item) => [item.model_id, []])),
+    [modelCatalog, modelRoutesQueries.data],
   );
   const modelOptions = useMemo(
     () => buildModelOptions(modelCatalog, routesByModel),

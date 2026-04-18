@@ -165,6 +165,48 @@ func (m *Manager) ListByModel(ctx context.Context, modelID string) ([]ModelRoute
 	return items, nil
 }
 
+func (m *Manager) ListByModels(ctx context.Context, modelIDs []string) (map[string][]ModelRoute, error) {
+	trimmed := make([]string, 0, len(modelIDs))
+	seen := make(map[string]struct{}, len(modelIDs))
+	for _, modelID := range modelIDs {
+		name := strings.TrimSpace(modelID)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		trimmed = append(trimmed, name)
+	}
+
+	routesByModel := make(map[string][]ModelRoute, len(trimmed))
+	for _, modelID := range trimmed {
+		routesByModel[modelID] = []ModelRoute{}
+	}
+	if len(trimmed) == 0 {
+		return routesByModel, nil
+	}
+
+	recs, err := m.client.ModelRoute.Query().
+		Where(modelroute.ModelIDIn(trimmed...)).
+		Order(ent.Asc(modelroute.FieldModelID), ent.Asc(modelroute.FieldProviderName)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list routes by models: %w", err)
+	}
+
+	for _, rec := range recs {
+		item, err := toModelRoute(rec)
+		if err != nil {
+			return nil, err
+		}
+		routesByModel[item.ModelID] = append(routesByModel[item.ModelID], item)
+	}
+
+	return routesByModel, nil
+}
+
 func (m *Manager) ResolveInput(ctx context.Context, input string) (*ModelRoute, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {

@@ -525,11 +525,8 @@ function AgentsSectionForm({
   );
 
   const routesByModel = useMemo(
-    () =>
-      Object.fromEntries(
-        modelCatalog.map((item, index) => [item.model_id, modelRoutesQueries[index]?.data ?? []]),
-      ),
-    [modelCatalog, modelRoutesQueries],
+    () => modelRoutesQueries.data ?? Object.fromEntries(modelCatalog.map((item) => [item.model_id, []])),
+    [modelCatalog, modelRoutesQueries.data],
   );
   const models = useMemo(
     () => buildModelOptions(modelCatalog, routesByModel),

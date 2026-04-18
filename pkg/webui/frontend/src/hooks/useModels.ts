@@ -1,5 +1,5 @@
 import { api } from '@/api/client';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/notify';
 import { t } from '@/lib/i18n';
 
@@ -57,6 +57,9 @@ export interface ResolvedModelOption {
 
 export const MODELS_KEY = ['models'] as const;
 
+export type ModelRoutesByModel = Record<string, ModelRoute[]>;
+
+
 export function useModels() {
   return useQuery<ModelCatalog[]>({
     queryKey: [...MODELS_KEY],
@@ -88,13 +91,25 @@ export function useModelRoutes(modelID: string) {
 }
 
 export function useModelRoutesForModels(modelIDs: string[]) {
-  return useQueries({
-    queries: modelIDs.map((modelID) => ({
-      queryKey: ['model-routes', modelID],
-      queryFn: () => api.get<ModelRoute[]>(`/api/model-routes?model_id=${encodeURIComponent(modelID)}`),
-      staleTime: 30_000,
-      enabled: modelID.trim().length > 0,
-    })),
+  const trimmedModelIDs = Array.from(new Set(modelIDs.map((modelID) => modelID.trim()).filter(Boolean)));
+
+  return useQuery<ModelRoutesByModel>({
+    queryKey: ['model-routes-batch', trimmedModelIDs],
+    queryFn: async () => {
+      if (trimmedModelIDs.length === 0) {
+        return {};
+      }
+      if (trimmedModelIDs.length === 1) {
+        const routes = await api.get<ModelRoute[]>(`/api/model-routes?model_id=${encodeURIComponent(trimmedModelIDs[0])}`);
+        return { [trimmedModelIDs[0]]: routes };
+      }
+      const params = trimmedModelIDs
+        .map((modelID) => `model_ids=${encodeURIComponent(modelID)}`)
+        .join('&');
+      return api.get<ModelRoutesByModel>(`/api/model-routes?${params}`);
+    },
+    staleTime: 30_000,
+    enabled: trimmedModelIDs.length > 0,
   });
 }
 
@@ -108,6 +123,7 @@ export function useUpdateModelRoute() {
       ),
     onSuccess: (_result, variables) => {
       qc.invalidateQueries({ queryKey: ['model-routes', variables.modelID] });
+      qc.invalidateQueries({ queryKey: ['model-routes-batch'] });
       qc.invalidateQueries({ queryKey: [...MODELS_KEY] });
       toast.success(t('saved'));
     },

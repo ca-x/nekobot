@@ -67,13 +67,10 @@ export default function ModelsPage() {
   const [newDisplayName, setNewDisplayName] = useState('');
   const [newRouteProviderByModel, setNewRouteProviderByModel] = useState<Record<string, string>>({});
 
-  const routesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
+  const routesQuery = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
   const routesByModel = useMemo(
-    () =>
-      Object.fromEntries(
-        modelCatalog.map((item, index) => [item.model_id, routesQueries[index]?.data ?? []]),
-      ),
-    [modelCatalog, routesQueries],
+    () => routesQuery.data ?? Object.fromEntries(modelCatalog.map((item) => [item.model_id, []])),
+    [modelCatalog, routesQuery.data],
   );
   const modelOptions = useMemo(
     () => buildModelOptions(modelCatalog, routesByModel),
