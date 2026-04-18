@@ -240,28 +240,32 @@ func init() {
 	cronjobDescFallbackJSON := cronjobFields[9].Descriptor()
 	// cronjob.DefaultFallbackJSON holds the default value on creation for the fallback_json field.
 	cronjob.DefaultFallbackJSON = cronjobDescFallbackJSON.Default.(string)
+	// cronjobDescSkillsJSON is the schema descriptor for skills_json field.
+	cronjobDescSkillsJSON := cronjobFields[10].Descriptor()
+	// cronjob.DefaultSkillsJSON holds the default value on creation for the skills_json field.
+	cronjob.DefaultSkillsJSON = cronjobDescSkillsJSON.Default.(string)
 	// cronjobDescEnabled is the schema descriptor for enabled field.
-	cronjobDescEnabled := cronjobFields[10].Descriptor()
+	cronjobDescEnabled := cronjobFields[11].Descriptor()
 	// cronjob.DefaultEnabled holds the default value on creation for the enabled field.
 	cronjob.DefaultEnabled = cronjobDescEnabled.Default.(bool)
 	// cronjobDescDeleteAfterRun is the schema descriptor for delete_after_run field.
-	cronjobDescDeleteAfterRun := cronjobFields[11].Descriptor()
+	cronjobDescDeleteAfterRun := cronjobFields[12].Descriptor()
 	// cronjob.DefaultDeleteAfterRun holds the default value on creation for the delete_after_run field.
 	cronjob.DefaultDeleteAfterRun = cronjobDescDeleteAfterRun.Default.(bool)
 	// cronjobDescCreatedAt is the schema descriptor for created_at field.
-	cronjobDescCreatedAt := cronjobFields[12].Descriptor()
+	cronjobDescCreatedAt := cronjobFields[13].Descriptor()
 	// cronjob.DefaultCreatedAt holds the default value on creation for the created_at field.
 	cronjob.DefaultCreatedAt = cronjobDescCreatedAt.Default.(func() time.Time)
 	// cronjobDescRunCount is the schema descriptor for run_count field.
-	cronjobDescRunCount := cronjobFields[15].Descriptor()
+	cronjobDescRunCount := cronjobFields[16].Descriptor()
 	// cronjob.DefaultRunCount holds the default value on creation for the run_count field.
 	cronjob.DefaultRunCount = cronjobDescRunCount.Default.(int)
 	// cronjobDescLastError is the schema descriptor for last_error field.
-	cronjobDescLastError := cronjobFields[16].Descriptor()
+	cronjobDescLastError := cronjobFields[17].Descriptor()
 	// cronjob.DefaultLastError holds the default value on creation for the last_error field.
 	cronjob.DefaultLastError = cronjobDescLastError.Default.(string)
 	// cronjobDescLastSuccess is the schema descriptor for last_success field.
-	cronjobDescLastSuccess := cronjobFields[17].Descriptor()
+	cronjobDescLastSuccess := cronjobFields[18].Descriptor()
 	// cronjob.DefaultLastSuccess holds the default value on creation for the last_success field.
 	cronjob.DefaultLastSuccess = cronjobDescLastSuccess.Default.(bool)
 	// cronjobDescID is the schema descriptor for id field.

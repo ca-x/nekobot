@@ -109,6 +109,11 @@ func FallbackJSON(v string) predicate.CronJob {
 	return predicate.CronJob(sql.FieldEQ(FieldFallbackJSON, v))
 }
 
+// SkillsJSON applies equality check predicate on the "skills_json" field. It's identical to SkillsJSONEQ.
+func SkillsJSON(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEQ(FieldSkillsJSON, v))
+}
+
 // Enabled applies equality check predicate on the "enabled" field. It's identical to EnabledEQ.
 func Enabled(v bool) predicate.CronJob {
 	return predicate.CronJob(sql.FieldEQ(FieldEnabled, v))
@@ -717,6 +722,71 @@ func FallbackJSONEqualFold(v string) predicate.CronJob {
 // FallbackJSONContainsFold applies the ContainsFold predicate on the "fallback_json" field.
 func FallbackJSONContainsFold(v string) predicate.CronJob {
 	return predicate.CronJob(sql.FieldContainsFold(FieldFallbackJSON, v))
+}
+
+// SkillsJSONEQ applies the EQ predicate on the "skills_json" field.
+func SkillsJSONEQ(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEQ(FieldSkillsJSON, v))
+}
+
+// SkillsJSONNEQ applies the NEQ predicate on the "skills_json" field.
+func SkillsJSONNEQ(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldNEQ(FieldSkillsJSON, v))
+}
+
+// SkillsJSONIn applies the In predicate on the "skills_json" field.
+func SkillsJSONIn(vs ...string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldIn(FieldSkillsJSON, vs...))
+}
+
+// SkillsJSONNotIn applies the NotIn predicate on the "skills_json" field.
+func SkillsJSONNotIn(vs ...string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldNotIn(FieldSkillsJSON, vs...))
+}
+
+// SkillsJSONGT applies the GT predicate on the "skills_json" field.
+func SkillsJSONGT(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldGT(FieldSkillsJSON, v))
+}
+
+// SkillsJSONGTE applies the GTE predicate on the "skills_json" field.
+func SkillsJSONGTE(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldGTE(FieldSkillsJSON, v))
+}
+
+// SkillsJSONLT applies the LT predicate on the "skills_json" field.
+func SkillsJSONLT(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldLT(FieldSkillsJSON, v))
+}
+
+// SkillsJSONLTE applies the LTE predicate on the "skills_json" field.
+func SkillsJSONLTE(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldLTE(FieldSkillsJSON, v))
+}
+
+// SkillsJSONContains applies the Contains predicate on the "skills_json" field.
+func SkillsJSONContains(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldContains(FieldSkillsJSON, v))
+}
+
+// SkillsJSONHasPrefix applies the HasPrefix predicate on the "skills_json" field.
+func SkillsJSONHasPrefix(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldHasPrefix(FieldSkillsJSON, v))
+}
+
+// SkillsJSONHasSuffix applies the HasSuffix predicate on the "skills_json" field.
+func SkillsJSONHasSuffix(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldHasSuffix(FieldSkillsJSON, v))
+}
+
+// SkillsJSONEqualFold applies the EqualFold predicate on the "skills_json" field.
+func SkillsJSONEqualFold(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldEqualFold(FieldSkillsJSON, v))
+}
+
+// SkillsJSONContainsFold applies the ContainsFold predicate on the "skills_json" field.
+func SkillsJSONContainsFold(v string) predicate.CronJob {
+	return predicate.CronJob(sql.FieldContainsFold(FieldSkillsJSON, v))
 }
 
 // EnabledEQ applies the EQ predicate on the "enabled" field.

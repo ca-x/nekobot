@@ -1567,3 +1567,17 @@ func truncate(s string, length int) string {
 	}
 	return s[:length] + "..."
 }
+
+func (a *Agent) SkillsManager() *skills.Manager {
+	if a == nil {
+		return nil
+	}
+	return a.skillsManager
+}
+
+func (a *Agent) ContextBuilder() *ContextBuilder {
+	if a == nil {
+		return nil
+	}
+	return a.context
+}

@@ -160,6 +160,20 @@ func (_u *CronJobUpdate) SetNillableFallbackJSON(v *string) *CronJobUpdate {
 	return _u
 }
 
+// SetSkillsJSON sets the "skills_json" field.
+func (_u *CronJobUpdate) SetSkillsJSON(v string) *CronJobUpdate {
+	_u.mutation.SetSkillsJSON(v)
+	return _u
+}
+
+// SetNillableSkillsJSON sets the "skills_json" field if the given value is not nil.
+func (_u *CronJobUpdate) SetNillableSkillsJSON(v *string) *CronJobUpdate {
+	if v != nil {
+		_u.SetSkillsJSON(*v)
+	}
+	return _u
+}
+
 // SetEnabled sets the "enabled" field.
 func (_u *CronJobUpdate) SetEnabled(v bool) *CronJobUpdate {
 	_u.mutation.SetEnabled(v)
@@ -366,6 +380,9 @@ func (_u *CronJobUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.FallbackJSON(); ok {
 		_spec.SetField(cronjob.FieldFallbackJSON, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.SkillsJSON(); ok {
+		_spec.SetField(cronjob.FieldSkillsJSON, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(cronjob.FieldEnabled, field.TypeBool, value)
 	}
@@ -544,6 +561,20 @@ func (_u *CronJobUpdateOne) SetFallbackJSON(v string) *CronJobUpdateOne {
 func (_u *CronJobUpdateOne) SetNillableFallbackJSON(v *string) *CronJobUpdateOne {
 	if v != nil {
 		_u.SetFallbackJSON(*v)
+	}
+	return _u
+}
+
+// SetSkillsJSON sets the "skills_json" field.
+func (_u *CronJobUpdateOne) SetSkillsJSON(v string) *CronJobUpdateOne {
+	_u.mutation.SetSkillsJSON(v)
+	return _u
+}
+
+// SetNillableSkillsJSON sets the "skills_json" field if the given value is not nil.
+func (_u *CronJobUpdateOne) SetNillableSkillsJSON(v *string) *CronJobUpdateOne {
+	if v != nil {
+		_u.SetSkillsJSON(*v)
 	}
 	return _u
 }
@@ -783,6 +814,9 @@ func (_u *CronJobUpdateOne) sqlSave(ctx context.Context) (_node *CronJob, err er
 	}
 	if value, ok := _u.mutation.FallbackJSON(); ok {
 		_spec.SetField(cronjob.FieldFallbackJSON, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SkillsJSON(); ok {
+		_spec.SetField(cronjob.FieldSkillsJSON, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Enabled(); ok {
 		_spec.SetField(cronjob.FieldEnabled, field.TypeBool, value)

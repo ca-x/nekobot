@@ -1081,11 +1081,11 @@ func (s *Server) handleDeleteProvider(c *echo.Context) error {
 
 func providerProfileToMap(p config.ProviderProfile) map[string]interface{} {
 	return map[string]interface{}{
-		"name":           p.Name,
-		"provider_kind":  p.ProviderKind,
-		"api_key":        p.APIKey,
-		"api_base":       p.APIBase,
-		"proxy":          p.Proxy,
+		"name":               p.Name,
+		"provider_kind":      p.ProviderKind,
+		"api_key":            p.APIKey,
+		"api_base":           p.APIBase,
+		"proxy":              p.Proxy,
 		"default_weight":     p.DefaultWeight,
 		"enabled":            p.Enabled,
 		"default_test_model": strings.TrimSpace(p.DefaultTestModel),
@@ -1442,6 +1442,7 @@ type createCronJobRequest struct {
 	AtTime         string   `json:"at_time"`
 	EveryDuration  string   `json:"every_duration"`
 	Prompt         string   `json:"prompt"`
+	Skills         []string `json:"skills"`
 	Provider       string   `json:"provider"`
 	Model          string   `json:"model"`
 	Fallback       []string `json:"fallback"`
@@ -1488,6 +1489,7 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 		Provider: provider,
 		Model:    model,
 		Fallback: fallback,
+		Skills:   body.Skills,
 	}
 
 	kind := cron.ScheduleKind(strings.ToLower(strings.TrimSpace(body.ScheduleKind)))

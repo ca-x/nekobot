@@ -3730,6 +3730,7 @@ type CronJobMutation struct {
 	provider         *string
 	model            *string
 	fallback_json    *string
+	skills_json      *string
 	enabled          *bool
 	delete_after_run *bool
 	created_at       *time.Time
@@ -4186,6 +4187,42 @@ func (m *CronJobMutation) ResetFallbackJSON() {
 	m.fallback_json = nil
 }
 
+// SetSkillsJSON sets the "skills_json" field.
+func (m *CronJobMutation) SetSkillsJSON(s string) {
+	m.skills_json = &s
+}
+
+// SkillsJSON returns the value of the "skills_json" field in the mutation.
+func (m *CronJobMutation) SkillsJSON() (r string, exists bool) {
+	v := m.skills_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSkillsJSON returns the old "skills_json" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldSkillsJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSkillsJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSkillsJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSkillsJSON: %w", err)
+	}
+	return oldValue.SkillsJSON, nil
+}
+
+// ResetSkillsJSON resets all changes to the "skills_json" field.
+func (m *CronJobMutation) ResetSkillsJSON() {
+	m.skills_json = nil
+}
+
 // SetEnabled sets the "enabled" field.
 func (m *CronJobMutation) SetEnabled(b bool) {
 	m.enabled = &b
@@ -4554,7 +4591,7 @@ func (m *CronJobMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CronJobMutation) Fields() []string {
-	fields := make([]string, 0, 17)
+	fields := make([]string, 0, 18)
 	if m.name != nil {
 		fields = append(fields, cronjob.FieldName)
 	}
@@ -4581,6 +4618,9 @@ func (m *CronJobMutation) Fields() []string {
 	}
 	if m.fallback_json != nil {
 		fields = append(fields, cronjob.FieldFallbackJSON)
+	}
+	if m.skills_json != nil {
+		fields = append(fields, cronjob.FieldSkillsJSON)
 	}
 	if m.enabled != nil {
 		fields = append(fields, cronjob.FieldEnabled)
@@ -4632,6 +4672,8 @@ func (m *CronJobMutation) Field(name string) (ent.Value, bool) {
 		return m.Model()
 	case cronjob.FieldFallbackJSON:
 		return m.FallbackJSON()
+	case cronjob.FieldSkillsJSON:
+		return m.SkillsJSON()
 	case cronjob.FieldEnabled:
 		return m.Enabled()
 	case cronjob.FieldDeleteAfterRun:
@@ -4675,6 +4717,8 @@ func (m *CronJobMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldModel(ctx)
 	case cronjob.FieldFallbackJSON:
 		return m.OldFallbackJSON(ctx)
+	case cronjob.FieldSkillsJSON:
+		return m.OldSkillsJSON(ctx)
 	case cronjob.FieldEnabled:
 		return m.OldEnabled(ctx)
 	case cronjob.FieldDeleteAfterRun:
@@ -4762,6 +4806,13 @@ func (m *CronJobMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetFallbackJSON(v)
+		return nil
+	case cronjob.FieldSkillsJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSkillsJSON(v)
 		return nil
 	case cronjob.FieldEnabled:
 		v, ok := value.(bool)
@@ -4930,6 +4981,9 @@ func (m *CronJobMutation) ResetField(name string) error {
 		return nil
 	case cronjob.FieldFallbackJSON:
 		m.ResetFallbackJSON()
+		return nil
+	case cronjob.FieldSkillsJSON:
+		m.ResetSkillsJSON()
 		return nil
 	case cronjob.FieldEnabled:
 		m.ResetEnabled()

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,6 +60,7 @@ type Job struct {
 	AtTime         *time.Time   `json:"at_time,omitempty"`          // Target time (for "at" kind).
 	EveryDuration  string       `json:"every_duration,omitempty"`   // Duration string (for "every" kind, e.g. "5m", "1h").
 	Prompt         string       `json:"prompt"`                     // Task prompt for agent.
+	Skills         []string     `json:"skills,omitempty"`           // Optional skills to prepend before execution.
 	Provider       string       `json:"provider,omitempty"`         // Optional provider/provider-group route override.
 	Model          string       `json:"model,omitempty"`            // Optional model override.
 	Fallback       []string     `json:"fallback,omitempty"`         // Optional fallback route targets.
@@ -105,6 +107,7 @@ type RouteOptions struct {
 	Provider string
 	Model    string
 	Fallback []string
+	Skills   []string
 }
 
 const (
@@ -204,6 +207,7 @@ func (m *Manager) AddCronJobWithRoute(name, schedule, prompt string, route Route
 		ScheduleKind: ScheduleCron,
 		Schedule:     schedule,
 		Prompt:       prompt,
+		Skills:       normalizeSkills(route.Skills),
 		Provider:     route.Provider,
 		Model:        route.Model,
 		Fallback:     append([]string(nil), route.Fallback...),
@@ -231,6 +235,7 @@ func (m *Manager) AddAtJobWithRoute(name string, at time.Time, prompt string, de
 		ScheduleKind:   ScheduleAt,
 		AtTime:         new(at),
 		Prompt:         prompt,
+		Skills:         normalizeSkills(route.Skills),
 		Provider:       route.Provider,
 		Model:          route.Model,
 		Fallback:       append([]string(nil), route.Fallback...),
@@ -264,6 +269,7 @@ func (m *Manager) AddEveryJobWithRoute(name, every, prompt string, route RouteOp
 		ScheduleKind:  ScheduleEvery,
 		EveryDuration: every,
 		Prompt:        prompt,
+		Skills:        normalizeSkills(route.Skills),
 		Provider:      route.Provider,
 		Model:         route.Model,
 		Fallback:      append([]string(nil), route.Fallback...),
@@ -557,6 +563,10 @@ func (m *Manager) executeJob(jobID string) {
 	}
 	jobName := job.Name
 	prompt := job.Prompt
+	skillPrefix := m.buildSkillPrompt(job.Skills)
+	if skillPrefix != "" {
+		prompt = skillPrefix + "\n\n" + prompt
+	}
 	m.mu.RUnlock()
 
 	m.log.Info("Executing job",
@@ -746,6 +756,10 @@ func (m *Manager) createJob(ctx context.Context, job *Job) error {
 	if err != nil {
 		return fmt.Errorf("marshal fallback: %w", err)
 	}
+	skillsJSON, err := marshalSkills(job.Skills)
+	if err != nil {
+		return fmt.Errorf("marshal skills: %w", err)
+	}
 
 	create := m.client.CronJob.Create().
 		SetID(job.ID).
@@ -757,6 +771,7 @@ func (m *Manager) createJob(ctx context.Context, job *Job) error {
 		SetProvider(job.Provider).
 		SetModel(job.Model).
 		SetFallbackJSON(fallbackJSON).
+		SetSkillsJSON(skillsJSON).
 		SetEnabled(job.Enabled).
 		SetDeleteAfterRun(job.DeleteAfterRun).
 		SetRunCount(job.RunCount).
@@ -787,6 +802,10 @@ func (m *Manager) updateJobState(ctx context.Context, job *Job) error {
 	if err != nil {
 		return fmt.Errorf("marshal fallback: %w", err)
 	}
+	skillsJSON, err := marshalSkills(job.Skills)
+	if err != nil {
+		return fmt.Errorf("marshal skills: %w", err)
+	}
 
 	update := m.client.CronJob.UpdateOneID(job.ID).
 		SetName(job.Name).
@@ -797,6 +816,7 @@ func (m *Manager) updateJobState(ctx context.Context, job *Job) error {
 		SetProvider(job.Provider).
 		SetModel(job.Model).
 		SetFallbackJSON(fallbackJSON).
+		SetSkillsJSON(skillsJSON).
 		SetEnabled(job.Enabled).
 		SetDeleteAfterRun(job.DeleteAfterRun).
 		SetRunCount(job.RunCount).
@@ -838,6 +858,7 @@ func (m *Manager) deleteJob(ctx context.Context, jobID string) error {
 
 func jobFromEntity(entity *ent.CronJob) *Job {
 	fallback, _ := unmarshalFallback(entity.FallbackJSON)
+	skills, _ := unmarshalSkills(entity.SkillsJSON)
 	job := &Job{
 		ID:             entity.ID,
 		Name:           entity.Name,
@@ -845,6 +866,7 @@ func jobFromEntity(entity *ent.CronJob) *Job {
 		Schedule:       entity.Schedule,
 		EveryDuration:  entity.EveryDuration,
 		Prompt:         entity.Prompt,
+		Skills:         skills,
 		Provider:       entity.Provider,
 		Model:          entity.Model,
 		Fallback:       fallback,
@@ -907,4 +929,70 @@ func unmarshalFallback(raw string) ([]string, error) {
 		return nil, err
 	}
 	return fallback, nil
+}
+
+func normalizeSkills(skills []string) []string {
+	if len(skills) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(skills))
+	out := make([]string, 0, len(skills))
+	for _, skill := range skills {
+		trimmed := strings.TrimSpace(skill)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func marshalSkills(skills []string) (string, error) {
+	if len(skills) == 0 {
+		return "[]", nil
+	}
+	data, err := json.Marshal(normalizeSkills(skills))
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func unmarshalSkills(raw string) ([]string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	var skills []string
+	if err := json.Unmarshal([]byte(trimmed), &skills); err != nil {
+		return nil, err
+	}
+	return normalizeSkills(skills), nil
+}
+
+func (m *Manager) buildSkillPrompt(skillNames []string) string {
+	if len(skillNames) == 0 || m == nil || m.agent == nil || m.agent.ContextBuilder() == nil {
+		return ""
+	}
+	manager := m.agent.SkillsManager()
+	if manager == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(skillNames))
+	for _, name := range normalizeSkills(skillNames) {
+		for _, skill := range manager.ListEnabled() {
+			if skill == nil {
+				continue
+			}
+			if skill.ID == name || skill.Name == name {
+				parts = append(parts, fmt.Sprintf("[SYSTEM: Cron job invoked skill %q. Follow its instructions below.]\n\n%s", name, strings.TrimSpace(skill.Instructions)))
+				break
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
 }

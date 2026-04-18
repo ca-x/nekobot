@@ -31,6 +31,8 @@ const (
 	FieldModel = "model"
 	// FieldFallbackJSON holds the string denoting the fallback_json field in the database.
 	FieldFallbackJSON = "fallback_json"
+	// FieldSkillsJSON holds the string denoting the skills_json field in the database.
+	FieldSkillsJSON = "skills_json"
 	// FieldEnabled holds the string denoting the enabled field in the database.
 	FieldEnabled = "enabled"
 	// FieldDeleteAfterRun holds the string denoting the delete_after_run field in the database.
@@ -63,6 +65,7 @@ var Columns = []string{
 	FieldProvider,
 	FieldModel,
 	FieldFallbackJSON,
+	FieldSkillsJSON,
 	FieldEnabled,
 	FieldDeleteAfterRun,
 	FieldCreatedAt,
@@ -100,6 +103,8 @@ var (
 	DefaultModel string
 	// DefaultFallbackJSON holds the default value on creation for the "fallback_json" field.
 	DefaultFallbackJSON string
+	// DefaultSkillsJSON holds the default value on creation for the "skills_json" field.
+	DefaultSkillsJSON string
 	// DefaultEnabled holds the default value on creation for the "enabled" field.
 	DefaultEnabled bool
 	// DefaultDeleteAfterRun holds the default value on creation for the "delete_after_run" field.
@@ -167,6 +172,11 @@ func ByModel(opts ...sql.OrderTermOption) OrderOption {
 // ByFallbackJSON orders the results by the fallback_json field.
 func ByFallbackJSON(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFallbackJSON, opts...).ToFunc()
+}
+
+// BySkillsJSON orders the results by the skills_json field.
+func BySkillsJSON(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSkillsJSON, opts...).ToFunc()
 }
 
 // ByEnabled orders the results by the enabled field.

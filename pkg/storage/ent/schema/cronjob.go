@@ -29,6 +29,7 @@ func (CronJob) Fields() []ent.Field {
 		field.String("provider").Default(""),
 		field.String("model").Default(""),
 		field.String("fallback_json").Default("[]"),
+		field.String("skills_json").Default("[]"),
 		field.Bool("enabled").Default(true),
 		field.Bool("delete_after_run").Default(false),
 		field.Time("created_at").Default(time.Now).Immutable(),

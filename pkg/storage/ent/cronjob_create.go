@@ -130,6 +130,20 @@ func (_c *CronJobCreate) SetNillableFallbackJSON(v *string) *CronJobCreate {
 	return _c
 }
 
+// SetSkillsJSON sets the "skills_json" field.
+func (_c *CronJobCreate) SetSkillsJSON(v string) *CronJobCreate {
+	_c.mutation.SetSkillsJSON(v)
+	return _c
+}
+
+// SetNillableSkillsJSON sets the "skills_json" field if the given value is not nil.
+func (_c *CronJobCreate) SetNillableSkillsJSON(v *string) *CronJobCreate {
+	if v != nil {
+		_c.SetSkillsJSON(*v)
+	}
+	return _c
+}
+
 // SetEnabled sets the "enabled" field.
 func (_c *CronJobCreate) SetEnabled(v bool) *CronJobCreate {
 	_c.mutation.SetEnabled(v)
@@ -315,6 +329,10 @@ func (_c *CronJobCreate) defaults() {
 		v := cronjob.DefaultFallbackJSON
 		_c.mutation.SetFallbackJSON(v)
 	}
+	if _, ok := _c.mutation.SkillsJSON(); !ok {
+		v := cronjob.DefaultSkillsJSON
+		_c.mutation.SetSkillsJSON(v)
+	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := cronjob.DefaultEnabled
 		_c.mutation.SetEnabled(v)
@@ -380,6 +398,9 @@ func (_c *CronJobCreate) check() error {
 	}
 	if _, ok := _c.mutation.FallbackJSON(); !ok {
 		return &ValidationError{Name: "fallback_json", err: errors.New(`ent: missing required field "CronJob.fallback_json"`)}
+	}
+	if _, ok := _c.mutation.SkillsJSON(); !ok {
+		return &ValidationError{Name: "skills_json", err: errors.New(`ent: missing required field "CronJob.skills_json"`)}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		return &ValidationError{Name: "enabled", err: errors.New(`ent: missing required field "CronJob.enabled"`)}
@@ -469,6 +490,10 @@ func (_c *CronJobCreate) createSpec() (*CronJob, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.FallbackJSON(); ok {
 		_spec.SetField(cronjob.FieldFallbackJSON, field.TypeString, value)
 		_node.FallbackJSON = value
+	}
+	if value, ok := _c.mutation.SkillsJSON(); ok {
+		_spec.SetField(cronjob.FieldSkillsJSON, field.TypeString, value)
+		_node.SkillsJSON = value
 	}
 	if value, ok := _c.mutation.Enabled(); ok {
 		_spec.SetField(cronjob.FieldEnabled, field.TypeBool, value)

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from '@/lib/notify';
 import Header from '@/components/layout/Header';
 import { useConfig } from '@/hooks/useConfig';
+import { usePrompts } from '@/hooks/usePrompts';
 import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
 import { useProviders } from '@/hooks/useProviders';
 import { Button } from '@/components/ui/button';
@@ -59,6 +60,7 @@ interface CronFormState {
   provider: string;
   model: string;
   fallback: string[];
+  skills: string[];
   delete_after_run: boolean;
 }
 
@@ -84,6 +86,7 @@ const DEFAULT_FORM: CronFormState = {
   provider: '',
   model: '',
   fallback: [],
+  skills: [],
   delete_after_run: true,
 };
 
@@ -112,6 +115,7 @@ function renderLastResult(job: CronJob): string {
 export default function CronPage() {
   const [form, setForm] = useState<CronFormState>(DEFAULT_FORM);
   const { data: providers = [] } = useProviders();
+  const { data: prompts = [] } = usePrompts();
   const { data: modelCatalog = [] } = useModels();
   const modelRoutesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
   const { data: config } = useConfig();
@@ -216,6 +220,7 @@ export default function CronPage() {
       provider: form.provider,
       model: form.model,
       fallback: form.fallback,
+      skills: form.skills,
       delete_after_run: form.delete_after_run,
     };
 
@@ -255,6 +260,16 @@ export default function CronPage() {
       fallback: prev.fallback.includes(target)
         ? prev.fallback.filter((item) => item !== target)
         : [...prev.fallback, target],
+    }));
+  };
+
+
+  const handleToggleSkill = (skillID: string) => {
+    setForm((prev) => ({
+      ...prev,
+      skills: prev.skills.includes(skillID)
+        ? prev.skills.filter((item) => item !== skillID)
+        : [...prev.skills, skillID],
     }));
   };
 
@@ -386,6 +401,36 @@ export default function CronPage() {
               </Select>
               <div className="break-all rounded-md border border-dashed border-border/70 px-3 py-2 font-mono text-xs text-muted-foreground">
                 {form.model || t('cronModelDefault')}
+              </div>
+            </div>
+
+            <div className="space-y-2 xl:col-span-2">
+              <Label>Skills</Label>
+              <div className="rounded-md border border-input bg-background px-3 py-3">
+                <div className="mb-3 text-xs text-muted-foreground">Preload selected skill instructions before this cron job runs.</div>
+                {prompts.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-input px-3 py-3 text-sm text-muted-foreground">
+                    No prompts/skills available.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {prompts.filter((item) => item.enabled).map((prompt) => {
+                      const selected = form.skills.includes(prompt.id);
+                      return (
+                        <button
+                          key={prompt.id}
+                          type="button"
+                          onClick={() => handleToggleSkill(prompt.id)}
+                          className={selected
+                            ? 'max-w-full rounded-full border border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] px-3 py-1.5 text-left text-xs font-medium text-[hsl(var(--brand-800))]'
+                            : 'max-w-full rounded-full border border-input bg-white px-3 py-1.5 text-left text-xs font-medium text-muted-foreground'}
+                        >
+                          <span className="break-all">{prompt.name || prompt.key || prompt.id}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
