@@ -42,6 +42,7 @@ import {
   useWorkspaceStatus,
 } from '@/hooks/useMarketplace';
 import { t } from '@/lib/i18n';
+import { useCreateCronJob } from '@/hooks/useCron';
 import { cn } from '@/lib/utils';
 import {
   AlertTriangle,
@@ -71,6 +72,7 @@ export default function MarketplacePage() {
   const { data: installed } = useInstalledMarketplaceSkills();
   const installSkill = useInstallMarketplaceSkill();
   const createWorkspaceDraft = useCreateMarketplaceWorkspaceDraft();
+  const createCronJob = useCreateCronJob();
   const enableSkill = useEnableMarketplaceSkill();
   const disableSkill = useDisableMarketplaceSkill();
   const installDependencies = useInstallMarketplaceSkillDependencies();
@@ -218,6 +220,31 @@ export default function MarketplacePage() {
   };
 
 
+  const handleCreateEvolutionReminder = (skillID: string, skillName: string, reasons: string[]) => {
+    const prompt = [
+      `Review the skill "${skillName || skillID}" for improvement.`,
+      '',
+      'Why this reminder exists:',
+      ...(reasons.length > 0 ? reasons.map((reason) => `- ${reason}`) : ['- Re-check recent learnings and version history.']),
+      '',
+      'Desired outcome:',
+      '- Decide whether to update the workspace draft, keep it as-is, or archive the suggestion.',
+    ].join('\n');
+
+    createCronJob.mutate({
+      name: `skill-review-${skillID}`.slice(0, 64),
+      schedule_kind: 'cron',
+      schedule: '0 9 * * 1',
+      prompt,
+      skills: [],
+      provider: '',
+      model: '',
+      fallback: [],
+      delete_after_run: false,
+    });
+  };
+
+
   const handleCreateSnapshot = () => {
     createSnapshot.mutate(
       {
@@ -321,6 +348,17 @@ export default function MarketplacePage() {
                 <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                   {item.reasons.map((reason, idx) => <li key={idx}>{reason}</li>)}
                 </ul>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="rounded-xl"
+                    disabled={createCronJob.isPending}
+                    onClick={() => handleCreateEvolutionReminder(item.skill_id, item.name, item.reasons)}
+                  >
+                    {createCronJob.isPending ? 'Creating reminder…' : 'Create weekly review reminder'}
+                  </Button>
+                </div>
               </div>
             ))}
             {(evolutionReview?.suggestions?.length ?? 0) === 0 ? (
