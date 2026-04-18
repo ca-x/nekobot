@@ -546,9 +546,10 @@ export function useCreateMarketplaceWorkspaceDraft() {
         `/api/marketplace/skills/items/${encodeURIComponent(skillID)}/workspace-draft`,
         { content },
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: marketplaceKeys.skills() });
-      qc.invalidateQueries({ queryKey: marketplaceKeys.item('') });
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: marketplaceKeys.all });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.item(variables.skillID) });
+      qc.invalidateQueries({ queryKey: marketplaceKeys.content(variables.skillID) });
       toast.success('Workspace skill draft saved.');
     },
     onError: (err: Error) => toast.error(err.message),

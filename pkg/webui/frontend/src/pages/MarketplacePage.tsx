@@ -94,6 +94,7 @@ export default function MarketplacePage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteSnapshotId, setDeleteSnapshotId] = useState<string>('');
   const [editablePatchDraft, setEditablePatchDraft] = useState('');
+  const [savedDraftPath, setSavedDraftPath] = useState('');
 
   const marketplaceSkills = skills ?? [];
   const filteredSkills = useMemo(() => {
@@ -196,13 +197,24 @@ export default function MarketplacePage() {
   }, [skillPatchDraft]);
 
   const handleCreateWorkspaceDraft = () => {
-    if (!selectedSkillID || !skillPatchDraft.trim()) {
+    if (!selectedSkillID || !editablePatchDraft.trim()) {
       return;
     }
-    createWorkspaceDraft.mutate({
-      skillID: selectedSkillID,
-      content: editablePatchDraft,
-    });
+    createWorkspaceDraft.mutate(
+      {
+        skillID: selectedSkillID,
+        content: editablePatchDraft,
+      },
+      {
+        onSuccess: (result) => {
+          setSavedDraftPath(result.file_path || '');
+        },
+      },
+    );
+  };
+
+  const handleResetPatchDraft = () => {
+    setEditablePatchDraft(skillPatchDraft);
   };
 
 
@@ -961,18 +973,34 @@ export default function MarketplacePage() {
                           <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                             Patch draft
                           </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="rounded-xl"
-                            disabled={!selectedSkillID || !skillPatchDraft.trim() || createWorkspaceDraft.isPending}
-                            onClick={handleCreateWorkspaceDraft}
-                          >
-                            {createWorkspaceDraft.isPending ? 'Saving…' : 'Save as workspace draft'}
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="rounded-xl"
+                              disabled={!selectedSkillID || !skillPatchDraft.trim()}
+                              onClick={handleResetPatchDraft}
+                            >
+                              Reset to suggested draft
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="rounded-xl"
+                              disabled={!selectedSkillID || !editablePatchDraft.trim() || createWorkspaceDraft.isPending}
+                              onClick={handleCreateWorkspaceDraft}
+                            >
+                              {createWorkspaceDraft.isPending ? 'Saving…' : 'Save as workspace draft'}
+                            </Button>
+                          </div>
                         </div>
                       </div>
                       <div className="px-4 py-4">
+                        {savedDraftPath ? (
+                          <div className="mb-3 rounded-xl border border-border/70 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                            Saved draft: <span className="font-mono text-foreground">{savedDraftPath}</span>
+                          </div>
+                        ) : null}
                         <textarea
                           className="min-h-[260px] w-full rounded-2xl border border-border/70 bg-background px-3 py-3 font-mono text-xs leading-6 text-foreground"
                           value={editablePatchDraft}
