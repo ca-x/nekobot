@@ -1910,14 +1910,27 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 	}
 	metadata[runtimeagents.MetadataLaunchCommand] = launchCommand
 	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), sess.ID, metadata); err != nil {
-		_ = s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to persist launch metadata: "+err.Error())
+		if terminateErr := s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to persist launch metadata: "+err.Error()); terminateErr != nil {
+			s.logger.Warn("Failed to terminate tool session after metadata persistence error",
+				zap.String("session_id", sess.ID),
+				zap.Error(terminateErr),
+			)
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to persist tool session metadata: " + err.Error()})
 	}
-	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
+	sess, err = s.toolSess.GetSession(c.Request().Context(), sess.ID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
+	}
 
 	spec := execenv.StartSpecFromContext(c.Request().Context(), sess.ID, launchCommand, workdir, metadata)
 	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
-		_ = s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error())
+		if terminateErr := s.toolSess.TerminateSession(context.Background(), sess.ID, "failed to start process: "+err.Error()); terminateErr != nil {
+			s.logger.Warn("Failed to terminate tool session after process start error",
+				zap.String("session_id", sess.ID),
+				zap.Error(terminateErr),
+			)
+		}
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to start tool process: " + err.Error()})
 	}
 	accessMode := strings.TrimSpace(body.AccessMode)
@@ -1927,13 +1940,19 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to configure session access: " + err.Error()})
 		}
-		sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
+		sess, err = s.toolSess.GetSession(c.Request().Context(), sess.ID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
+		}
 	}
 	accessURL := ""
 	if strings.TrimSpace(sess.AccessMode) != "" && sess.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, sess.ID, strings.TrimSpace(body.PublicBaseURL))
 	}
-	sess, _ = s.toolSess.GetSession(c.Request().Context(), sess.ID)
+	sess, err = s.toolSess.GetSession(c.Request().Context(), sess.ID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
+	}
 
 	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"command":    command,
@@ -1942,7 +1961,12 @@ func (s *Server) handleSpawnToolSession(c *echo.Context) error {
 		"proxy_mode": proxyMode,
 	}, transport.Name(), runtimeSession)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
-	_ = s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", eventPayload)
+	if err := s.toolSess.AppendEvent(context.Background(), sess.ID, "process_started", eventPayload); err != nil {
+		s.logger.Warn("Failed to append tool session start event",
+			zap.String("session_id", sess.ID),
+			zap.Error(err),
+		)
+	}
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"session":         sess,
 		"access_mode":     sess.AccessMode,
@@ -2642,11 +2666,16 @@ func (s *Server) handleUpdateToolSession(c *echo.Context) error {
 	if strings.TrimSpace(updatedSession.AccessMode) != "" && updatedSession.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, id, strings.TrimSpace(body.PublicBaseURL))
 	}
-	_ = s.toolSess.AppendEvent(context.Background(), id, "session_updated", map[string]interface{}{
+	if err := s.toolSess.AppendEvent(context.Background(), id, "session_updated", map[string]interface{}{
 		"command":    command,
 		"workdir":    workdir,
 		"proxy_mode": proxyMode,
-	})
+	}); err != nil {
+		s.logger.Warn("Failed to append tool session update event",
+			zap.String("session_id", id),
+			zap.Error(err),
+		)
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"session":         updatedSession,
@@ -2744,11 +2773,21 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	}
 	nextMetadata[runtimeagents.MetadataLaunchCommand] = launchCommand
 
-	_ = s.processMgr.Reset(id)
+	if err := s.processMgr.Reset(id); err != nil {
+		s.logger.Warn("Failed to reset existing tool process before restart",
+			zap.String("session_id", id),
+			zap.Error(err),
+		)
+	}
 	s.tryKillRuntimeSession(c.Request().Context(), id)
 	spec := execenv.StartSpecFromContext(c.Request().Context(), id, launchCommand, workdir, nextMetadata)
 	if err := s.processMgr.StartWithSpec(context.Background(), spec); err != nil {
-		_ = s.toolSess.TerminateSession(context.Background(), id, "failed to restart process: "+err.Error())
+		if terminateErr := s.toolSess.TerminateSession(context.Background(), id, "failed to restart process: "+err.Error()); terminateErr != nil {
+			s.logger.Warn("Failed to terminate tool session after restart error",
+				zap.String("session_id", id),
+				zap.Error(terminateErr),
+			)
+		}
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to restart tool process: " + err.Error()})
 	}
 
@@ -2759,7 +2798,10 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 	if err := s.toolSess.UpdateSessionMetadata(c.Request().Context(), id, nextMetadata); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	updatedSession, _ := s.toolSess.GetSession(c.Request().Context(), id)
+	updatedSession, err := s.toolSess.GetSession(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
+	}
 
 	accessPassword := ""
 	modeChanged := strings.TrimSpace(body.AccessMode) != "" || strings.TrimSpace(body.AccessPassword) != ""
@@ -2772,14 +2814,20 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to configure session access: " + err.Error()})
 		}
-		updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
+		updatedSession, err = s.toolSess.GetSession(c.Request().Context(), id)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
+		}
 	}
 
 	accessURL := ""
 	if strings.TrimSpace(updatedSession.AccessMode) != "" && updatedSession.AccessMode != toolsessions.AccessModeNone {
 		accessURL = s.buildToolSessionAccessURL(c, id, strings.TrimSpace(body.PublicBaseURL))
 	}
-	updatedSession, _ = s.toolSess.GetSession(c.Request().Context(), id)
+	updatedSession, err = s.toolSess.GetSession(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to reload tool session: " + err.Error()})
+	}
 
 	eventPayload := runtimeagents.ApplyRuntimeSessionPayload(map[string]interface{}{
 		"command":    command,
@@ -2788,7 +2836,12 @@ func (s *Server) handleRestartToolSession(c *echo.Context) error {
 		"proxy_mode": proxyMode,
 	}, transport.Name(), runtimeSession)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
-	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restarted", eventPayload)
+	if err := s.toolSess.AppendEvent(context.Background(), id, "process_restarted", eventPayload); err != nil {
+		s.logger.Warn("Failed to append tool session restart event",
+			zap.String("session_id", id),
+			zap.Error(err),
+		)
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"session":         updatedSession,
@@ -3368,8 +3421,18 @@ func (s *Server) tryRestoreToolSessionRuntime(ctx context.Context, sessionID str
 		"workdir":    workdir,
 	}, transport.Name(), runtimeSession)
 	eventPayload[runtimeagents.MetadataRuntimeTransport] = strings.TrimSpace(transport.Name())
-	_ = s.toolSess.AppendEvent(context.Background(), id, "process_restored", eventPayload)
-	_ = s.toolSess.TouchSession(context.Background(), id, toolsessions.StateRunning)
+	if err := s.toolSess.AppendEvent(context.Background(), id, "process_restored", eventPayload); err != nil {
+		s.logger.Warn("Failed to append tool session restore event",
+			zap.String("session_id", id),
+			zap.Error(err),
+		)
+	}
+	if err := s.toolSess.TouchSession(context.Background(), id, toolsessions.StateRunning); err != nil {
+		s.logger.Warn("Failed to touch restored tool session",
+			zap.String("session_id", id),
+			zap.Error(err),
+		)
+	}
 	s.logger.Info("Restored tool session runtime",
 		zap.String("session_id", id),
 		zap.String("runtime_session", runtimeSession),
