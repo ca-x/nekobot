@@ -168,6 +168,10 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
     !(provider?.name || draftName.trim());
   const logo = getProviderLogo(selectedType?.icon ?? selectedKind);
 
+  const defaultTestModelOptions = useMemo(() => {
+    return Array.from(new Set(selectedDiscoveredModels.length > 0 ? selectedDiscoveredModels : discoveredModels));
+  }, [discoveredModels, selectedDiscoveredModels]);
+
   const filteredDiscoveredModels = useMemo(() => {
     const keyword = discoveredModelQuery.trim().toLowerCase();
     if (!keyword) {
@@ -454,12 +458,32 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
 
                   <div className="space-y-2">
                     <Label htmlFor="pf-default-test-model">{t('modelsFieldModelId')}</Label>
-                    <Input
-                      id="pf-default-test-model"
-                      placeholder={t('providerDiscoverApply')}
-                      {...register('default_test_model')}
-                      className="h-11 rounded-2xl bg-card/90"
-                    />
+                    {defaultTestModelOptions.length > 0 ? (
+                      <Controller
+                        name="default_test_model"
+                        control={control}
+                        render={({ field }) => (
+                          <Select value={field.value || '__unset__'} onValueChange={(value) => field.onChange(value === '__unset__' ? '' : value)}>
+                            <SelectTrigger className="h-11 rounded-2xl bg-card/90">
+                              <SelectValue placeholder={t('cronModelDefault')} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__unset__">{t('cronModelDefault')}</SelectItem>
+                              {defaultTestModelOptions.map((modelID) => (
+                                <SelectItem key={modelID} value={modelID}>{modelID}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    ) : (
+                      <Input
+                        id="pf-default-test-model"
+                        placeholder={t('providerDiscoverApply')}
+                        {...register('default_test_model')}
+                        className="h-11 rounded-2xl bg-card/90"
+                      />
+                    )}
                   </div>
                 </section>
 
