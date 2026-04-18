@@ -49,7 +49,12 @@ func NewBrowserTool(log *logger.Logger, headless bool, timeout int, outputDir st
 	}
 
 	// Ensure output directory exists
-	_ = os.MkdirAll(outputDir, 0755)
+	if err := os.MkdirAll(outputDir, 0o755); err != nil && log != nil {
+		log.Warn("Failed to create browser output directory",
+			zap.String("output_dir", outputDir),
+			zap.Error(err),
+		)
+	}
 
 	return &BrowserTool{
 		log:       log,

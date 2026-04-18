@@ -11,6 +11,7 @@ import (
 
 	"github.com/mafredri/cdp/protocol/emulation"
 	"github.com/mafredri/cdp/protocol/page"
+	"go.uber.org/zap"
 
 	"nekobot/pkg/logger"
 	"nekobot/pkg/tools"
@@ -31,7 +32,12 @@ type BrowserMarkdownRenderer struct {
 
 // NewBrowserMarkdownRenderer creates a browser-backed markdown image renderer.
 func NewBrowserMarkdownRenderer(log *logger.Logger, outputDir string) *BrowserMarkdownRenderer {
-	_ = os.MkdirAll(outputDir, 0o755)
+	if err := os.MkdirAll(outputDir, 0o755); err != nil && log != nil {
+		log.Warn("Failed to create markdown render output directory",
+			zap.String("output_dir", outputDir),
+			zap.Error(err),
+		)
+	}
 	return &BrowserMarkdownRenderer{
 		log:       log,
 		outputDir: outputDir,
