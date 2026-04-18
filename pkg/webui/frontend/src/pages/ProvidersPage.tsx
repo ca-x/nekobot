@@ -82,7 +82,7 @@ function getKindTint(kind: string): string {
 
 function getConnectionState(provider: Provider, runtime?: ProviderRuntime) {
   if (!provider.enabled) {
-    return { label: t('disabled'), tone: 'bg-slate-100 text-slate-700 border-slate-200/70', dot: 'bg-slate-400' };
+    return { label: t('disabled'), tone: 'bg-slate-100 text-foreground border-slate-200/70', dot: 'bg-slate-400' };
   }
   if (!provider.api_key_set) {
     return { label: t('providerStateCredentialsMissing'), tone: 'bg-amber-50 text-amber-700 border-amber-200/70', dot: 'bg-amber-500' };
@@ -271,9 +271,9 @@ export default function ProvidersPage() {
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <Card className="overflow-hidden rounded-[28px] border-border/70 bg-card/92 shadow-sm">
           <div className="border-b border-border/70 px-5 py-5">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-violet-200/80 bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">
+                <div className="inline-flex items-center gap-2 rounded-full border border-violet-200/80 bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-200">
                   <GitBranch className="h-3.5 w-3.5" />
                   {t('providerGroupsBadge')}
                 </div>
@@ -289,22 +289,22 @@ export default function ProvidersPage() {
 
           <div className="space-y-3 p-4">
             {providerGroups.length === 0 && (
-              <div className="rounded-[22px] border border-dashed border-slate-300 bg-slate-50/80 px-4 py-8 text-center">
-                <p className="text-sm font-medium text-slate-700">{t('providerGroupsEmptyTitle')}</p>
-                <p className="mt-2 text-sm leading-6 text-slate-500">{t('providerGroupsEmptyDescription')}</p>
+              <div className="rounded-[22px] border border-dashed border-border/70 bg-card/70 px-4 py-8 text-center">
+                <p className="text-sm font-medium text-foreground">{t('providerGroupsEmptyTitle')}</p>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('providerGroupsEmptyDescription')}</p>
               </div>
             )}
 
             {providerGroups.map((group) => (
-              <div key={group.id} className="rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
+              <div key={group.id} className="rounded-[24px] border border-border/70 bg-card/92 p-4 shadow-sm">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1 space-y-3">
                     <div className="space-y-2">
-                      <label className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">{t('providerGroupName')}</label>
+                      <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('providerGroupName')}</label>
                       <Input value={group.name} onChange={(event) => handleGroupNameChange(group.id, event.target.value)} className="h-10 rounded-xl" />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">{t('providerGroupStrategy')}</label>
+                      <label className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('providerGroupStrategy')}</label>
                       <Select value={group.strategy} onValueChange={(value) => handleGroupStrategyChange(group.id, value as ProviderGroupStrategy)}>
                         <SelectTrigger className="h-10 rounded-xl"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -313,18 +313,18 @@ export default function ProvidersPage() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-xs leading-5 text-slate-500">{t(PROVIDER_GROUP_STRATEGIES.find((strategy) => strategy.value === group.strategy)?.descriptionKey ?? 'providerGroupStrategyRoundRobinDescription')}</p>
+                      <p className="text-xs leading-5 text-muted-foreground">{t(PROVIDER_GROUP_STRATEGIES.find((strategy) => strategy.value === group.strategy)?.descriptionKey ?? 'providerGroupStrategyRoundRobinDescription')}</p>
                     </div>
                   </div>
                   <Button size="sm" variant="outline" onClick={() => handleRemoveGroup(group.id)} className="rounded-xl">{t('delete')}</Button>
                 </div>
                 <div className="mt-4 space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">{t('providerGroupMembers')}</div>
+                  <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('providerGroupMembers')}</div>
                   <div className="flex flex-wrap gap-2">
                     {providerNames.map((providerName) => {
                       const selected = group.members.includes(providerName);
                       return (
-                        <button key={providerName} type="button" onClick={() => handleToggleGroupMember(group.id, providerName)} className={cn('rounded-full border px-3 py-1.5 text-xs font-medium transition-colors', selected ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100')}>
+                        <button key={providerName} type="button" onClick={() => handleToggleGroupMember(group.id, providerName)} className={cn('rounded-full border px-3 py-1.5 text-xs font-medium transition-colors', selected ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 bg-slate-50 text-muted-foreground hover:border-slate-300 hover:bg-slate-100')}>
                           {providerName}
                         </button>
                       );
@@ -335,9 +335,9 @@ export default function ProvidersPage() {
             ))}
           </div>
 
-          <div className="border-t border-slate-100 px-5 py-4">
+          <div className="border-t border-border/70 px-5 py-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className={cn('text-sm', providerGroupValidationError ? 'text-rose-600' : 'text-slate-500')}>
+              <p className={cn('text-sm', providerGroupValidationError ? 'text-rose-600 dark:text-rose-300' : 'text-muted-foreground')}>
                 {providerGroupValidationError ?? t('providerGroupsSaveHint')}
               </p>
               <Button onClick={handleSaveGroups} disabled={saveConfig.isPending || Boolean(providerGroupValidationError)} className="rounded-xl">
@@ -347,33 +347,33 @@ export default function ProvidersPage() {
           </div>
         </Card>
 
-        <Card className="overflow-hidden rounded-[28px] border-slate-200/80 bg-white/95 shadow-sm">
-          <div className="border-b border-slate-100 px-5 py-5">
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">{t('providerOverviewBadge')}</div>
-            <h3 className="mt-2 text-lg font-semibold text-slate-950">{t('providerOverviewTitle')}</h3>
+        <Card className="overflow-hidden rounded-[28px] border-border/70 bg-card/92 shadow-sm">
+          <div className="border-b border-border/70 px-5 py-5">
+            <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('providerOverviewBadge')}</div>
+            <h3 className="mt-2 text-lg font-semibold text-foreground">{t('providerOverviewTitle')}</h3>
           </div>
           <div className="space-y-3 p-4">
             {(providers ?? []).slice(0, 5).map((provider) => {
               const runtime = runtimeMap.get(provider.name);
               const typeMeta = providerTypeMap.get(provider.provider_kind);
               return (
-                <div key={`${provider.name}-overview`} className="rounded-[24px] border border-slate-200/80 bg-[linear-gradient(140deg,_rgba(248,250,252,0.95),_rgba(255,255,255,0.98))] p-4">
-                  <div className="flex items-center justify-between gap-3">
+                <div key={`${provider.name}-overview`} className="rounded-[24px] border border-border/70 bg-[linear-gradient(140deg,_rgba(248,250,252,0.95),_rgba(255,255,255,0.98))] p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <h4 className="text-sm font-semibold text-slate-900">{provider.name}</h4>
-                      <p className="mt-1 text-xs uppercase tracking-[0.14em] text-slate-400">{typeMeta?.display_name || provider.provider_kind}</p>
+                      <h4 className="text-sm font-semibold text-foreground">{provider.name}</h4>
+                      <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">{typeMeta?.display_name || provider.provider_kind}</p>
                     </div>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">{provider.enabled ? t('enabled') : t('disabled')}</span>
+                    <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">{provider.enabled ? t('enabled') : t('disabled')}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm">{provider.api_key_set ? t('providerCredentialsSet') : t('providerCredentialsMissing')}</span>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm">{provider.supports_discovery ? t('providerDiscoverLabel') : t('providerPanelManualOnly')}</span>
+                    <span className="rounded-full bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-sm">{provider.api_key_set ? t('providerCredentialsSet') : t('providerCredentialsMissing')}</span>
+                    <span className="rounded-full bg-background px-2.5 py-1 text-xs font-medium text-foreground shadow-sm">{provider.supports_discovery ? t('providerDiscoverLabel') : t('providerPanelManualOnly')}</span>
                     {runtime?.in_cooldown && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 shadow-sm">{t('providerRuntimeCooldown')}</span>}
                   </div>
                 </div>
               );
             })}
-            {(providers?.length ?? 0) === 0 && <div className="rounded-[22px] border border-dashed border-slate-300 bg-slate-50/80 px-4 py-8 text-center"><p className="text-sm leading-6 text-slate-500">{t('providerGroupsOverviewEmpty')}</p></div>}
+            {(providers?.length ?? 0) === 0 && <div className="rounded-[22px] border border-dashed border-border/70 bg-card/70 px-4 py-8 text-center"><p className="text-sm leading-6 text-muted-foreground">{t('providerGroupsOverviewEmpty')}</p></div>}
           </div>
         </Card>
       </section>
@@ -402,18 +402,18 @@ export default function ProvidersPage() {
       )}
 
       {!isLoading && (providers?.length ?? 0) > 0 && filteredProviders.length === 0 && (
-        <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50/70 px-6 py-14 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm"><Search className="h-5 w-5 text-slate-400" /></div>
-          <h3 className="text-sm font-semibold text-slate-900">{t('providersNoMatchTitle')}</h3>
-          <p className="mt-1 text-sm text-slate-500">{t('providersNoMatchDescription')}</p>
+        <div className="rounded-[24px] border border-dashed border-border/70 bg-card/70 px-6 py-14 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-background shadow-sm"><Search className="h-5 w-5 text-muted-foreground" /></div>
+          <h3 className="text-sm font-semibold text-foreground">{t('providersNoMatchTitle')}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{t('providersNoMatchDescription')}</p>
         </div>
       )}
 
       {!isLoading && (providers?.length ?? 0) === 0 && (
-        <div className="rounded-[28px] border border-dashed border-slate-300 bg-[linear-gradient(180deg,_rgba(255,255,255,0.96),_rgba(248,250,252,0.96))] px-6 py-20 text-center shadow-sm">
-          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[22px] bg-slate-900 text-white shadow-lg shadow-slate-900/10"><KeyRound className="h-7 w-7" /></div>
-          <h3 className="text-lg font-semibold text-slate-900">{t('noProviders')}</h3>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{t('providersEmptyDescription')}</p>
+        <div className="rounded-[28px] border border-dashed border-border/70 bg-card/80 px-6 py-20 text-center shadow-sm">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-[22px] bg-foreground text-background shadow-lg shadow-foreground/10"><KeyRound className="h-7 w-7" /></div>
+          <h3 className="text-lg font-semibold text-foreground">{t('noProviders')}</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{t('providersEmptyDescription')}</p>
           <Button size="sm" onClick={openNew} className="mt-5 h-10 rounded-xl px-4"><Plus className="mr-1.5 h-4 w-4" />{t('newProvider')}</Button>
         </div>
       )}
@@ -483,9 +483,9 @@ function validateProviderGroups(groups: ProviderGroup[]): string | null {
 
 function MetricCard({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
-    <div className="min-w-[120px] rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-sm">
-      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{label}</div>
-      <div className={cn('mt-1 text-base font-semibold text-slate-900', muted && 'text-slate-500')}>{value}</div>
+    <div className="min-w-[120px] rounded-2xl border border-border/70 bg-card/90 px-4 py-3 shadow-sm">
+      <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className={cn('mt-1 text-base font-semibold text-foreground', muted && 'text-muted-foreground')}>{value}</div>
     </div>
   );
 }
@@ -499,19 +499,19 @@ function ProviderPanel({ provider, runtime, typeMeta, onClick, onClearCooldown, 
   const discoveryReady = provider.supports_discovery && credentialsReady;
 
   return (
-    <Card className="group cursor-pointer overflow-hidden rounded-[28px] border-slate-200/80 bg-white/95 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-200/60" onClick={onClick}>
-      <div className={cn('border-b border-slate-100 bg-gradient-to-br p-5', tint)}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] border border-white/70 bg-white/95 shadow-sm">
+    <Card className="group cursor-pointer overflow-hidden rounded-[28px] border-border/70 bg-card/92 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-lg hover:shadow-foreground/5" onClick={onClick}>
+      <div className={cn('border-b border-border/70 bg-gradient-to-br p-5', tint)}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 flex-col items-start gap-4 sm:flex-row sm:items-center">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] border border-white/70 bg-card/92 shadow-sm">
               {logo ? <img src={logo} alt={provider.provider_kind} className="h-7 w-7 object-contain" /> : <span className="text-lg font-semibold uppercase">{provider.provider_kind?.[0] ?? '?'}</span>}
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="truncate text-lg font-semibold text-slate-950">{provider.name}</h3>
+                <h3 className="truncate text-lg font-semibold text-foreground">{provider.name}</h3>
                 {provider.is_routing_default && <span className="inline-flex items-center gap-1 rounded-full border border-sky-200/80 bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700"><ShieldCheck className="h-3 w-3" />{t('providerPanelRoutingDefault')}</span>}
               </div>
-              <p className="mt-1 text-sm capitalize text-slate-600">{typeMeta?.display_name || provider.provider_kind}</p>
+              <p className="mt-1 text-sm capitalize text-muted-foreground">{typeMeta?.display_name || provider.provider_kind}</p>
             </div>
           </div>
           <span className={cn('inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium shadow-sm', state.tone)}>
@@ -529,34 +529,34 @@ function ProviderPanel({ provider, runtime, typeMeta, onClick, onClearCooldown, 
         </div>
 
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-          <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4">
-            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400"><Globe className="h-3.5 w-3.5" />{t('providerPanelEndpoint')}</div>
-            <p className="mt-2 break-all text-sm leading-6 text-slate-700">{endpoint}</p>
-            {provider.proxy?.trim() && <p className="mt-3 text-xs leading-5 text-slate-500">{t('proxyAddress')}: {provider.proxy}</p>}
-            <p className="mt-3 text-xs leading-5 text-slate-500">{t('providerWeightSummary', String(provider.default_weight), provider.enabled ? t('enabled') : t('disabled'))}</p>
+          <div className="rounded-2xl border border-border/70 bg-muted/40 p-4">
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground"><Globe className="h-3.5 w-3.5" />{t('providerPanelEndpoint')}</div>
+            <p className="mt-2 break-all text-sm leading-6 text-foreground">{endpoint}</p>
+            {provider.proxy?.trim() && <p className="mt-3 text-xs leading-5 text-muted-foreground">{t('proxyAddress')}: {provider.proxy}</p>}
+            <p className="mt-3 text-xs leading-5 text-muted-foreground">{t('providerWeightSummary', String(provider.default_weight), provider.enabled ? t('enabled') : t('disabled'))}</p>
           </div>
 
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-4">
-            <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">{t('providerPanelSummary')}</div>
-            <p className="mt-2 text-sm leading-6 text-slate-700">{provider.summary || typeMeta?.description || t('providerPanelNoSummary')}</p>
-            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-500">
+          <div className="rounded-2xl border border-border/70 bg-card p-4">
+            <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{t('providerPanelSummary')}</div>
+            <p className="mt-2 text-sm leading-6 text-foreground">{provider.summary || typeMeta?.description || t('providerPanelNoSummary')}</p>
+            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
               <span>{provider.provider_kind}</span>
-              <ArrowUpRight className="h-4 w-4 text-slate-300 transition-colors group-hover:text-slate-500" />
+              <ArrowUpRight className="h-4 w-4 text-muted-foreground/70 transition-colors group-hover:text-muted-foreground" />
             </div>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4">
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400"><TimerReset className="h-3.5 w-3.5" />{t('providerRuntimeTitle')}</div>
+        <div className="rounded-2xl border border-border/70 bg-muted/40 p-4">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground"><TimerReset className="h-3.5 w-3.5" />{t('providerRuntimeTitle')}</div>
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={cn('rounded-full px-3 py-1.5 text-xs font-medium', runtime?.in_cooldown ? 'bg-amber-50 text-amber-800' : runtime?.available === false ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700')}>
               {runtime?.in_cooldown ? t('providerRuntimeCooldown') : runtime?.available === false ? t('providerRuntimeUnavailable') : t('providerRuntimeAvailable')}
             </span>
-            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600">{t('providerRuntimeErrors', String(runtime?.error_count ?? 0))}</span>
-            {runtime?.in_cooldown && <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs text-amber-800">{t('providerRuntimeRemaining', formatDuration(runtime.cooldown_remaining_seconds))}</span>}
-            {runtime?.disabled_reason && <span className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-700">{t('providerRuntimeReason', runtime.disabled_reason)}</span>}
+            <span className="rounded-full border border-slate-200 bg-card px-3 py-1.5 text-xs text-muted-foreground">{t('providerRuntimeErrors', String(runtime?.error_count ?? 0))}</span>
+            {runtime?.in_cooldown && <span className="rounded-full border border-amber-200 bg-card px-3 py-1.5 text-xs text-amber-800">{t('providerRuntimeRemaining', formatDuration(runtime.cooldown_remaining_seconds))}</span>}
+            {runtime?.disabled_reason && <span className="rounded-full border border-rose-200 bg-card px-3 py-1.5 text-xs text-rose-700">{t('providerRuntimeReason', runtime.disabled_reason)}</span>}
           </div>
-          <p className="mt-3 text-sm leading-6 text-slate-500">{formatFailureSummary(runtime)}</p>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{formatFailureSummary(runtime)}</p>
           {runtime ? (
             <div className="mt-3 flex flex-wrap gap-2">
               {runtime.error_count > 0 ? <Button type="button" variant="outline" className="rounded-full" onClick={(event) => { event.stopPropagation(); onShowRuntimeDetails(runtime); }}>{t('providerRuntimeViewErrors', String(runtime.error_count))}</Button> : null}
@@ -589,10 +589,10 @@ function formatFailureSummary(runtime?: ProviderRuntime): string {
 
 function InfoTile({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string; detail: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-4">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">{icon}{label}</div>
-      <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
-      <p className="mt-2 text-xs leading-5 text-slate-500">{detail}</p>
+    <div className="rounded-2xl border border-border/70 bg-card p-4">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">{icon}{label}</div>
+      <div className="mt-2 text-sm font-semibold text-foreground">{value}</div>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{detail}</p>
     </div>
   )
 }

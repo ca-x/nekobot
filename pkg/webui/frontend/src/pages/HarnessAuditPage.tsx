@@ -70,7 +70,7 @@ export default function HarnessAuditPage() {
       />
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(247,250,255,0.95),rgba(241,246,255,0.9))] shadow-[0_24px_60px_-42px_rgba(71,85,132,0.35)]">
+        <Card className="border-border/70 bg-card/92 shadow-sm">
           <CardHeader className="pb-3">
             <CardDescription>{t('harnessAuditMetricEntries')}</CardDescription>
             <CardTitle className="mono-data text-3xl">{String(data?.stats.entries ?? 0)}</CardTitle>
@@ -80,7 +80,7 @@ export default function HarnessAuditPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(246,255,250,0.95),rgba(238,250,244,0.9))] shadow-[0_24px_60px_-42px_rgba(31,94,64,0.28)]">
+        <Card className="border-border/70 bg-card/92 shadow-sm">
           <CardHeader className="pb-3">
             <CardDescription>{t('harnessAuditMetricSuccessRate')}</CardDescription>
             <CardTitle className="mono-data text-3xl">{`${successRate}%`}</CardTitle>
@@ -91,7 +91,7 @@ export default function HarnessAuditPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-white/70 bg-[linear-gradient(180deg,rgba(255,249,244,0.95),rgba(252,243,236,0.9))] shadow-[0_24px_60px_-42px_rgba(129,78,36,0.28)]">
+        <Card className="border-border/70 bg-card/92 shadow-sm">
           <CardHeader className="pb-3">
             <CardDescription>{t('harnessAuditMetricStorage')}</CardDescription>
             <CardTitle className="mono-data text-3xl">{formatBytes(data?.stats.size)}</CardTitle>
@@ -102,11 +102,11 @@ export default function HarnessAuditPage() {
         </Card>
       </div>
 
-      <Card className="border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(253,249,247,0.96))] shadow-[0_24px_80px_-40px_rgba(80,40,45,0.24)]">
+      <Card className="border-border/70 bg-card/92 shadow-sm">
         <CardHeader className="pb-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <div className="eyebrow-label inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-100))] px-3 py-1 text-[hsl(var(--brand-800))]">
+              <div className="eyebrow-label inline-flex items-center gap-2 rounded-full bg-[hsl(var(--brand-100))] px-3 py-1 text-[hsl(var(--brand-800))] dark:text-[hsl(var(--brand-100))]">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {t('tabHarnessAudit')}
               </div>
@@ -125,7 +125,7 @@ export default function HarnessAuditPage() {
                   max={500}
                   value={limitInput}
                   onChange={(event) => setLimitInput(event.target.value)}
-                  className="mono-data h-11 rounded-xl bg-white"
+                  className="mono-data h-11 rounded-xl bg-background"
                 />
               </div>
               <Button type="button" variant="outline" className="h-11 rounded-xl" onClick={() => refetch()} disabled={isFetching}>
@@ -186,7 +186,7 @@ export default function HarnessAuditPage() {
                       <div className="min-w-0 space-y-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground">
-                            {entry.success ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <CircleAlert className="h-3.5 w-3.5 text-rose-600" />}
+                            {entry.success ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-300" /> : <CircleAlert className="h-3.5 w-3.5 text-rose-600 dark:text-rose-300" />}
                             {entry.tool}
                           </span>
                           <span className="mono-data inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
@@ -194,7 +194,7 @@ export default function HarnessAuditPage() {
                             {t('harnessAuditDuration', String(entry.duration_ms))}
                           </span>
                           {entry.session_id && (
-                            <span className="rounded-full bg-[hsl(var(--brand-50))] px-2.5 py-1 text-xs text-[hsl(var(--brand-800))]">
+                            <span className="rounded-full bg-[hsl(var(--brand-50))] px-2.5 py-1 text-xs text-[hsl(var(--brand-800))] dark:text-[hsl(var(--brand-100))]">
                               {t('harnessAuditSession', entry.session_id)}
                             </span>
                           )}
@@ -205,13 +205,13 @@ export default function HarnessAuditPage() {
                         </div>
 
                         {entry.result_preview && (
-                          <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-3 text-sm text-emerald-950 whitespace-pre-wrap break-words">
+                          <div className="rounded-2xl border border-emerald-200/60 bg-emerald-50/70 p-3 text-sm text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100 whitespace-pre-wrap break-words">
                             {entry.result_preview}
                           </div>
                         )}
 
                         {entry.error && (
-                          <div className="rounded-2xl border border-rose-200/70 bg-rose-50/80 p-3 text-sm text-rose-950 whitespace-pre-wrap break-words">
+                          <div className="rounded-2xl border border-rose-200/70 bg-rose-50/80 p-3 text-sm text-rose-950 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100 whitespace-pre-wrap break-words">
                             {entry.error}
                           </div>
                         )}
