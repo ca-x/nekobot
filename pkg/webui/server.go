@@ -467,6 +467,7 @@ func (s *Server) setup() {
 	api.GET("/marketplace/skills/items/:id/content", s.handleGetMarketplaceSkillContent)
 	api.POST("/marketplace/skills/install", s.handleInstallMarketplaceSkill)
 	api.GET("/marketplace/skills/inventory", s.handleGetMarketplaceInventory)
+	api.GET("/marketplace/skills/evolution-review", s.handleGetMarketplaceSkillEvolutionReview)
 	api.GET("/marketplace/skills/snapshots", s.handleListMarketplaceSkillSnapshots)
 	api.POST("/marketplace/skills/snapshots", s.handleCreateMarketplaceSkillSnapshot)
 	api.POST("/marketplace/skills/snapshots/prune", s.handlePruneMarketplaceSkillSnapshots)
@@ -3968,6 +3969,78 @@ func (s *Server) handleInstallMarketplaceSkill(c *echo.Context) error {
 		"proxy":     s.skillsMgr.SkillsProxy(),
 		"installed": true,
 		"refreshed": true,
+	})
+}
+
+func (s *Server) handleGetMarketplaceSkillEvolutionReview(c *echo.Context) error {
+	if s.skillsMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
+	}
+
+	inventory := map[string]any{}
+	if invCtx := c.Request().Context(); true {
+		sources := s.skillsMgr.GetSkillSources()
+		versionStats := s.skillsMgr.VersionHistoryStats()
+		inventory = map[string]any{
+			"source_count": len(sources),
+			"version_history": map[string]any{
+				"skill_count":   versionStats["skill_count"],
+				"version_count": versionStats["version_count"],
+			},
+			"enabled_count":  len(s.skillsMgr.ListEnabled()),
+			"eligible_count": len(s.skillsMgr.ListEligibleEnabled()),
+		}
+		_ = invCtx
+	}
+
+	var activeLearnings string
+	var learningEntries []memory.LearningEntry
+	if mgr, err := memory.NewLearningsManager(s.config); err == nil {
+		activeLearnings = strings.TrimSpace(mgr.ReadActive())
+		if entries, listErr := mgr.List(); listErr == nil {
+			learningEntries = entries
+		}
+	}
+
+	snapshotList, _ := s.skillsMgr.ListSnapshots()
+	skillsList := s.skillsMgr.List()
+	suggestions := make([]map[string]any, 0)
+	for _, skill := range skillsList {
+		if skill == nil {
+			continue
+		}
+		reasons := make([]string, 0)
+		lowerName := strings.ToLower(strings.TrimSpace(skill.Name + " " + skill.ID + " " + skill.Description))
+		if activeLearnings != "" {
+			activeLower := strings.ToLower(activeLearnings)
+			if strings.Contains(activeLower, "cron") && strings.Contains(lowerName, "cron") {
+				reasons = append(reasons, "Active learnings mention cron workflows that may need stronger skill guidance.")
+			}
+			if strings.Contains(activeLower, "provider") && (strings.Contains(lowerName, "provider") || strings.Contains(lowerName, "model")) {
+				reasons = append(reasons, "Recent learnings mention provider/model behavior relevant to this skill.")
+			}
+		}
+		if !skill.Enabled {
+			reasons = append(reasons, "Skill is installed but currently disabled.")
+		}
+		if len(reasons) == 0 {
+			continue
+		}
+		suggestions = append(suggestions, map[string]any{
+			"skill_id": skill.ID,
+			"name":     skill.Name,
+			"enabled":  skill.Enabled,
+			"always":   skill.Always,
+			"reasons":  reasons,
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"active_learnings":     activeLearnings,
+		"learning_entry_count": len(learningEntries),
+		"snapshot_count":       len(snapshotList),
+		"inventory":            inventory,
+		"suggestions":          suggestions,
 	})
 }
 

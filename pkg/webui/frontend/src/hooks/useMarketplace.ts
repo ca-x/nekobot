@@ -131,6 +131,31 @@ export interface MarketplaceSnapshotPruneResponse {
   auto_prune: boolean;
 }
 
+
+export interface MarketplaceEvolutionSuggestion {
+  skill_id: string;
+  name: string;
+  enabled: boolean;
+  always: boolean;
+  reasons: string[];
+}
+
+export interface MarketplaceEvolutionReview {
+  active_learnings: string;
+  learning_entry_count: number;
+  snapshot_count: number;
+  inventory: {
+    source_count: number;
+    enabled_count: number;
+    eligible_count: number;
+    version_history: {
+      skill_count: number;
+      version_count: number;
+    };
+  };
+  suggestions: MarketplaceEvolutionSuggestion[];
+}
+
 export interface WorkspaceStatus {
   path: string;
   exists: boolean;
@@ -492,5 +517,14 @@ export function useRepairWorkspace() {
       toast.success(t('marketplaceWorkspaceRepaired'));
     },
     onError: (err) => toast.error(err.message),
+  });
+}
+
+
+export function useMarketplaceSkillEvolutionReview() {
+  return useQuery<MarketplaceEvolutionReview>({
+    queryKey: [...marketplaceKeys.all, 'evolution-review'],
+    queryFn: () => api.get('/api/marketplace/skills/evolution-review'),
+    staleTime: 10_000,
   });
 }

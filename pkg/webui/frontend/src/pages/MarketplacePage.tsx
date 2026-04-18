@@ -27,6 +27,7 @@ import {
   useMarketplaceSkillContent,
   useMarketplaceSkillItem,
   useMarketplaceSnapshots,
+  useMarketplaceSkillEvolutionReview,
   useMarketplaceSkills,
   usePruneMarketplaceSnapshots,
   useRepairWorkspace,
@@ -79,6 +80,7 @@ export default function MarketplacePage() {
   const { data: inventory } = useMarketplaceInventory();
   const { data: snapshots } = useMarketplaceSnapshots();
   const { data: workspaceStatus } = useWorkspaceStatus();
+  const { data: evolutionReview } = useMarketplaceSkillEvolutionReview();
 
   const [query, setQuery] = useState('');
   const [remoteQuery, setRemoteQuery] = useState('');
@@ -225,6 +227,58 @@ export default function MarketplacePage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Evolution review
+              </div>
+              <h3 className="mt-2 text-lg font-semibold text-foreground">
+                Skill improvement suggestions
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Review active learnings, version history, and snapshot signals before editing skills.
+              </p>
+            </div>
+            <div className="rounded-full bg-muted/60 px-3 py-1 text-xs text-muted-foreground">
+              {String(evolutionReview?.suggestions?.length ?? 0)} suggestions
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <SkillMetric label="Learnings" value={String(evolutionReview?.learning_entry_count ?? 0)} />
+            <SkillMetric label="Snapshots" value={String(evolutionReview?.snapshot_count ?? 0)} />
+            <SkillMetric label="Version records" value={String(evolutionReview?.inventory?.version_history?.version_count ?? 0)} />
+          </div>
+
+          {evolutionReview?.active_learnings ? (
+            <div className="mt-4 rounded-2xl border border-border/70 bg-card/80 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Active learnings</div>
+              <pre className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-muted-foreground">{evolutionReview.active_learnings}</pre>
+            </div>
+          ) : null}
+
+          <div className="mt-4 space-y-3">
+            {(evolutionReview?.suggestions ?? []).map((item) => (
+              <div key={item.skill_id} className="rounded-2xl border border-border/70 bg-card/80 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-foreground">{item.name || item.skill_id}</div>
+                  <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">{item.enabled ? 'enabled' : 'disabled'}</span>
+                  {item.always ? <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">always</span> : null}
+                </div>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                  {item.reasons.map((reason, idx) => <li key={idx}>{reason}</li>)}
+                </ul>
+              </div>
+            ))}
+            {(evolutionReview?.suggestions?.length ?? 0) === 0 ? (
+              <p className="rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                No immediate skill-improvement suggestions detected yet.
+              </p>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card className="rounded-[28px] border-border/70 bg-card/92 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 {t('marketplaceRemoteSearch')}
               </div>
               <h3 className="mt-2 text-lg font-semibold text-foreground">
@@ -301,6 +355,58 @@ export default function MarketplacePage() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)_minmax(0,1fr)]">
+        <Card className="rounded-[28px] border-border/70 bg-card/92 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Evolution review
+              </div>
+              <h3 className="mt-2 text-lg font-semibold text-foreground">
+                Skill improvement suggestions
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Review active learnings, version history, and snapshot signals before editing skills.
+              </p>
+            </div>
+            <div className="rounded-full bg-muted/60 px-3 py-1 text-xs text-muted-foreground">
+              {String(evolutionReview?.suggestions?.length ?? 0)} suggestions
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <SkillMetric label="Learnings" value={String(evolutionReview?.learning_entry_count ?? 0)} />
+            <SkillMetric label="Snapshots" value={String(evolutionReview?.snapshot_count ?? 0)} />
+            <SkillMetric label="Version records" value={String(evolutionReview?.inventory?.version_history?.version_count ?? 0)} />
+          </div>
+
+          {evolutionReview?.active_learnings ? (
+            <div className="mt-4 rounded-2xl border border-border/70 bg-card/80 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Active learnings</div>
+              <pre className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-muted-foreground">{evolutionReview.active_learnings}</pre>
+            </div>
+          ) : null}
+
+          <div className="mt-4 space-y-3">
+            {(evolutionReview?.suggestions ?? []).map((item) => (
+              <div key={item.skill_id} className="rounded-2xl border border-border/70 bg-card/80 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-foreground">{item.name || item.skill_id}</div>
+                  <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">{item.enabled ? 'enabled' : 'disabled'}</span>
+                  {item.always ? <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">always</span> : null}
+                </div>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                  {item.reasons.map((reason, idx) => <li key={idx}>{reason}</li>)}
+                </ul>
+              </div>
+            ))}
+            {(evolutionReview?.suggestions?.length ?? 0) === 0 ? (
+              <p className="rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                No immediate skill-improvement suggestions detected yet.
+              </p>
+            ) : null}
+          </div>
+        </Card>
+
         <Card className="rounded-[28px] border-border/70 bg-card/92 p-5 shadow-sm">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -420,6 +526,58 @@ export default function MarketplacePage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Evolution review
+              </div>
+              <h3 className="mt-2 text-lg font-semibold text-foreground">
+                Skill improvement suggestions
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Review active learnings, version history, and snapshot signals before editing skills.
+              </p>
+            </div>
+            <div className="rounded-full bg-muted/60 px-3 py-1 text-xs text-muted-foreground">
+              {String(evolutionReview?.suggestions?.length ?? 0)} suggestions
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <SkillMetric label="Learnings" value={String(evolutionReview?.learning_entry_count ?? 0)} />
+            <SkillMetric label="Snapshots" value={String(evolutionReview?.snapshot_count ?? 0)} />
+            <SkillMetric label="Version records" value={String(evolutionReview?.inventory?.version_history?.version_count ?? 0)} />
+          </div>
+
+          {evolutionReview?.active_learnings ? (
+            <div className="mt-4 rounded-2xl border border-border/70 bg-card/80 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Active learnings</div>
+              <pre className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-muted-foreground">{evolutionReview.active_learnings}</pre>
+            </div>
+          ) : null}
+
+          <div className="mt-4 space-y-3">
+            {(evolutionReview?.suggestions ?? []).map((item) => (
+              <div key={item.skill_id} className="rounded-2xl border border-border/70 bg-card/80 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-foreground">{item.name || item.skill_id}</div>
+                  <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">{item.enabled ? 'enabled' : 'disabled'}</span>
+                  {item.always ? <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">always</span> : null}
+                </div>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                  {item.reasons.map((reason, idx) => <li key={idx}>{reason}</li>)}
+                </ul>
+              </div>
+            ))}
+            {(evolutionReview?.suggestions?.length ?? 0) === 0 ? (
+              <p className="rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                No immediate skill-improvement suggestions detected yet.
+              </p>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card className="rounded-[28px] border-border/70 bg-card/92 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 {t('marketplaceSkillSources')}
               </div>
               <h3 className="mt-2 text-lg font-semibold text-foreground">
@@ -458,6 +616,58 @@ export default function MarketplacePage() {
             {(inventory?.sources ?? []).length === 0 ? (
               <p className="rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
                 {t('marketplaceNoSources')}
+              </p>
+            ) : null}
+          </div>
+        </Card>
+
+        <Card className="rounded-[28px] border-border/70 bg-card/92 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Evolution review
+              </div>
+              <h3 className="mt-2 text-lg font-semibold text-foreground">
+                Skill improvement suggestions
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Review active learnings, version history, and snapshot signals before editing skills.
+              </p>
+            </div>
+            <div className="rounded-full bg-muted/60 px-3 py-1 text-xs text-muted-foreground">
+              {String(evolutionReview?.suggestions?.length ?? 0)} suggestions
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <SkillMetric label="Learnings" value={String(evolutionReview?.learning_entry_count ?? 0)} />
+            <SkillMetric label="Snapshots" value={String(evolutionReview?.snapshot_count ?? 0)} />
+            <SkillMetric label="Version records" value={String(evolutionReview?.inventory?.version_history?.version_count ?? 0)} />
+          </div>
+
+          {evolutionReview?.active_learnings ? (
+            <div className="mt-4 rounded-2xl border border-border/70 bg-card/80 p-4">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Active learnings</div>
+              <pre className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-muted-foreground">{evolutionReview.active_learnings}</pre>
+            </div>
+          ) : null}
+
+          <div className="mt-4 space-y-3">
+            {(evolutionReview?.suggestions ?? []).map((item) => (
+              <div key={item.skill_id} className="rounded-2xl border border-border/70 bg-card/80 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-foreground">{item.name || item.skill_id}</div>
+                  <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">{item.enabled ? 'enabled' : 'disabled'}</span>
+                  {item.always ? <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] text-muted-foreground">always</span> : null}
+                </div>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                  {item.reasons.map((reason, idx) => <li key={idx}>{reason}</li>)}
+                </ul>
+              </div>
+            ))}
+            {(evolutionReview?.suggestions?.length ?? 0) === 0 ? (
+              <p className="rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                No immediate skill-improvement suggestions detected yet.
               </p>
             ) : null}
           </div>
