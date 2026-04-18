@@ -2897,12 +2897,23 @@ func (s *Server) handleToolSessionProcessOutput(c *echo.Context) error {
 
 	status, statusErr := s.processMgr.GetStatus(id)
 	if statusErr == nil && status.Running {
-		_ = s.toolSess.TouchSession(c.Request().Context(), id, toolsessions.StateRunning)
+		if err := s.toolSess.TouchSession(c.Request().Context(), id, toolsessions.StateRunning); err != nil {
+			s.logger.Warn("Failed to touch running tool session",
+				zap.String("session_id", id),
+				zap.Error(err),
+			)
+		}
 	} else if statusErr == nil && !status.Running {
 		if sess, err := s.toolSess.GetSession(c.Request().Context(), id); err == nil &&
 			sess.State != toolsessions.StateTerminated &&
 			sess.State != toolsessions.StateArchived {
-			_ = s.toolSess.TerminateSession(c.Request().Context(), id, fmt.Sprintf("process exited with code %d", status.ExitCode))
+			if err := s.toolSess.TerminateSession(c.Request().Context(), id, fmt.Sprintf("process exited with code %d", status.ExitCode)); err != nil {
+				s.logger.Warn("Failed to terminate stopped tool session",
+					zap.String("session_id", id),
+					zap.Int("exit_code", status.ExitCode),
+					zap.Error(err),
+				)
+			}
 		}
 	}
 	running := statusErr == nil && status.Running
@@ -2947,7 +2958,12 @@ func (s *Server) handleToolSessionProcessInput(c *echo.Context) error {
 			if s.tryRestoreToolSessionRuntime(c.Request().Context(), id) {
 				retryErr := s.processMgr.Write(id, body.Data)
 				if retryErr == nil {
-					_ = s.toolSess.TouchSession(c.Request().Context(), id, toolsessions.StateRunning)
+					if touchErr := s.toolSess.TouchSession(c.Request().Context(), id, toolsessions.StateRunning); touchErr != nil {
+						s.logger.Warn("Failed to touch restored tool session after input retry",
+							zap.String("session_id", id),
+							zap.Error(touchErr),
+						)
+					}
 					return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 				}
 				err = retryErr
@@ -2961,7 +2977,12 @@ func (s *Server) handleToolSessionProcessInput(c *echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	_ = s.toolSess.TouchSession(c.Request().Context(), id, toolsessions.StateRunning)
+	if err := s.toolSess.TouchSession(c.Request().Context(), id, toolsessions.StateRunning); err != nil {
+		s.logger.Warn("Failed to touch tool session after process input",
+			zap.String("session_id", id),
+			zap.Error(err),
+		)
+	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -2982,7 +3003,12 @@ func (s *Server) handleToolSessionProcessKill(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	s.tryKillRuntimeSession(c.Request().Context(), id)
-	_ = s.toolSess.TerminateSession(c.Request().Context(), id, "killed from webui")
+	if err := s.toolSess.TerminateSession(c.Request().Context(), id, "killed from webui"); err != nil {
+		s.logger.Warn("Failed to terminate tool session after kill",
+			zap.String("session_id", id),
+			zap.Error(err),
+		)
+	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "killed"})
 }
 
@@ -7493,13 +7519,28 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 			}
 			switch msg.Type {
 			case "ping":
-				_ = writeJSON(toolWSResponse{Type: "pong"})
+				if err := writeJSON(toolWSResponse{Type: "pong"}); err != nil {
+					s.logger.Warn("Failed to write tool websocket pong",
+						zap.String("session_id", sessionID),
+						zap.Error(err),
+					)
+				}
 			case "kill":
 				if s.processMgr != nil {
-					_ = s.processMgr.Kill(sessionID)
+					if err := s.processMgr.Kill(sessionID); err != nil && !isProcessSessionNotFound(err) && !strings.Contains(strings.ToLower(err.Error()), "not running") {
+						s.logger.Warn("Failed to kill tool websocket session process",
+							zap.String("session_id", sessionID),
+							zap.Error(err),
+						)
+					}
 				}
 				s.tryKillRuntimeSession(context.Background(), sessionID)
-				_ = s.toolSess.TerminateSession(context.Background(), sessionID, "killed from tool ws")
+				if err := s.toolSess.TerminateSession(context.Background(), sessionID, "killed from tool ws"); err != nil {
+					s.logger.Warn("Failed to terminate tool websocket session",
+						zap.String("session_id", sessionID),
+						zap.Error(err),
+					)
+				}
 			case "resize":
 				if msg.Cols <= 0 || msg.Rows <= 0 {
 					continue
@@ -7516,16 +7557,31 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 				if err := s.processMgr.Write(sessionID, msg.Data); err != nil {
 					if isProcessSessionNotFound(err) && s.tryRestoreToolSessionRuntime(context.Background(), sessionID) {
 						if retryErr := s.processMgr.Write(sessionID, msg.Data); retryErr == nil {
-							_ = s.toolSess.TouchSession(context.Background(), sessionID, toolsessions.StateRunning)
+							if touchErr := s.toolSess.TouchSession(context.Background(), sessionID, toolsessions.StateRunning); touchErr != nil {
+								s.logger.Warn("Failed to touch restored websocket tool session",
+									zap.String("session_id", sessionID),
+									zap.Error(touchErr),
+								)
+							}
 							continue
 						} else {
 							err = retryErr
 						}
 					}
-					_ = writeJSON(toolWSResponse{Type: "error", Message: err.Error()})
+					if writeErr := writeJSON(toolWSResponse{Type: "error", Message: err.Error()}); writeErr != nil {
+						s.logger.Warn("Failed to write tool websocket error response",
+							zap.String("session_id", sessionID),
+							zap.Error(writeErr),
+						)
+					}
 					continue
 				}
-				_ = s.toolSess.TouchSession(context.Background(), sessionID, toolsessions.StateRunning)
+				if err := s.toolSess.TouchSession(context.Background(), sessionID, toolsessions.StateRunning); err != nil {
+					s.logger.Warn("Failed to touch websocket tool session after input",
+						zap.String("session_id", sessionID),
+						zap.Error(err),
+					)
+				}
 			}
 		}
 	}()
@@ -7562,11 +7618,16 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 			if outErr == nil {
 				offset = total
 				if len(chunks) > 0 {
-					_ = writeJSON(toolWSResponse{
+					if err := writeJSON(toolWSResponse{
 						Type:  "output",
 						Data:  strings.Join(chunks, ""),
 						Total: total,
-					})
+					}); err != nil {
+						s.logger.Warn("Failed to write tool websocket output",
+							zap.String("session_id", sessionID),
+							zap.Error(err),
+						)
+					}
 				}
 			}
 
@@ -7574,11 +7635,16 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 			if statusErr != nil {
 				missing := isProcessSessionNotFound(statusErr)
 				if !statusInit || missing != lastMissing {
-					_ = writeJSON(toolWSResponse{
+					if err := writeJSON(toolWSResponse{
 						Type:    "status",
 						Running: false,
 						Missing: missing,
-					})
+					}); err != nil {
+						s.logger.Warn("Failed to write missing tool websocket status",
+							zap.String("session_id", sessionID),
+							zap.Error(err),
+						)
+					}
 					statusInit = true
 					lastMissing = missing
 				}
@@ -7586,22 +7652,38 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 			}
 
 			if status.Running {
-				_ = s.toolSess.TouchSession(context.Background(), sessionID, toolsessions.StateRunning)
+				if err := s.toolSess.TouchSession(context.Background(), sessionID, toolsessions.StateRunning); err != nil {
+					s.logger.Warn("Failed to touch websocket tool session from status poll",
+						zap.String("session_id", sessionID),
+						zap.Error(err),
+					)
+				}
 			} else {
 				if rec, err := s.toolSess.GetSession(context.Background(), sessionID); err == nil &&
 					rec.State != toolsessions.StateTerminated &&
 					rec.State != toolsessions.StateArchived {
-					_ = s.toolSess.TerminateSession(context.Background(), sessionID, fmt.Sprintf("process exited with code %d", status.ExitCode))
+					if err := s.toolSess.TerminateSession(context.Background(), sessionID, fmt.Sprintf("process exited with code %d", status.ExitCode)); err != nil {
+						s.logger.Warn("Failed to terminate websocket tool session after exit",
+							zap.String("session_id", sessionID),
+							zap.Int("exit_code", status.ExitCode),
+							zap.Error(err),
+						)
+					}
 				}
 			}
 
 			if !statusInit || status.Running != lastRunning || status.ExitCode != lastExit || lastMissing {
-				_ = writeJSON(toolWSResponse{
+				if err := writeJSON(toolWSResponse{
 					Type:     "status",
 					Running:  status.Running,
 					ExitCode: status.ExitCode,
 					Missing:  false,
-				})
+				}); err != nil {
+					s.logger.Warn("Failed to write websocket tool status",
+						zap.String("session_id", sessionID),
+						zap.Error(err),
+					)
+				}
 				statusInit = true
 				lastRunning = status.Running
 				lastExit = status.ExitCode
