@@ -336,7 +336,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                     <Label htmlFor="pf-name">{t('providerName')}</Label>
                     <Input
                       id="pf-name"
-                      placeholder="e.g. openai-main"
+                      placeholder={t('providerNamePlaceholder')}
                       disabled={isEdit}
                       {...register('name', { required: !isEdit })}
                       className={cn('h-11 rounded-2xl bg-card/90', errors.name && 'border-destructive')}
@@ -379,7 +379,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                     <Label htmlFor="pf-proxy">{t('proxyAddress')}</Label>
                     <Input
                       id="pf-proxy"
-                      placeholder="http://127.0.0.1:7890"
+                      placeholder={t('proxyAddressPlaceholder')}
                       {...register('proxy')}
                       className="h-11 rounded-2xl bg-card/90"
                     />

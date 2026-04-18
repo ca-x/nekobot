@@ -1483,5 +1483,10 @@
   "providerCooldownCleared": "provider のクールダウンを解除しました。",
   "providerRuntimeDetailTitle": "Provider ランタイム詳細",
   "providerRuntimeDetailDescription": "{0} のランタイム失敗理由を確認します。",
-  "providerRuntimeViewErrors": "エラー {0} 件を表示"
+  "providerRuntimeViewErrors": "エラー {0} 件を表示",
+  "providerNamePlaceholder": "例: openai-main",
+  "proxyAddressPlaceholder": "http://127.0.0.1:7890",
+  "durationSecondsCompact": "{0}秒",
+  "durationMinutesCompact": "{0}分",
+  "durationMinutesSecondsCompact": "{0}分 {1}秒"
 }

@@ -1477,5 +1477,16 @@
   "modelsAliasesPlaceholder": "alias-a, alias-b",
   "modelsFieldRegexRules": "正規表現ルール",
   "modelsRegexPlaceholder": "^gpt-4\\.1-mini$",
-  "modelsSaveRoute": "ルート保存"
+  "modelsSaveRoute": "ルート保存",
+  "defaults": "既定値",
+  "providerCooldownClear": "クールダウンを解除",
+  "providerCooldownCleared": "provider のクールダウンを解除しました。",
+  "providerRuntimeDetailTitle": "Provider ランタイム詳細",
+  "providerRuntimeDetailDescription": "{0} のランタイム失敗理由を確認します。",
+  "providerRuntimeViewErrors": "エラー {0} 件を表示",
+  "providerNamePlaceholder": "例: openai-main",
+  "proxyAddressPlaceholder": "http://127.0.0.1:7890",
+  "durationSecondsCompact": "{0}秒",
+  "durationMinutesCompact": "{0}分",
+  "durationMinutesSecondsCompact": "{0}分 {1}秒"
 }

@@ -1483,5 +1483,10 @@
   "providerCooldownCleared": "Provider cooldown cleared.",
   "providerRuntimeDetailTitle": "Provider runtime details",
   "providerRuntimeDetailDescription": "Inspect runtime failure reasons for {0}.",
-  "providerRuntimeViewErrors": "View {0} error(s)"
+  "providerRuntimeViewErrors": "View {0} error(s)",
+  "providerNamePlaceholder": "e.g. openai-main",
+  "proxyAddressPlaceholder": "http://127.0.0.1:7890",
+  "durationSecondsCompact": "{0}s",
+  "durationMinutesCompact": "{0}m",
+  "durationMinutesSecondsCompact": "{0}m {1}s"
 }

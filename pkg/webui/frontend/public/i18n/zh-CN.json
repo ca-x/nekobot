@@ -1483,5 +1483,10 @@
   "providerCooldownCleared": "已清除 provider 冷却状态。",
   "providerRuntimeDetailTitle": "Provider 运行时详情",
   "providerRuntimeDetailDescription": "查看 {0} 的运行时失败原因。",
-  "providerRuntimeViewErrors": "查看 {0} 个错误"
+  "providerRuntimeViewErrors": "查看 {0} 个错误",
+  "providerNamePlaceholder": "例如 openai-main",
+  "proxyAddressPlaceholder": "http://127.0.0.1:7890",
+  "durationSecondsCompact": "{0}秒",
+  "durationMinutesCompact": "{0}分",
+  "durationMinutesSecondsCompact": "{0}分 {1}秒"
 }

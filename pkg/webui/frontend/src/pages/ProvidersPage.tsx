@@ -532,7 +532,7 @@ function ProviderPanel({ provider, runtime, typeMeta, onClick, onClearCooldown, 
           <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-4">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400"><Globe className="h-3.5 w-3.5" />{t('providerPanelEndpoint')}</div>
             <p className="mt-2 break-all text-sm leading-6 text-slate-700">{endpoint}</p>
-            {provider.proxy?.trim() && <p className="mt-3 text-xs leading-5 text-slate-500">Proxy: {provider.proxy}</p>}
+            {provider.proxy?.trim() && <p className="mt-3 text-xs leading-5 text-slate-500">{t('proxyAddress')}: {provider.proxy}</p>}
             <p className="mt-3 text-xs leading-5 text-slate-500">{t('providerWeightSummary', String(provider.default_weight), provider.enabled ? t('enabled') : t('disabled'))}</p>
           </div>
 
@@ -570,12 +570,12 @@ function ProviderPanel({ provider, runtime, typeMeta, onClick, onClearCooldown, 
 }
 
 function formatDuration(totalSeconds: number): string {
-  if (!totalSeconds || totalSeconds <= 0) return '0s';
+  if (!totalSeconds || totalSeconds <= 0) return t('durationSecondsCompact', '0');
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
-  if (minutes <= 0) return `${seconds}s`
-  if (seconds === 0) return `${minutes}m`
-  return `${minutes}m ${seconds}s`
+  if (minutes <= 0) return t('durationSecondsCompact', String(seconds))
+  if (seconds === 0) return t('durationMinutesCompact', String(minutes))
+  return t('durationMinutesSecondsCompact', String(minutes), String(seconds))
 }
 
 function formatFailureSummary(runtime?: ProviderRuntime): string {
