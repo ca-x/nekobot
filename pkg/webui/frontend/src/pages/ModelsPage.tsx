@@ -125,7 +125,7 @@ export default function ModelsPage() {
 
   return (
     <div className="space-y-6">
-      <Header title="Models" description="Manage logical models and provider routes separately from provider connections." />
+      <Header title={t('tabModels')} description={t('modelsPageDescription')} />
 
       <section className="relative overflow-hidden rounded-[28px] border border-border/70 bg-[radial-gradient(circle_at_top_left,_rgba(244,114,182,0.18),_transparent_38%),linear-gradient(135deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.72))] p-5 shadow-sm sm:p-6">
         <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-100/60 blur-3xl" />
@@ -133,21 +133,21 @@ export default function ModelsPage() {
           <div className="space-y-3">
             <div className="inline-flex items-center gap-2 rounded-full border border-rose-300/40 bg-card/90 px-3 py-1 text-xs font-medium text-rose-700 shadow-sm">
               <Sparkles className="h-3.5 w-3.5" />
-              Model workspace
+              {t('modelsHeroBadge')}
             </div>
             <div className="space-y-2">
               <h2 className="max-w-2xl text-2xl font-semibold tracking-tight text-foreground">
-                Shape logical models first, then tune provider-specific routes.
+                {t('modelsHeroTitle')}
               </h2>
               <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                The model catalog defines user-facing model IDs. Routes decide which provider serves each model, which route is default, and how aliases or regex matching resolve.
+                {t('modelsHeroDescription')}
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <MetricCard label="Catalog" value={String(modelCatalog.length)} />
-              <MetricCard label="Enabled" value={String(modelOptions.length)} />
+              <MetricCard label={t('modelsMetricCatalog')} value={String(modelCatalog.length)} />
+              <MetricCard label={t('modelsMetricEnabled')} value={String(modelOptions.length)} />
               <MetricCard
-                label="Providers wired"
+                label={t('modelsMetricProvidersWired')}
                 value={String(
                   Array.from(
                     new Set(
@@ -167,7 +167,7 @@ export default function ModelsPage() {
               <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search model ID, name, developer"
+                placeholder={t('modelsSearchPlaceholder')}
                 className="h-11 rounded-2xl border-border/70 bg-card/90 pl-9 shadow-sm"
               />
             </div>
@@ -178,7 +178,7 @@ export default function ModelsPage() {
       <Card className="rounded-[28px] border-border/70 bg-card/92 shadow-sm">
         <CardContent className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
           <div className="space-y-2">
-            <Label htmlFor="new-model-id">Model ID</Label>
+            <Label htmlFor="new-model-id">{t('modelsFieldModelId')}</Label>
             <Input
               id="new-model-id"
               value={newModelID}
@@ -188,7 +188,7 @@ export default function ModelsPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="new-model-display-name">Display name</Label>
+            <Label htmlFor="new-model-display-name">{t('modelsFieldDisplayName')}</Label>
             <Input
               id="new-model-display-name"
               value={newDisplayName}
@@ -199,7 +199,7 @@ export default function ModelsPage() {
           </div>
           <div className="flex items-end">
             <Button type="button" className="h-11 rounded-full px-5" onClick={handleCreateModel} disabled={createDisabled}>
-              Create model
+              {t('modelsCreate')}
             </Button>
           </div>
         </CardContent>
@@ -215,9 +215,9 @@ export default function ModelsPage() {
 
       {!isLoading && filteredModels.length === 0 && (
         <div className="rounded-[28px] border border-dashed border-border/70 bg-card/70 px-6 py-16 text-center">
-          <div className="text-lg font-semibold text-foreground">No models found</div>
+          <div className="text-lg font-semibold text-foreground">{t('modelsEmptyTitle')}</div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Discover models from a provider or create them through the backend API first.
+            {t('modelsEmptyDescription')}
           </p>
         </div>
       )}
@@ -234,7 +234,7 @@ export default function ModelsPage() {
                     <div className="space-y-3">
                       <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/90 px-3 py-1 text-xs font-medium text-muted-foreground">
                         <Route className="h-3.5 w-3.5" />
-                        {model.catalog_source || 'manual'}
+                        {model.catalog_source || t('providerPanelManualOnly')}
                       </div>
                       <div>
                         <h3 className="text-lg font-semibold text-foreground">{model.display_name || model.model_id}</h3>
@@ -242,7 +242,7 @@ export default function ModelsPage() {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <span className="rounded-full bg-background px-2.5 py-1 text-xs text-muted-foreground">
-                          {model.enabled ? 'Enabled' : 'Disabled'}
+                          {model.enabled ? t('enabled') : t('disabled')}
                         </span>
                         {model.developer && (
                           <span className="rounded-full bg-background px-2.5 py-1 text-xs text-muted-foreground">
@@ -263,9 +263,9 @@ export default function ModelsPage() {
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      <MetricCard label="Routes" value={String(routes.length)} compact />
+                      <MetricCard label={t('modelsMetricRoutes')} value={String(routes.length)} compact />
                       <MetricCard
-                        label="Providers"
+                        label={t('modelsMetricProviders')}
                         value={String(new Set(routes.map((route) => route.provider_name)).size)}
                         compact
                       />
@@ -276,7 +276,7 @@ export default function ModelsPage() {
                         onClick={() => setExpandedModelID(expanded ? '' : model.model_id)}
                       >
                         {expanded ? <ChevronUp className="mr-2 h-4 w-4" /> : <ChevronDown className="mr-2 h-4 w-4" />}
-                        Routes
+                        {t('modelsRoutesButton')}
                       </Button>
                     </div>
                   </div>
@@ -287,7 +287,7 @@ export default function ModelsPage() {
                     {routes.length === 0 ? (
                       <div className="rounded-[22px] border border-dashed border-border/70 bg-card/70 px-4 py-8">
                         <div className="space-y-4 text-center">
-                          <p className="text-sm text-muted-foreground">No routes are configured for this model yet.</p>
+                          <p className="text-sm text-muted-foreground">{t('modelsNoRoutes')}</p>
                           <div className="mx-auto grid max-w-xl gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
                             <Input
                               value={newRouteProviderByModel[model.model_id] ?? ''}
@@ -297,7 +297,7 @@ export default function ModelsPage() {
                                   [model.model_id]: event.target.value,
                                 }))
                               }
-                              placeholder="Provider name (e.g. demo-openai)"
+                              placeholder={t('modelsProviderNamePlaceholder')}
                               className="h-11 rounded-2xl bg-card/90"
                               list={`providers-${model.model_id}`}
                             />
@@ -321,7 +321,7 @@ export default function ModelsPage() {
                                 })
                               }
                             >
-                              Add route
+                              {t('modelsAddRoute')}
                             </Button>
                           </div>
                         </div>
@@ -397,27 +397,27 @@ function RouteEditor({
         <div>
           <div className="text-sm font-semibold text-foreground">{route.provider_name}</div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {providerExists ? 'Connected provider route' : 'Route points to a provider that is not currently configured'}
+            {providerExists ? t('modelsRouteConnectedProvider') : t('modelsRouteMissingProvider')}
           </p>
         </div>
         <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-card px-3 py-1.5 text-xs text-muted-foreground">
           <SlidersHorizontal className="h-3.5 w-3.5" />
-          {route.is_default ? 'Default route' : 'Secondary route'}
+          {route.is_default ? t('modelsRouteDefault') : t('modelsRouteSecondary')}
         </div>
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
-        <Field label="Enabled">
+        <Field label={t('enabled')}>
           <div className="flex h-11 items-center rounded-2xl border border-border/70 bg-card/90 px-3">
             <Switch checked={enabled} onCheckedChange={setEnabled} />
           </div>
         </Field>
-        <Field label="Default">
+        <Field label={t('modelsRouteDefaultToggle')}>
           <div className="flex h-11 items-center rounded-2xl border border-border/70 bg-card/90 px-3">
             <Switch checked={isDefault} onCheckedChange={setIsDefault} />
           </div>
         </Field>
-        <Field label="Weight override">
+        <Field label={t('modelsFieldWeightOverride')}>
           <Input
             type="number"
             min={0}
@@ -426,26 +426,26 @@ function RouteEditor({
             className="h-11 rounded-2xl bg-card/90"
           />
         </Field>
-        <Field label="Provider model ID">
+        <Field label={t('modelsFieldProviderModelId')}>
           <Input
             value={providerModelID}
             onChange={(event) => setProviderModelID(event.target.value)}
             className="h-11 rounded-2xl bg-card/90"
           />
         </Field>
-        <Field label="Aliases">
+        <Field label={t('modelsFieldAliases')}>
           <Input
             value={aliases}
             onChange={(event) => setAliases(event.target.value)}
-            placeholder="alias-a, alias-b"
+            placeholder={t('modelsAliasesPlaceholder')}
             className="h-11 rounded-2xl bg-card/90"
           />
         </Field>
-        <Field label="Regex rules">
+        <Field label={t('modelsFieldRegexRules')}>
           <Input
             value={regexRules}
             onChange={(event) => setRegexRules(event.target.value)}
-            placeholder="^gpt-4\\.1-mini$"
+            placeholder={t('modelsRegexPlaceholder')}
             className="h-11 rounded-2xl bg-card/90"
           />
         </Field>
@@ -453,7 +453,7 @@ function RouteEditor({
 
       <div className="mt-4 flex justify-end">
         <Button type="button" className="rounded-full" onClick={handleSave} disabled={saving}>
-          Save route
+          {t('modelsSaveRoute')}
         </Button>
       </div>
     </div>

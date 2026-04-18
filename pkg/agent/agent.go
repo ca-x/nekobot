@@ -1227,6 +1227,15 @@ func (a *Agent) GetFailoverSnapshots(providerNames []string) map[string]provider
 	return snapshots
 }
 
+// ClearFailoverCooldown removes in-memory cooldown state for one provider.
+func (a *Agent) ClearFailoverCooldown(providerName string) {
+	trimmed := strings.TrimSpace(providerName)
+	if trimmed == "" {
+		return
+	}
+	a.getFailoverCooldown().ClearProvider(trimmed)
+}
+
 func (a *Agent) getProviderClient(providerName, model string, cache map[string]*providers.Client) (*providers.Client, error) {
 	key := providerName + "::" + model
 	if client, ok := cache[key]; ok {

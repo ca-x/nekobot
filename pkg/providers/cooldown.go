@@ -95,6 +95,13 @@ func (ct *CooldownTracker) MarkSuccess(provider string) {
 	entry.DisabledReason = ""
 }
 
+// ClearProvider resets all counters and cooldown state for one provider.
+func (ct *CooldownTracker) ClearProvider(provider string) {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	delete(ct.entries, provider)
+}
+
 // IsAvailable returns true if the provider is not in cooldown or disabled.
 func (ct *CooldownTracker) IsAvailable(provider string) bool {
 	ct.mu.RLock()

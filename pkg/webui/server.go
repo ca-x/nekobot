@@ -362,6 +362,8 @@ func (s *Server) setup() {
 	api.GET("/providers/runtime", s.handleGetProviderRuntime)
 	api.POST("/providers", s.handleCreateProvider)
 	api.POST("/providers/discover-models", s.handleDiscoverProviderModels)
+	api.POST("/providers/:name/clear-cooldown", s.handleClearProviderCooldown)
+	api.POST("/providers/apply-discovered-models", s.handleApplyDiscoveredProviderModels)
 	api.PUT("/providers/:name", s.handleUpdateProvider)
 	api.DELETE("/providers/:name", s.handleDeleteProvider)
 	api.GET("/models", s.handleGetModels)
@@ -1014,6 +1016,18 @@ func (s *Server) handleGetProviderRuntime(c *echo.Context) error {
 	return c.JSON(http.StatusOK, items)
 }
 
+func (s *Server) handleClearProviderCooldown(c *echo.Context) error {
+	if s.agent == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "agent not available"})
+	}
+	name := strings.TrimSpace(c.Param("name"))
+	if name == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "provider name is required"})
+	}
+	s.agent.ClearFailoverCooldown(name)
+	return c.JSON(http.StatusOK, map[string]string{"status": "cleared"})
+}
+
 func (s *Server) handleCreateProvider(c *echo.Context) error {
 	var profile config.ProviderProfile
 	if err := c.Bind(&profile); err != nil {
@@ -1230,13 +1244,34 @@ func (s *Server) handleDiscoverProviderModels(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	if err := s.mergeDiscoveredModels(c.Request().Context(), profile, models); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"provider_kind": kind,
 		"models":        models,
+	})
+}
+
+func (s *Server) handleApplyDiscoveredProviderModels(c *echo.Context) error {
+	var body struct {
+		Profile config.ProviderProfile `json:"profile"`
+		Models  []string               `json:"models"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	body.Profile.Name = strings.TrimSpace(body.Profile.Name)
+	body.Profile.ProviderKind = strings.TrimSpace(body.Profile.ProviderKind)
+	if body.Profile.ProviderKind == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "provider_kind is required"})
+	}
+	if len(body.Models) == 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "models are required"})
+	}
+	if err := s.mergeDiscoveredModels(c.Request().Context(), body.Profile, dedupeStrings(body.Models)); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{
+		"provider_kind": body.Profile.ProviderKind,
+		"models":        dedupeStrings(body.Models),
 	})
 }
 

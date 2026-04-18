@@ -245,7 +245,7 @@ func TestHandleUpdateModelRouteCreatesMissingRoute(t *testing.T) {
 	}
 }
 
-func TestHandleDiscoverProviderModelsMergesCatalogAndRoutes(t *testing.T) {
+func TestHandleDiscoverProviderModelsReturnsPreviewOnly(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
 	cfg.Agents.Defaults.Workspace = t.TempDir()
@@ -301,8 +301,61 @@ func TestHandleDiscoverProviderModelsMergesCatalogAndRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list models failed: %v", err)
 	}
+	if len(listedModels) != 0 {
+		t.Fatalf("expected preview-only discover to persist 0 models, got %d", len(listedModels))
+	}
+}
+
+func TestHandleApplyDiscoveredProviderModelsMergesCatalogAndRoutes(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		_ = client.Close()
+	})
+	providers, err := providerstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new provider manager: %v", err)
+	}
+	if _, err := providers.Create(context.Background(), config.ProviderProfile{
+		Name:         "openai-main",
+		ProviderKind: "openai",
+		APIBase:      "https://api.example.com/v1",
+		APIKey:       "secret",
+		Enabled:      true,
+	}); err != nil {
+		t.Fatalf("create provider failed: %v", err)
+	}
+
+	s := &Server{config: cfg, logger: log, providers: providers, entClient: client}
+
+	e := echo.New()
+	body := `{"profile":{"name":"openai-main","provider_kind":"openai"},"models":["gpt-4.1","gpt-4o-mini"]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/providers/apply-discovered-models", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := s.handleApplyDiscoveredProviderModels(c); err != nil {
+		t.Fatalf("handleApplyDiscoveredProviderModels failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	models, err := modelstore.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new model manager: %v", err)
+	}
+	listedModels, err := models.List(context.Background())
+	if err != nil {
+		t.Fatalf("list models failed: %v", err)
+	}
 	if len(listedModels) != 2 {
-		t.Fatalf("expected 2 discovered models, got %d", len(listedModels))
+		t.Fatalf("expected 2 applied models, got %d", len(listedModels))
 	}
 
 	routes, err := modelroute.NewManager(cfg, log, client)

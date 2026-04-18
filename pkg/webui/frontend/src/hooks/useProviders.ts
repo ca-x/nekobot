@@ -60,8 +60,16 @@ export interface DiscoverModelsInput {
   timeout?: number;
 }
 
-interface DiscoverModelsResponse {
+export interface DiscoverModelsResponse {
   provider_kind: string;
+  models: string[];
+}
+
+export interface ApplyDiscoveredModelsInput {
+  profile: {
+    name: string;
+    provider_kind: string;
+  };
   models: string[];
 }
 
@@ -127,15 +135,35 @@ export function useDeleteProvider() {
 }
 
 export function useDiscoverModels() {
-  const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: DiscoverModelsInput) =>
       api.post<DiscoverModelsResponse>('/api/providers/discover-models', input),
-    onSuccess: () => {
+    onError: (err: Error) => toast.error(t('discoveryFailed', err.message)),
+  });
+}
+
+export function useApplyDiscoveredModels() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: ApplyDiscoveredModelsInput) =>
+      api.post<DiscoverModelsResponse>('/api/providers/apply-discovered-models', input),
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['models'] });
       qc.invalidateQueries({ queryKey: ['model-routes'] });
-      toast.success(t('saved'));
+      toast.success(t('providerDiscoveredModelsApplied', String(result.models.length)));
     },
     onError: (err: Error) => toast.error(t('discoveryFailed', err.message)),
+  });
+}
+
+export function useClearProviderCooldown() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => api.post<{ status: string }>(`/api/providers/${encodeURIComponent(name)}/clear-cooldown`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...PROVIDER_RUNTIME_KEY] });
+      toast.success(t('providerCooldownCleared'));
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 }

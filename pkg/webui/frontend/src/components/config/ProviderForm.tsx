@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/lib/notify';
 import { getProviderLogo } from '@/lib/provider-logos';
 import {
+  useApplyDiscoveredModels,
   useCreateProvider,
   useDeleteProvider,
   useDiscoverModels,
@@ -90,7 +91,10 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
   const updateProvider = useUpdateProvider();
   const deleteProvider = useDeleteProvider();
   const discoverModels = useDiscoverModels();
+  const applyDiscoveredModels = useApplyDiscoveredModels();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [selectedDiscoveredModels, setSelectedDiscoveredModels] = useState<string[]>([]);
 
   const {
     register,
@@ -109,6 +113,8 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
       return;
     }
     reset(toFormData(provider));
+    setDiscoveredModels([]);
+    setSelectedDiscoveredModels([]);
   }, [open, provider, reset]);
 
   const selectedKind = watch('provider_kind');
@@ -144,6 +150,10 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
   const discoverDisabled =
     discoverModels.isPending ||
     !hasSatisfiedRequiredApiKey;
+  const applyDiscoveredDisabled =
+    applyDiscoveredModels.isPending ||
+    selectedDiscoveredModels.length === 0 ||
+    !(provider?.name || draftName.trim());
   const logo = getProviderLogo(selectedType?.icon ?? selectedKind);
 
   const applyDiscover = () => {
@@ -159,10 +169,36 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
       },
       {
         onSuccess: (result) => {
-          toast.success(`Discovered ${result.models.length} models and synced them to Models.`);
+          setDiscoveredModels(result.models);
+          setSelectedDiscoveredModels(result.models);
+          toast.success(t('providerDiscoveredModelsPreviewReady', String(result.models.length)));
         },
       },
     );
+  };
+
+  const toggleDiscoveredModel = (modelID: string) => {
+    setSelectedDiscoveredModels((current) =>
+      current.includes(modelID)
+        ? current.filter((item) => item !== modelID)
+        : [...current, modelID],
+    );
+  };
+
+  const applySelectedModels = () => {
+    const values = watch();
+    const providerName = provider?.name || values.name.trim();
+    if (!providerName) {
+      toast.error(t('providerDiscoverSaveProviderFirst'));
+      return;
+    }
+    applyDiscoveredModels.mutate({
+      profile: {
+        name: providerName,
+        provider_kind: values.provider_kind,
+      },
+      models: selectedDiscoveredModels,
+    });
   };
 
   const onSubmit = (data: ProviderFormData) => {
@@ -225,7 +261,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
               <div className="space-y-1">
                 <DialogTitle>{isEdit ? t('editProviderDialogTitle') : t('newProviderDialogTitle')}</DialogTitle>
                 <DialogDescription>
-                  {isEdit ? provider.name : 'Create a provider connection first, then sync discovered models into the shared models workspace.'}
+                  {isEdit ? provider.name : t('providerDialogCreateFirst')}
                 </DialogDescription>
               </div>
             </div>
@@ -237,7 +273,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                 <section className="space-y-3">
                   <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                     <ShieldCheck className="h-3.5 w-3.5" />
-                    Provider type
+                    {t('providerType')}
                   </div>
                   <Controller
                     name="provider_kind"
@@ -275,18 +311,18 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                         </div>
                       </div>
                       <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
-                        <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Defaults</div>
+                        <div className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{t('defaults')}</div>
                         <div className="mt-3 space-y-3 text-sm">
                           <div>
-                            <div className="text-muted-foreground">API Base</div>
+                            <div className="text-muted-foreground">{t('apiEndpoint')}</div>
                             <div className="mt-1 break-all text-foreground">
-                              {selectedType.default_api_base || 'Manual'}
+                              {selectedType.default_api_base || t('providerPanelManualOnly')}
                             </div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground">Discovery</div>
+                            <div className="text-muted-foreground">{t('providerDiscoverLabel')}</div>
                             <div className="mt-1 text-foreground">
-                              {selectedType.supports_discovery ? 'Supported' : 'Manual only'}
+                              {selectedType.supports_discovery ? t('providerDiscoverySupported') : t('providerPanelManualOnly')}
                             </div>
                           </div>
                         </div>
@@ -350,7 +386,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="pf-timeout">Timeout (s)</Label>
+                    <Label htmlFor="pf-timeout">{t('providerPanelTimeout')} (s)</Label>
                     <Input
                       id="pf-timeout"
                       type="number"
@@ -361,7 +397,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="pf-weight">Default weight</Label>
+                    <Label htmlFor="pf-weight">{t('modelsFieldWeightOverride')}</Label>
                     <Input
                       id="pf-weight"
                       type="number"
@@ -375,9 +411,9 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                 <section className="rounded-[24px] border border-border/70 bg-card/70 p-4">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="space-y-1">
-                      <div className="text-sm font-semibold text-foreground">Connection state</div>
+                      <div className="text-sm font-semibold text-foreground">{t('providerConnectionStateTitle')}</div>
                       <p className="text-sm leading-6 text-muted-foreground">
-                        Keep the provider enabled for routing, and sync discovered models into the shared model catalog.
+                        {t('providerConnectionStateDescription')}
                       </p>
                     </div>
                     <Controller
@@ -385,7 +421,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                       control={control}
                       render={({ field }) => (
                         <div className="flex items-center gap-3 rounded-full border border-border/70 bg-background px-3 py-2">
-                          <span className="text-sm text-muted-foreground">Enabled</span>
+                          <span className="text-sm text-muted-foreground">{t('enabled')}</span>
                           <Switch checked={field.value} onCheckedChange={field.onChange} />
                         </div>
                       )}
@@ -400,7 +436,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                           {t('fetchModels')}
                         </div>
                         <p className="text-sm leading-6 text-muted-foreground">
-                          Discover available models from this provider and merge them into the shared Models workspace.
+                          {t('providerDiscoverDescription')}
                         </p>
                       </div>
                       <Button
@@ -415,8 +451,55 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                         ) : (
                           <Search className="mr-2 h-4 w-4" />
                         )}
-                        {discoverModels.isPending ? 'Syncing...' : t('fetchModels')}
+                        {discoverModels.isPending ? t('discoveringModels') : t('fetchModels')}
                       </Button>
+                    </div>
+                  )}
+
+                  {selectedType?.supports_discovery && discoveredModels.length > 0 && (
+                    <div className="mt-4 space-y-3 rounded-2xl border border-border/70 bg-background/80 p-4">
+                      <div className="space-y-1">
+                        <div className="text-sm font-semibold text-foreground">{t('providerDiscoverTitle')}</div>
+                        <p className="text-sm leading-6 text-muted-foreground">{t('providerDiscoverSelectionHint')}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {discoveredModels.map((modelID) => {
+                          const selected = selectedDiscoveredModels.includes(modelID);
+                          return (
+                            <button
+                              key={modelID}
+                              type="button"
+                              onClick={() => toggleDiscoveredModel(modelID)}
+                              className={cn(
+                                'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                                selected
+                                  ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
+                                  : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
+                              )}
+                            >
+                              {modelID}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs text-muted-foreground">
+                          {t('providerDiscoveredModelsSelected', String(selectedDiscoveredModels.length), String(discoveredModels.length))}
+                        </p>
+                        <Button
+                          type="button"
+                          className="rounded-full"
+                          onClick={applySelectedModels}
+                          disabled={applyDiscoveredDisabled}
+                        >
+                          {applyDiscoveredModels.isPending ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                          )}
+                          {t('providerDiscoverApply')}
+                        </Button>
+                      </div>
                     </div>
                   )}
 
@@ -424,7 +507,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                     <div className="mt-4 flex items-start gap-3 rounded-2xl border border-border/70 bg-background/80 p-4">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 text-muted-foreground" />
                       <p className="text-sm leading-6 text-muted-foreground">
-                        This provider type does not expose automatic discovery. Add models and routes from the Models workspace after saving the connection.
+                        {t('providerDiscoveryManualDescription')}
                       </p>
                     </div>
                   )}
