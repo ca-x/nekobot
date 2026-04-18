@@ -144,7 +144,9 @@ func ProvideAgent(deps provideAgentDeps) (*Agent, error) {
 
 	// Register skill tools
 	agent.RegisterSkillTool(skillsMgr)
-	agent.GetTools().MustRegister(tools.NewSkillManageTool(skillsMgr))
+	if err := agent.GetTools().Register(tools.NewSkillManageTool(skillsMgr)); err != nil {
+		log.Warn("Failed to register skill-manage tool", zap.Error(err))
+	}
 	agent.EnableSubagents(func(task *subagent.SubagentTask) {
 		if err := subagent.SendTaskNotification(busNotificationSender{bus: deps.Bus}, task); err != nil {
 			log.Warn("Subagent notification failed", zap.Error(err))

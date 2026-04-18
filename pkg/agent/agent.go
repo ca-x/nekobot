@@ -156,14 +156,30 @@ func New(
 
 	// Create tool registry
 	toolRegistry := tools.NewRegistry()
+	registerTool := func(tool tools.Tool) error {
+		if err := toolRegistry.Register(tool); err != nil {
+			return fmt.Errorf("register tool %s: %w", tool.Name(), err)
+		}
+		return nil
+	}
 
 	// Register built-in tools
-	toolRegistry.MustRegister(tools.NewReadFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
-	toolRegistry.MustRegister(tools.NewWriteFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
-	toolRegistry.MustRegister(tools.NewEditFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
-	toolRegistry.MustRegister(tools.NewAppendFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
-	toolRegistry.MustRegister(tools.NewListDirTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace))
-	toolRegistry.MustRegister(tools.NewExecTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace, tools.ExecConfig{
+	if err := registerTool(tools.NewReadFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace)); err != nil {
+		return nil, err
+	}
+	if err := registerTool(tools.NewWriteFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace)); err != nil {
+		return nil, err
+	}
+	if err := registerTool(tools.NewEditFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace)); err != nil {
+		return nil, err
+	}
+	if err := registerTool(tools.NewAppendFileTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace)); err != nil {
+		return nil, err
+	}
+	if err := registerTool(tools.NewListDirTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace)); err != nil {
+		return nil, err
+	}
+	if err := registerTool(tools.NewExecTool(workspace, cfg.Agents.Defaults.RestrictToWorkspace, tools.ExecConfig{
 		Timeout: time.Duration(cfg.Tools.Exec.TimeoutSeconds) * time.Second,
 		Sandbox: tools.DockerSandboxConfig{
 			Enabled:     cfg.Tools.Exec.Sandbox.Enabled,
@@ -173,15 +189,21 @@ func New(
 			Timeout:     time.Duration(cfg.Tools.Exec.Sandbox.Timeout) * time.Second,
 			AutoCleanup: cfg.Tools.Exec.Sandbox.AutoCleanup,
 		},
-	}, processMgr))
+	}, processMgr)); err != nil {
+		return nil, err
+	}
 
 	// Register process tool
-	toolRegistry.MustRegister(tools.NewProcessTool(processMgr))
+	if err := registerTool(tools.NewProcessTool(processMgr)); err != nil {
+		return nil, err
+	}
 	log.Info("PTY process management enabled")
 
 	// Register tool session tool (if tool session manager is available)
 	if toolSessionMgr != nil {
-		toolRegistry.MustRegister(tools.NewToolSessionTool(processMgr, toolSessionMgr, cfg))
+		if err := registerTool(tools.NewToolSessionTool(processMgr, toolSessionMgr, cfg)); err != nil {
+			return nil, err
+		}
 		log.Info("Tool session tool enabled")
 	}
 
@@ -192,22 +214,34 @@ func New(
 		DuckDuckGoEnabled:    cfg.Tools.Web.Search.DuckDuckGoEnabled,
 		DuckDuckGoMaxResults: cfg.Tools.Web.Search.DuckDuckGoMaxResults,
 	}); webSearch != nil {
-		toolRegistry.MustRegister(webSearch)
+		if err := registerTool(webSearch); err != nil {
+			return nil, err
+		}
 		log.Info("Web search tool enabled", zap.String("providers", webSearch.ProviderSummary()))
 	}
 
 	// Web fetch tool (always available)
-	toolRegistry.MustRegister(tools.NewWebFetchTool(50000))
+	if err := registerTool(tools.NewWebFetchTool(50000)); err != nil {
+		return nil, err
+	}
 
 	// Browser tool (if Chrome is available)
 	outputDir := cfg.WorkspacePath() + "/screenshots"
-	toolRegistry.MustRegister(tools.NewBrowserTool(log, true, 30, outputDir))
+	if err := registerTool(tools.NewBrowserTool(log, true, 30, outputDir)); err != nil {
+		return nil, err
+	}
 	log.Info("Browser tool enabled")
 
 	// Message tool (will be configured later by gateway)
-	toolRegistry.MustRegister(tools.NewMessageTool(nil))
-	toolRegistry.MustRegister(tools.NewWikiQueryTool(workspace))
-	toolRegistry.MustRegister(tools.NewWikiLintTool(workspace))
+	if err := registerTool(tools.NewMessageTool(nil)); err != nil {
+		return nil, err
+	}
+	if err := registerTool(tools.NewWikiQueryTool(workspace)); err != nil {
+		return nil, err
+	}
+	if err := registerTool(tools.NewWikiLintTool(workspace)); err != nil {
+		return nil, err
+	}
 
 	var semanticMemory memory.SearchManager
 	if cfg.Memory.Enabled && cfg.Memory.Semantic.Enabled {
@@ -216,12 +250,14 @@ func New(
 			log.Warn("Failed to initialize semantic memory tool", zap.Error(err))
 		} else {
 			semanticMemory = memoryMgr
-			toolRegistry.MustRegister(tools.NewMemoryTool(log, memoryMgr, tools.MemoryToolOptions{
+			if err := registerTool(tools.NewMemoryTool(log, memoryMgr, tools.MemoryToolOptions{
 				DefaultTopK:   cfg.Memory.Semantic.DefaultTopK,
 				MaxTopK:       cfg.Memory.Semantic.MaxTopK,
 				SearchPolicy:  cfg.Memory.Semantic.SearchPolicy,
 				IncludeScores: cfg.Memory.Semantic.IncludeScores,
-			}))
+			})); err != nil {
+				return nil, err
+			}
 			log.Info("Memory tool enabled",
 				zap.String("search_policy", cfg.Memory.Semantic.SearchPolicy),
 				zap.Int("default_top_k", cfg.Memory.Semantic.DefaultTopK),
@@ -234,7 +270,9 @@ func New(
 		if err != nil {
 			log.Warn("Failed to initialize learning tool", zap.Error(err))
 		} else {
-			toolRegistry.MustRegister(tools.NewLearningTool(learningsMgr))
+			if err := registerTool(tools.NewLearningTool(learningsMgr)); err != nil {
+				return nil, err
+			}
 			log.Info("Learning tool enabled")
 		}
 	}
@@ -314,7 +352,7 @@ func preprocessConfigFromConfig(cfg *config.Config, workspace string) preprocess
 // This should be called after agent creation when skills manager is available.
 func (a *Agent) RegisterSkillTool(skillsManager *skills.Manager) {
 	a.skillsManager = skillsManager
-	a.tools.MustRegister(tools.NewSkillTool(a.logger, skillsManager))
+	a.tools.Replace(tools.NewSkillTool(a.logger, skillsManager))
 	a.logger.Info("Skill tool registered")
 }
 
@@ -459,8 +497,11 @@ func (a *Agent) EnableSubagents(notify subagent.NotifyFunc) {
 
 	a.subagents = manager
 	if _, exists := a.tools.Get("spawn"); !exists {
-		a.tools.MustRegister(tools.NewSpawnTool(a.logger, manager))
-		a.logger.Info("Spawn tool registered")
+		if err := a.tools.Register(tools.NewSpawnTool(a.logger, manager)); err != nil {
+			a.logger.Warn("Failed to register spawn tool", zap.Error(err))
+		} else {
+			a.logger.Info("Spawn tool registered")
+		}
 	}
 }
 
