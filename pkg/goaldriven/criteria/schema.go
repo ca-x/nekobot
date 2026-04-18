@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var blockedCIDRs = mustParseCIDRs(
+var blockedCIDRs = parseCIDRs(
 	"0.0.0.0/8",
 	"10.0.0.0/8",
 	"100.64.0.0/10",
@@ -179,12 +179,12 @@ func IsBlockedIP(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }
 
-func mustParseCIDRs(values ...string) []*net.IPNet {
+func parseCIDRs(values ...string) []*net.IPNet {
 	result := make([]*net.IPNet, 0, len(values))
 	for _, value := range values {
 		_, cidr, err := net.ParseCIDR(value)
 		if err != nil {
-			panic(fmt.Sprintf("parse CIDR %s: %v", value, err))
+			continue
 		}
 		result = append(result, cidr)
 	}
