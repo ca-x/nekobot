@@ -484,6 +484,7 @@ func (s *Server) setup() {
 	api.GET("/auth/profile", s.handleGetProfile)
 	api.GET("/auth/me", s.handleGetMe)
 	api.PUT("/auth/profile", s.handleUpdateProfile)
+	api.POST("/auth/stream-token", s.handleCreateStreamToken)
 
 	// Tool session routes
 	api.GET("/tool-sessions", s.handleListToolSessions)
@@ -2452,7 +2453,7 @@ func (s *Server) handleChatEvents(c *echo.Context) error {
 	if tokenStr == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
 	}
-	username, err := s.parseJWTSubject(tokenStr)
+	username, _, _, err := s.parseScopedStreamToken(tokenStr, streamTokenPurposeChatEvents)
 	if err != nil || strings.TrimSpace(username) == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
@@ -3235,6 +3236,9 @@ func (s *Server) allowMemberAPI(c *echo.Context) bool {
 		return true
 	}
 	if method == http.MethodGet && path == "/api/tool-sessions/runtime-transports" {
+		return true
+	}
+	if method == http.MethodPost && path == "/api/auth/stream-token" {
 		return true
 	}
 	if strings.HasPrefix(path, "/api/tool-sessions/") {
@@ -7015,7 +7019,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 	if tokenStr == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
 	}
-	username, err := s.parseJWTSubject(tokenStr)
+	username, _, _, err := s.parseScopedStreamToken(tokenStr, streamTokenPurposeChatWS)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
@@ -7407,7 +7411,7 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 	if tokenStr == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
 	}
-	username, err := s.parseJWTSubject(tokenStr)
+	username, scopedSessionID, _, err := s.parseScopedStreamToken(tokenStr, streamTokenPurposeToolSessionWS)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
@@ -7422,6 +7426,9 @@ func (s *Server) handleToolSessionWS(c *echo.Context) error {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "session not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if scopedSessionID != "" && scopedSessionID != sessionID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "session does not belong to current token"})
 	}
 	if strings.TrimSpace(sess.Owner) != "" && sess.Owner != username {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "session does not belong to current user"})
@@ -8530,6 +8537,95 @@ func (s *Server) handleEvaluatePolicy(c *echo.Context) error {
 }
 
 // --- Helpers ---
+
+type streamTokenPurpose string
+
+const (
+	streamTokenPurposeChatEvents    streamTokenPurpose = "chat_events"
+	streamTokenPurposeChatWS        streamTokenPurpose = "chat_ws"
+	streamTokenPurposeToolSessionWS streamTokenPurpose = "tool_session_ws"
+)
+
+func normalizeStreamTokenPurpose(raw string) streamTokenPurpose {
+	switch strings.TrimSpace(raw) {
+	case string(streamTokenPurposeChatEvents):
+		return streamTokenPurposeChatEvents
+	case string(streamTokenPurposeChatWS):
+		return streamTokenPurposeChatWS
+	case string(streamTokenPurposeToolSessionWS):
+		return streamTokenPurposeToolSessionWS
+	default:
+		return ""
+	}
+}
+
+func (s *Server) handleCreateStreamToken(c *echo.Context) error {
+	var body struct {
+		Purpose   string `json:"purpose"`
+		SessionID string `json:"session_id"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	purpose := normalizeStreamTokenPurpose(body.Purpose)
+	if purpose == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid stream token purpose"})
+	}
+	sessionID := strings.TrimSpace(body.SessionID)
+	if purpose == streamTokenPurposeToolSessionWS {
+		if sessionID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "session_id required"})
+		}
+		if err := s.ensureSessionOwner(c, sessionID); err != nil {
+			return err
+		}
+	}
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"sub":  s.currentUsername(c),
+		"uid":  s.currentUserID(c),
+		"role": s.currentUserRole(c),
+		"pur":  string(purpose),
+		"exp":  now.Add(5 * time.Minute).Unix(),
+		"iat":  now.Unix(),
+	}
+	if sessionID != "" {
+		claims["sid"] = sessionID
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString([]byte(s.getJWTSecret()))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "token generation failed"})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"token": signed, "expires_in": 300})
+}
+
+func (s *Server) parseScopedStreamToken(tokenStr string, purpose streamTokenPurpose) (string, string, string, error) {
+	parsed, err := jwt.Parse(strings.TrimSpace(tokenStr), func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(s.getJWTSecret()), nil
+	})
+	if err != nil || parsed == nil || !parsed.Valid {
+		return "", "", "", fmt.Errorf("invalid token")
+	}
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", "", "", fmt.Errorf("invalid token claims")
+	}
+	claimedPurpose, _ := claims["pur"].(string)
+	if normalizeStreamTokenPurpose(claimedPurpose) != purpose {
+		return "", "", "", fmt.Errorf("invalid token purpose")
+	}
+	sub, _ := claims["sub"].(string)
+	sid, _ := claims["sid"].(string)
+	role, _ := claims["role"].(string)
+	if strings.TrimSpace(sub) == "" {
+		return "", "", "", fmt.Errorf("subject is empty")
+	}
+	return strings.TrimSpace(sub), strings.TrimSpace(sid), strings.TrimSpace(role), nil
+}
 
 func (s *Server) parseJWTSubject(tokenStr string) (string, error) {
 	parsed, err := jwt.Parse(strings.TrimSpace(tokenStr), func(t *jwt.Token) (interface{}, error) {

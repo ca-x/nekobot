@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
-import { getToken } from '@/api/client';
+import { getStreamToken } from '@/api/client';
 import '@xterm/xterm/css/xterm.css';
 
 interface TerminalPanelProps {
@@ -20,20 +20,6 @@ interface WsMessage {
   message?: string;
   cols?: number;
   rows?: number;
-}
-
-function buildWsUrl(sessionId: string): string {
-  const token = getToken();
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return (
-    proto +
-    '://' +
-    window.location.host +
-    '/api/tool-sessions/ws?token=' +
-    encodeURIComponent(token || '') +
-    '&session_id=' +
-    encodeURIComponent(sessionId)
-  );
 }
 
 export default function TerminalPanel({ sessionId, active }: TerminalPanelProps) {
@@ -168,20 +154,27 @@ export default function TerminalPanel({ sessionId, active }: TerminalPanelProps)
     });
 
     /* Connect WebSocket */
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(buildWsUrl(sessionId));
-    } catch {
-      return;
-    }
-    wsRef.current = ws;
+    let cancelled = false;
+    getStreamToken('tool_session_ws', sessionId)
+      .then((token) => {
+        if (cancelled) return;
+        const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        let ws: WebSocket;
+        try {
+          ws = new WebSocket(
+            proto + '://' + window.location.host + '/api/tool-sessions/ws?token=' + encodeURIComponent(token) + '&session_id=' + encodeURIComponent(sessionId),
+          );
+        } catch {
+          return;
+        }
+        wsRef.current = ws;
 
-    ws.onopen = () => {
+        ws.onopen = () => {
       /* Send initial resize */
       sendResize(term.cols, term.rows);
     };
 
-    ws.onmessage = (ev) => {
+        ws.onmessage = (ev) => {
       let msg: WsMessage;
       try {
         msg = JSON.parse(ev.data || '{}');
@@ -209,13 +202,18 @@ export default function TerminalPanel({ sessionId, active }: TerminalPanelProps)
       }
     };
 
-    ws.onerror = () => {
+        ws.onerror = () => {
       term.write('\r\n\x1b[31m[WebSocket connection error]\x1b[0m\r\n');
     };
 
-    ws.onclose = () => {
+        ws.onclose = () => {
       term.write('\r\n\x1b[33m[WebSocket disconnected]\x1b[0m\r\n');
     };
+
+      })
+      .catch(() => {
+        /* ignore */
+      });
 
     /* Window resize listener */
     const handleResize = () => {
@@ -249,7 +247,8 @@ export default function TerminalPanel({ sessionId, active }: TerminalPanelProps)
       dataDisposable.dispose();
       resizeDisposable.dispose();
       try {
-        ws.close();
+        cancelled = true;
+        wsRef.current?.close();
       } catch {
         /* ignore */
       }

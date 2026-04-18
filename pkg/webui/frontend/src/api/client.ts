@@ -73,3 +73,12 @@ export const api = {
   delete: <T>(path: string) =>
     apiFetch<T>(path, { method: 'DELETE' }),
 };
+
+
+export async function getStreamToken(purpose: string, sessionId?: string): Promise<string> {
+  const data = await api.post<{ token: string }>('/api/auth/stream-token', {
+    purpose,
+    session_id: sessionId || '',
+  });
+  return data.token;
+}
