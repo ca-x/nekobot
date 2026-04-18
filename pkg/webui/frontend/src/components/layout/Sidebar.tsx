@@ -159,19 +159,21 @@ export default function Sidebar() {
     <div className={cn('mt-4 shrink-0 space-y-1 border-t border-border/70 pt-4', !sidebarOpen && 'flex flex-col items-center space-y-2')}>
       <button
         onClick={handleLanguageSwitch}
-        title={sidebarOpen ? `Language: ${langLabel}` : t('language')}
-        aria-label={sidebarOpen ? `Language: ${langLabel}` : t('language')}
+        title={sidebarOpen ? `${t('language')}: ${langLabel}` : `${t('language')}: ${langLabel}`}
+        aria-label={sidebarOpen ? `${t('language')}: ${langLabel}` : `${t('language')}: ${langLabel}`}
         className={cn(
           'flex w-full items-center gap-3 rounded-2xl text-[13px] font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           sidebarOpen ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
         )}
       >
         <Languages className="h-4 w-4 shrink-0" />
-        {sidebarOpen && (
-          <span className="flex-1 truncate text-left">{t('language')}</span>
-        )}
-        {sidebarOpen && (
-          <span className="text-xs text-muted-foreground shrink-0">{langLabel}</span>
+        {sidebarOpen ? (
+          <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+            <span className="truncate text-left">{t('language')}</span>
+            <span className="shrink-0 rounded-full border border-border/60 bg-background/80 px-2 py-0.5 text-[11px] text-muted-foreground">{langLabel}</span>
+          </div>
+        ) : (
+          <span className="sr-only">{`${t('language')}: ${langLabel}`}</span>
         )}
       </button>
 
