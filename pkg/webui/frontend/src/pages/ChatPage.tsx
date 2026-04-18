@@ -607,7 +607,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="relative flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-5">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-4 lg:grid lg:grid-cols-[368px_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[392px_minmax(0,1fr)]">
         <div className="absolute inset-x-0 top-0 -z-10 h-48 rounded-[2rem] bg-[radial-gradient(circle_at_top_left,rgba(198,104,140,0.22),transparent_48%),radial-gradient(circle_at_top_right,rgba(229,183,107,0.22),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(255,247,243,0.55))]" />
 
         <Card className="overflow-hidden border-border/70 bg-card/88 shadow-[0_20px_60px_-36px_rgba(120,55,75,0.45)] backdrop-blur lg:sticky lg:top-3 lg:h-fit">
@@ -841,7 +841,7 @@ export default function ChatPage() {
                 <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
                   <div className="text-sm font-semibold text-foreground">{t('chatHarnessAuditTitle')}</div>
                   <div className="mt-2 text-xs leading-5 text-muted-foreground">{t('chatHarnessAuditDescription')}</div>
-                  <Button asChild variant="outline" className="mt-3 rounded-full">
+                  <Button asChild variant="outline" className="mt-3 w-full justify-center rounded-full sm:w-auto">
                     <Link to="/harness/audit">
                       <ShieldCheck className="mr-2 h-4 w-4" />
                       {t('chatOpenAudit')}
@@ -851,7 +851,7 @@ export default function ChatPage() {
                 <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
                   <div className="text-sm font-semibold text-foreground">{t('chatHarnessWatchTitle')}</div>
                   <div className="mt-2 text-xs leading-5 text-muted-foreground">{t('chatHarnessWatchDescription')}</div>
-                  <Button asChild variant="outline" className="mt-3 rounded-full">
+                  <Button asChild variant="outline" className="mt-3 w-full justify-center rounded-full sm:w-auto">
                     <Link to="/config">
                       <Settings2 className="mr-2 h-4 w-4" />
                       {t('chatOpenWatchConfig')}
