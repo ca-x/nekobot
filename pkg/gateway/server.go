@@ -42,6 +42,8 @@ import (
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/version"
 
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -298,7 +300,7 @@ func (s *Server) Start() error {
 
 	s.server = &http.Server{
 		Addr:    addr,
-		Handler: s.mixedHandler(),
+		Handler: h2c.NewHandler(s.mixedHandler(), &http2.Server{}),
 	}
 
 	go func() {

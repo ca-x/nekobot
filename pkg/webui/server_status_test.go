@@ -2097,7 +2097,7 @@ func TestHandleGetNekoClientdBootstrap(t *testing.T) {
 	defer func() { _ = store.Close() }()
 	s := &Server{config: cfg, kvStore: store}
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/nekoclientd/bootstrap", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/nekoclientd/bootstrap?os=darwin&arch=arm64", nil)
 	rec := httptest.NewRecorder()
 	ctx := e.NewContext(req, rec)
 	if err := s.handleGetNekoClientdBootstrap(ctx); err != nil {

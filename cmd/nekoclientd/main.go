@@ -85,7 +85,7 @@ func runClientLoop(ctx context.Context) error {
 
 func runClientService() error {
 	prg := &clientProgram{}
-	svc, err := service.New(prg, servicecontrol.NekoClientdConfig(configPath))
+	svc, err := service.New(prg, currentServiceConfig())
 	if err != nil {
 		return fmt.Errorf("creating service: %w", err)
 	}
@@ -104,7 +104,7 @@ func (p *clientProgram) Stop(s service.Service) error {
 	return nil
 }
 func installClientService() error {
-	svc, err := service.New(&clientProgram{}, servicecontrol.NekoClientdConfig(configPath))
+	svc, err := service.New(&clientProgram{}, currentServiceConfig())
 	if err != nil {
 		return fmt.Errorf("creating service: %w", err)
 	}
@@ -114,7 +114,7 @@ func installClientService() error {
 	return nil
 }
 func uninstallClientService() error {
-	svc, err := service.New(&clientProgram{}, servicecontrol.NekoClientdConfig(configPath))
+	svc, err := service.New(&clientProgram{}, currentServiceConfig())
 	if err != nil {
 		return fmt.Errorf("creating service: %w", err)
 	}
@@ -124,7 +124,7 @@ func uninstallClientService() error {
 	return nil
 }
 func startClientService() error {
-	svc, err := service.New(&clientProgram{}, servicecontrol.NekoClientdConfig(configPath))
+	svc, err := service.New(&clientProgram{}, currentServiceConfig())
 	if err != nil {
 		return fmt.Errorf("creating service: %w", err)
 	}
@@ -134,7 +134,7 @@ func startClientService() error {
 	return nil
 }
 func stopClientService() error {
-	svc, err := service.New(&clientProgram{}, servicecontrol.NekoClientdConfig(configPath))
+	svc, err := service.New(&clientProgram{}, currentServiceConfig())
 	if err != nil {
 		return fmt.Errorf("creating service: %w", err)
 	}
@@ -145,6 +145,27 @@ func stopClientService() error {
 }
 func restartClientService() error { return servicecontrol.RestartNekoClientdService(configPath) }
 func statusClientService() error {
-	_, err := servicecontrol.InspectNekoClientdService(configPath)
-	return err
+	status, err := servicecontrol.InspectNekoClientdService(configPath)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Service Status: %s\n", status.Status)
+	return nil
+}
+
+func currentServiceConfig() *service.Config {
+	spec := servicecontrol.NekoClientdServiceSpec
+	if serverTarget != "" {
+		spec.ExtraArgs = append(spec.ExtraArgs, "--server", serverTarget)
+	}
+	if grpcToken != "" {
+		spec.ExtraArgs = append(spec.ExtraArgs, "--token", grpcToken)
+	}
+	if machineName != "" {
+		spec.ExtraArgs = append(spec.ExtraArgs, "--machine-name", machineName)
+	}
+	if inventoryHomeDir != "" {
+		spec.ExtraArgs = append(spec.ExtraArgs, "--home", inventoryHomeDir)
+	}
+	return servicecontrol.ServiceConfig(configPath, spec)
 }

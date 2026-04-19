@@ -41,14 +41,12 @@ jobs:
             goarch: amd64
             binary: nekobot
             extra_binary: nekoclientd
-            extra_binary: nekoclientd
-            extra_binary: nekoclientd
-            extra_binary: nekoclientd
           - os: ubuntu-latest
             platform: linux-arm64
             goos: linux
             goarch: arm64
             binary: nekobot
+            extra_binary: nekoclientd
           - os: ubuntu-latest
             platform: windows-amd64
             goos: windows
@@ -60,11 +58,13 @@ jobs:
             goos: darwin
             goarch: amd64
             binary: nekobot
+            extra_binary: nekoclientd
           - os: macos-latest
             platform: darwin-arm64
             goos: darwin
             goarch: arm64
             binary: nekobot
+            extra_binary: nekoclientd
 
     steps:
       - name: Checkout

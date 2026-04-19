@@ -1497,5 +1497,7 @@
   "systemNekoClientdPlatform": "nekoclientd platform",
   "systemNekoClientdName": "nekoclientd service name",
   "systemNekoClientdDownloadUrl": "nekoclientd download URL",
-  "systemNekoClientdArchiveName": "nekoclientd archive"
+  "systemNekoClientdArchiveName": "nekoclientd archive",
+  "systemNekoClientdInstallCommand": "nekoclientd install command",
+  "systemNekoClientdServiceInstallCommand": "nekoclientd service install command"
 }

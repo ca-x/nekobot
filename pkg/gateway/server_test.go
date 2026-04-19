@@ -2665,3 +2665,13 @@ func TestIsGRPCRequest(t *testing.T) {
 		t.Fatalf("expected grpc request to be detected")
 	}
 }
+
+func TestIsGRPCRequestRejectsHTTP11(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/grpc", nil)
+	req.ProtoMajor = 1
+	req.Header.Set("Content-Type", "application/grpc")
+	if s.isGRPCRequest(req) {
+		t.Fatalf("expected non-http2 request to be rejected")
+	}
+}

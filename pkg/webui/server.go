@@ -2569,6 +2569,28 @@ func (s *Server) releaseBaseURL() string {
 	return "https://github.com/czyt/nekobot/releases/download/" + s.releaseVersion()
 }
 
+func normalizePlatformTarget(goos, goarch string) (string, string) {
+	allowedOS := map[string]struct{}{"linux": {}, "darwin": {}, "windows": {}}
+	allowedArch := map[string]struct{}{"amd64": {}, "arm64": {}}
+	if _, ok := allowedOS[goos]; !ok {
+		goos = runtime.GOOS
+	}
+	if _, ok := allowedArch[goarch]; !ok {
+		goarch = runtime.GOARCH
+	}
+	if _, ok := allowedOS[goos]; !ok {
+		goos = "linux"
+	}
+	if _, ok := allowedArch[goarch]; !ok {
+		goarch = "amd64"
+	}
+	return goos, goarch
+}
+
+func parseBootstrapTarget(c *echo.Context) (string, string) {
+	return normalizePlatformTarget(strings.TrimSpace(c.QueryParam("os")), strings.TrimSpace(c.QueryParam("arch")))
+}
+
 func detectArchiveName(goos, goarch, binary string) string {
 	platform := goos + "-" + goarch
 	if goos == "windows" {
@@ -2607,13 +2629,14 @@ func (s *Server) handleGetNekoClientdBootstrap(c *echo.Context) error {
 	}
 	token := s.getDaemonToken()
 	grpcTarget := strings.TrimPrefix(strings.TrimPrefix(serverURL, "https://"), "http://")
-	archiveName := detectArchiveName(runtime.GOOS, runtime.GOARCH, "nekoclientd")
+	targetOS, targetArch := parseBootstrapTarget(c)
+	archiveName := detectArchiveName(targetOS, targetArch, "nekoclientd")
 	downloadBaseURL := s.releaseBaseURL()
 	downloadURL := strings.TrimRight(downloadBaseURL, "/") + "/" + archiveName
-	installCommand := fmt.Sprintf("curl -L %s -o /tmp/%s", strconv.Quote(downloadURL), archiveName)
-	serviceInstallCommand := fmt.Sprintf("nekoclientd --server %s --token %s install", strconv.Quote(grpcTarget), strconv.Quote(token))
-	startCommand := fmt.Sprintf("nekoclientd --server %s --token %s start", strconv.Quote(grpcTarget), strconv.Quote(token))
-	return c.JSON(http.StatusOK, map[string]any{"server_url": serverURL, "daemon_token": token, "grpc_target": grpcTarget, "binary_name": "nekoclientd", "version": s.releaseVersion(), "download_base_url": downloadBaseURL, "download_url": downloadURL, "archive_name": archiveName, "install_command": installCommand, "service_install_command": serviceInstallCommand, "start_command": startCommand})
+	installCommand := fmt.Sprintf("curl -L %s -o /tmp/%s && mkdir -p /tmp/nekoclientd-extract && tar -xzf /tmp/%s -C /tmp/nekoclientd-extract && sudo install -m 0755 /tmp/nekoclientd-extract/nekoclientd /usr/local/bin/nekoclientd", strconv.Quote(downloadURL), archiveName, archiveName)
+	serviceInstallCommand := fmt.Sprintf("nekoclientd --server %s --token %s --machine-name %s install", strconv.Quote(grpcTarget), strconv.Quote(token), strconv.Quote(strings.TrimSpace(s.currentUsername(c))))
+	startCommand := fmt.Sprintf("nekoclientd --server %s --token %s --machine-name %s start", strconv.Quote(grpcTarget), strconv.Quote(token), strconv.Quote(strings.TrimSpace(s.currentUsername(c))))
+	return c.JSON(http.StatusOK, map[string]any{"server_url": serverURL, "daemon_token": token, "grpc_target": grpcTarget, "target_os": targetOS, "target_arch": targetArch, "binary_name": "nekoclientd", "version": s.releaseVersion(), "download_base_url": downloadBaseURL, "download_url": downloadURL, "archive_name": archiveName, "install_command": installCommand, "service_install_command": serviceInstallCommand, "start_command": startCommand})
 }
 
 func (s *Server) handleRegisterDaemon(c *echo.Context) error {

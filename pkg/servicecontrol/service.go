@@ -27,6 +27,7 @@ type ServiceSpec struct {
 	DisplayName string
 	Description string
 	RunArgs     []string
+	ExtraArgs   []string
 }
 
 var (
@@ -53,7 +54,8 @@ func (noopProgram) Stop(service.Service) error  { return nil }
 
 // ServiceConfig returns the managed service manager configuration.
 func ServiceConfig(configPath string, spec ServiceSpec) *service.Config {
-	args := append([]string(nil), spec.RunArgs...)
+	args := append([]string(nil), spec.ExtraArgs...)
+	args = append(args, spec.RunArgs...)
 	configFile := cmp.Or(strings.TrimSpace(configPath), strings.TrimSpace(os.Getenv(config.ConfigPathEnv)))
 	if configFile != "" {
 		if absPath, err := filepath.Abs(configFile); err == nil {

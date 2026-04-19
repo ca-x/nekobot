@@ -43,7 +43,9 @@ export default function SystemPage() {
     refetch: refetchDaemonBootstrap,
     isFetching: daemonBootstrapFetching,
   } = useDaemonBootstrap();
-  const { data: nekoclientdBootstrap } = useNekoClientdBootstrap();
+  const [nekoclientdTargetOS, setNekoclientdTargetOS] = useState<string>("linux");
+  const [nekoclientdTargetArch, setNekoclientdTargetArch] = useState<string>("amd64");
+  const { data: nekoclientdBootstrap } = useNekoClientdBootstrap(nekoclientdTargetOS, nekoclientdTargetArch);
   const {
     data: qmd,
     isLoading: qmdLoading,
@@ -58,16 +60,16 @@ export default function SystemPage() {
   const nekoclientdService = service?.nekoclientd;
   const serviceInstalled = gatewayService?.installed ?? false;
   const serviceStatus = gatewayService?.status ?? "unknown";
+  const [selectedDaemonMachine, setSelectedDaemonMachine] = useState<string>("");
+  const [selectedDaemonWorkspace, setSelectedDaemonWorkspace] = useState<string>("");
+  const [daemonPath, setDaemonPath] = useState<string>("");
+  const [selectedPreviewPath, setSelectedPreviewPath] = useState<string>("");
   const taskCounts = status?.task_state_counts ?? {};
   const recentTasks = status?.recent_tasks ?? [];
   const recentCronJobs = status?.recent_cron_jobs ?? [];
   const runtimeStates = status?.runtime_states ?? [];
   const daemonMachines = status?.daemon_machines ?? [];
   const daemonMachinesWithURL = daemonMachines.filter((machine) => machine.info.daemon_url);
-  const [selectedDaemonMachine, setSelectedDaemonMachine] = useState<string>("");
-  const [selectedDaemonWorkspace, setSelectedDaemonWorkspace] = useState<string>("");
-  const [daemonPath, setDaemonPath] = useState<string>("");
-  const [selectedPreviewPath, setSelectedPreviewPath] = useState<string>("");
   const selectedMachine = useMemo(() => daemonMachinesWithURL.find((machine) => machine.info.machine_id === selectedDaemonMachine) ?? daemonMachinesWithURL[0] ?? null, [daemonMachinesWithURL, selectedDaemonMachine]);
   useEffect(() => {
     if (!selectedMachine) {
@@ -740,9 +742,46 @@ export default function SystemPage() {
                     </div>
                   </div>
                   {nekoclientdBootstrap ? (
-                    <div className="mt-3 rounded-2xl border border-border/70 bg-muted/35 p-4">
+                    <div className="mt-3 rounded-2xl border border-border/70 bg-muted/35 p-4 space-y-3">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="text-sm text-muted-foreground">
+                          OS
+                          <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-foreground" value={nekoclientdTargetOS} onChange={(event) => setNekoclientdTargetOS(event.target.value)}>
+                            <option value="linux">linux</option>
+                            <option value="darwin">darwin</option>
+                            <option value="windows">windows</option>
+                          </select>
+                        </label>
+                        <label className="text-sm text-muted-foreground">
+                          Arch
+                          <select className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-foreground" value={nekoclientdTargetArch} onChange={(event) => setNekoclientdTargetArch(event.target.value)}>
+                            <option value="amd64">amd64</option>
+                            <option value="arm64">arm64</option>
+                          </select>
+                        </label>
+                      </div>
                       <StatusMetric label={t("systemNekoClientdDownloadUrl")} value={nekoclientdBootstrap.download_url || "-"} />
                       <StatusMetric label={t("systemNekoClientdArchiveName")} value={nekoclientdBootstrap.archive_name || "-"} />
+                      <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{t("systemNekoClientdInstallCommand")}</div>
+                          <Button size="sm" variant="outline" onClick={() => copyText(nekoclientdBootstrap.install_command || "")} className="w-full sm:w-auto">
+                            <Copy className="mr-2 h-4 w-4" />
+                            {t("copyAccess")}
+                          </Button>
+                        </div>
+                        <div className="mt-2 whitespace-pre-wrap break-words font-mono text-sm leading-6 text-foreground">{nekoclientdBootstrap.install_command || "-"}</div>
+                      </div>
+                      <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{t("systemNekoClientdServiceInstallCommand")}</div>
+                          <Button size="sm" variant="outline" onClick={() => copyText(nekoclientdBootstrap.service_install_command || "")} className="w-full sm:w-auto">
+                            <Copy className="mr-2 h-4 w-4" />
+                            {t("copyAccess")}
+                          </Button>
+                        </div>
+                        <div className="mt-2 whitespace-pre-wrap break-words font-mono text-sm leading-6 text-foreground">{nekoclientdBootstrap.service_install_command || "-"}</div>
+                      </div>
                     </div>
                   ) : null}
                 </div>

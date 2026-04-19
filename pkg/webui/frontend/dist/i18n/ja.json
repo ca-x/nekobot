@@ -1497,5 +1497,7 @@
   "systemNekoClientdPlatform": "nekoclientd プラットフォーム",
   "systemNekoClientdName": "nekoclientd サービス名",
   "systemNekoClientdDownloadUrl": "nekoclientd ダウンロード URL",
-  "systemNekoClientdArchiveName": "nekoclientd アーカイブ"
+  "systemNekoClientdArchiveName": "nekoclientd アーカイブ",
+  "systemNekoClientdInstallCommand": "nekoclientd インストールコマンド",
+  "systemNekoClientdServiceInstallCommand": "nekoclientd サービスインストールコマンド"
 }

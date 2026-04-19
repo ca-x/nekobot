@@ -184,6 +184,8 @@ export interface NekoClientdBootstrapData {
   server_url: string;
   daemon_token: string;
   grpc_target: string;
+  target_os: string;
+  target_arch: string;
   binary_name: string;
   version: string;
   download_base_url: string;
@@ -357,10 +359,10 @@ export function useDaemonBootstrap() {
   });
 }
 
-export function useNekoClientdBootstrap() {
+export function useNekoClientdBootstrap(targetOS = "linux", targetArch = "amd64") {
   return useQuery<NekoClientdBootstrapData>({
-    queryKey: ["nekoclientd-bootstrap"],
-    queryFn: () => api.get("/api/nekoclientd/bootstrap"),
+    queryKey: ["nekoclientd-bootstrap", targetOS, targetArch],
+    queryFn: () => api.get(`/api/nekoclientd/bootstrap?os=${encodeURIComponent(targetOS)}&arch=${encodeURIComponent(targetArch)}`),
     staleTime: 30_000,
   });
 }

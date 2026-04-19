@@ -1497,5 +1497,7 @@
   "systemNekoClientdPlatform": "nekoclientd 平台",
   "systemNekoClientdName": "nekoclientd 服务名",
   "systemNekoClientdDownloadUrl": "nekoclientd 下载地址",
-  "systemNekoClientdArchiveName": "nekoclientd 压缩包"
+  "systemNekoClientdArchiveName": "nekoclientd 压缩包",
+  "systemNekoClientdInstallCommand": "nekoclientd 安装命令",
+  "systemNekoClientdServiceInstallCommand": "nekoclientd 服务安装命令"
 }
