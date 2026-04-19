@@ -35,12 +35,13 @@ import (
 )
 
 type stubGatewayServiceController struct {
-	status       map[string]interface{}
-	statusErr    error
-	restartErr   error
-	restartCalls int
-	reloadErr    error
-	reloadCalls  int
+	status        map[string]interface{}
+	clientdStatus map[string]interface{}
+	statusErr     error
+	restartErr    error
+	restartCalls  int
+	reloadErr     error
+	reloadCalls   int
 }
 
 func (s *stubGatewayServiceController) Status() (map[string]interface{}, error) {
@@ -58,6 +59,13 @@ func (s *stubGatewayServiceController) Restart() error {
 func (s *stubGatewayServiceController) Reload() error {
 	s.reloadCalls++
 	return s.reloadErr
+}
+
+func (s *stubGatewayServiceController) NekoClientdStatus() (map[string]interface{}, error) {
+	if s.statusErr != nil {
+		return nil, s.statusErr
+	}
+	return s.clientdStatus, nil
 }
 
 func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
@@ -742,6 +750,11 @@ func TestHandleServiceStatus(t *testing.T) {
 			"status":      "running",
 			"config_path": "/tmp/nekobot/config.json",
 		},
+		clientdStatus: map[string]interface{}{
+			"name":      "nekoclientd",
+			"installed": false,
+			"status":    "not_installed",
+		},
 	}
 
 	s := &Server{
@@ -764,7 +777,12 @@ func TestHandleServiceStatus(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal payload failed: %v", err)
 	}
-	if payload["status"] != "running" || payload["installed"] != true {
+	gatewayPayload, _ := payload["gateway"].(map[string]interface{})
+	if gatewayPayload["status"] != "running" || gatewayPayload["installed"] != true {
+		t.Fatalf("unexpected payload: %+v", payload)
+	}
+	clientdPayload, _ := payload["nekoclientd"].(map[string]interface{})
+	if clientdPayload["name"] != "nekoclientd" {
 		t.Fatalf("unexpected payload: %+v", payload)
 	}
 }
@@ -2065,5 +2083,34 @@ func TestPrivilegedAPIAllowsAdminToken(t *testing.T) {
 	s.echo.ServeHTTP(rec, req)
 	if rec.Code == http.StatusForbidden {
 		t.Fatalf("expected admin token to pass privileged middleware, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleGetNekoClientdBootstrap(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	log := newTestLogger(t)
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	s := &Server{config: cfg, kvStore: store}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/nekoclientd/bootstrap", nil)
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	if err := s.handleGetNekoClientdBootstrap(ctx); err != nil {
+		t.Fatalf("handleGetNekoClientdBootstrap failed: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload failed: %v", err)
+	}
+	if payload["binary_name"] != "nekoclientd" {
+		t.Fatalf("unexpected payload: %+v", payload)
 	}
 }

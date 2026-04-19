@@ -1448,7 +1448,14 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\acontent\x18\x03 \x01(\tR\acontent\x12\x1c\n" +
 	"\ttruncated\x18\x04 \x01(\bR\ttruncated\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\x05 \x01(\x03R\tsizeBytesB+Z)nekobot/gen/go/nekobot/daemon/v1;daemonv1b\x06proto3"
+	"size_bytes\x18\x05 \x01(\x03R\tsizeBytes2\xad\x05\n" +
+	"\x14DaemonControlService\x12h\n" +
+	"\x0fRegisterMachine\x12).nekobot.daemon.v1.RegisterMachineRequest\x1a*.nekobot.daemon.v1.RegisterMachineResponse\x12k\n" +
+	"\x10HeartbeatMachine\x12*.nekobot.daemon.v1.HeartbeatMachineRequest\x1a+.nekobot.daemon.v1.HeartbeatMachineResponse\x12q\n" +
+	"\x12FetchAssignedTasks\x12,.nekobot.daemon.v1.FetchAssignedTasksRequest\x1a-.nekobot.daemon.v1.FetchAssignedTasksResponse\x12k\n" +
+	"\x10UpdateTaskStatus\x12*.nekobot.daemon.v1.UpdateTaskStatusRequest\x1a+.nekobot.daemon.v1.UpdateTaskStatusResponse\x12n\n" +
+	"\x11ListWorkspaceTree\x12+.nekobot.daemon.v1.ListWorkspaceTreeRequest\x1a,.nekobot.daemon.v1.ListWorkspaceTreeResponse\x12n\n" +
+	"\x11ReadWorkspaceFile\x12+.nekobot.daemon.v1.ReadWorkspaceFileRequest\x1a,.nekobot.daemon.v1.ReadWorkspaceFileResponseB+Z)nekobot/gen/go/nekobot/daemon/v1;daemonv1b\x06proto3"
 
 var (
 	file_nekobot_daemon_v1_daemon_proto_rawDescOnce sync.Once
@@ -1492,8 +1499,20 @@ var file_nekobot_daemon_v1_daemon_proto_depIdxs = []int32{
 	2,  // 5: nekobot.daemon.v1.HeartbeatMachineRequest.inventory:type_name -> nekobot.daemon.v1.RuntimeInventory
 	8,  // 6: nekobot.daemon.v1.FetchAssignedTasksResponse.tasks:type_name -> nekobot.daemon.v1.Task
 	13, // 7: nekobot.daemon.v1.ListWorkspaceTreeResponse.entries:type_name -> nekobot.daemon.v1.WorkspaceTreeEntry
-	8,  // [8:8] is the sub-list for method output_type
-	8,  // [8:8] is the sub-list for method input_type
+	4,  // 8: nekobot.daemon.v1.DaemonControlService.RegisterMachine:input_type -> nekobot.daemon.v1.RegisterMachineRequest
+	6,  // 9: nekobot.daemon.v1.DaemonControlService.HeartbeatMachine:input_type -> nekobot.daemon.v1.HeartbeatMachineRequest
+	9,  // 10: nekobot.daemon.v1.DaemonControlService.FetchAssignedTasks:input_type -> nekobot.daemon.v1.FetchAssignedTasksRequest
+	11, // 11: nekobot.daemon.v1.DaemonControlService.UpdateTaskStatus:input_type -> nekobot.daemon.v1.UpdateTaskStatusRequest
+	14, // 12: nekobot.daemon.v1.DaemonControlService.ListWorkspaceTree:input_type -> nekobot.daemon.v1.ListWorkspaceTreeRequest
+	16, // 13: nekobot.daemon.v1.DaemonControlService.ReadWorkspaceFile:input_type -> nekobot.daemon.v1.ReadWorkspaceFileRequest
+	5,  // 14: nekobot.daemon.v1.DaemonControlService.RegisterMachine:output_type -> nekobot.daemon.v1.RegisterMachineResponse
+	7,  // 15: nekobot.daemon.v1.DaemonControlService.HeartbeatMachine:output_type -> nekobot.daemon.v1.HeartbeatMachineResponse
+	10, // 16: nekobot.daemon.v1.DaemonControlService.FetchAssignedTasks:output_type -> nekobot.daemon.v1.FetchAssignedTasksResponse
+	12, // 17: nekobot.daemon.v1.DaemonControlService.UpdateTaskStatus:output_type -> nekobot.daemon.v1.UpdateTaskStatusResponse
+	15, // 18: nekobot.daemon.v1.DaemonControlService.ListWorkspaceTree:output_type -> nekobot.daemon.v1.ListWorkspaceTreeResponse
+	17, // 19: nekobot.daemon.v1.DaemonControlService.ReadWorkspaceFile:output_type -> nekobot.daemon.v1.ReadWorkspaceFileResponse
+	14, // [14:20] is the sub-list for method output_type
+	8,  // [8:14] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
 	8,  // [8:8] is the sub-list for extension extendee
 	0,  // [0:8] is the sub-list for field type_name
@@ -1512,7 +1531,7 @@ func file_nekobot_daemon_v1_daemon_proto_init() {
 			NumEnums:      0,
 			NumMessages:   18,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_nekobot_daemon_v1_daemon_proto_goTypes,
 		DependencyIndexes: file_nekobot_daemon_v1_daemon_proto_depIdxs,

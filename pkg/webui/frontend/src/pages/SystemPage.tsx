@@ -4,6 +4,7 @@ import {
   SessionRuntimeState,
   StatusTask,
   useDaemonBootstrap,
+  useNekoClientdBootstrap,
   useDaemonExplorerWorkspaces,
   useDaemonWorkspaceFile,
   useDaemonWorkspaceTree,
@@ -42,6 +43,7 @@ export default function SystemPage() {
     refetch: refetchDaemonBootstrap,
     isFetching: daemonBootstrapFetching,
   } = useDaemonBootstrap();
+  const { data: nekoclientdBootstrap } = useNekoClientdBootstrap();
   const {
     data: qmd,
     isLoading: qmdLoading,
@@ -52,8 +54,10 @@ export default function SystemPage() {
   const installQMD = useInstallQMD();
   const restartService = useRestartService();
   const reloadService = useReloadService();
-  const serviceInstalled = service?.installed ?? false;
-  const serviceStatus = service?.status ?? "unknown";
+  const gatewayService = service?.gateway;
+  const nekoclientdService = service?.nekoclientd;
+  const serviceInstalled = gatewayService?.installed ?? false;
+  const serviceStatus = gatewayService?.status ?? "unknown";
   const taskCounts = status?.task_state_counts ?? {};
   const recentTasks = status?.recent_tasks ?? [];
   const recentCronJobs = status?.recent_cron_jobs ?? [];
@@ -735,6 +739,12 @@ export default function SystemPage() {
                       {daemonBootstrap.daemon_token || "-"}
                     </div>
                   </div>
+                  {nekoclientdBootstrap ? (
+                    <div className="mt-3 rounded-2xl border border-border/70 bg-muted/35 p-4">
+                      <StatusMetric label={t("systemNekoClientdDownloadUrl")} value={nekoclientdBootstrap.download_url || "-"} />
+                      <StatusMetric label={t("systemNekoClientdArchiveName")} value={nekoclientdBootstrap.archive_name || "-"} />
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className="mt-4 rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
@@ -942,12 +952,19 @@ export default function SystemPage() {
                   />
                   <StatusMetric
                     label={t("systemServicePlatform")}
-                    value={service?.platform || "-"}
+                    value={gatewayService?.platform || "-"}
                   />
                   <StatusMetric
                     label={t("systemServiceName")}
-                    value={service?.name || "-"}
+                    value={gatewayService?.name || "-"}
                   />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <StatusMetric label={t("systemNekoClientdInstalled")} value={nekoclientdService?.installed ? t("systemYes") : t("systemNo")} />
+                  <StatusMetric label={t("systemNekoClientdStatus")} value={formatServiceStatus(nekoclientdService?.status || "unknown")} />
+                  <StatusMetric label={t("systemNekoClientdPlatform")} value={nekoclientdService?.platform || "-"} />
+                  <StatusMetric label={t("systemNekoClientdName")} value={nekoclientdService?.name || "-"} />
                 </div>
 
                 <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
@@ -955,15 +972,15 @@ export default function SystemPage() {
                     {t("systemServiceConfigPath")}
                   </div>
                   <div className="mt-2 break-all font-mono text-sm text-foreground">
-                    {service?.config_path || "-"}
+                    {gatewayService?.config_path || "-"}
                   </div>
                   <div className="mt-3">
                     <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                       {t("systemServiceArguments")}
                     </div>
                     <div className="mt-2 break-all font-mono text-sm text-foreground">
-                      {service?.arguments && service.arguments.length > 0
-                        ? service.arguments.join(" ")
+                      {gatewayService?.arguments && gatewayService.arguments.length > 0
+                        ? gatewayService.arguments.join(" ")
                         : "-"}
                     </div>
                   </div>
@@ -1059,6 +1076,13 @@ export default function SystemPage() {
                     label={t("systemCollections")}
                     value={String(qmd?.collections.length ?? 0)}
                   />
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-4">
+                  <StatusMetric label={t("systemNekoClientdInstalled")} value={nekoclientdService?.installed ? t("systemYes") : t("systemNo")} />
+                  <StatusMetric label={t("systemNekoClientdStatus")} value={formatServiceStatus(nekoclientdService?.status || "unknown")} />
+                  <StatusMetric label={t("systemNekoClientdPlatform")} value={nekoclientdService?.platform || "-"} />
+                  <StatusMetric label={t("systemNekoClientdName")} value={nekoclientdService?.name || "-"} />
                 </div>
 
                 <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">

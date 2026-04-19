@@ -140,3 +140,12 @@ message ReadWorkspaceFileResponse {
   bool truncated = 4;
   int64 size_bytes = 5;
 }
+
+service DaemonControlService {
+  rpc RegisterMachine(RegisterMachineRequest) returns (RegisterMachineResponse);
+  rpc HeartbeatMachine(HeartbeatMachineRequest) returns (HeartbeatMachineResponse);
+  rpc FetchAssignedTasks(FetchAssignedTasksRequest) returns (FetchAssignedTasksResponse);
+  rpc UpdateTaskStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);
+  rpc ListWorkspaceTree(ListWorkspaceTreeRequest) returns (ListWorkspaceTreeResponse);
+  rpc ReadWorkspaceFile(ReadWorkspaceFileRequest) returns (ReadWorkspaceFileResponse);
+}

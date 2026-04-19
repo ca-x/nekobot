@@ -180,6 +180,25 @@ export interface DaemonBootstrapData {
   command: string;
 }
 
+export interface NekoClientdBootstrapData {
+  server_url: string;
+  daemon_token: string;
+  grpc_target: string;
+  binary_name: string;
+  version: string;
+  download_base_url: string;
+  download_url: string;
+  archive_name: string;
+  install_command: string;
+  service_install_command: string;
+  start_command: string;
+}
+
+export interface SystemServiceBundleData {
+  gateway: ServiceStatusData;
+  nekoclientd: ServiceStatusData;
+}
+
 export interface StatusData {
   version: string;
   commit: string;
@@ -323,7 +342,7 @@ export function useStatus() {
 }
 
 export function useServiceStatus() {
-  return useQuery<ServiceStatusData>({
+  return useQuery<SystemServiceBundleData>({
     queryKey: ["service-status"],
     queryFn: () => api.get("/api/service"),
     staleTime: 10_000,
@@ -334,6 +353,14 @@ export function useDaemonBootstrap() {
   return useQuery<DaemonBootstrapData>({
     queryKey: ["daemon-bootstrap"],
     queryFn: () => api.get("/api/daemon/bootstrap"),
+    staleTime: 30_000,
+  });
+}
+
+export function useNekoClientdBootstrap() {
+  return useQuery<NekoClientdBootstrapData>({
+    queryKey: ["nekoclientd-bootstrap"],
+    queryFn: () => api.get("/api/nekoclientd/bootstrap"),
     staleTime: 30_000,
   });
 }

@@ -2655,3 +2655,13 @@ func TestWSChatRejectsRateLimitedRequest(t *testing.T) {
 		t.Fatalf("expected websocket request 429, got %d", wsRec.Code)
 	}
 }
+
+func TestIsGRPCRequest(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/grpc", nil)
+	req.ProtoMajor = 2
+	req.Header.Set("Content-Type", "application/grpc+proto")
+	if !s.isGRPCRequest(req) {
+		t.Fatalf("expected grpc request to be detected")
+	}
+}

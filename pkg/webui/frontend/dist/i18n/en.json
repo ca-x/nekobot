@@ -1491,5 +1491,11 @@
   "durationMinutesSecondsCompact": "{0}m {1}s",
   "modelsFieldModelIdExample": "gpt-4.1",
   "modelsFieldDisplayNameExample": "GPT-4.1",
-  "apiEndpointExample": "https://api.example.com/v1"
+  "apiEndpointExample": "https://api.example.com/v1",
+  "systemNekoClientdInstalled": "nekoclientd installed",
+  "systemNekoClientdStatus": "nekoclientd status",
+  "systemNekoClientdPlatform": "nekoclientd platform",
+  "systemNekoClientdName": "nekoclientd service name",
+  "systemNekoClientdDownloadUrl": "nekoclientd download URL",
+  "systemNekoClientdArchiveName": "nekoclientd archive"
 }

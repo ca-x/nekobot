@@ -149,7 +149,7 @@ func (s *GatewayService) run() {
 
 // ServiceConfig returns the service configuration.
 func ServiceConfig() *service.Config {
-	return servicecontrol.ServiceConfig(configPath)
+	return servicecontrol.GatewayConfig(configPath)
 }
 
 // InstallService installs the gateway as a system service.

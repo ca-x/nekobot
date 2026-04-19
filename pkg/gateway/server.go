@@ -17,6 +17,9 @@ import (
 	"sync"
 	"time"
 
+	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
+	"nekobot/pkg/daemonhost"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -33,10 +36,14 @@ import (
 	"nekobot/pkg/process"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
+	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
 	"nekobot/pkg/version"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 var upgrader = websocket.Upgrader{
@@ -89,6 +96,8 @@ type Server struct {
 	sessionMgr                *session.Manager
 	entClient                 *ent.Client
 	taskStore                 *tasks.Store
+	kvStore                   state.KV
+	grpcServer                *grpc.Server
 	mux                       *http.ServeMux
 	server                    *http.Server
 	clients                   map[string]*Client
@@ -137,6 +146,7 @@ func NewServer(
 	processManager *process.Manager,
 	sessionMgr *session.Manager,
 	entClient *ent.Client,
+	kvStore state.KV,
 ) *Server {
 	s := &Server{
 		config:   cfg,
@@ -160,6 +170,7 @@ func NewServer(
 		processMgr: processManager,
 		sessionMgr: sessionMgr,
 		entClient:  entClient,
+		kvStore:    kvStore,
 		taskStore: func() *tasks.Store {
 			if ag == nil {
 				return nil
@@ -171,8 +182,80 @@ func NewServer(
 		rateLimiters:              make(map[string]*rate.Limiter),
 	}
 
+	s.setupGRPC()
 	s.setupRoutes()
 	return s
+}
+
+func (s *Server) setupGRPC() {
+	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(s.grpcAuthUnaryInterceptor))
+	service := daemonhost.NewGRPCService(
+		daemonhost.NewRegistry(s.kvStore),
+		func() *tasks.Service {
+			if s == nil || s.agent == nil {
+				return nil
+			}
+			return s.agent.TaskService()
+		}(),
+		func() (*daemonv1.RuntimeInventory, error) { return daemonhost.BuildInventory("") },
+		func(ctx context.Context, task tasks.Task, req *daemonv1.UpdateTaskStatusRequest) error { return nil },
+	)
+	daemonv1.RegisterDaemonControlServiceServer(grpcServer, service)
+	s.grpcServer = grpcServer
+}
+
+func (s *Server) grpcAuthUnaryInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	if !s.authorizeDaemonContext(ctx) {
+		return nil, fmt.Errorf("invalid daemon token")
+	}
+	return handler(ctx, req)
+}
+
+func (s *Server) authorizeDaemonContext(ctx context.Context) bool {
+	if s == nil {
+		return false
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return false
+	}
+	values := md.Get("authorization")
+	if len(values) == 0 {
+		return false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(values[0], "Bearer"))
+	if token == "" {
+		return false
+	}
+	return token == s.daemonToken()
+}
+
+func (s *Server) daemonToken() string {
+	if s == nil || s.kvStore == nil {
+		return ""
+	}
+	value, ok, err := s.kvStore.GetString(context.Background(), "daemonhost.auth.token")
+	if err != nil || !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func (s *Server) mixedHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.isGRPCRequest(r) && s.grpcServer != nil {
+			s.grpcServer.ServeHTTP(w, r)
+			return
+		}
+		s.mux.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) isGRPCRequest(r *http.Request) bool {
+	if r == nil || r.ProtoMajor != 2 {
+		return false
+	}
+	return strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/grpc")
 }
 
 func (s *Server) setupRoutes() {
@@ -215,7 +298,7 @@ func (s *Server) Start() error {
 
 	s.server = &http.Server{
 		Addr:    addr,
-		Handler: s.mux,
+		Handler: s.mixedHandler(),
 	}
 
 	go func() {
@@ -242,6 +325,9 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
+	}
 	if s.server != nil {
 		return s.server.Shutdown(ctx)
 	}

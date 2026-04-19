@@ -142,6 +142,7 @@ type serviceController interface {
 	Status() (map[string]interface{}, error)
 	Restart() error
 	Reload() error
+	NekoClientdStatus() (map[string]interface{}, error)
 }
 
 type gatewayServiceController struct {
@@ -175,6 +176,14 @@ func (c *gatewayServiceController) Reload() error {
 		return fmt.Errorf("gateway reload is not available")
 	}
 	return gateway.NewController(c.cfg, c.loader, c.log).ReloadConfig()
+}
+
+func (c *gatewayServiceController) NekoClientdStatus() (map[string]interface{}, error) {
+	status, err := servicecontrol.InspectNekoClientdService(c.configPath)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"name": status.Name, "platform": status.Platform, "config_path": status.ConfigPath, "arguments": status.Arguments, "installed": status.Installed, "status": status.Status}, nil
 }
 
 const defaultQMDNPMPackage = "@tobilu/qmd"
@@ -338,6 +347,7 @@ func (s *Server) setup() {
 	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
 	e.POST("/api/daemon/tasks/fetch", s.handleFetchDaemonTasks)
 	e.POST("/api/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+	e.GET("/api/nekoclientd/bootstrap", s.handleGetNekoClientdBootstrap)
 
 	// Chat WebSocket (auth handled inside via token query param)
 	e.GET("/api/chat/ws", s.handleChatWS)
@@ -2547,6 +2557,26 @@ func (s *Server) handleConfirmGoalRunManualCriterion(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"goal_run": run})
 }
 
+func (s *Server) releaseVersion() string {
+	versionValue := strings.TrimSpace(version.GetVersion())
+	if versionValue == "" || versionValue == "dev" {
+		return "latest"
+	}
+	return versionValue
+}
+
+func (s *Server) releaseBaseURL() string {
+	return "https://github.com/czyt/nekobot/releases/download/" + s.releaseVersion()
+}
+
+func detectArchiveName(goos, goarch, binary string) string {
+	platform := goos + "-" + goarch
+	if goos == "windows" {
+		return binary + "-" + platform + ".zip"
+	}
+	return binary + "-" + platform + ".tar.gz"
+}
+
 func (s *Server) handleGetDaemonBootstrap(c *echo.Context) error {
 	serverURL := strings.TrimSpace(s.config.WebUI.PublicBaseURL)
 	if serverURL == "" {
@@ -2564,6 +2594,26 @@ func (s *Server) handleGetDaemonBootstrap(c *echo.Context) error {
 		"daemon_token": token,
 		"command":      command,
 	})
+}
+
+func (s *Server) handleGetNekoClientdBootstrap(c *echo.Context) error {
+	serverURL := strings.TrimSpace(s.config.WebUI.PublicBaseURL)
+	if serverURL == "" {
+		scheme := "http"
+		if c.Scheme() != "" {
+			scheme = c.Scheme()
+		}
+		serverURL = fmt.Sprintf("%s://%s", scheme, c.Request().Host)
+	}
+	token := s.getDaemonToken()
+	grpcTarget := strings.TrimPrefix(strings.TrimPrefix(serverURL, "https://"), "http://")
+	archiveName := detectArchiveName(runtime.GOOS, runtime.GOARCH, "nekoclientd")
+	downloadBaseURL := s.releaseBaseURL()
+	downloadURL := strings.TrimRight(downloadBaseURL, "/") + "/" + archiveName
+	installCommand := fmt.Sprintf("curl -L %s -o /tmp/%s", strconv.Quote(downloadURL), archiveName)
+	serviceInstallCommand := fmt.Sprintf("nekoclientd --server %s --token %s install", strconv.Quote(grpcTarget), strconv.Quote(token))
+	startCommand := fmt.Sprintf("nekoclientd --server %s --token %s start", strconv.Quote(grpcTarget), strconv.Quote(token))
+	return c.JSON(http.StatusOK, map[string]any{"server_url": serverURL, "daemon_token": token, "grpc_target": grpcTarget, "binary_name": "nekoclientd", "version": s.releaseVersion(), "download_base_url": downloadBaseURL, "download_url": downloadURL, "archive_name": archiveName, "install_command": installCommand, "service_install_command": serviceInstallCommand, "start_command": startCommand})
 }
 
 func (s *Server) handleRegisterDaemon(c *echo.Context) error {
@@ -7024,12 +7074,15 @@ func (s *Server) handleServiceStatus(c *echo.Context) error {
 	if s.serviceCtrl == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "service control not available"})
 	}
-
-	status, err := s.serviceCtrl.Status()
+	gatewayStatus, err := s.serviceCtrl.Status()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	return c.JSON(http.StatusOK, status)
+	clientdStatus, err := s.serviceCtrl.NekoClientdStatus()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"gateway": gatewayStatus, "nekoclientd": clientdStatus})
 }
 
 func (s *Server) handleServiceRestart(c *echo.Context) error {

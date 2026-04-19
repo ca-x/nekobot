@@ -4,3 +4,7 @@ plugins:
     out: gen/go
     opt:
       - paths=source_relative
+  - local: /home/czyt/.local/share/mise/installs/go/1.26.2/bin/protoc-gen-go-grpc
+    out: gen/go
+    opt:
+      - paths=source_relative

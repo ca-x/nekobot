@@ -40,6 +40,10 @@ jobs:
             goos: linux
             goarch: amd64
             binary: nekobot
+            extra_binary: nekoclientd
+            extra_binary: nekoclientd
+            extra_binary: nekoclientd
+            extra_binary: nekoclientd
           - os: ubuntu-latest
             platform: linux-arm64
             goos: linux
@@ -50,6 +54,7 @@ jobs:
             goos: windows
             goarch: amd64
             binary: nekobot.exe
+            extra_binary: nekoclientd.exe
           - os: macos-latest
             platform: darwin-amd64
             goos: darwin
@@ -97,12 +102,9 @@ jobs:
         run: |
           mkdir -p dist
           BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-          go build -trimpath \
-            -ldflags="-s -w \
-              -X 'nekobot/pkg/version.Version=${{ github.ref_name }}' \
-              -X 'nekobot/pkg/version.BuildTime=${BUILD_TIME}' \
-              -X 'nekobot/pkg/version.GitCommit=${{ github.sha }}'" \
-            -o "dist/${{ matrix.binary }}" ./cmd/nekobot
+          LDFLAGS="-s -w -X 'nekobot/pkg/version.Version=${{ github.ref_name }}' -X 'nekobot/pkg/version.BuildTime=${BUILD_TIME}' -X 'nekobot/pkg/version.GitCommit=${{ github.sha }}'"
+          go build -trimpath -ldflags="$LDFLAGS" -o "dist/${{ matrix.binary }}" ./cmd/nekobot
+          go build -trimpath -ldflags="$LDFLAGS" -o "dist/${{ matrix.extra_binary }}" ./cmd/nekoclientd
 
       - name: Archive
         shell: bash
@@ -110,19 +112,25 @@ jobs:
           cd dist
           if [ "${{ matrix.goos }}" = "windows" ]; then
             zip "nekobot-${{ matrix.platform }}.zip" "${{ matrix.binary }}"
+            zip "nekoclientd-${{ matrix.platform }}.zip" "${{ matrix.extra_binary }}"
           else
             tar czf "nekobot-${{ matrix.platform }}.tar.gz" "${{ matrix.binary }}"
+            tar czf "nekoclientd-${{ matrix.platform }}.tar.gz" "${{ matrix.extra_binary }}"
           fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: nekobot-${{ matrix.platform }}
-          path: dist/nekobot-${{ matrix.platform }}.*
+          path: |
+            dist/nekobot-${{ matrix.platform }}.*
+            dist/nekoclientd-${{ matrix.platform }}.*
           retention-days: 7
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: dist/nekobot-${{ matrix.platform }}.*
+          files: |
+            dist/nekobot-${{ matrix.platform }}.*
+            dist/nekoclientd-${{ matrix.platform }}.*

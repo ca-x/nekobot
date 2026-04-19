@@ -455,6 +455,14 @@ func (a *Agent) TaskService() *tasks.Service {
 	return a.taskService
 }
 
+// KVStore returns the agent backing key-value store.
+func (a *Agent) KVStore() state.KV {
+	if a == nil {
+		return nil
+	}
+	return a.kvStore
+}
+
 // Definition exposes the current AgentDefinition compatibility snapshot.
 func (a *Agent) Definition() AgentDefinition {
 	if a == nil {
