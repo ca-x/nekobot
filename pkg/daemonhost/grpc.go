@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/tasks"
 )
@@ -61,6 +63,7 @@ func (s *GRPCService) ListWorkspaceTree(ctx context.Context, req *daemonv1.ListW
 	}
 	return ListWorkspaceTree(inventory, req)
 }
+
 func (s *GRPCService) ReadWorkspaceFile(ctx context.Context, req *daemonv1.ReadWorkspaceFileRequest) (*daemonv1.ReadWorkspaceFileResponse, error) {
 	inventory, err := s.loadInventory()
 	if err != nil {
@@ -68,9 +71,10 @@ func (s *GRPCService) ReadWorkspaceFile(ctx context.Context, req *daemonv1.ReadW
 	}
 	return ReadWorkspaceFile(inventory, req)
 }
+
 func (s *GRPCService) loadInventory() (*daemonv1.RuntimeInventory, error) {
 	if s == nil || s.InventoryLoader == nil {
-		return nil, fmt.Errorf("inventory loader unavailable")
+		return nil, status.Error(codes.Unimplemented, "workspace RPCs are not implemented on this daemon control surface")
 	}
 	return s.InventoryLoader()
 }

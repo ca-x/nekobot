@@ -200,7 +200,9 @@ func (s *Server) setupGRPC() {
 			return s.agent.TaskService()
 		}(),
 		func() (*daemonv1.RuntimeInventory, error) { return daemonhost.BuildInventory("") },
-		func(ctx context.Context, task tasks.Task, req *daemonv1.UpdateTaskStatusRequest) error { return nil },
+		func(ctx context.Context, task tasks.Task, req *daemonv1.UpdateTaskStatusRequest) error {
+			return s.appendDaemonTaskSessionUpdate(ctx, task, req)
+		},
 	)
 	daemonv1.RegisterDaemonControlServiceServer(grpcServer, service)
 	s.grpcServer = grpcServer
@@ -337,6 +339,68 @@ func (s *Server) Stop(ctx context.Context) error {
 }
 
 // --- WebSocket Handler ---
+
+func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.Task, req *daemonv1.UpdateTaskStatusRequest) error {
+	if s == nil || s.sessionMgr == nil || req == nil {
+		return nil
+	}
+	sessionID := strings.TrimSpace(task.SessionID)
+	if sessionID == "" {
+		return nil
+	}
+	stateValue := strings.TrimSpace(req.State)
+	messageRole := "system"
+	messageContent := ""
+	switch stateValue {
+	case string(tasks.StateClaimed):
+		messageContent = fmt.Sprintf("Daemon task claimed.\nTask ID: %s", strings.TrimSpace(task.ID))
+	case string(tasks.StateRunning):
+		messageContent = fmt.Sprintf("Daemon task started.\nTask ID: %s", strings.TrimSpace(task.ID))
+	case string(tasks.StateRequiresAction):
+		reason := strings.TrimSpace(req.BlockedReason)
+		if reason == "" {
+			reason = strings.TrimSpace(task.PendingAction)
+		}
+		if reason == "" {
+			reason = "Daemon task requires action."
+		}
+		messageContent = reason
+	case string(tasks.StateCompleted):
+		messageRole = "assistant"
+		messageContent = strings.TrimSpace(req.ResultMessage)
+		if messageContent == "" {
+			messageContent = fmt.Sprintf("Daemon task completed.\nTask ID: %s", strings.TrimSpace(task.ID))
+		}
+	case string(tasks.StateFailed):
+		reason := strings.TrimSpace(req.Error)
+		if reason == "" {
+			reason = strings.TrimSpace(task.LastError)
+		}
+		messageContent = strings.TrimSpace(req.ResultMessage)
+		if messageContent == "" {
+			messageContent = "Daemon task failed."
+		}
+		if reason != "" {
+			messageContent = fmt.Sprintf("%s\nError: %s", messageContent, reason)
+		}
+	case string(tasks.StateCanceled):
+		messageContent = fmt.Sprintf("Daemon task canceled.\nTask ID: %s", strings.TrimSpace(task.ID))
+	default:
+		return nil
+	}
+	if strings.TrimSpace(messageContent) == "" {
+		return nil
+	}
+	sess, err := s.sessionMgr.GetWithSource(sessionID, session.SourceGateway)
+	if err != nil {
+		return fmt.Errorf("load daemon task session %s: %w", sessionID, err)
+	}
+	sess.AddMessage(agent.Message{Role: messageRole, Content: messageContent})
+	if err := s.sessionMgr.Save(sess); err != nil {
+		return fmt.Errorf("save daemon task session %s: %w", sessionID, err)
+	}
+	return nil
+}
 
 func (s *Server) handleWSChat(w http.ResponseWriter, r *http.Request) {
 	if err := s.checkClientIP(r); err != nil {

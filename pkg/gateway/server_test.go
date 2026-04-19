@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,17 +17,22 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
+	"nekobot/pkg/daemonhost"
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
 	"nekobot/pkg/session"
+	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
 	"nekobot/pkg/toolsessions"
@@ -2673,5 +2679,90 @@ func TestIsGRPCRequestRejectsHTTP11(t *testing.T) {
 	req.Header.Set("Content-Type", "application/grpc")
 	if s.isGRPCRequest(req) {
 		t.Fatalf("expected non-http2 request to be rejected")
+	}
+}
+
+func TestGatewayGRPCFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Port = 0
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Sessions.Sources.WebUI = true
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, store, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+	_, err = ag.TaskService().Enqueue(tasks.Task{
+		ID: "task-grpc", Type: tasks.TypeRemoteAgent, Summary: "grpc work", SessionID: "webui-chat:grpc", RuntimeID: "runtime-a", Metadata: map[string]any{"machine_id": "machine-a"},
+	})
+	if err != nil {
+		t.Fatalf("enqueue task: %v", err)
+	}
+
+	s := NewServer(cfg, log, ag, bus.NewLocalBus(log, 10), nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, process.NewManager(log), sessionMgr, nil, store)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	httpServer := &http.Server{Handler: h2c.NewHandler(s.mixedHandler(), &http2.Server{})}
+	defer func() { _ = httpServer.Shutdown(context.Background()) }()
+	go func() { _ = httpServer.Serve(ln) }()
+
+	token := "daemon-test-token"
+	if err := store.Set(context.Background(), "daemonhost.auth.token", token); err != nil {
+		t.Fatalf("seed daemon token: %v", err)
+	}
+	client, err := daemonhost.NewGRPCClient(ln.Addr().String(), token)
+	if err != nil {
+		t.Fatalf("new grpc client: %v", err)
+	}
+	defer client.Close()
+
+	if _, err := client.RegisterRemote(&daemonv1.RegisterMachineRequest{Info: &daemonv1.DaemonInfo{MachineId: "machine-a", DaemonId: "daemon-a"}}); err != nil {
+		t.Fatalf("register remote: %v", err)
+	}
+	fetchResp, err := client.FetchAssignedTasksRemote(&daemonv1.FetchAssignedTasksRequest{MachineId: "machine-a", RuntimeIds: []string{"runtime-a"}, Limit: 10})
+	if err != nil {
+		t.Fatalf("fetch tasks: %v", err)
+	}
+	if len(fetchResp.Tasks) != 1 || fetchResp.Tasks[0].TaskId != "task-grpc" {
+		t.Fatalf("unexpected fetched tasks: %+v", fetchResp.Tasks)
+	}
+	for _, stateValue := range []string{string(tasks.StateClaimed), string(tasks.StateRunning), string(tasks.StateCompleted)} {
+		req := &daemonv1.UpdateTaskStatusRequest{TaskId: "task-grpc", RuntimeId: "runtime-a", State: stateValue, Summary: "grpc work"}
+		if stateValue == string(tasks.StateCompleted) {
+			req.ResultMessage = "grpc-ok"
+		}
+		if _, err := client.UpdateTaskStatusRemote(req); err != nil {
+			t.Fatalf("update status %s: %v", stateValue, err)
+		}
+	}
+	items := ag.TaskService().List()
+	if len(items) != 1 || items[0].State != tasks.StateCompleted {
+		t.Fatalf("unexpected task state: %+v", items)
+	}
+	sess, err := sessionMgr.GetExisting("webui-chat:grpc")
+	if err != nil {
+		t.Fatalf("get existing session: %v", err)
+	}
+	messages := sess.GetMessages()
+	if len(messages) < 3 {
+		t.Fatalf("expected daemon session messages, got %+v", messages)
+	}
+	if messages[len(messages)-1].Role != "assistant" || messages[len(messages)-1].Content != "grpc-ok" {
+		t.Fatalf("unexpected final session message: %+v", messages[len(messages)-1])
 	}
 }
