@@ -113,7 +113,7 @@ export default function Sidebar() {
     }
   }, [mobileSidebarOpen]);
 
-  const renderNav = () => (
+  const renderNav = (expanded: boolean) => (
     <nav className="custom-scrollbar flex-1 overflow-y-auto pr-1">
       <ul className="space-y-1">
         {navItems.map((item) => {
@@ -123,11 +123,11 @@ export default function Sidebar() {
               <NavLink
                 to={item.target}
                 onClick={handleNavigate}
-                title={!sidebarOpen ? item.label : undefined}
+                title={!expanded ? item.label : undefined}
                 className={({ isActive }) =>
                   cn(
                     'group flex w-full items-center gap-3 rounded-2xl text-[13px] font-medium transition-colors duration-150',
-                    sidebarOpen ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
+                    expanded ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
                     isActive
                       ? 'bg-[linear-gradient(135deg,hsl(var(--brand-50))/0.9,hsl(var(--accent))/0.92)] text-accent-foreground font-semibold shadow-sm ring-1 ring-[hsl(var(--brand-200))/0.7] dark:bg-[linear-gradient(135deg,hsl(var(--brand-500))/0.18,hsl(var(--accent))/0.88)]'
                       : 'text-muted-foreground hover:bg-muted/85 hover:text-foreground',
@@ -144,7 +144,7 @@ export default function Sidebar() {
                           : 'text-muted-foreground group-hover:text-foreground',
                       )}
                     />
-                    {sidebarOpen && <span className="truncate">{item.label}</span>}
+                    {expanded && <span className="truncate">{item.label}</span>}
                   </>
                 )}
               </NavLink>
@@ -155,19 +155,24 @@ export default function Sidebar() {
     </nav>
   );
 
-  const renderActions = () => (
-    <div className={cn('mt-4 shrink-0 space-y-1 border-t border-border/70 pt-4', !sidebarOpen && 'flex flex-col items-center space-y-2')}>
+  const renderActions = (expanded: boolean) => (
+    <div
+      className={cn(
+        'mt-4 shrink-0 space-y-1 border-t border-border/70 pt-4',
+        !expanded && 'flex flex-col items-center space-y-2',
+      )}
+    >
       <button
         onClick={handleLanguageSwitch}
-        title={sidebarOpen ? `${t('language')}: ${langLabel}` : `${t('language')}: ${langLabel}`}
-        aria-label={sidebarOpen ? `${t('language')}: ${langLabel}` : `${t('language')}: ${langLabel}`}
+        title={`${t('language')}: ${langLabel}`}
+        aria-label={`${t('language')}: ${langLabel}`}
         className={cn(
           'flex w-full items-center gap-3 rounded-2xl text-[13px] font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-          sidebarOpen ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
+          expanded ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
         )}
       >
         <Languages className="h-4 w-4 shrink-0" />
-        {sidebarOpen ? (
+        {expanded ? (
           <span className="min-w-0 flex-1 truncate text-left">{`${t('language')} · ${langLabel}`}</span>
         ) : (
           <span className="sr-only">{`${t('language')}: ${langLabel}`}</span>
@@ -180,7 +185,7 @@ export default function Sidebar() {
         aria-label={currentTheme === 'dark' ? t('themeLight') : t('themeDark')}
         className={cn(
           'flex w-full items-center gap-3 rounded-2xl text-[13px] font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-          sidebarOpen ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
+          expanded ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
         )}
       >
         {currentTheme === 'dark' ? (
@@ -188,7 +193,7 @@ export default function Sidebar() {
         ) : (
           <Moon className="h-4 w-4 shrink-0" />
         )}
-        {sidebarOpen && (
+        {expanded && (
           <span className="flex-1 truncate text-left">
             {currentTheme === 'dark' ? t('themeLight') : t('themeDark')}
           </span>
@@ -201,11 +206,11 @@ export default function Sidebar() {
         aria-label={t('logout')}
         className={cn(
           'flex w-full items-center gap-3 rounded-2xl text-[13px] font-medium text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-          sidebarOpen ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
+          expanded ? 'px-3 py-2.5' : 'justify-center px-0 py-2.5',
         )}
       >
         <LogOut className="h-4 w-4 shrink-0" />
-        {sidebarOpen && <span className="flex-1 truncate text-left">{t('logout')}</span>}
+        {expanded && <span className="flex-1 truncate text-left">{t('logout')}</span>}
       </button>
     </div>
   );
@@ -272,8 +277,8 @@ export default function Sidebar() {
             {t('sidebarOverviewDesc')}
           </div>
         </div>
-        {renderNav()}
-        {renderActions()}
+        {renderNav(true)}
+        {renderActions(true)}
       </aside>
 
       <aside
@@ -326,8 +331,8 @@ export default function Sidebar() {
             )}
           </button>
         </div>
-        {renderNav()}
-        {renderActions()}
+        {renderNav(sidebarOpen)}
+        {renderActions(sidebarOpen)}
       </aside>
     </>
   );

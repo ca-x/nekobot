@@ -540,7 +540,7 @@ export function ProviderForm({ open, onOpenChange, provider }: ProviderFormProps
                       <div className="space-y-1">
                         <div className="text-sm font-semibold text-foreground">{t('providerDiscoverTitle')}</div>
                         <p className="text-sm leading-6 text-muted-foreground">{t('providerDiscoverSelectionHint')}</p>
-                        <p className="text-xs text-muted-foreground">{selectedAPIFormat === 'openai/responses' ? 'Responses API enabled for this provider.' : 'Chat Completions API enabled for this provider.'}</p>
+                        <p className="text-xs text-muted-foreground">{selectedAPIFormat === 'openai/responses' ? t('providerResponsesApiEnabled') : t('providerChatCompletionsApiEnabled')}</p>
                       </div>
 
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
