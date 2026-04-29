@@ -53,10 +53,22 @@ func (m *Manager) Close() error {
 }
 
 // ListPrompts returns all prompts ordered by name and key.
+// When an ownership.AuthContext is stored in ctx, results are filtered
+// to records the caller is allowed to read.
 func (m *Manager) ListPrompts(ctx context.Context) ([]Prompt, error) {
-	recs, err := m.client.Prompt.Query().
-		Order(ent.Asc(prompt.FieldName), ent.Asc(prompt.FieldPromptKey)).
-		All(ctx)
+	q := m.client.Prompt.Query().
+		Order(ent.Asc(prompt.FieldName), ent.Asc(prompt.FieldPromptKey))
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		q = q.Where(prompt.Or(
+			prompt.OwnerUserIDEQ(ac.UserID),
+			prompt.And(
+				prompt.VisibilityEQ(prompt.Visibility(ownership.VisibilityShared)),
+				prompt.TenantIDEQ(ac.TenantID),
+			),
+			prompt.VisibilityEQ(prompt.Visibility(ownership.VisibilitySystem)),
+		))
+	}
+	recs, err := q.All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list prompts: %w", err)
 	}
@@ -68,10 +80,17 @@ func (m *Manager) ListPrompts(ctx context.Context) ([]Prompt, error) {
 }
 
 // CreatePrompt inserts a new prompt.
+// When an ownership.AuthContext is stored in ctx, ownership fields are
+// enforced: normal users cannot forge owner_user_id or set system visibility.
 func (m *Manager) CreatePrompt(ctx context.Context, item Prompt) (*Prompt, error) {
 	normalized, err := normalizePrompt(item)
 	if err != nil {
 		return nil, err
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		normalized.OwnerUserID, normalized.TenantID, normalized.Visibility = ac.ValidateCreateOwnership(
+			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
+		)
 	}
 	tagsJSON, err := marshalTags(normalized.Tags)
 	if err != nil {
@@ -100,6 +119,8 @@ func (m *Manager) CreatePrompt(ctx context.Context, item Prompt) (*Prompt, error
 }
 
 // UpdatePrompt updates an existing prompt by ID.
+// When an ownership.AuthContext is stored in ctx, write permission is
+// verified and ownership fields are enforced.
 func (m *Manager) UpdatePrompt(ctx context.Context, id string, item Prompt) (*Prompt, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -108,6 +129,22 @@ func (m *Manager) UpdatePrompt(ctx context.Context, id string, item Prompt) (*Pr
 	normalized, err := normalizePrompt(item)
 	if err != nil {
 		return nil, err
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		existing, lookupErr := m.client.Prompt.Get(ctx, id)
+		if lookupErr != nil {
+			if ent.IsNotFound(lookupErr) {
+				return nil, ErrPromptNotFound
+			}
+			return nil, fmt.Errorf("get prompt for auth: %w", lookupErr)
+		}
+		if !ac.CanWrite(existing.OwnerUserID) {
+			return nil, ownership.ErrPermissionDenied
+		}
+		normalized.OwnerUserID, normalized.TenantID, normalized.Visibility = ac.ValidateUpdateOwnership(
+			existing.OwnerUserID, existing.TenantID, string(existing.Visibility),
+			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
+		)
 	}
 	tagsJSON, err := marshalTags(normalized.Tags)
 	if err != nil {
@@ -139,10 +176,23 @@ func (m *Manager) UpdatePrompt(ctx context.Context, id string, item Prompt) (*Pr
 }
 
 // DeletePrompt removes a prompt and all of its bindings.
+// When an ownership.AuthContext is stored in ctx, write permission is verified first.
 func (m *Manager) DeletePrompt(ctx context.Context, id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return fmt.Errorf("prompt id is required")
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		existing, lookupErr := m.client.Prompt.Get(ctx, id)
+		if lookupErr != nil {
+			if ent.IsNotFound(lookupErr) {
+				return ErrPromptNotFound
+			}
+			return fmt.Errorf("get prompt for auth: %w", lookupErr)
+		}
+		if !ac.CanWrite(existing.OwnerUserID) {
+			return ownership.ErrPermissionDenied
+		}
 	}
 	if _, err := m.client.PromptBinding.Delete().Where(promptbinding.PromptIDEQ(id)).Exec(ctx); err != nil {
 		return fmt.Errorf("delete prompt bindings: %w", err)

@@ -423,6 +423,26 @@ func (m *Manager) ListJobs() []*Job {
 	return jobs
 }
 
+// ListJobsFiltered returns jobs visible to the AuthContext stored in ctx.
+// When no AuthContext is present it falls back to ListJobs.
+func (m *Manager) ListJobsFiltered(ctx context.Context) []*Job {
+	ac, ok := ownership.AuthContextFromContext(ctx)
+	if !ok {
+		return m.ListJobs()
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	jobs := make([]*Job, 0, len(m.jobs))
+	for _, job := range m.jobs {
+		if ac.CanRead(job.OwnerUserID, job.TenantID, job.Visibility) {
+			jobCopy := *job
+			jobs = append(jobs, &jobCopy)
+		}
+	}
+	return jobs
+}
+
 // GetJob returns a job by ID.
 func (m *Manager) GetJob(jobID string) (*Job, error) {
 	m.mu.RLock()
@@ -435,6 +455,149 @@ func (m *Manager) GetJob(jobID string) (*Job, error) {
 
 	jobCopy := *job
 	return &jobCopy, nil
+}
+
+// GetJobAuth returns a job by ID if the caller has read permission.
+func (m *Manager) GetJobAuth(ctx context.Context, jobID string) (*Job, error) {
+	job, err := m.GetJob(jobID)
+	if err != nil {
+		return nil, err
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		if !ac.CanRead(job.OwnerUserID, job.TenantID, job.Visibility) {
+			return nil, ownership.ErrPermissionDenied
+		}
+	}
+	return job, nil
+}
+
+// AddJobWithAuth creates a cron job with ownership enforced from the context.
+func (m *Manager) AddJobWithAuth(ctx context.Context, name, schedule, prompt string, route RouteOptions) (*Job, error) {
+	job := &Job{
+		ID:           generateJobID(),
+		Name:         name,
+		ScheduleKind: ScheduleCron,
+		Schedule:     schedule,
+		Prompt:       prompt,
+		Skills:       normalizeSkills(route.Skills),
+		Provider:     route.Provider,
+		Model:        route.Model,
+		Fallback:     append([]string(nil), route.Fallback...),
+		Enabled:      true,
+		CreatedAt:    time.Now(),
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		job.OwnerUserID, job.TenantID, job.Visibility = ac.ValidateCreateOwnership("", "", "")
+	}
+	return m.addAndSchedule(job)
+}
+
+// AddAtJobWithAuth creates a one-time job with ownership enforced from the context.
+func (m *Manager) AddAtJobWithAuth(ctx context.Context, name string, at time.Time, prompt string, deleteAfterRun bool, route RouteOptions) (*Job, error) {
+	job := &Job{
+		ID:             generateJobID(),
+		Name:           name,
+		ScheduleKind:   ScheduleAt,
+		AtTime:         &at,
+		Prompt:         prompt,
+		Skills:         normalizeSkills(route.Skills),
+		Provider:       route.Provider,
+		Model:          route.Model,
+		Fallback:       append([]string(nil), route.Fallback...),
+		Enabled:        true,
+		DeleteAfterRun: deleteAfterRun,
+		CreatedAt:      time.Now(),
+		NextRun:        at,
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		job.OwnerUserID, job.TenantID, job.Visibility = ac.ValidateCreateOwnership("", "", "")
+	}
+	return m.addAndSchedule(job)
+}
+
+// AddEveryJobWithAuth creates a recurring job with ownership enforced from the context.
+func (m *Manager) AddEveryJobWithAuth(ctx context.Context, name, every, prompt string, route RouteOptions) (*Job, error) {
+	duration, err := time.ParseDuration(every)
+	if err != nil {
+		return nil, fmt.Errorf("invalid duration %q: %w", every, err)
+	}
+	if duration < time.Second {
+		return nil, fmt.Errorf("interval must be at least 1 second")
+	}
+	job := &Job{
+		ID:            generateJobID(),
+		Name:          name,
+		ScheduleKind:  ScheduleEvery,
+		EveryDuration: every,
+		Prompt:        prompt,
+		Skills:        normalizeSkills(route.Skills),
+		Provider:      route.Provider,
+		Model:         route.Model,
+		Fallback:      append([]string(nil), route.Fallback...),
+		Enabled:       true,
+		CreatedAt:     time.Now(),
+		NextRun:       time.Now().Add(duration),
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		job.OwnerUserID, job.TenantID, job.Visibility = ac.ValidateCreateOwnership("", "", "")
+	}
+	return m.addAndSchedule(job)
+}
+
+// RemoveJobAuth removes a job after verifying write permission.
+func (m *Manager) RemoveJobAuth(ctx context.Context, jobID string) error {
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		job, err := m.GetJob(jobID)
+		if err != nil {
+			return err
+		}
+		if !ac.CanWrite(job.OwnerUserID) {
+			return ownership.ErrPermissionDenied
+		}
+	}
+	return m.RemoveJob(jobID)
+}
+
+// EnableJobAuth enables a job after verifying write permission.
+func (m *Manager) EnableJobAuth(ctx context.Context, jobID string) error {
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		job, err := m.GetJob(jobID)
+		if err != nil {
+			return err
+		}
+		if !ac.CanWrite(job.OwnerUserID) {
+			return ownership.ErrPermissionDenied
+		}
+	}
+	return m.EnableJob(jobID)
+}
+
+// DisableJobAuth disables a job after verifying write permission.
+func (m *Manager) DisableJobAuth(ctx context.Context, jobID string) error {
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		job, err := m.GetJob(jobID)
+		if err != nil {
+			return err
+		}
+		if !ac.CanWrite(job.OwnerUserID) {
+			return ownership.ErrPermissionDenied
+		}
+	}
+	return m.DisableJob(jobID)
+}
+
+// RunJobAuth executes a job once after verifying write permission.
+func (m *Manager) RunJobAuth(ctx context.Context, jobID string) error {
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		job, err := m.GetJob(jobID)
+		if err != nil {
+			return err
+		}
+		if !ac.CanWrite(job.OwnerUserID) {
+			return ownership.ErrPermissionDenied
+		}
+	}
+	return m.RunJob(jobID)
 }
 
 // RunJob executes a job once immediately.

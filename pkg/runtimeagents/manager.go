@@ -48,10 +48,22 @@ func (m *Manager) Close() error {
 }
 
 // List returns all runtimes ordered by display fields.
+// When an ownership.AuthContext is stored in ctx, results are filtered
+// to records the caller is allowed to read.
 func (m *Manager) List(ctx context.Context) ([]AgentRuntime, error) {
-	recs, err := m.client.AgentRuntime.Query().
-		Order(ent.Asc(agentruntime.FieldName), ent.Asc(agentruntime.FieldUpdatedAt)).
-		All(ctx)
+	q := m.client.AgentRuntime.Query().
+		Order(ent.Asc(agentruntime.FieldName), ent.Asc(agentruntime.FieldUpdatedAt))
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		q = q.Where(agentruntime.Or(
+			agentruntime.OwnerUserIDEQ(ac.UserID),
+			agentruntime.And(
+				agentruntime.VisibilityEQ(agentruntime.Visibility(ownership.VisibilityShared)),
+				agentruntime.TenantIDEQ(ac.TenantID),
+			),
+			agentruntime.VisibilityEQ(agentruntime.Visibility(ownership.VisibilitySystem)),
+		))
+	}
+	recs, err := q.All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list agent runtimes: %w", err)
 	}
@@ -87,10 +99,16 @@ func (m *Manager) Get(ctx context.Context, id string) (*AgentRuntime, error) {
 }
 
 // Create inserts a new runtime.
+// When an ownership.AuthContext is stored in ctx, ownership fields are enforced.
 func (m *Manager) Create(ctx context.Context, item AgentRuntime) (*AgentRuntime, error) {
 	normalized, err := normalizeRuntime(item)
 	if err != nil {
 		return nil, err
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		normalized.OwnerUserID, normalized.TenantID, normalized.Visibility = ac.ValidateCreateOwnership(
+			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
+		)
 	}
 	skillsJSON, err := marshalStringSlice(normalized.Skills)
 	if err != nil {
@@ -133,6 +151,8 @@ func (m *Manager) Create(ctx context.Context, item AgentRuntime) (*AgentRuntime,
 }
 
 // Update updates an existing runtime by ID.
+// When an ownership.AuthContext is stored in ctx, write permission is
+// verified and ownership fields are enforced.
 func (m *Manager) Update(ctx context.Context, id string, item AgentRuntime) (*AgentRuntime, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -141,6 +161,22 @@ func (m *Manager) Update(ctx context.Context, id string, item AgentRuntime) (*Ag
 	normalized, err := normalizeRuntime(item)
 	if err != nil {
 		return nil, err
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		existing, lookupErr := m.client.AgentRuntime.Get(ctx, id)
+		if lookupErr != nil {
+			if ent.IsNotFound(lookupErr) {
+				return nil, ErrRuntimeNotFound
+			}
+			return nil, fmt.Errorf("get agent runtime for auth: %w", lookupErr)
+		}
+		if !ac.CanWrite(existing.OwnerUserID) {
+			return nil, ownership.ErrPermissionDenied
+		}
+		normalized.OwnerUserID, normalized.TenantID, normalized.Visibility = ac.ValidateUpdateOwnership(
+			existing.OwnerUserID, existing.TenantID, string(existing.Visibility),
+			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
+		)
 	}
 	skillsJSON, err := marshalStringSlice(normalized.Skills)
 	if err != nil {
@@ -186,10 +222,23 @@ func (m *Manager) Update(ctx context.Context, id string, item AgentRuntime) (*Ag
 }
 
 // Delete removes one runtime by ID.
+// When an ownership.AuthContext is stored in ctx, write permission is verified first.
 func (m *Manager) Delete(ctx context.Context, id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return fmt.Errorf("runtime id is required")
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		existing, lookupErr := m.client.AgentRuntime.Get(ctx, id)
+		if lookupErr != nil {
+			if ent.IsNotFound(lookupErr) {
+				return ErrRuntimeNotFound
+			}
+			return fmt.Errorf("get agent runtime for auth: %w", lookupErr)
+		}
+		if !ac.CanWrite(existing.OwnerUserID) {
+			return ownership.ErrPermissionDenied
+		}
 	}
 	affected, err := m.client.AgentRuntime.Delete().Where(agentruntime.IDEQ(id)).Exec(ctx)
 	if err != nil {

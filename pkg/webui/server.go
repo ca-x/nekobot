@@ -55,6 +55,7 @@ import (
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/ownership"
 	"nekobot/pkg/memory"
 	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/modelroute"
@@ -1622,7 +1623,7 @@ func (s *Server) handleListCronJobs(c *echo.Context) error {
 	if s.cronMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cron manager unavailable"})
 	}
-	return c.JSON(http.StatusOK, s.cronMgr.ListJobs())
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c)); return c.JSON(http.StatusOK, s.cronMgr.ListJobsFiltered(ctx))
 }
 
 func (s *Server) handleCreateCronJob(c *echo.Context) error {
@@ -1654,6 +1655,7 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("fallback routing target not found: %s", item)})
 		}
 	}
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
 	route := cron.RouteOptions{
 		Provider: provider,
 		Model:    model,
@@ -1677,7 +1679,7 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 		if schedule == "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "schedule is required for cron jobs"})
 		}
-		job, err = s.cronMgr.AddCronJobWithRoute(name, schedule, prompt, route)
+		job, err = s.cronMgr.AddJobWithAuth(ctx, name, schedule, prompt, route)
 	case cron.ScheduleAt:
 		atRaw := strings.TrimSpace(body.AtTime)
 		if atRaw == "" {
@@ -1687,13 +1689,13 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 		if parseErr != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid at_time, must be RFC3339"})
 		}
-		job, err = s.cronMgr.AddAtJobWithRoute(name, at, prompt, body.DeleteAfterRun, route)
+		job, err = s.cronMgr.AddAtJobWithAuth(ctx, name, at, prompt, body.DeleteAfterRun, route)
 	case cron.ScheduleEvery:
 		every := strings.TrimSpace(body.EveryDuration)
 		if every == "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "every_duration is required for every jobs"})
 		}
-		job, err = s.cronMgr.AddEveryJobWithRoute(name, every, prompt, route)
+		job, err = s.cronMgr.AddEveryJobWithAuth(ctx, name, every, prompt, route)
 	default:
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid schedule_kind"})
 	}
@@ -1716,9 +1718,13 @@ func (s *Server) handleDeleteCronJob(c *echo.Context) error {
 	if jobID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
 	}
-	if err := s.cronMgr.RemoveJob(jobID); err != nil {
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+		if err := s.cronMgr.RemoveJobAuth(ctx, jobID); err != nil {
 		if strings.Contains(err.Error(), "job not found") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 		}
 		s.logger.Error("Failed to delete cron job", zap.String("job_id", jobID), zap.Error(err))
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -1734,9 +1740,13 @@ func (s *Server) handleEnableCronJob(c *echo.Context) error {
 	if jobID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
 	}
-	if err := s.cronMgr.EnableJob(jobID); err != nil {
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+		if err := s.cronMgr.EnableJobAuth(ctx, jobID); err != nil {
 		if strings.Contains(err.Error(), "job not found") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 		}
 		s.logger.Error("Failed to enable cron job", zap.String("job_id", jobID), zap.Error(err))
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -1752,9 +1762,13 @@ func (s *Server) handleDisableCronJob(c *echo.Context) error {
 	if jobID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
 	}
-	if err := s.cronMgr.DisableJob(jobID); err != nil {
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+		if err := s.cronMgr.DisableJobAuth(ctx, jobID); err != nil {
 		if strings.Contains(err.Error(), "job not found") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 		}
 		s.logger.Error("Failed to disable cron job", zap.String("job_id", jobID), zap.Error(err))
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -1770,9 +1784,13 @@ func (s *Server) handleRunCronJob(c *echo.Context) error {
 	if jobID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
 	}
-	if err := s.cronMgr.RunJob(jobID); err != nil {
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+		if err := s.cronMgr.RunJobAuth(ctx, jobID); err != nil {
 		if strings.Contains(err.Error(), "job not found") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
 		}
 		s.logger.Error("Failed to run cron job", zap.String("job_id", jobID), zap.Error(err))
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -3604,6 +3622,28 @@ func (s *Server) currentUserRole(c *echo.Context) string {
 	}
 	role, _ := claims["role"].(string)
 	return strings.TrimSpace(role)
+}
+
+func (s *Server) currentTenantID(c *echo.Context) string {
+	user := c.Get("user")
+	token, ok := user.(*jwt.Token)
+	if !ok || token == nil {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+	tid, _ := claims["tid"].(string)
+	return strings.TrimSpace(tid)
+}
+
+func (s *Server) authContextFromEcho(c *echo.Context) ownership.AuthContext {
+	return ownership.AuthContext{
+		UserID:   s.currentUserID(c),
+		TenantID: s.currentTenantID(c),
+		Role:     s.currentUserRole(c),
+	}
 }
 
 func (s *Server) currentToolSessionID(c *echo.Context) string {
@@ -8313,7 +8353,8 @@ func (s *Server) handleListPrompts(c *echo.Context) error {
 	if s.prompts == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
 	}
-	items, err := s.prompts.ListPrompts(c.Request().Context())
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	items, err := s.prompts.ListPrompts(ctx)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -8328,7 +8369,8 @@ func (s *Server) handleCreatePrompt(c *echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	item, err := s.prompts.CreatePrompt(c.Request().Context(), body)
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	item, err := s.prompts.CreatePrompt(ctx, body)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
@@ -8343,11 +8385,15 @@ func (s *Server) handleUpdatePrompt(c *echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	item, err := s.prompts.UpdatePrompt(c.Request().Context(), c.Param("id"), body)
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	item, err := s.prompts.UpdatePrompt(ctx, c.Param("id"), body)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, prompts.ErrPromptNotFound) {
 			status = http.StatusNotFound
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			status = http.StatusForbidden
 		}
 		return c.JSON(status, map[string]string{"error": err.Error()})
 	}
@@ -8358,11 +8404,15 @@ func (s *Server) handleDeletePrompt(c *echo.Context) error {
 	if s.prompts == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "prompt manager not available"})
 	}
-	err := s.prompts.DeletePrompt(c.Request().Context(), c.Param("id"))
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	err := s.prompts.DeletePrompt(ctx, c.Param("id"))
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, prompts.ErrPromptNotFound) {
 			status = http.StatusNotFound
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			status = http.StatusForbidden
 		}
 		return c.JSON(status, map[string]string{"error": err.Error()})
 	}
@@ -8487,7 +8537,7 @@ func (s *Server) handleListRuntimeAgents(c *echo.Context) error {
 	if s.runtimeMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime agent manager not available"})
 	}
-	items, err := s.deriveRuntimeStatuses(c.Request().Context())
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c)); items, err := s.deriveRuntimeStatuses(ctx)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -8502,7 +8552,7 @@ func (s *Server) handleCreateRuntimeAgent(c *echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	item, err := s.runtimeMgr.Create(c.Request().Context(), body)
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c)); item, err := s.runtimeMgr.Create(ctx, body)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
@@ -8517,11 +8567,14 @@ func (s *Server) handleUpdateRuntimeAgent(c *echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	item, err := s.runtimeMgr.Update(c.Request().Context(), c.Param("id"), body)
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c)); item, err := s.runtimeMgr.Update(ctx, c.Param("id"), body)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, runtimeagents.ErrRuntimeNotFound) {
 			status = http.StatusNotFound
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			status = http.StatusForbidden
 		}
 		return c.JSON(status, map[string]string{"error": err.Error()})
 	}
@@ -8536,16 +8589,20 @@ func (s *Server) handleDeleteRuntimeAgent(c *echo.Context) error {
 	if runtimeID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "runtime id is required"})
 	}
+	authCtx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
 	if s.bindingMgr != nil {
-		if err := s.bindingMgr.DeleteByRuntimeID(c.Request().Context(), runtimeID); err != nil {
+		if err := s.bindingMgr.DeleteByRuntimeID(authCtx, runtimeID); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 	}
-	err := s.runtimeMgr.Delete(c.Request().Context(), runtimeID)
+	err := s.runtimeMgr.Delete(authCtx, runtimeID)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, runtimeagents.ErrRuntimeNotFound) {
 			status = http.StatusNotFound
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			status = http.StatusForbidden
 		}
 		return c.JSON(status, map[string]string{"error": err.Error()})
 	}
@@ -8556,7 +8613,8 @@ func (s *Server) handleListChannelAccounts(c *echo.Context) error {
 	if s.accountMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "channel account manager not available"})
 	}
-	items, err := s.accountMgr.List(c.Request().Context())
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	items, err := s.accountMgr.List(ctx)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -8574,7 +8632,8 @@ func (s *Server) handleCreateChannelAccount(c *echo.Context) error {
 	if err := validateChannelAccountInput(body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
-	item, err := s.accountMgr.Create(c.Request().Context(), body)
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	item, err := s.accountMgr.Create(ctx, body)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
@@ -8592,7 +8651,9 @@ func (s *Server) handleUpdateChannelAccount(c *echo.Context) error {
 	if s.accountMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "channel account manager not available"})
 	}
-	existing, err := s.accountMgr.Get(c.Request().Context(), c.Param("id"))
+	id := c.Param("id")
+	authCtx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	existing, err := s.accountMgr.Get(authCtx, id)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
@@ -8610,11 +8671,14 @@ func (s *Server) handleUpdateChannelAccount(c *echo.Context) error {
 	if err := validateChannelAccountInput(body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
-	item, err := s.accountMgr.Update(c.Request().Context(), c.Param("id"), body)
+	item, err := s.accountMgr.Update(authCtx, id, body)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
 			status = http.StatusNotFound
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			status = http.StatusForbidden
 		}
 		return c.JSON(status, map[string]string{"error": err.Error()})
 	}
@@ -8641,7 +8705,9 @@ func (s *Server) handleDeleteChannelAccount(c *echo.Context) error {
 	if s.accountMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "channel account manager not available"})
 	}
-	existing, err := s.accountMgr.Get(c.Request().Context(), c.Param("id"))
+	id := c.Param("id")
+	authCtx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	existing, err := s.accountMgr.Get(authCtx, id)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
@@ -8653,15 +8719,18 @@ func (s *Server) handleDeleteChannelAccount(c *echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "channel account not found"})
 	}
 	if s.bindingMgr != nil {
-		if err := s.bindingMgr.DeleteByChannelAccountID(c.Request().Context(), existing.ID); err != nil {
+		if err := s.bindingMgr.DeleteByChannelAccountID(authCtx, existing.ID); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 	}
-	err = s.accountMgr.Delete(c.Request().Context(), c.Param("id"))
+	err = s.accountMgr.Delete(authCtx, id)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, channelaccounts.ErrAccountNotFound) {
 			status = http.StatusNotFound
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			status = http.StatusForbidden
 		}
 		return c.JSON(status, map[string]string{"error": err.Error()})
 	}

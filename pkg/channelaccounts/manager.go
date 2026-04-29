@@ -49,10 +49,22 @@ func (m *Manager) Close() error {
 }
 
 // List returns all channel accounts ordered by type/key.
+// When an ownership.AuthContext is stored in ctx, results are filtered
+// to records the caller is allowed to read.
 func (m *Manager) List(ctx context.Context) ([]ChannelAccount, error) {
-	recs, err := m.client.ChannelAccount.Query().
-		Order(ent.Asc(channelaccount.FieldChannelType), ent.Asc(channelaccount.FieldAccountKey)).
-		All(ctx)
+	q := m.client.ChannelAccount.Query().
+		Order(ent.Asc(channelaccount.FieldChannelType), ent.Asc(channelaccount.FieldAccountKey))
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		q = q.Where(channelaccount.Or(
+			channelaccount.OwnerUserIDEQ(ac.UserID),
+			channelaccount.And(
+				channelaccount.VisibilityEQ(channelaccount.Visibility(ownership.VisibilityShared)),
+				channelaccount.TenantIDEQ(ac.TenantID),
+			),
+			channelaccount.VisibilityEQ(channelaccount.Visibility(ownership.VisibilitySystem)),
+		))
+	}
+	recs, err := q.All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list channel accounts: %w", err)
 	}
@@ -186,10 +198,16 @@ func (m *Manager) prioritizeAccountsForChannelID(channelID string, accounts []Ch
 }
 
 // Create inserts a new channel account.
+// When an ownership.AuthContext is stored in ctx, ownership fields are enforced.
 func (m *Manager) Create(ctx context.Context, item ChannelAccount) (*ChannelAccount, error) {
 	normalized, err := normalizeAccount(item)
 	if err != nil {
 		return nil, err
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		normalized.OwnerUserID, normalized.TenantID, normalized.Visibility = ac.ValidateCreateOwnership(
+			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
+		)
 	}
 	configJSON, err := marshalMap(normalized.Config)
 	if err != nil {
@@ -225,6 +243,8 @@ func (m *Manager) Create(ctx context.Context, item ChannelAccount) (*ChannelAcco
 }
 
 // Update updates an existing channel account.
+// When an ownership.AuthContext is stored in ctx, write permission is
+// verified and ownership fields are enforced.
 func (m *Manager) Update(ctx context.Context, id string, item ChannelAccount) (*ChannelAccount, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -233,6 +253,22 @@ func (m *Manager) Update(ctx context.Context, id string, item ChannelAccount) (*
 	normalized, err := normalizeAccount(item)
 	if err != nil {
 		return nil, err
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		existing, lookupErr := m.client.ChannelAccount.Get(ctx, id)
+		if lookupErr != nil {
+			if ent.IsNotFound(lookupErr) {
+				return nil, ErrAccountNotFound
+			}
+			return nil, fmt.Errorf("get channel account for auth: %w", lookupErr)
+		}
+		if !ac.CanWrite(existing.OwnerUserID) {
+			return nil, ownership.ErrPermissionDenied
+		}
+		normalized.OwnerUserID, normalized.TenantID, normalized.Visibility = ac.ValidateUpdateOwnership(
+			existing.OwnerUserID, existing.TenantID, string(existing.Visibility),
+			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
+		)
 	}
 	configJSON, err := marshalMap(normalized.Config)
 	if err != nil {
@@ -271,10 +307,23 @@ func (m *Manager) Update(ctx context.Context, id string, item ChannelAccount) (*
 }
 
 // Delete removes one channel account by ID.
+// When an ownership.AuthContext is stored in ctx, write permission is verified first.
 func (m *Manager) Delete(ctx context.Context, id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return fmt.Errorf("channel account id is required")
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		existing, lookupErr := m.client.ChannelAccount.Get(ctx, id)
+		if lookupErr != nil {
+			if ent.IsNotFound(lookupErr) {
+				return ErrAccountNotFound
+			}
+			return fmt.Errorf("get channel account for auth: %w", lookupErr)
+		}
+		if !ac.CanWrite(existing.OwnerUserID) {
+			return ownership.ErrPermissionDenied
+		}
 	}
 	affected, err := m.client.ChannelAccount.Delete().Where(channelaccount.IDEQ(id)).Exec(ctx)
 	if err != nil {
