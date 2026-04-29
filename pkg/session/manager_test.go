@@ -1,8 +1,10 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"nekobot/pkg/config"
@@ -77,6 +79,71 @@ func TestSessionDoesNotPersistDisabledSource(t *testing.T) {
 	reloaded := NewManager(manager.baseDir, cfg)
 	if _, err := reloaded.GetExisting("disabled-webui"); !os.IsNotExist(err) {
 		t.Fatalf("expected session file to be absent, got err=%v", err)
+	}
+}
+
+func TestSessionAddMessageAppendsJSONL(t *testing.T) {
+	cfg := config.DefaultConfig().Sessions
+	cfg.Sources = config.SessionSourcesConfig{WebUI: true}
+	cfg.Content = config.SessionContentConfig{
+		UserMessages:      true,
+		AssistantMessages: true,
+		SystemMessages:    true,
+		ToolCalls:         true,
+		ToolResults:       true,
+	}
+
+	manager := NewManager(t.TempDir(), cfg)
+	sess, err := manager.GetWithSource("append-webui", SourceWebUI)
+	if err != nil {
+		t.Fatalf("GetWithSource failed: %v", err)
+	}
+
+	sess.AddMessage(Message{Role: "user", Content: "first"})
+	path := manager.getJSONLPath("append-webui")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read session file: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected metadata + 1 message, got %d lines", len(lines))
+	}
+	var metadata map[string]interface{}
+	if err := json.Unmarshal([]byte(lines[0]), &metadata); err != nil {
+		t.Fatalf("decode metadata: %v", err)
+	}
+	metadata["append_sentinel"] = "kept"
+	encodedMetadata, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatalf("encode metadata: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(string(encodedMetadata)+"\n"+strings.Join(lines[1:], "\n")+"\n"), 0o644); err != nil {
+		t.Fatalf("write sentinel metadata: %v", err)
+	}
+
+	sess.AddMessage(Message{Role: "assistant", Content: "second"})
+
+	raw, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read appended session file: %v", err)
+	}
+	lines = strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected metadata + 2 messages after append, got %d lines", len(lines))
+	}
+	if !strings.Contains(lines[0], "append_sentinel") {
+		t.Fatalf("expected append path to preserve existing metadata line, got %s", lines[0])
+	}
+
+	reloaded := NewManager(manager.baseDir, cfg)
+	loaded, err := reloaded.GetExisting("append-webui")
+	if err != nil {
+		t.Fatalf("GetExisting failed: %v", err)
+	}
+	if messages := loaded.GetMessages(); len(messages) != 2 || messages[0].Content != "first" || messages[1].Content != "second" {
+		t.Fatalf("unexpected reloaded messages: %#v", messages)
 	}
 }
 

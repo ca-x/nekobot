@@ -19,6 +19,8 @@ type Message = message.Message
 // ToolCall is an alias for message.ToolCall for backward compatibility.
 type ToolCall = message.ToolCall
 
+var errSessionAppendNeedsRewrite = errors.New("session append needs full rewrite")
+
 // Session represents a conversation session with history.
 type Session struct {
 	ID        string    `json:"id"`
@@ -190,12 +192,18 @@ func (m *Manager) Delete(sessionID string) error {
 // AddMessage adds a message to the session.
 func (s *Session) AddMessage(message Message) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.Messages = append(s.Messages, message)
 	s.UpdatedAt = time.Now()
+	appendSnapshot := s.appendSnapshotLocked()
+	s.mu.Unlock()
+
 	if s.manager != nil {
-		_ = s.manager.saveSnapshot(s.snapshotLocked())
+		if err := s.manager.appendSnapshotMessage(appendSnapshot, message); errors.Is(err, errSessionAppendNeedsRewrite) {
+			s.mu.RLock()
+			snapshot := s.snapshotLocked()
+			s.mu.RUnlock()
+			_ = s.manager.saveSnapshot(snapshot)
+		}
 	}
 }
 
@@ -328,6 +336,14 @@ type sessionSnapshot struct {
 	Source    string
 }
 
+type sessionAppendSnapshot struct {
+	ID           string
+	CreatedAt    time.Time
+	Summary      string
+	Source       string
+	MessageCount int
+}
+
 func (s *Session) snapshotLocked() sessionSnapshot {
 	messages := make([]Message, len(s.Messages))
 	copy(messages, s.Messages)
@@ -338,6 +354,16 @@ func (s *Session) snapshotLocked() sessionSnapshot {
 		Messages:  messages,
 		Summary:   s.Summary,
 		Source:    s.Source,
+	}
+}
+
+func (s *Session) appendSnapshotLocked() sessionAppendSnapshot {
+	return sessionAppendSnapshot{
+		ID:           s.ID,
+		CreatedAt:    s.CreatedAt,
+		Summary:      s.Summary,
+		Source:       s.Source,
+		MessageCount: len(s.Messages),
 	}
 }
 
@@ -352,6 +378,32 @@ func (m *Manager) saveSnapshot(snapshot sessionSnapshot) error {
 		"source":     snapshot.Source,
 		"created_at": snapshot.CreatedAt.Format(time.RFC3339Nano),
 	})
+}
+
+func (m *Manager) appendSnapshotMessage(snapshot sessionAppendSnapshot, msg Message) error {
+	if !m.shouldPersist(snapshot.Source) {
+		return nil
+	}
+
+	keep, filtered := m.filterMessage(msg)
+	if !keep {
+		return nil
+	}
+
+	if snapshot.MessageCount > 1 {
+		if _, err := os.Stat(m.getJSONLPath(snapshot.ID)); err != nil {
+			if os.IsNotExist(err) {
+				return errSessionAppendNeedsRewrite
+			}
+			return err
+		}
+	}
+
+	return m.AppendMessageJSONL(snapshot.ID, filtered, map[string]interface{}{
+		"summary":    snapshot.Summary,
+		"source":     snapshot.Source,
+		"created_at": snapshot.CreatedAt.Format(time.RFC3339Nano),
+	}, snapshot.CreatedAt)
 }
 
 func (m *Manager) shouldPersist(source string) bool {

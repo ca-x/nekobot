@@ -169,7 +169,7 @@ func (m *Manager) DeleteJSONL(key string) error {
 
 // AppendMessageJSONL appends a single message to an existing JSONL file.
 // This is efficient for streaming scenarios.
-func (m *Manager) AppendMessageJSONL(key string, msg Message) error {
+func (m *Manager) AppendMessageJSONL(key string, msg Message, metadata map[string]interface{}, createdAt time.Time) error {
 	path := m.getJSONLPath(key)
 
 	// Open file in append mode
@@ -188,13 +188,19 @@ func (m *Manager) AppendMessageJSONL(key string, msg Message) error {
 	}
 
 	if stat.Size() == 0 {
+		if createdAt.IsZero() {
+			createdAt = time.Now()
+		}
+		if metadata == nil {
+			metadata = map[string]interface{}{}
+		}
 		// Write metadata first
 		metadataLine := map[string]interface{}{
 			"_type":      "metadata",
 			"key":        key,
-			"created_at": time.Now(),
+			"created_at": createdAt,
 			"updated_at": time.Now(),
-			"metadata":   make(map[string]interface{}),
+			"metadata":   metadata,
 		}
 		encoder := json.NewEncoder(file)
 		if err := encoder.Encode(metadataLine); err != nil {
