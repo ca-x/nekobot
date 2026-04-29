@@ -12,6 +12,7 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/ownership"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
@@ -84,6 +85,9 @@ func (m *Manager) CreatePrompt(ctx context.Context, item Prompt) (*Prompt, error
 		SetTemplate(normalized.Template).
 		SetEnabled(normalized.Enabled).
 		SetTagsJSON(tagsJSON).
+		SetTenantID(normalized.TenantID).
+		SetOwnerUserID(normalized.OwnerUserID).
+		SetVisibility(prompt.Visibility(normalized.Visibility)).
 		Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
@@ -117,6 +121,9 @@ func (m *Manager) UpdatePrompt(ctx context.Context, id string, item Prompt) (*Pr
 		SetTemplate(normalized.Template).
 		SetEnabled(normalized.Enabled).
 		SetTagsJSON(tagsJSON).
+		SetTenantID(normalized.TenantID).
+		SetOwnerUserID(normalized.OwnerUserID).
+		SetVisibility(prompt.Visibility(normalized.Visibility)).
 		Save(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -539,6 +546,9 @@ func normalizePrompt(item Prompt) (Prompt, error) {
 		Template:    templateText,
 		Enabled:     item.Enabled,
 		Tags:        tags,
+		TenantID:    strings.TrimSpace(item.TenantID),
+		OwnerUserID: strings.TrimSpace(item.OwnerUserID),
+		Visibility:  ownership.NormalizeVisibility(item.Visibility),
 	}, nil
 }
 
@@ -620,6 +630,9 @@ func toPrompt(rec *ent.Prompt) Prompt {
 		Template:    rec.Template,
 		Enabled:     rec.Enabled,
 		Tags:        unmarshalTags(rec.TagsJSON),
+		TenantID:    rec.TenantID,
+		OwnerUserID: rec.OwnerUserID,
+		Visibility:  string(rec.Visibility),
 		CreatedAt:   rec.CreatedAt,
 		UpdatedAt:   rec.UpdatedAt,
 	}

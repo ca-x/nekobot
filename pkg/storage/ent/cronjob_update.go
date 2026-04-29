@@ -291,6 +291,48 @@ func (_u *CronJobUpdate) SetNillableLastSuccess(v *bool) *CronJobUpdate {
 	return _u
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_u *CronJobUpdate) SetTenantID(v string) *CronJobUpdate {
+	_u.mutation.SetTenantID(v)
+	return _u
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_u *CronJobUpdate) SetNillableTenantID(v *string) *CronJobUpdate {
+	if v != nil {
+		_u.SetTenantID(*v)
+	}
+	return _u
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_u *CronJobUpdate) SetOwnerUserID(v string) *CronJobUpdate {
+	_u.mutation.SetOwnerUserID(v)
+	return _u
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_u *CronJobUpdate) SetNillableOwnerUserID(v *string) *CronJobUpdate {
+	if v != nil {
+		_u.SetOwnerUserID(*v)
+	}
+	return _u
+}
+
+// SetVisibility sets the "visibility" field.
+func (_u *CronJobUpdate) SetVisibility(v cronjob.Visibility) *CronJobUpdate {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *CronJobUpdate) SetNillableVisibility(v *cronjob.Visibility) *CronJobUpdate {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
 // Mutation returns the CronJobMutation object of the builder.
 func (_u *CronJobUpdate) Mutation() *CronJobMutation {
 	return _u.mutation
@@ -333,6 +375,11 @@ func (_u *CronJobUpdate) check() error {
 	if v, ok := _u.mutation.Prompt(); ok {
 		if err := cronjob.PromptValidator(v); err != nil {
 			return &ValidationError{Name: "prompt", err: fmt.Errorf(`ent: validator failed for field "CronJob.prompt": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := cronjob.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "CronJob.visibility": %w`, err)}
 		}
 	}
 	return nil
@@ -412,6 +459,15 @@ func (_u *CronJobUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.LastSuccess(); ok {
 		_spec.SetField(cronjob.FieldLastSuccess, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.TenantID(); ok {
+		_spec.SetField(cronjob.FieldTenantID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OwnerUserID(); ok {
+		_spec.SetField(cronjob.FieldOwnerUserID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(cronjob.FieldVisibility, field.TypeEnum, value)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -696,6 +752,48 @@ func (_u *CronJobUpdateOne) SetNillableLastSuccess(v *bool) *CronJobUpdateOne {
 	return _u
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_u *CronJobUpdateOne) SetTenantID(v string) *CronJobUpdateOne {
+	_u.mutation.SetTenantID(v)
+	return _u
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_u *CronJobUpdateOne) SetNillableTenantID(v *string) *CronJobUpdateOne {
+	if v != nil {
+		_u.SetTenantID(*v)
+	}
+	return _u
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_u *CronJobUpdateOne) SetOwnerUserID(v string) *CronJobUpdateOne {
+	_u.mutation.SetOwnerUserID(v)
+	return _u
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_u *CronJobUpdateOne) SetNillableOwnerUserID(v *string) *CronJobUpdateOne {
+	if v != nil {
+		_u.SetOwnerUserID(*v)
+	}
+	return _u
+}
+
+// SetVisibility sets the "visibility" field.
+func (_u *CronJobUpdateOne) SetVisibility(v cronjob.Visibility) *CronJobUpdateOne {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *CronJobUpdateOne) SetNillableVisibility(v *cronjob.Visibility) *CronJobUpdateOne {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
 // Mutation returns the CronJobMutation object of the builder.
 func (_u *CronJobUpdateOne) Mutation() *CronJobMutation {
 	return _u.mutation
@@ -751,6 +849,11 @@ func (_u *CronJobUpdateOne) check() error {
 	if v, ok := _u.mutation.Prompt(); ok {
 		if err := cronjob.PromptValidator(v); err != nil {
 			return &ValidationError{Name: "prompt", err: fmt.Errorf(`ent: validator failed for field "CronJob.prompt": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := cronjob.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "CronJob.visibility": %w`, err)}
 		}
 	}
 	return nil
@@ -847,6 +950,15 @@ func (_u *CronJobUpdateOne) sqlSave(ctx context.Context) (_node *CronJob, err er
 	}
 	if value, ok := _u.mutation.LastSuccess(); ok {
 		_spec.SetField(cronjob.FieldLastSuccess, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.TenantID(); ok {
+		_spec.SetField(cronjob.FieldTenantID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OwnerUserID(); ok {
+		_spec.SetField(cronjob.FieldOwnerUserID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(cronjob.FieldVisibility, field.TypeEnum, value)
 	}
 	_node = &CronJob{config: _u.config}
 	_spec.Assign = _node.assignValues

@@ -23,6 +23,9 @@ func TestManagerCRUD(t *testing.T) {
 		Policy: map[string]interface{}{
 			"memory_scope": "private",
 		},
+		TenantID:    "tenant-a",
+		OwnerUserID: "user-a",
+		Visibility:  "private",
 	})
 	if err != nil {
 		t.Fatalf("create runtime: %v", err)
@@ -35,6 +38,9 @@ func TestManagerCRUD(t *testing.T) {
 	}
 	if created.Status != nil {
 		t.Fatalf("expected derived runtime status to stay unset on create, got %+v", created.Status)
+	}
+	if created.TenantID != "tenant-a" || created.OwnerUserID != "user-a" || created.Visibility != "private" {
+		t.Fatalf("expected ownership to round-trip, got %+v", created)
 	}
 
 	if _, err := mgr.Create(ctx, AgentRuntime{Name: "support-main"}); !errors.Is(err, ErrRuntimeExists) {
@@ -61,12 +67,18 @@ func TestManagerCRUD(t *testing.T) {
 		Policy: map[string]interface{}{
 			"memory_scope": "shared_and_private",
 		},
+		TenantID:    "tenant-b",
+		OwnerUserID: "user-b",
+		Visibility:  "system",
 	})
 	if err != nil {
 		t.Fatalf("update runtime: %v", err)
 	}
 	if updated.Name != "support-main-v2" || updated.Provider != "anthropic" {
 		t.Fatalf("unexpected updated runtime: %+v", updated)
+	}
+	if updated.TenantID != "tenant-b" || updated.OwnerUserID != "user-b" || updated.Visibility != "system" {
+		t.Fatalf("expected updated ownership, got %+v", updated)
 	}
 
 	got, err := mgr.Get(ctx, created.ID)

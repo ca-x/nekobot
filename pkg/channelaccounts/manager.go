@@ -13,6 +13,7 @@ import (
 	channelwechat "nekobot/pkg/channels/wechat"
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/ownership"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/storage/ent/channelaccount"
 )
@@ -206,6 +207,9 @@ func (m *Manager) Create(ctx context.Context, item ChannelAccount) (*ChannelAcco
 		SetEnabled(normalized.Enabled).
 		SetConfigJSON(configJSON).
 		SetMetadataJSON(metadataJSON).
+		SetTenantID(normalized.TenantID).
+		SetOwnerUserID(normalized.OwnerUserID).
+		SetVisibility(channelaccount.Visibility(normalized.Visibility)).
 		Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
@@ -246,6 +250,9 @@ func (m *Manager) Update(ctx context.Context, id string, item ChannelAccount) (*
 		SetEnabled(normalized.Enabled).
 		SetConfigJSON(configJSON).
 		SetMetadataJSON(metadataJSON).
+		SetTenantID(normalized.TenantID).
+		SetOwnerUserID(normalized.OwnerUserID).
+		SetVisibility(channelaccount.Visibility(normalized.Visibility)).
 		Save(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -284,6 +291,9 @@ func normalizeAccount(item ChannelAccount) (ChannelAccount, error) {
 	item.AccountKey = strings.TrimSpace(item.AccountKey)
 	item.DisplayName = strings.TrimSpace(item.DisplayName)
 	item.Description = strings.TrimSpace(item.Description)
+	item.TenantID = strings.TrimSpace(item.TenantID)
+	item.OwnerUserID = strings.TrimSpace(item.OwnerUserID)
+	item.Visibility = ownership.NormalizeVisibility(item.Visibility)
 	if item.ChannelType == "" {
 		return ChannelAccount{}, fmt.Errorf("channel_type is required")
 	}
@@ -342,6 +352,9 @@ func toAccount(rec *ent.ChannelAccount) (ChannelAccount, error) {
 		Enabled:     rec.Enabled,
 		Config:      cfgMap,
 		Metadata:    metadata,
+		TenantID:    rec.TenantID,
+		OwnerUserID: rec.OwnerUserID,
+		Visibility:  string(rec.Visibility),
 		CreatedAt:   rec.CreatedAt,
 		UpdatedAt:   rec.UpdatedAt,
 	}, nil

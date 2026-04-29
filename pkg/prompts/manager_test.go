@@ -14,14 +14,20 @@ func TestResolvePrefersNarrowerScopeForSamePrompt(t *testing.T) {
 	ctx := context.Background()
 
 	promptItem, err := mgr.CreatePrompt(ctx, Prompt{
-		Key:      "ops",
-		Name:     "Ops",
-		Mode:     ModeSystem,
-		Template: "scope={{channel.id}}",
-		Enabled:  true,
+		Key:         "ops",
+		Name:        "Ops",
+		Mode:        ModeSystem,
+		Template:    "scope={{channel.id}}",
+		Enabled:     true,
+		TenantID:    "tenant-a",
+		OwnerUserID: "user-a",
+		Visibility:  "private",
 	})
 	if err != nil {
 		t.Fatalf("create prompt: %v", err)
+	}
+	if promptItem.TenantID != "tenant-a" || promptItem.OwnerUserID != "user-a" || promptItem.Visibility != "private" {
+		t.Fatalf("expected ownership to round-trip, got %+v", promptItem)
 	}
 
 	if _, err := mgr.CreateBinding(ctx, Binding{

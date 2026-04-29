@@ -30,6 +30,9 @@ func (AgentRuntime) Fields() []ent.Field {
 		field.String("skills_json").Default("[]"),
 		field.String("tools_json").Default("[]"),
 		field.String("policy_json").Default("{}"),
+		field.String("tenant_id").Default(""),
+		field.String("owner_user_id").Default(""),
+		field.Enum("visibility").Values("private", "shared", "system").Default("shared"),
 		field.Time("created_at").Default(time.Now).Immutable(),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}
@@ -45,6 +48,8 @@ func (AgentRuntime) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("name").Unique(),
 		index.Fields("enabled"),
+		index.Fields("tenant_id", "visibility"),
+		index.Fields("owner_user_id", "visibility"),
 		index.Fields("updated_at"),
 	}
 }

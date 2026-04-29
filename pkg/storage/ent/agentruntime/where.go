@@ -114,6 +114,16 @@ func PolicyJSON(v string) predicate.AgentRuntime {
 	return predicate.AgentRuntime(sql.FieldEQ(FieldPolicyJSON, v))
 }
 
+// TenantID applies equality check predicate on the "tenant_id" field. It's identical to TenantIDEQ.
+func TenantID(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldEQ(FieldTenantID, v))
+}
+
+// OwnerUserID applies equality check predicate on the "owner_user_id" field. It's identical to OwnerUserIDEQ.
+func OwnerUserID(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldEQ(FieldOwnerUserID, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.AgentRuntime {
 	return predicate.AgentRuntime(sql.FieldEQ(FieldCreatedAt, v))
@@ -717,6 +727,156 @@ func PolicyJSONEqualFold(v string) predicate.AgentRuntime {
 // PolicyJSONContainsFold applies the ContainsFold predicate on the "policy_json" field.
 func PolicyJSONContainsFold(v string) predicate.AgentRuntime {
 	return predicate.AgentRuntime(sql.FieldContainsFold(FieldPolicyJSON, v))
+}
+
+// TenantIDEQ applies the EQ predicate on the "tenant_id" field.
+func TenantIDEQ(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldEQ(FieldTenantID, v))
+}
+
+// TenantIDNEQ applies the NEQ predicate on the "tenant_id" field.
+func TenantIDNEQ(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldNEQ(FieldTenantID, v))
+}
+
+// TenantIDIn applies the In predicate on the "tenant_id" field.
+func TenantIDIn(vs ...string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldIn(FieldTenantID, vs...))
+}
+
+// TenantIDNotIn applies the NotIn predicate on the "tenant_id" field.
+func TenantIDNotIn(vs ...string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldNotIn(FieldTenantID, vs...))
+}
+
+// TenantIDGT applies the GT predicate on the "tenant_id" field.
+func TenantIDGT(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldGT(FieldTenantID, v))
+}
+
+// TenantIDGTE applies the GTE predicate on the "tenant_id" field.
+func TenantIDGTE(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldGTE(FieldTenantID, v))
+}
+
+// TenantIDLT applies the LT predicate on the "tenant_id" field.
+func TenantIDLT(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldLT(FieldTenantID, v))
+}
+
+// TenantIDLTE applies the LTE predicate on the "tenant_id" field.
+func TenantIDLTE(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldLTE(FieldTenantID, v))
+}
+
+// TenantIDContains applies the Contains predicate on the "tenant_id" field.
+func TenantIDContains(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldContains(FieldTenantID, v))
+}
+
+// TenantIDHasPrefix applies the HasPrefix predicate on the "tenant_id" field.
+func TenantIDHasPrefix(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldHasPrefix(FieldTenantID, v))
+}
+
+// TenantIDHasSuffix applies the HasSuffix predicate on the "tenant_id" field.
+func TenantIDHasSuffix(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldHasSuffix(FieldTenantID, v))
+}
+
+// TenantIDEqualFold applies the EqualFold predicate on the "tenant_id" field.
+func TenantIDEqualFold(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldEqualFold(FieldTenantID, v))
+}
+
+// TenantIDContainsFold applies the ContainsFold predicate on the "tenant_id" field.
+func TenantIDContainsFold(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldContainsFold(FieldTenantID, v))
+}
+
+// OwnerUserIDEQ applies the EQ predicate on the "owner_user_id" field.
+func OwnerUserIDEQ(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldEQ(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDNEQ applies the NEQ predicate on the "owner_user_id" field.
+func OwnerUserIDNEQ(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldNEQ(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDIn applies the In predicate on the "owner_user_id" field.
+func OwnerUserIDIn(vs ...string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldIn(FieldOwnerUserID, vs...))
+}
+
+// OwnerUserIDNotIn applies the NotIn predicate on the "owner_user_id" field.
+func OwnerUserIDNotIn(vs ...string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldNotIn(FieldOwnerUserID, vs...))
+}
+
+// OwnerUserIDGT applies the GT predicate on the "owner_user_id" field.
+func OwnerUserIDGT(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldGT(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDGTE applies the GTE predicate on the "owner_user_id" field.
+func OwnerUserIDGTE(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldGTE(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDLT applies the LT predicate on the "owner_user_id" field.
+func OwnerUserIDLT(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldLT(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDLTE applies the LTE predicate on the "owner_user_id" field.
+func OwnerUserIDLTE(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldLTE(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDContains applies the Contains predicate on the "owner_user_id" field.
+func OwnerUserIDContains(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldContains(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDHasPrefix applies the HasPrefix predicate on the "owner_user_id" field.
+func OwnerUserIDHasPrefix(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldHasPrefix(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDHasSuffix applies the HasSuffix predicate on the "owner_user_id" field.
+func OwnerUserIDHasSuffix(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldHasSuffix(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDEqualFold applies the EqualFold predicate on the "owner_user_id" field.
+func OwnerUserIDEqualFold(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldEqualFold(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDContainsFold applies the ContainsFold predicate on the "owner_user_id" field.
+func OwnerUserIDContainsFold(v string) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldContainsFold(FieldOwnerUserID, v))
+}
+
+// VisibilityEQ applies the EQ predicate on the "visibility" field.
+func VisibilityEQ(v Visibility) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldEQ(FieldVisibility, v))
+}
+
+// VisibilityNEQ applies the NEQ predicate on the "visibility" field.
+func VisibilityNEQ(v Visibility) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldNEQ(FieldVisibility, v))
+}
+
+// VisibilityIn applies the In predicate on the "visibility" field.
+func VisibilityIn(vs ...Visibility) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldIn(FieldVisibility, vs...))
+}
+
+// VisibilityNotIn applies the NotIn predicate on the "visibility" field.
+func VisibilityNotIn(vs ...Visibility) predicate.AgentRuntime {
+	return predicate.AgentRuntime(sql.FieldNotIn(FieldVisibility, vs...))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

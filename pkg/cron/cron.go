@@ -17,7 +17,9 @@ import (
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/message"
+	"nekobot/pkg/ownership"
 	"nekobot/pkg/storage/ent"
+	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/tasks"
 )
 
@@ -66,6 +68,9 @@ type Job struct {
 	Fallback       []string     `json:"fallback,omitempty"`         // Optional fallback route targets.
 	Enabled        bool         `json:"enabled"`                    // Whether job is enabled.
 	DeleteAfterRun bool         `json:"delete_after_run,omitempty"` // Auto-delete after execution (for "at" jobs).
+	TenantID       string       `json:"tenant_id,omitempty"`        // Tenant ownership boundary.
+	OwnerUserID    string       `json:"owner_user_id,omitempty"`    // User that owns this job.
+	Visibility     string       `json:"visibility"`                 // private/shared/system visibility.
 	CreatedAt      time.Time    `json:"created_at"`                 // Creation timestamp.
 	LastRun        time.Time    `json:"last_run"`                   // Last execution time.
 	NextRun        time.Time    `json:"next_run"`                   // Next scheduled run.
@@ -776,7 +781,10 @@ func (m *Manager) createJob(ctx context.Context, job *Job) error {
 		SetDeleteAfterRun(job.DeleteAfterRun).
 		SetRunCount(job.RunCount).
 		SetLastError(job.LastError).
-		SetLastSuccess(job.LastSuccess)
+		SetLastSuccess(job.LastSuccess).
+		SetTenantID(strings.TrimSpace(job.TenantID)).
+		SetOwnerUserID(strings.TrimSpace(job.OwnerUserID)).
+		SetVisibility(cronjob.Visibility(ownership.NormalizeVisibility(job.Visibility)))
 
 	if !job.CreatedAt.IsZero() {
 		create.SetCreatedAt(job.CreatedAt)
@@ -821,7 +829,10 @@ func (m *Manager) updateJobState(ctx context.Context, job *Job) error {
 		SetDeleteAfterRun(job.DeleteAfterRun).
 		SetRunCount(job.RunCount).
 		SetLastError(job.LastError).
-		SetLastSuccess(job.LastSuccess)
+		SetLastSuccess(job.LastSuccess).
+		SetTenantID(strings.TrimSpace(job.TenantID)).
+		SetOwnerUserID(strings.TrimSpace(job.OwnerUserID)).
+		SetVisibility(cronjob.Visibility(ownership.NormalizeVisibility(job.Visibility)))
 
 	if job.AtTime == nil {
 		update.ClearAtTime()
@@ -872,6 +883,9 @@ func jobFromEntity(entity *ent.CronJob) *Job {
 		Fallback:       fallback,
 		Enabled:        entity.Enabled,
 		DeleteAfterRun: entity.DeleteAfterRun,
+		TenantID:       entity.TenantID,
+		OwnerUserID:    entity.OwnerUserID,
+		Visibility:     string(entity.Visibility),
 		CreatedAt:      entity.CreatedAt,
 		RunCount:       entity.RunCount,
 		LastError:      entity.LastError,

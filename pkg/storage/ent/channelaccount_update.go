@@ -126,6 +126,48 @@ func (_u *ChannelAccountUpdate) SetNillableMetadataJSON(v *string) *ChannelAccou
 	return _u
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_u *ChannelAccountUpdate) SetTenantID(v string) *ChannelAccountUpdate {
+	_u.mutation.SetTenantID(v)
+	return _u
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_u *ChannelAccountUpdate) SetNillableTenantID(v *string) *ChannelAccountUpdate {
+	if v != nil {
+		_u.SetTenantID(*v)
+	}
+	return _u
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_u *ChannelAccountUpdate) SetOwnerUserID(v string) *ChannelAccountUpdate {
+	_u.mutation.SetOwnerUserID(v)
+	return _u
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_u *ChannelAccountUpdate) SetNillableOwnerUserID(v *string) *ChannelAccountUpdate {
+	if v != nil {
+		_u.SetOwnerUserID(*v)
+	}
+	return _u
+}
+
+// SetVisibility sets the "visibility" field.
+func (_u *ChannelAccountUpdate) SetVisibility(v channelaccount.Visibility) *ChannelAccountUpdate {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *ChannelAccountUpdate) SetNillableVisibility(v *channelaccount.Visibility) *ChannelAccountUpdate {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *ChannelAccountUpdate) SetUpdatedAt(v time.Time) *ChannelAccountUpdate {
 	_u.mutation.SetUpdatedAt(v)
@@ -185,6 +227,11 @@ func (_u *ChannelAccountUpdate) check() error {
 			return &ValidationError{Name: "account_key", err: fmt.Errorf(`ent: validator failed for field "ChannelAccount.account_key": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := channelaccount.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "ChannelAccount.visibility": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -220,6 +267,15 @@ func (_u *ChannelAccountUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if value, ok := _u.mutation.MetadataJSON(); ok {
 		_spec.SetField(channelaccount.FieldMetadataJSON, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.TenantID(); ok {
+		_spec.SetField(channelaccount.FieldTenantID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OwnerUserID(); ok {
+		_spec.SetField(channelaccount.FieldOwnerUserID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(channelaccount.FieldVisibility, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(channelaccount.FieldUpdatedAt, field.TypeTime, value)
@@ -342,6 +398,48 @@ func (_u *ChannelAccountUpdateOne) SetNillableMetadataJSON(v *string) *ChannelAc
 	return _u
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_u *ChannelAccountUpdateOne) SetTenantID(v string) *ChannelAccountUpdateOne {
+	_u.mutation.SetTenantID(v)
+	return _u
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_u *ChannelAccountUpdateOne) SetNillableTenantID(v *string) *ChannelAccountUpdateOne {
+	if v != nil {
+		_u.SetTenantID(*v)
+	}
+	return _u
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_u *ChannelAccountUpdateOne) SetOwnerUserID(v string) *ChannelAccountUpdateOne {
+	_u.mutation.SetOwnerUserID(v)
+	return _u
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_u *ChannelAccountUpdateOne) SetNillableOwnerUserID(v *string) *ChannelAccountUpdateOne {
+	if v != nil {
+		_u.SetOwnerUserID(*v)
+	}
+	return _u
+}
+
+// SetVisibility sets the "visibility" field.
+func (_u *ChannelAccountUpdateOne) SetVisibility(v channelaccount.Visibility) *ChannelAccountUpdateOne {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *ChannelAccountUpdateOne) SetNillableVisibility(v *channelaccount.Visibility) *ChannelAccountUpdateOne {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *ChannelAccountUpdateOne) SetUpdatedAt(v time.Time) *ChannelAccountUpdateOne {
 	_u.mutation.SetUpdatedAt(v)
@@ -414,6 +512,11 @@ func (_u *ChannelAccountUpdateOne) check() error {
 			return &ValidationError{Name: "account_key", err: fmt.Errorf(`ent: validator failed for field "ChannelAccount.account_key": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := channelaccount.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "ChannelAccount.visibility": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -466,6 +569,15 @@ func (_u *ChannelAccountUpdateOne) sqlSave(ctx context.Context) (_node *ChannelA
 	}
 	if value, ok := _u.mutation.MetadataJSON(); ok {
 		_spec.SetField(channelaccount.FieldMetadataJSON, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.TenantID(); ok {
+		_spec.SetField(channelaccount.FieldTenantID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OwnerUserID(); ok {
+		_spec.SetField(channelaccount.FieldOwnerUserID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(channelaccount.FieldVisibility, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(channelaccount.FieldUpdatedAt, field.TypeTime, value)

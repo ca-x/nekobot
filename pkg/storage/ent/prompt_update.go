@@ -126,6 +126,48 @@ func (_u *PromptUpdate) SetNillableTagsJSON(v *string) *PromptUpdate {
 	return _u
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_u *PromptUpdate) SetTenantID(v string) *PromptUpdate {
+	_u.mutation.SetTenantID(v)
+	return _u
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_u *PromptUpdate) SetNillableTenantID(v *string) *PromptUpdate {
+	if v != nil {
+		_u.SetTenantID(*v)
+	}
+	return _u
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_u *PromptUpdate) SetOwnerUserID(v string) *PromptUpdate {
+	_u.mutation.SetOwnerUserID(v)
+	return _u
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_u *PromptUpdate) SetNillableOwnerUserID(v *string) *PromptUpdate {
+	if v != nil {
+		_u.SetOwnerUserID(*v)
+	}
+	return _u
+}
+
+// SetVisibility sets the "visibility" field.
+func (_u *PromptUpdate) SetVisibility(v prompt.Visibility) *PromptUpdate {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *PromptUpdate) SetNillableVisibility(v *prompt.Visibility) *PromptUpdate {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *PromptUpdate) SetUpdatedAt(v time.Time) *PromptUpdate {
 	_u.mutation.SetUpdatedAt(v)
@@ -195,6 +237,11 @@ func (_u *PromptUpdate) check() error {
 			return &ValidationError{Name: "template", err: fmt.Errorf(`ent: validator failed for field "Prompt.template": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := prompt.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Prompt.visibility": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -230,6 +277,15 @@ func (_u *PromptUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.TagsJSON(); ok {
 		_spec.SetField(prompt.FieldTagsJSON, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.TenantID(); ok {
+		_spec.SetField(prompt.FieldTenantID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OwnerUserID(); ok {
+		_spec.SetField(prompt.FieldOwnerUserID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(prompt.FieldVisibility, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(prompt.FieldUpdatedAt, field.TypeTime, value)
@@ -352,6 +408,48 @@ func (_u *PromptUpdateOne) SetNillableTagsJSON(v *string) *PromptUpdateOne {
 	return _u
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_u *PromptUpdateOne) SetTenantID(v string) *PromptUpdateOne {
+	_u.mutation.SetTenantID(v)
+	return _u
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_u *PromptUpdateOne) SetNillableTenantID(v *string) *PromptUpdateOne {
+	if v != nil {
+		_u.SetTenantID(*v)
+	}
+	return _u
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_u *PromptUpdateOne) SetOwnerUserID(v string) *PromptUpdateOne {
+	_u.mutation.SetOwnerUserID(v)
+	return _u
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_u *PromptUpdateOne) SetNillableOwnerUserID(v *string) *PromptUpdateOne {
+	if v != nil {
+		_u.SetOwnerUserID(*v)
+	}
+	return _u
+}
+
+// SetVisibility sets the "visibility" field.
+func (_u *PromptUpdateOne) SetVisibility(v prompt.Visibility) *PromptUpdateOne {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *PromptUpdateOne) SetNillableVisibility(v *prompt.Visibility) *PromptUpdateOne {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *PromptUpdateOne) SetUpdatedAt(v time.Time) *PromptUpdateOne {
 	_u.mutation.SetUpdatedAt(v)
@@ -434,6 +532,11 @@ func (_u *PromptUpdateOne) check() error {
 			return &ValidationError{Name: "template", err: fmt.Errorf(`ent: validator failed for field "Prompt.template": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := prompt.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "Prompt.visibility": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -486,6 +589,15 @@ func (_u *PromptUpdateOne) sqlSave(ctx context.Context) (_node *Prompt, err erro
 	}
 	if value, ok := _u.mutation.TagsJSON(); ok {
 		_spec.SetField(prompt.FieldTagsJSON, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.TenantID(); ok {
+		_spec.SetField(prompt.FieldTenantID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OwnerUserID(); ok {
+		_spec.SetField(prompt.FieldOwnerUserID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(prompt.FieldVisibility, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(prompt.FieldUpdatedAt, field.TypeTime, value)

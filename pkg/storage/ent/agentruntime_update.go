@@ -168,6 +168,48 @@ func (_u *AgentRuntimeUpdate) SetNillablePolicyJSON(v *string) *AgentRuntimeUpda
 	return _u
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_u *AgentRuntimeUpdate) SetTenantID(v string) *AgentRuntimeUpdate {
+	_u.mutation.SetTenantID(v)
+	return _u
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_u *AgentRuntimeUpdate) SetNillableTenantID(v *string) *AgentRuntimeUpdate {
+	if v != nil {
+		_u.SetTenantID(*v)
+	}
+	return _u
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_u *AgentRuntimeUpdate) SetOwnerUserID(v string) *AgentRuntimeUpdate {
+	_u.mutation.SetOwnerUserID(v)
+	return _u
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_u *AgentRuntimeUpdate) SetNillableOwnerUserID(v *string) *AgentRuntimeUpdate {
+	if v != nil {
+		_u.SetOwnerUserID(*v)
+	}
+	return _u
+}
+
+// SetVisibility sets the "visibility" field.
+func (_u *AgentRuntimeUpdate) SetVisibility(v agentruntime.Visibility) *AgentRuntimeUpdate {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *AgentRuntimeUpdate) SetNillableVisibility(v *agentruntime.Visibility) *AgentRuntimeUpdate {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *AgentRuntimeUpdate) SetUpdatedAt(v time.Time) *AgentRuntimeUpdate {
 	_u.mutation.SetUpdatedAt(v)
@@ -222,6 +264,11 @@ func (_u *AgentRuntimeUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "AgentRuntime.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := agentruntime.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "AgentRuntime.visibility": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -266,6 +313,15 @@ func (_u *AgentRuntimeUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.PolicyJSON(); ok {
 		_spec.SetField(agentruntime.FieldPolicyJSON, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.TenantID(); ok {
+		_spec.SetField(agentruntime.FieldTenantID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OwnerUserID(); ok {
+		_spec.SetField(agentruntime.FieldOwnerUserID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(agentruntime.FieldVisibility, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(agentruntime.FieldUpdatedAt, field.TypeTime, value)
@@ -430,6 +486,48 @@ func (_u *AgentRuntimeUpdateOne) SetNillablePolicyJSON(v *string) *AgentRuntimeU
 	return _u
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_u *AgentRuntimeUpdateOne) SetTenantID(v string) *AgentRuntimeUpdateOne {
+	_u.mutation.SetTenantID(v)
+	return _u
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_u *AgentRuntimeUpdateOne) SetNillableTenantID(v *string) *AgentRuntimeUpdateOne {
+	if v != nil {
+		_u.SetTenantID(*v)
+	}
+	return _u
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_u *AgentRuntimeUpdateOne) SetOwnerUserID(v string) *AgentRuntimeUpdateOne {
+	_u.mutation.SetOwnerUserID(v)
+	return _u
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_u *AgentRuntimeUpdateOne) SetNillableOwnerUserID(v *string) *AgentRuntimeUpdateOne {
+	if v != nil {
+		_u.SetOwnerUserID(*v)
+	}
+	return _u
+}
+
+// SetVisibility sets the "visibility" field.
+func (_u *AgentRuntimeUpdateOne) SetVisibility(v agentruntime.Visibility) *AgentRuntimeUpdateOne {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *AgentRuntimeUpdateOne) SetNillableVisibility(v *agentruntime.Visibility) *AgentRuntimeUpdateOne {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *AgentRuntimeUpdateOne) SetUpdatedAt(v time.Time) *AgentRuntimeUpdateOne {
 	_u.mutation.SetUpdatedAt(v)
@@ -497,6 +595,11 @@ func (_u *AgentRuntimeUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "AgentRuntime.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Visibility(); ok {
+		if err := agentruntime.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "AgentRuntime.visibility": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -558,6 +661,15 @@ func (_u *AgentRuntimeUpdateOne) sqlSave(ctx context.Context) (_node *AgentRunti
 	}
 	if value, ok := _u.mutation.PolicyJSON(); ok {
 		_spec.SetField(agentruntime.FieldPolicyJSON, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.TenantID(); ok {
+		_spec.SetField(agentruntime.FieldTenantID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.OwnerUserID(); ok {
+		_spec.SetField(agentruntime.FieldOwnerUserID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(agentruntime.FieldVisibility, field.TypeEnum, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(agentruntime.FieldUpdatedAt, field.TypeTime, value)

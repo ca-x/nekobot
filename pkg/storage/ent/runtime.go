@@ -114,12 +114,20 @@ func init() {
 	agentruntimeDescPolicyJSON := agentruntimeFields[10].Descriptor()
 	// agentruntime.DefaultPolicyJSON holds the default value on creation for the policy_json field.
 	agentruntime.DefaultPolicyJSON = agentruntimeDescPolicyJSON.Default.(string)
+	// agentruntimeDescTenantID is the schema descriptor for tenant_id field.
+	agentruntimeDescTenantID := agentruntimeFields[11].Descriptor()
+	// agentruntime.DefaultTenantID holds the default value on creation for the tenant_id field.
+	agentruntime.DefaultTenantID = agentruntimeDescTenantID.Default.(string)
+	// agentruntimeDescOwnerUserID is the schema descriptor for owner_user_id field.
+	agentruntimeDescOwnerUserID := agentruntimeFields[12].Descriptor()
+	// agentruntime.DefaultOwnerUserID holds the default value on creation for the owner_user_id field.
+	agentruntime.DefaultOwnerUserID = agentruntimeDescOwnerUserID.Default.(string)
 	// agentruntimeDescCreatedAt is the schema descriptor for created_at field.
-	agentruntimeDescCreatedAt := agentruntimeFields[11].Descriptor()
+	agentruntimeDescCreatedAt := agentruntimeFields[14].Descriptor()
 	// agentruntime.DefaultCreatedAt holds the default value on creation for the created_at field.
 	agentruntime.DefaultCreatedAt = agentruntimeDescCreatedAt.Default.(func() time.Time)
 	// agentruntimeDescUpdatedAt is the schema descriptor for updated_at field.
-	agentruntimeDescUpdatedAt := agentruntimeFields[12].Descriptor()
+	agentruntimeDescUpdatedAt := agentruntimeFields[15].Descriptor()
 	// agentruntime.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	agentruntime.DefaultUpdatedAt = agentruntimeDescUpdatedAt.Default.(func() time.Time)
 	// agentruntime.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -172,12 +180,20 @@ func init() {
 	channelaccountDescMetadataJSON := channelaccountFields[7].Descriptor()
 	// channelaccount.DefaultMetadataJSON holds the default value on creation for the metadata_json field.
 	channelaccount.DefaultMetadataJSON = channelaccountDescMetadataJSON.Default.(string)
+	// channelaccountDescTenantID is the schema descriptor for tenant_id field.
+	channelaccountDescTenantID := channelaccountFields[8].Descriptor()
+	// channelaccount.DefaultTenantID holds the default value on creation for the tenant_id field.
+	channelaccount.DefaultTenantID = channelaccountDescTenantID.Default.(string)
+	// channelaccountDescOwnerUserID is the schema descriptor for owner_user_id field.
+	channelaccountDescOwnerUserID := channelaccountFields[9].Descriptor()
+	// channelaccount.DefaultOwnerUserID holds the default value on creation for the owner_user_id field.
+	channelaccount.DefaultOwnerUserID = channelaccountDescOwnerUserID.Default.(string)
 	// channelaccountDescCreatedAt is the schema descriptor for created_at field.
-	channelaccountDescCreatedAt := channelaccountFields[8].Descriptor()
+	channelaccountDescCreatedAt := channelaccountFields[11].Descriptor()
 	// channelaccount.DefaultCreatedAt holds the default value on creation for the created_at field.
 	channelaccount.DefaultCreatedAt = channelaccountDescCreatedAt.Default.(func() time.Time)
 	// channelaccountDescUpdatedAt is the schema descriptor for updated_at field.
-	channelaccountDescUpdatedAt := channelaccountFields[9].Descriptor()
+	channelaccountDescUpdatedAt := channelaccountFields[12].Descriptor()
 	// channelaccount.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	channelaccount.DefaultUpdatedAt = channelaccountDescUpdatedAt.Default.(func() time.Time)
 	// channelaccount.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -268,6 +284,14 @@ func init() {
 	cronjobDescLastSuccess := cronjobFields[18].Descriptor()
 	// cronjob.DefaultLastSuccess holds the default value on creation for the last_success field.
 	cronjob.DefaultLastSuccess = cronjobDescLastSuccess.Default.(bool)
+	// cronjobDescTenantID is the schema descriptor for tenant_id field.
+	cronjobDescTenantID := cronjobFields[19].Descriptor()
+	// cronjob.DefaultTenantID holds the default value on creation for the tenant_id field.
+	cronjob.DefaultTenantID = cronjobDescTenantID.Default.(string)
+	// cronjobDescOwnerUserID is the schema descriptor for owner_user_id field.
+	cronjobDescOwnerUserID := cronjobFields[20].Descriptor()
+	// cronjob.DefaultOwnerUserID holds the default value on creation for the owner_user_id field.
+	cronjob.DefaultOwnerUserID = cronjobDescOwnerUserID.Default.(string)
 	// cronjobDescID is the schema descriptor for id field.
 	cronjobDescID := cronjobFields[0].Descriptor()
 	// cronjob.DefaultID holds the default value on creation for the id field.
@@ -470,12 +494,20 @@ func init() {
 	promptDescTagsJSON := promptFields[7].Descriptor()
 	// prompt.DefaultTagsJSON holds the default value on creation for the tags_json field.
 	prompt.DefaultTagsJSON = promptDescTagsJSON.Default.(string)
+	// promptDescTenantID is the schema descriptor for tenant_id field.
+	promptDescTenantID := promptFields[8].Descriptor()
+	// prompt.DefaultTenantID holds the default value on creation for the tenant_id field.
+	prompt.DefaultTenantID = promptDescTenantID.Default.(string)
+	// promptDescOwnerUserID is the schema descriptor for owner_user_id field.
+	promptDescOwnerUserID := promptFields[9].Descriptor()
+	// prompt.DefaultOwnerUserID holds the default value on creation for the owner_user_id field.
+	prompt.DefaultOwnerUserID = promptDescOwnerUserID.Default.(string)
 	// promptDescCreatedAt is the schema descriptor for created_at field.
-	promptDescCreatedAt := promptFields[8].Descriptor()
+	promptDescCreatedAt := promptFields[11].Descriptor()
 	// prompt.DefaultCreatedAt holds the default value on creation for the created_at field.
 	prompt.DefaultCreatedAt = promptDescCreatedAt.Default.(func() time.Time)
 	// promptDescUpdatedAt is the schema descriptor for updated_at field.
-	promptDescUpdatedAt := promptFields[9].Descriptor()
+	promptDescUpdatedAt := promptFields[12].Descriptor()
 	// prompt.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	prompt.DefaultUpdatedAt = promptDescUpdatedAt.Default.(func() time.Time)
 	// prompt.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

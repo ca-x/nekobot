@@ -99,6 +99,16 @@ func MetadataJSON(v string) predicate.ChannelAccount {
 	return predicate.ChannelAccount(sql.FieldEQ(FieldMetadataJSON, v))
 }
 
+// TenantID applies equality check predicate on the "tenant_id" field. It's identical to TenantIDEQ.
+func TenantID(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldEQ(FieldTenantID, v))
+}
+
+// OwnerUserID applies equality check predicate on the "owner_user_id" field. It's identical to OwnerUserIDEQ.
+func OwnerUserID(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldEQ(FieldOwnerUserID, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.ChannelAccount {
 	return predicate.ChannelAccount(sql.FieldEQ(FieldCreatedAt, v))
@@ -507,6 +517,156 @@ func MetadataJSONEqualFold(v string) predicate.ChannelAccount {
 // MetadataJSONContainsFold applies the ContainsFold predicate on the "metadata_json" field.
 func MetadataJSONContainsFold(v string) predicate.ChannelAccount {
 	return predicate.ChannelAccount(sql.FieldContainsFold(FieldMetadataJSON, v))
+}
+
+// TenantIDEQ applies the EQ predicate on the "tenant_id" field.
+func TenantIDEQ(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldEQ(FieldTenantID, v))
+}
+
+// TenantIDNEQ applies the NEQ predicate on the "tenant_id" field.
+func TenantIDNEQ(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldNEQ(FieldTenantID, v))
+}
+
+// TenantIDIn applies the In predicate on the "tenant_id" field.
+func TenantIDIn(vs ...string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldIn(FieldTenantID, vs...))
+}
+
+// TenantIDNotIn applies the NotIn predicate on the "tenant_id" field.
+func TenantIDNotIn(vs ...string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldNotIn(FieldTenantID, vs...))
+}
+
+// TenantIDGT applies the GT predicate on the "tenant_id" field.
+func TenantIDGT(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldGT(FieldTenantID, v))
+}
+
+// TenantIDGTE applies the GTE predicate on the "tenant_id" field.
+func TenantIDGTE(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldGTE(FieldTenantID, v))
+}
+
+// TenantIDLT applies the LT predicate on the "tenant_id" field.
+func TenantIDLT(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldLT(FieldTenantID, v))
+}
+
+// TenantIDLTE applies the LTE predicate on the "tenant_id" field.
+func TenantIDLTE(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldLTE(FieldTenantID, v))
+}
+
+// TenantIDContains applies the Contains predicate on the "tenant_id" field.
+func TenantIDContains(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldContains(FieldTenantID, v))
+}
+
+// TenantIDHasPrefix applies the HasPrefix predicate on the "tenant_id" field.
+func TenantIDHasPrefix(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldHasPrefix(FieldTenantID, v))
+}
+
+// TenantIDHasSuffix applies the HasSuffix predicate on the "tenant_id" field.
+func TenantIDHasSuffix(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldHasSuffix(FieldTenantID, v))
+}
+
+// TenantIDEqualFold applies the EqualFold predicate on the "tenant_id" field.
+func TenantIDEqualFold(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldEqualFold(FieldTenantID, v))
+}
+
+// TenantIDContainsFold applies the ContainsFold predicate on the "tenant_id" field.
+func TenantIDContainsFold(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldContainsFold(FieldTenantID, v))
+}
+
+// OwnerUserIDEQ applies the EQ predicate on the "owner_user_id" field.
+func OwnerUserIDEQ(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldEQ(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDNEQ applies the NEQ predicate on the "owner_user_id" field.
+func OwnerUserIDNEQ(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldNEQ(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDIn applies the In predicate on the "owner_user_id" field.
+func OwnerUserIDIn(vs ...string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldIn(FieldOwnerUserID, vs...))
+}
+
+// OwnerUserIDNotIn applies the NotIn predicate on the "owner_user_id" field.
+func OwnerUserIDNotIn(vs ...string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldNotIn(FieldOwnerUserID, vs...))
+}
+
+// OwnerUserIDGT applies the GT predicate on the "owner_user_id" field.
+func OwnerUserIDGT(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldGT(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDGTE applies the GTE predicate on the "owner_user_id" field.
+func OwnerUserIDGTE(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldGTE(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDLT applies the LT predicate on the "owner_user_id" field.
+func OwnerUserIDLT(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldLT(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDLTE applies the LTE predicate on the "owner_user_id" field.
+func OwnerUserIDLTE(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldLTE(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDContains applies the Contains predicate on the "owner_user_id" field.
+func OwnerUserIDContains(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldContains(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDHasPrefix applies the HasPrefix predicate on the "owner_user_id" field.
+func OwnerUserIDHasPrefix(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldHasPrefix(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDHasSuffix applies the HasSuffix predicate on the "owner_user_id" field.
+func OwnerUserIDHasSuffix(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldHasSuffix(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDEqualFold applies the EqualFold predicate on the "owner_user_id" field.
+func OwnerUserIDEqualFold(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldEqualFold(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDContainsFold applies the ContainsFold predicate on the "owner_user_id" field.
+func OwnerUserIDContainsFold(v string) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldContainsFold(FieldOwnerUserID, v))
+}
+
+// VisibilityEQ applies the EQ predicate on the "visibility" field.
+func VisibilityEQ(v Visibility) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldEQ(FieldVisibility, v))
+}
+
+// VisibilityNEQ applies the NEQ predicate on the "visibility" field.
+func VisibilityNEQ(v Visibility) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldNEQ(FieldVisibility, v))
+}
+
+// VisibilityIn applies the In predicate on the "visibility" field.
+func VisibilityIn(vs ...Visibility) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldIn(FieldVisibility, vs...))
+}
+
+// VisibilityNotIn applies the NotIn predicate on the "visibility" field.
+func VisibilityNotIn(vs ...Visibility) predicate.ChannelAccount {
+	return predicate.ChannelAccount(sql.FieldNotIn(FieldVisibility, vs...))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

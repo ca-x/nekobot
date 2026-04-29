@@ -52,7 +52,13 @@ type CronJob struct {
 	// LastError holds the value of the "last_error" field.
 	LastError string `json:"last_error,omitempty"`
 	// LastSuccess holds the value of the "last_success" field.
-	LastSuccess  bool `json:"last_success,omitempty"`
+	LastSuccess bool `json:"last_success,omitempty"`
+	// TenantID holds the value of the "tenant_id" field.
+	TenantID string `json:"tenant_id,omitempty"`
+	// OwnerUserID holds the value of the "owner_user_id" field.
+	OwnerUserID string `json:"owner_user_id,omitempty"`
+	// Visibility holds the value of the "visibility" field.
+	Visibility   cronjob.Visibility `json:"visibility,omitempty"`
 	selectValues sql.SelectValues
 }
 
@@ -65,7 +71,7 @@ func (*CronJob) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case cronjob.FieldRunCount:
 			values[i] = new(sql.NullInt64)
-		case cronjob.FieldID, cronjob.FieldName, cronjob.FieldScheduleKind, cronjob.FieldSchedule, cronjob.FieldEveryDuration, cronjob.FieldPrompt, cronjob.FieldProvider, cronjob.FieldModel, cronjob.FieldFallbackJSON, cronjob.FieldSkillsJSON, cronjob.FieldLastError:
+		case cronjob.FieldID, cronjob.FieldName, cronjob.FieldScheduleKind, cronjob.FieldSchedule, cronjob.FieldEveryDuration, cronjob.FieldPrompt, cronjob.FieldProvider, cronjob.FieldModel, cronjob.FieldFallbackJSON, cronjob.FieldSkillsJSON, cronjob.FieldLastError, cronjob.FieldTenantID, cronjob.FieldOwnerUserID, cronjob.FieldVisibility:
 			values[i] = new(sql.NullString)
 		case cronjob.FieldAtTime, cronjob.FieldCreatedAt, cronjob.FieldLastRun, cronjob.FieldNextRun:
 			values[i] = new(sql.NullTime)
@@ -201,6 +207,24 @@ func (_m *CronJob) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.LastSuccess = value.Bool
 			}
+		case cronjob.FieldTenantID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field tenant_id", values[i])
+			} else if value.Valid {
+				_m.TenantID = value.String
+			}
+		case cronjob.FieldOwnerUserID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field owner_user_id", values[i])
+			} else if value.Valid {
+				_m.OwnerUserID = value.String
+			}
+		case cronjob.FieldVisibility:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field visibility", values[i])
+			} else if value.Valid {
+				_m.Visibility = cronjob.Visibility(value.String)
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -296,6 +320,15 @@ func (_m *CronJob) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("last_success=")
 	builder.WriteString(fmt.Sprintf("%v", _m.LastSuccess))
+	builder.WriteString(", ")
+	builder.WriteString("tenant_id=")
+	builder.WriteString(_m.TenantID)
+	builder.WriteString(", ")
+	builder.WriteString("owner_user_id=")
+	builder.WriteString(_m.OwnerUserID)
+	builder.WriteString(", ")
+	builder.WriteString("visibility=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))
 	builder.WriteByte(')')
 	return builder.String()
 }

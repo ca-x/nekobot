@@ -102,6 +102,48 @@ func (_c *ChannelAccountCreate) SetNillableMetadataJSON(v *string) *ChannelAccou
 	return _c
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_c *ChannelAccountCreate) SetTenantID(v string) *ChannelAccountCreate {
+	_c.mutation.SetTenantID(v)
+	return _c
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_c *ChannelAccountCreate) SetNillableTenantID(v *string) *ChannelAccountCreate {
+	if v != nil {
+		_c.SetTenantID(*v)
+	}
+	return _c
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_c *ChannelAccountCreate) SetOwnerUserID(v string) *ChannelAccountCreate {
+	_c.mutation.SetOwnerUserID(v)
+	return _c
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_c *ChannelAccountCreate) SetNillableOwnerUserID(v *string) *ChannelAccountCreate {
+	if v != nil {
+		_c.SetOwnerUserID(*v)
+	}
+	return _c
+}
+
+// SetVisibility sets the "visibility" field.
+func (_c *ChannelAccountCreate) SetVisibility(v channelaccount.Visibility) *ChannelAccountCreate {
+	_c.mutation.SetVisibility(v)
+	return _c
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_c *ChannelAccountCreate) SetNillableVisibility(v *channelaccount.Visibility) *ChannelAccountCreate {
+	if v != nil {
+		_c.SetVisibility(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *ChannelAccountCreate) SetCreatedAt(v time.Time) *ChannelAccountCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -199,6 +241,18 @@ func (_c *ChannelAccountCreate) defaults() {
 		v := channelaccount.DefaultMetadataJSON
 		_c.mutation.SetMetadataJSON(v)
 	}
+	if _, ok := _c.mutation.TenantID(); !ok {
+		v := channelaccount.DefaultTenantID
+		_c.mutation.SetTenantID(v)
+	}
+	if _, ok := _c.mutation.OwnerUserID(); !ok {
+		v := channelaccount.DefaultOwnerUserID
+		_c.mutation.SetOwnerUserID(v)
+	}
+	if _, ok := _c.mutation.Visibility(); !ok {
+		v := channelaccount.DefaultVisibility
+		_c.mutation.SetVisibility(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := channelaccount.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -245,6 +299,20 @@ func (_c *ChannelAccountCreate) check() error {
 	}
 	if _, ok := _c.mutation.MetadataJSON(); !ok {
 		return &ValidationError{Name: "metadata_json", err: errors.New(`ent: missing required field "ChannelAccount.metadata_json"`)}
+	}
+	if _, ok := _c.mutation.TenantID(); !ok {
+		return &ValidationError{Name: "tenant_id", err: errors.New(`ent: missing required field "ChannelAccount.tenant_id"`)}
+	}
+	if _, ok := _c.mutation.OwnerUserID(); !ok {
+		return &ValidationError{Name: "owner_user_id", err: errors.New(`ent: missing required field "ChannelAccount.owner_user_id"`)}
+	}
+	if _, ok := _c.mutation.Visibility(); !ok {
+		return &ValidationError{Name: "visibility", err: errors.New(`ent: missing required field "ChannelAccount.visibility"`)}
+	}
+	if v, ok := _c.mutation.Visibility(); ok {
+		if err := channelaccount.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "ChannelAccount.visibility": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "ChannelAccount.created_at"`)}
@@ -314,6 +382,18 @@ func (_c *ChannelAccountCreate) createSpec() (*ChannelAccount, *sqlgraph.CreateS
 	if value, ok := _c.mutation.MetadataJSON(); ok {
 		_spec.SetField(channelaccount.FieldMetadataJSON, field.TypeString, value)
 		_node.MetadataJSON = value
+	}
+	if value, ok := _c.mutation.TenantID(); ok {
+		_spec.SetField(channelaccount.FieldTenantID, field.TypeString, value)
+		_node.TenantID = value
+	}
+	if value, ok := _c.mutation.OwnerUserID(); ok {
+		_spec.SetField(channelaccount.FieldOwnerUserID, field.TypeString, value)
+		_node.OwnerUserID = value
+	}
+	if value, ok := _c.mutation.Visibility(); ok {
+		_spec.SetField(channelaccount.FieldVisibility, field.TypeEnum, value)
+		_node.Visibility = value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(channelaccount.FieldCreatedAt, field.TypeTime, value)

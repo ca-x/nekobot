@@ -12,6 +12,9 @@ type ChannelAccount struct {
 	Enabled     bool                   `json:"enabled"`
 	Config      map[string]interface{} `json:"config"`
 	Metadata    map[string]interface{} `json:"metadata"`
+	TenantID    string                 `json:"tenant_id"`
+	OwnerUserID string                 `json:"owner_user_id"`
+	Visibility  string                 `json:"visibility"`
 	CreatedAt   time.Time              `json:"created_at"`
 	UpdatedAt   time.Time              `json:"updated_at"`
 }

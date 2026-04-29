@@ -21,6 +21,9 @@ type Prompt struct {
 	Template    string    `json:"template"`
 	Enabled     bool      `json:"enabled"`
 	Tags        []string  `json:"tags"`
+	TenantID    string    `json:"tenant_id"`
+	OwnerUserID string    `json:"owner_user_id"`
+	Visibility  string    `json:"visibility"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -73,7 +76,7 @@ type ResolvedPromptSet struct {
 
 // SessionBindingSet is the chat-friendly shape for session bindings.
 type SessionBindingSet struct {
-	SystemPromptIDs []string `json:"system_prompt_ids"`
-	UserPromptIDs   []string `json:"user_prompt_ids"`
+	SystemPromptIDs []string  `json:"system_prompt_ids"`
+	UserPromptIDs   []string  `json:"user_prompt_ids"`
 	Bindings        []Binding `json:"bindings"`
 }

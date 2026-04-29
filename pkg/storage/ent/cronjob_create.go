@@ -256,6 +256,48 @@ func (_c *CronJobCreate) SetNillableLastSuccess(v *bool) *CronJobCreate {
 	return _c
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (_c *CronJobCreate) SetTenantID(v string) *CronJobCreate {
+	_c.mutation.SetTenantID(v)
+	return _c
+}
+
+// SetNillableTenantID sets the "tenant_id" field if the given value is not nil.
+func (_c *CronJobCreate) SetNillableTenantID(v *string) *CronJobCreate {
+	if v != nil {
+		_c.SetTenantID(*v)
+	}
+	return _c
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_c *CronJobCreate) SetOwnerUserID(v string) *CronJobCreate {
+	_c.mutation.SetOwnerUserID(v)
+	return _c
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_c *CronJobCreate) SetNillableOwnerUserID(v *string) *CronJobCreate {
+	if v != nil {
+		_c.SetOwnerUserID(*v)
+	}
+	return _c
+}
+
+// SetVisibility sets the "visibility" field.
+func (_c *CronJobCreate) SetVisibility(v cronjob.Visibility) *CronJobCreate {
+	_c.mutation.SetVisibility(v)
+	return _c
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_c *CronJobCreate) SetNillableVisibility(v *cronjob.Visibility) *CronJobCreate {
+	if v != nil {
+		_c.SetVisibility(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *CronJobCreate) SetID(v string) *CronJobCreate {
 	_c.mutation.SetID(v)
@@ -357,6 +399,18 @@ func (_c *CronJobCreate) defaults() {
 		v := cronjob.DefaultLastSuccess
 		_c.mutation.SetLastSuccess(v)
 	}
+	if _, ok := _c.mutation.TenantID(); !ok {
+		v := cronjob.DefaultTenantID
+		_c.mutation.SetTenantID(v)
+	}
+	if _, ok := _c.mutation.OwnerUserID(); !ok {
+		v := cronjob.DefaultOwnerUserID
+		_c.mutation.SetOwnerUserID(v)
+	}
+	if _, ok := _c.mutation.Visibility(); !ok {
+		v := cronjob.DefaultVisibility
+		_c.mutation.SetVisibility(v)
+	}
 	if _, ok := _c.mutation.ID(); !ok {
 		v := cronjob.DefaultID()
 		_c.mutation.SetID(v)
@@ -419,6 +473,20 @@ func (_c *CronJobCreate) check() error {
 	}
 	if _, ok := _c.mutation.LastSuccess(); !ok {
 		return &ValidationError{Name: "last_success", err: errors.New(`ent: missing required field "CronJob.last_success"`)}
+	}
+	if _, ok := _c.mutation.TenantID(); !ok {
+		return &ValidationError{Name: "tenant_id", err: errors.New(`ent: missing required field "CronJob.tenant_id"`)}
+	}
+	if _, ok := _c.mutation.OwnerUserID(); !ok {
+		return &ValidationError{Name: "owner_user_id", err: errors.New(`ent: missing required field "CronJob.owner_user_id"`)}
+	}
+	if _, ok := _c.mutation.Visibility(); !ok {
+		return &ValidationError{Name: "visibility", err: errors.New(`ent: missing required field "CronJob.visibility"`)}
+	}
+	if v, ok := _c.mutation.Visibility(); ok {
+		if err := cronjob.VisibilityValidator(v); err != nil {
+			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "CronJob.visibility": %w`, err)}
+		}
 	}
 	return nil
 }
@@ -526,6 +594,18 @@ func (_c *CronJobCreate) createSpec() (*CronJob, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.LastSuccess(); ok {
 		_spec.SetField(cronjob.FieldLastSuccess, field.TypeBool, value)
 		_node.LastSuccess = value
+	}
+	if value, ok := _c.mutation.TenantID(); ok {
+		_spec.SetField(cronjob.FieldTenantID, field.TypeString, value)
+		_node.TenantID = value
+	}
+	if value, ok := _c.mutation.OwnerUserID(); ok {
+		_spec.SetField(cronjob.FieldOwnerUserID, field.TypeString, value)
+		_node.OwnerUserID = value
+	}
+	if value, ok := _c.mutation.Visibility(); ok {
+		_spec.SetField(cronjob.FieldVisibility, field.TypeEnum, value)
+		_node.Visibility = value
 	}
 	return _node, _spec
 }

@@ -31,6 +31,12 @@ type ChannelAccount struct {
 	ConfigJSON string `json:"config_json,omitempty"`
 	// MetadataJSON holds the value of the "metadata_json" field.
 	MetadataJSON string `json:"metadata_json,omitempty"`
+	// TenantID holds the value of the "tenant_id" field.
+	TenantID string `json:"tenant_id,omitempty"`
+	// OwnerUserID holds the value of the "owner_user_id" field.
+	OwnerUserID string `json:"owner_user_id,omitempty"`
+	// Visibility holds the value of the "visibility" field.
+	Visibility channelaccount.Visibility `json:"visibility,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -45,7 +51,7 @@ func (*ChannelAccount) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case channelaccount.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case channelaccount.FieldID, channelaccount.FieldChannelType, channelaccount.FieldAccountKey, channelaccount.FieldDisplayName, channelaccount.FieldDescription, channelaccount.FieldConfigJSON, channelaccount.FieldMetadataJSON:
+		case channelaccount.FieldID, channelaccount.FieldChannelType, channelaccount.FieldAccountKey, channelaccount.FieldDisplayName, channelaccount.FieldDescription, channelaccount.FieldConfigJSON, channelaccount.FieldMetadataJSON, channelaccount.FieldTenantID, channelaccount.FieldOwnerUserID, channelaccount.FieldVisibility:
 			values[i] = new(sql.NullString)
 		case channelaccount.FieldCreatedAt, channelaccount.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -111,6 +117,24 @@ func (_m *ChannelAccount) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field metadata_json", values[i])
 			} else if value.Valid {
 				_m.MetadataJSON = value.String
+			}
+		case channelaccount.FieldTenantID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field tenant_id", values[i])
+			} else if value.Valid {
+				_m.TenantID = value.String
+			}
+		case channelaccount.FieldOwnerUserID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field owner_user_id", values[i])
+			} else if value.Valid {
+				_m.OwnerUserID = value.String
+			}
+		case channelaccount.FieldVisibility:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field visibility", values[i])
+			} else if value.Valid {
+				_m.Visibility = channelaccount.Visibility(value.String)
 			}
 		case channelaccount.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -180,6 +204,15 @@ func (_m *ChannelAccount) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("metadata_json=")
 	builder.WriteString(_m.MetadataJSON)
+	builder.WriteString(", ")
+	builder.WriteString("tenant_id=")
+	builder.WriteString(_m.TenantID)
+	builder.WriteString(", ")
+	builder.WriteString("owner_user_id=")
+	builder.WriteString(_m.OwnerUserID)
+	builder.WriteString(", ")
+	builder.WriteString("visibility=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

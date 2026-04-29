@@ -41,6 +41,9 @@ func TestManagerPersistsJobsInDatabase(t *testing.T) {
 	if stored.NextRun == nil || stored.NextRun.IsZero() {
 		t.Fatalf("expected persisted next run to be populated for cron job")
 	}
+	if stored.Visibility != "shared" {
+		t.Fatalf("expected default visibility shared, got %q", stored.Visibility)
+	}
 
 	if err := manager.DisableJob(job.ID); err != nil {
 		t.Fatalf("disable job: %v", err)
@@ -69,6 +72,43 @@ func TestManagerPersistsJobsInDatabase(t *testing.T) {
 	}
 	if _, err := manager.client.CronJob.Get(ctx, job.ID); err == nil {
 		t.Fatalf("expected removed job to be deleted from database")
+	}
+}
+
+func TestManagerPersistsJobOwnership(t *testing.T) {
+	t.Parallel()
+
+	manager, cleanup := newTestManager(t)
+	defer cleanup()
+
+	ctx := t.Context()
+	job := &Job{
+		ID:           "owned-job",
+		Name:         "owned",
+		ScheduleKind: ScheduleCron,
+		Schedule:     "0 0 * * *",
+		Prompt:       "ping",
+		Enabled:      true,
+		TenantID:     "tenant-a",
+		OwnerUserID:  "user-a",
+		Visibility:   "private",
+		CreatedAt:    time.Now(),
+	}
+	if err := manager.createJob(ctx, job); err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	stored, err := manager.client.CronJob.Get(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("get stored cron job: %v", err)
+	}
+	if stored.TenantID != "tenant-a" || stored.OwnerUserID != "user-a" || string(stored.Visibility) != "private" {
+		t.Fatalf("expected ownership to persist, got %+v", stored)
+	}
+
+	loaded := jobFromEntity(stored)
+	if loaded.TenantID != "tenant-a" || loaded.OwnerUserID != "user-a" || loaded.Visibility != "private" {
+		t.Fatalf("expected ownership to load, got %+v", loaded)
 	}
 }
 

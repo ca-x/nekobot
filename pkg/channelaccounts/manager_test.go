@@ -25,12 +25,18 @@ func TestManagerCRUD(t *testing.T) {
 		Metadata: map[string]interface{}{
 			"owner": "ops",
 		},
+		TenantID:    "tenant-a",
+		OwnerUserID: "user-a",
+		Visibility:  "private",
 	})
 	if err != nil {
 		t.Fatalf("create account: %v", err)
 	}
 	if created.ID == "" {
 		t.Fatalf("expected account id")
+	}
+	if created.TenantID != "tenant-a" || created.OwnerUserID != "user-a" || created.Visibility != "private" {
+		t.Fatalf("expected ownership to round-trip, got %+v", created)
 	}
 
 	if _, err := mgr.Create(ctx, ChannelAccount{
@@ -56,12 +62,18 @@ func TestManagerCRUD(t *testing.T) {
 		Config: map[string]interface{}{
 			"app_id": "A123",
 		},
+		TenantID:    "tenant-b",
+		OwnerUserID: "user-b",
+		Visibility:  "system",
 	})
 	if err != nil {
 		t.Fatalf("update account: %v", err)
 	}
 	if updated.ChannelType != "slack" || updated.AccountKey != "workspace-a" {
 		t.Fatalf("unexpected updated account: %+v", updated)
+	}
+	if updated.TenantID != "tenant-b" || updated.OwnerUserID != "user-b" || updated.Visibility != "system" {
+		t.Fatalf("expected updated ownership, got %+v", updated)
 	}
 
 	got, err := mgr.Get(ctx, created.ID)

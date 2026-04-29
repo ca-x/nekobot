@@ -27,6 +27,9 @@ func (ChannelAccount) Fields() []ent.Field {
 		field.Bool("enabled").Default(true),
 		field.String("config_json").Default("{}"),
 		field.String("metadata_json").Default("{}"),
+		field.String("tenant_id").Default(""),
+		field.String("owner_user_id").Default(""),
+		field.Enum("visibility").Values("private", "shared", "system").Default("shared"),
 		field.Time("created_at").Default(time.Now).Immutable(),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}
@@ -43,6 +46,8 @@ func (ChannelAccount) Indexes() []ent.Index {
 		index.Fields("channel_type", "account_key").Unique(),
 		index.Fields("channel_type"),
 		index.Fields("enabled"),
+		index.Fields("tenant_id", "visibility"),
+		index.Fields("owner_user_id", "visibility"),
 		index.Fields("updated_at"),
 	}
 }

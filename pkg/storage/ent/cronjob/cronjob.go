@@ -3,6 +3,7 @@
 package cronjob
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -49,6 +50,12 @@ const (
 	FieldLastError = "last_error"
 	// FieldLastSuccess holds the string denoting the last_success field in the database.
 	FieldLastSuccess = "last_success"
+	// FieldTenantID holds the string denoting the tenant_id field in the database.
+	FieldTenantID = "tenant_id"
+	// FieldOwnerUserID holds the string denoting the owner_user_id field in the database.
+	FieldOwnerUserID = "owner_user_id"
+	// FieldVisibility holds the string denoting the visibility field in the database.
+	FieldVisibility = "visibility"
 	// Table holds the table name of the cronjob in the database.
 	Table = "cron_jobs"
 )
@@ -74,6 +81,9 @@ var Columns = []string{
 	FieldRunCount,
 	FieldLastError,
 	FieldLastSuccess,
+	FieldTenantID,
+	FieldOwnerUserID,
+	FieldVisibility,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -117,9 +127,40 @@ var (
 	DefaultLastError string
 	// DefaultLastSuccess holds the default value on creation for the "last_success" field.
 	DefaultLastSuccess bool
+	// DefaultTenantID holds the default value on creation for the "tenant_id" field.
+	DefaultTenantID string
+	// DefaultOwnerUserID holds the default value on creation for the "owner_user_id" field.
+	DefaultOwnerUserID string
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() string
 )
+
+// Visibility defines the type for the "visibility" enum field.
+type Visibility string
+
+// VisibilityShared is the default value of the Visibility enum.
+const DefaultVisibility = VisibilityShared
+
+// Visibility values.
+const (
+	VisibilityPrivate Visibility = "private"
+	VisibilityShared  Visibility = "shared"
+	VisibilitySystem  Visibility = "system"
+)
+
+func (v Visibility) String() string {
+	return string(v)
+}
+
+// VisibilityValidator is a validator for the "visibility" field enum values. It is called by the builders before save.
+func VisibilityValidator(v Visibility) error {
+	switch v {
+	case VisibilityPrivate, VisibilityShared, VisibilitySystem:
+		return nil
+	default:
+		return fmt.Errorf("cronjob: invalid enum value for visibility field: %q", v)
+	}
+}
 
 // OrderOption defines the ordering options for the CronJob queries.
 type OrderOption func(*sql.Selector)
@@ -217,4 +258,19 @@ func ByLastError(opts ...sql.OrderTermOption) OrderOption {
 // ByLastSuccess orders the results by the last_success field.
 func ByLastSuccess(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastSuccess, opts...).ToFunc()
+}
+
+// ByTenantID orders the results by the tenant_id field.
+func ByTenantID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTenantID, opts...).ToFunc()
+}
+
+// ByOwnerUserID orders the results by the owner_user_id field.
+func ByOwnerUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOwnerUserID, opts...).ToFunc()
+}
+
+// ByVisibility orders the results by the visibility field.
+func ByVisibility(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVisibility, opts...).ToFunc()
 }

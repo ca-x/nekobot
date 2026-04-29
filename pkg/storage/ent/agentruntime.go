@@ -37,6 +37,12 @@ type AgentRuntime struct {
 	ToolsJSON string `json:"tools_json,omitempty"`
 	// PolicyJSON holds the value of the "policy_json" field.
 	PolicyJSON string `json:"policy_json,omitempty"`
+	// TenantID holds the value of the "tenant_id" field.
+	TenantID string `json:"tenant_id,omitempty"`
+	// OwnerUserID holds the value of the "owner_user_id" field.
+	OwnerUserID string `json:"owner_user_id,omitempty"`
+	// Visibility holds the value of the "visibility" field.
+	Visibility agentruntime.Visibility `json:"visibility,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -51,7 +57,7 @@ func (*AgentRuntime) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case agentruntime.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case agentruntime.FieldID, agentruntime.FieldName, agentruntime.FieldDisplayName, agentruntime.FieldDescription, agentruntime.FieldProvider, agentruntime.FieldModel, agentruntime.FieldPromptID, agentruntime.FieldSkillsJSON, agentruntime.FieldToolsJSON, agentruntime.FieldPolicyJSON:
+		case agentruntime.FieldID, agentruntime.FieldName, agentruntime.FieldDisplayName, agentruntime.FieldDescription, agentruntime.FieldProvider, agentruntime.FieldModel, agentruntime.FieldPromptID, agentruntime.FieldSkillsJSON, agentruntime.FieldToolsJSON, agentruntime.FieldPolicyJSON, agentruntime.FieldTenantID, agentruntime.FieldOwnerUserID, agentruntime.FieldVisibility:
 			values[i] = new(sql.NullString)
 		case agentruntime.FieldCreatedAt, agentruntime.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -136,6 +142,24 @@ func (_m *AgentRuntime) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.PolicyJSON = value.String
 			}
+		case agentruntime.FieldTenantID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field tenant_id", values[i])
+			} else if value.Valid {
+				_m.TenantID = value.String
+			}
+		case agentruntime.FieldOwnerUserID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field owner_user_id", values[i])
+			} else if value.Valid {
+				_m.OwnerUserID = value.String
+			}
+		case agentruntime.FieldVisibility:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field visibility", values[i])
+			} else if value.Valid {
+				_m.Visibility = agentruntime.Visibility(value.String)
+			}
 		case agentruntime.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field created_at", values[i])
@@ -213,6 +237,15 @@ func (_m *AgentRuntime) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("policy_json=")
 	builder.WriteString(_m.PolicyJSON)
+	builder.WriteString(", ")
+	builder.WriteString("tenant_id=")
+	builder.WriteString(_m.TenantID)
+	builder.WriteString(", ")
+	builder.WriteString("owner_user_id=")
+	builder.WriteString(_m.OwnerUserID)
+	builder.WriteString(", ")
+	builder.WriteString("visibility=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

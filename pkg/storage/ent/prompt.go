@@ -31,6 +31,12 @@ type Prompt struct {
 	Enabled bool `json:"enabled,omitempty"`
 	// TagsJSON holds the value of the "tags_json" field.
 	TagsJSON string `json:"tags_json,omitempty"`
+	// TenantID holds the value of the "tenant_id" field.
+	TenantID string `json:"tenant_id,omitempty"`
+	// OwnerUserID holds the value of the "owner_user_id" field.
+	OwnerUserID string `json:"owner_user_id,omitempty"`
+	// Visibility holds the value of the "visibility" field.
+	Visibility prompt.Visibility `json:"visibility,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -45,7 +51,7 @@ func (*Prompt) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case prompt.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case prompt.FieldID, prompt.FieldPromptKey, prompt.FieldName, prompt.FieldDescription, prompt.FieldMode, prompt.FieldTemplate, prompt.FieldTagsJSON:
+		case prompt.FieldID, prompt.FieldPromptKey, prompt.FieldName, prompt.FieldDescription, prompt.FieldMode, prompt.FieldTemplate, prompt.FieldTagsJSON, prompt.FieldTenantID, prompt.FieldOwnerUserID, prompt.FieldVisibility:
 			values[i] = new(sql.NullString)
 		case prompt.FieldCreatedAt, prompt.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -111,6 +117,24 @@ func (_m *Prompt) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field tags_json", values[i])
 			} else if value.Valid {
 				_m.TagsJSON = value.String
+			}
+		case prompt.FieldTenantID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field tenant_id", values[i])
+			} else if value.Valid {
+				_m.TenantID = value.String
+			}
+		case prompt.FieldOwnerUserID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field owner_user_id", values[i])
+			} else if value.Valid {
+				_m.OwnerUserID = value.String
+			}
+		case prompt.FieldVisibility:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field visibility", values[i])
+			} else if value.Valid {
+				_m.Visibility = prompt.Visibility(value.String)
 			}
 		case prompt.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -180,6 +204,15 @@ func (_m *Prompt) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("tags_json=")
 	builder.WriteString(_m.TagsJSON)
+	builder.WriteString(", ")
+	builder.WriteString("tenant_id=")
+	builder.WriteString(_m.TenantID)
+	builder.WriteString(", ")
+	builder.WriteString("owner_user_id=")
+	builder.WriteString(_m.OwnerUserID)
+	builder.WriteString(", ")
+	builder.WriteString("visibility=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Visibility))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

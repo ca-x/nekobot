@@ -68,6 +68,9 @@ var (
 		{Name: "skills_json", Type: field.TypeString, Default: "[]"},
 		{Name: "tools_json", Type: field.TypeString, Default: "[]"},
 		{Name: "policy_json", Type: field.TypeString, Default: "{}"},
+		{Name: "tenant_id", Type: field.TypeString, Default: ""},
+		{Name: "owner_user_id", Type: field.TypeString, Default: ""},
+		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"private", "shared", "system"}, Default: "shared"},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
@@ -88,9 +91,19 @@ var (
 				Columns: []*schema.Column{AgentRuntimesColumns[4]},
 			},
 			{
+				Name:    "agentruntime_tenant_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{AgentRuntimesColumns[11], AgentRuntimesColumns[13]},
+			},
+			{
+				Name:    "agentruntime_owner_user_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{AgentRuntimesColumns[12], AgentRuntimesColumns[13]},
+			},
+			{
 				Name:    "agentruntime_updated_at",
 				Unique:  false,
-				Columns: []*schema.Column{AgentRuntimesColumns[12]},
+				Columns: []*schema.Column{AgentRuntimesColumns[15]},
 			},
 		},
 	}
@@ -142,6 +155,9 @@ var (
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "config_json", Type: field.TypeString, Default: "{}"},
 		{Name: "metadata_json", Type: field.TypeString, Default: "{}"},
+		{Name: "tenant_id", Type: field.TypeString, Default: ""},
+		{Name: "owner_user_id", Type: field.TypeString, Default: ""},
+		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"private", "shared", "system"}, Default: "shared"},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
@@ -167,9 +183,19 @@ var (
 				Columns: []*schema.Column{ChannelAccountsColumns[5]},
 			},
 			{
+				Name:    "channelaccount_tenant_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{ChannelAccountsColumns[8], ChannelAccountsColumns[10]},
+			},
+			{
+				Name:    "channelaccount_owner_user_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{ChannelAccountsColumns[9], ChannelAccountsColumns[10]},
+			},
+			{
 				Name:    "channelaccount_updated_at",
 				Unique:  false,
-				Columns: []*schema.Column{ChannelAccountsColumns[9]},
+				Columns: []*schema.Column{ChannelAccountsColumns[12]},
 			},
 		},
 	}
@@ -215,6 +241,9 @@ var (
 		{Name: "run_count", Type: field.TypeInt, Default: 0},
 		{Name: "last_error", Type: field.TypeString, Default: ""},
 		{Name: "last_success", Type: field.TypeBool, Default: false},
+		{Name: "tenant_id", Type: field.TypeString, Default: ""},
+		{Name: "owner_user_id", Type: field.TypeString, Default: ""},
+		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"private", "shared", "system"}, Default: "shared"},
 	}
 	// CronJobsTable holds the schema information for the "cron_jobs" table.
 	CronJobsTable = &schema.Table{
@@ -231,6 +260,16 @@ var (
 				Name:    "cronjob_schedule_kind",
 				Unique:  false,
 				Columns: []*schema.Column{CronJobsColumns[2]},
+			},
+			{
+				Name:    "cronjob_tenant_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{CronJobsColumns[19], CronJobsColumns[21]},
+			},
+			{
+				Name:    "cronjob_owner_user_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{CronJobsColumns[20], CronJobsColumns[21]},
 			},
 			{
 				Name:    "cronjob_created_at",
@@ -421,6 +460,9 @@ var (
 		{Name: "template", Type: field.TypeString},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "tags_json", Type: field.TypeString, Default: "[]"},
+		{Name: "tenant_id", Type: field.TypeString, Default: ""},
+		{Name: "owner_user_id", Type: field.TypeString, Default: ""},
+		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"private", "shared", "system"}, Default: "shared"},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 	}
@@ -446,9 +488,19 @@ var (
 				Columns: []*schema.Column{PromptsColumns[6]},
 			},
 			{
+				Name:    "prompt_tenant_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{PromptsColumns[8], PromptsColumns[10]},
+			},
+			{
+				Name:    "prompt_owner_user_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{PromptsColumns[9], PromptsColumns[10]},
+			},
+			{
 				Name:    "prompt_updated_at",
 				Unique:  false,
-				Columns: []*schema.Column{PromptsColumns[9]},
+				Columns: []*schema.Column{PromptsColumns[12]},
 			},
 		},
 	}

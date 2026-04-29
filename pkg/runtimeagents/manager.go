@@ -12,6 +12,7 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/ownership"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/storage/ent/agentruntime"
 )
@@ -114,6 +115,9 @@ func (m *Manager) Create(ctx context.Context, item AgentRuntime) (*AgentRuntime,
 		SetSkillsJSON(skillsJSON).
 		SetToolsJSON(toolsJSON).
 		SetPolicyJSON(policyJSON).
+		SetTenantID(normalized.TenantID).
+		SetOwnerUserID(normalized.OwnerUserID).
+		SetVisibility(agentruntime.Visibility(normalized.Visibility)).
 		Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
@@ -161,6 +165,9 @@ func (m *Manager) Update(ctx context.Context, id string, item AgentRuntime) (*Ag
 		SetSkillsJSON(skillsJSON).
 		SetToolsJSON(toolsJSON).
 		SetPolicyJSON(policyJSON).
+		SetTenantID(normalized.TenantID).
+		SetOwnerUserID(normalized.OwnerUserID).
+		SetVisibility(agentruntime.Visibility(normalized.Visibility)).
 		Save(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -201,6 +208,9 @@ func normalizeRuntime(item AgentRuntime) (AgentRuntime, error) {
 	item.Provider = strings.TrimSpace(item.Provider)
 	item.Model = strings.TrimSpace(item.Model)
 	item.PromptID = strings.TrimSpace(item.PromptID)
+	item.TenantID = strings.TrimSpace(item.TenantID)
+	item.OwnerUserID = strings.TrimSpace(item.OwnerUserID)
+	item.Visibility = ownership.NormalizeVisibility(item.Visibility)
 	if item.Name == "" {
 		return AgentRuntime{}, fmt.Errorf("runtime name is required")
 	}
@@ -271,6 +281,9 @@ func toRuntime(rec *ent.AgentRuntime) (AgentRuntime, error) {
 		Skills:      skills,
 		Tools:       tools,
 		Policy:      policy,
+		TenantID:    rec.TenantID,
+		OwnerUserID: rec.OwnerUserID,
+		Visibility:  string(rec.Visibility),
 		CreatedAt:   rec.CreatedAt,
 		UpdatedAt:   rec.UpdatedAt,
 	}, nil

@@ -3,6 +3,7 @@
 package agentruntime
 
 import (
+	"fmt"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -33,6 +34,12 @@ const (
 	FieldToolsJSON = "tools_json"
 	// FieldPolicyJSON holds the string denoting the policy_json field in the database.
 	FieldPolicyJSON = "policy_json"
+	// FieldTenantID holds the string denoting the tenant_id field in the database.
+	FieldTenantID = "tenant_id"
+	// FieldOwnerUserID holds the string denoting the owner_user_id field in the database.
+	FieldOwnerUserID = "owner_user_id"
+	// FieldVisibility holds the string denoting the visibility field in the database.
+	FieldVisibility = "visibility"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -54,6 +61,9 @@ var Columns = []string{
 	FieldSkillsJSON,
 	FieldToolsJSON,
 	FieldPolicyJSON,
+	FieldTenantID,
+	FieldOwnerUserID,
+	FieldVisibility,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -89,6 +99,10 @@ var (
 	DefaultToolsJSON string
 	// DefaultPolicyJSON holds the default value on creation for the "policy_json" field.
 	DefaultPolicyJSON string
+	// DefaultTenantID holds the default value on creation for the "tenant_id" field.
+	DefaultTenantID string
+	// DefaultOwnerUserID holds the default value on creation for the "owner_user_id" field.
+	DefaultOwnerUserID string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -98,6 +112,33 @@ var (
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() string
 )
+
+// Visibility defines the type for the "visibility" enum field.
+type Visibility string
+
+// VisibilityShared is the default value of the Visibility enum.
+const DefaultVisibility = VisibilityShared
+
+// Visibility values.
+const (
+	VisibilityPrivate Visibility = "private"
+	VisibilityShared  Visibility = "shared"
+	VisibilitySystem  Visibility = "system"
+)
+
+func (v Visibility) String() string {
+	return string(v)
+}
+
+// VisibilityValidator is a validator for the "visibility" field enum values. It is called by the builders before save.
+func VisibilityValidator(v Visibility) error {
+	switch v {
+	case VisibilityPrivate, VisibilityShared, VisibilitySystem:
+		return nil
+	default:
+		return fmt.Errorf("agentruntime: invalid enum value for visibility field: %q", v)
+	}
+}
 
 // OrderOption defines the ordering options for the AgentRuntime queries.
 type OrderOption func(*sql.Selector)
@@ -155,6 +196,21 @@ func ByToolsJSON(opts ...sql.OrderTermOption) OrderOption {
 // ByPolicyJSON orders the results by the policy_json field.
 func ByPolicyJSON(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPolicyJSON, opts...).ToFunc()
+}
+
+// ByTenantID orders the results by the tenant_id field.
+func ByTenantID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTenantID, opts...).ToFunc()
+}
+
+// ByOwnerUserID orders the results by the owner_user_id field.
+func ByOwnerUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOwnerUserID, opts...).ToFunc()
+}
+
+// ByVisibility orders the results by the visibility field.
+func ByVisibility(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVisibility, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

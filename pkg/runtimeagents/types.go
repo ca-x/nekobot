@@ -48,6 +48,9 @@ type AgentRuntime struct {
 	Skills      []string               `json:"skills"`
 	Tools       []string               `json:"tools"`
 	Policy      map[string]interface{} `json:"policy"`
+	TenantID    string                 `json:"tenant_id"`
+	OwnerUserID string                 `json:"owner_user_id"`
+	Visibility  string                 `json:"visibility"`
 	CreatedAt   time.Time              `json:"created_at"`
 	UpdatedAt   time.Time              `json:"updated_at"`
 	Status      *RuntimeDerivedStatus  `json:"status,omitempty"`

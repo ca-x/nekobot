@@ -27,6 +27,9 @@ func (Prompt) Fields() []ent.Field {
 		field.String("template").NotEmpty(),
 		field.Bool("enabled").Default(true),
 		field.String("tags_json").Default("[]"),
+		field.String("tenant_id").Default(""),
+		field.String("owner_user_id").Default(""),
+		field.Enum("visibility").Values("private", "shared", "system").Default("shared"),
 		field.Time("created_at").Default(time.Now).Immutable(),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}
@@ -43,6 +46,8 @@ func (Prompt) Indexes() []ent.Index {
 		index.Fields("prompt_key").Unique(),
 		index.Fields("mode"),
 		index.Fields("enabled"),
+		index.Fields("tenant_id", "visibility"),
+		index.Fields("owner_user_id", "visibility"),
 		index.Fields("updated_at"),
 	}
 }

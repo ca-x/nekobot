@@ -38,6 +38,9 @@ func (CronJob) Fields() []ent.Field {
 		field.Int("run_count").Default(0),
 		field.String("last_error").Default(""),
 		field.Bool("last_success").Default(false),
+		field.String("tenant_id").Default(""),
+		field.String("owner_user_id").Default(""),
+		field.Enum("visibility").Values("private", "shared", "system").Default("shared"),
 	}
 }
 
@@ -51,6 +54,8 @@ func (CronJob) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("enabled", "next_run"),
 		index.Fields("schedule_kind"),
+		index.Fields("tenant_id", "visibility"),
+		index.Fields("owner_user_id", "visibility"),
 		index.Fields("created_at"),
 	}
 }

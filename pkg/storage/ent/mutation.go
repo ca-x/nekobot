@@ -929,6 +929,9 @@ type AgentRuntimeMutation struct {
 	skills_json   *string
 	tools_json    *string
 	policy_json   *string
+	tenant_id     *string
+	owner_user_id *string
+	visibility    *agentruntime.Visibility
 	created_at    *time.Time
 	updated_at    *time.Time
 	clearedFields map[string]struct{}
@@ -1401,6 +1404,114 @@ func (m *AgentRuntimeMutation) ResetPolicyJSON() {
 	m.policy_json = nil
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (m *AgentRuntimeMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *AgentRuntimeMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the AgentRuntime entity.
+// If the AgentRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AgentRuntimeMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *AgentRuntimeMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (m *AgentRuntimeMutation) SetOwnerUserID(s string) {
+	m.owner_user_id = &s
+}
+
+// OwnerUserID returns the value of the "owner_user_id" field in the mutation.
+func (m *AgentRuntimeMutation) OwnerUserID() (r string, exists bool) {
+	v := m.owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnerUserID returns the old "owner_user_id" field's value of the AgentRuntime entity.
+// If the AgentRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AgentRuntimeMutation) OldOwnerUserID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnerUserID: %w", err)
+	}
+	return oldValue.OwnerUserID, nil
+}
+
+// ResetOwnerUserID resets all changes to the "owner_user_id" field.
+func (m *AgentRuntimeMutation) ResetOwnerUserID() {
+	m.owner_user_id = nil
+}
+
+// SetVisibility sets the "visibility" field.
+func (m *AgentRuntimeMutation) SetVisibility(a agentruntime.Visibility) {
+	m.visibility = &a
+}
+
+// Visibility returns the value of the "visibility" field in the mutation.
+func (m *AgentRuntimeMutation) Visibility() (r agentruntime.Visibility, exists bool) {
+	v := m.visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVisibility returns the old "visibility" field's value of the AgentRuntime entity.
+// If the AgentRuntime object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AgentRuntimeMutation) OldVisibility(ctx context.Context) (v agentruntime.Visibility, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVisibility: %w", err)
+	}
+	return oldValue.Visibility, nil
+}
+
+// ResetVisibility resets all changes to the "visibility" field.
+func (m *AgentRuntimeMutation) ResetVisibility() {
+	m.visibility = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *AgentRuntimeMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -1507,7 +1618,7 @@ func (m *AgentRuntimeMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AgentRuntimeMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 15)
 	if m.name != nil {
 		fields = append(fields, agentruntime.FieldName)
 	}
@@ -1537,6 +1648,15 @@ func (m *AgentRuntimeMutation) Fields() []string {
 	}
 	if m.policy_json != nil {
 		fields = append(fields, agentruntime.FieldPolicyJSON)
+	}
+	if m.tenant_id != nil {
+		fields = append(fields, agentruntime.FieldTenantID)
+	}
+	if m.owner_user_id != nil {
+		fields = append(fields, agentruntime.FieldOwnerUserID)
+	}
+	if m.visibility != nil {
+		fields = append(fields, agentruntime.FieldVisibility)
 	}
 	if m.created_at != nil {
 		fields = append(fields, agentruntime.FieldCreatedAt)
@@ -1572,6 +1692,12 @@ func (m *AgentRuntimeMutation) Field(name string) (ent.Value, bool) {
 		return m.ToolsJSON()
 	case agentruntime.FieldPolicyJSON:
 		return m.PolicyJSON()
+	case agentruntime.FieldTenantID:
+		return m.TenantID()
+	case agentruntime.FieldOwnerUserID:
+		return m.OwnerUserID()
+	case agentruntime.FieldVisibility:
+		return m.Visibility()
 	case agentruntime.FieldCreatedAt:
 		return m.CreatedAt()
 	case agentruntime.FieldUpdatedAt:
@@ -1605,6 +1731,12 @@ func (m *AgentRuntimeMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldToolsJSON(ctx)
 	case agentruntime.FieldPolicyJSON:
 		return m.OldPolicyJSON(ctx)
+	case agentruntime.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case agentruntime.FieldOwnerUserID:
+		return m.OldOwnerUserID(ctx)
+	case agentruntime.FieldVisibility:
+		return m.OldVisibility(ctx)
 	case agentruntime.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case agentruntime.FieldUpdatedAt:
@@ -1687,6 +1819,27 @@ func (m *AgentRuntimeMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPolicyJSON(v)
+		return nil
+	case agentruntime.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case agentruntime.FieldOwnerUserID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnerUserID(v)
+		return nil
+	case agentruntime.FieldVisibility:
+		v, ok := value.(agentruntime.Visibility)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVisibility(v)
 		return nil
 	case agentruntime.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -1780,6 +1933,15 @@ func (m *AgentRuntimeMutation) ResetField(name string) error {
 		return nil
 	case agentruntime.FieldPolicyJSON:
 		m.ResetPolicyJSON()
+		return nil
+	case agentruntime.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case agentruntime.FieldOwnerUserID:
+		m.ResetOwnerUserID()
+		return nil
+	case agentruntime.FieldVisibility:
+		m.ResetVisibility()
 		return nil
 	case agentruntime.FieldCreatedAt:
 		m.ResetCreatedAt()
@@ -2476,6 +2638,9 @@ type ChannelAccountMutation struct {
 	enabled       *bool
 	config_json   *string
 	metadata_json *string
+	tenant_id     *string
+	owner_user_id *string
+	visibility    *channelaccount.Visibility
 	created_at    *time.Time
 	updated_at    *time.Time
 	clearedFields map[string]struct{}
@@ -2840,6 +3005,114 @@ func (m *ChannelAccountMutation) ResetMetadataJSON() {
 	m.metadata_json = nil
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (m *ChannelAccountMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *ChannelAccountMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the ChannelAccount entity.
+// If the ChannelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ChannelAccountMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *ChannelAccountMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (m *ChannelAccountMutation) SetOwnerUserID(s string) {
+	m.owner_user_id = &s
+}
+
+// OwnerUserID returns the value of the "owner_user_id" field in the mutation.
+func (m *ChannelAccountMutation) OwnerUserID() (r string, exists bool) {
+	v := m.owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnerUserID returns the old "owner_user_id" field's value of the ChannelAccount entity.
+// If the ChannelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ChannelAccountMutation) OldOwnerUserID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnerUserID: %w", err)
+	}
+	return oldValue.OwnerUserID, nil
+}
+
+// ResetOwnerUserID resets all changes to the "owner_user_id" field.
+func (m *ChannelAccountMutation) ResetOwnerUserID() {
+	m.owner_user_id = nil
+}
+
+// SetVisibility sets the "visibility" field.
+func (m *ChannelAccountMutation) SetVisibility(c channelaccount.Visibility) {
+	m.visibility = &c
+}
+
+// Visibility returns the value of the "visibility" field in the mutation.
+func (m *ChannelAccountMutation) Visibility() (r channelaccount.Visibility, exists bool) {
+	v := m.visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVisibility returns the old "visibility" field's value of the ChannelAccount entity.
+// If the ChannelAccount object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ChannelAccountMutation) OldVisibility(ctx context.Context) (v channelaccount.Visibility, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVisibility: %w", err)
+	}
+	return oldValue.Visibility, nil
+}
+
+// ResetVisibility resets all changes to the "visibility" field.
+func (m *ChannelAccountMutation) ResetVisibility() {
+	m.visibility = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *ChannelAccountMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -2946,7 +3219,7 @@ func (m *ChannelAccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ChannelAccountMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 12)
 	if m.channel_type != nil {
 		fields = append(fields, channelaccount.FieldChannelType)
 	}
@@ -2967,6 +3240,15 @@ func (m *ChannelAccountMutation) Fields() []string {
 	}
 	if m.metadata_json != nil {
 		fields = append(fields, channelaccount.FieldMetadataJSON)
+	}
+	if m.tenant_id != nil {
+		fields = append(fields, channelaccount.FieldTenantID)
+	}
+	if m.owner_user_id != nil {
+		fields = append(fields, channelaccount.FieldOwnerUserID)
+	}
+	if m.visibility != nil {
+		fields = append(fields, channelaccount.FieldVisibility)
 	}
 	if m.created_at != nil {
 		fields = append(fields, channelaccount.FieldCreatedAt)
@@ -2996,6 +3278,12 @@ func (m *ChannelAccountMutation) Field(name string) (ent.Value, bool) {
 		return m.ConfigJSON()
 	case channelaccount.FieldMetadataJSON:
 		return m.MetadataJSON()
+	case channelaccount.FieldTenantID:
+		return m.TenantID()
+	case channelaccount.FieldOwnerUserID:
+		return m.OwnerUserID()
+	case channelaccount.FieldVisibility:
+		return m.Visibility()
 	case channelaccount.FieldCreatedAt:
 		return m.CreatedAt()
 	case channelaccount.FieldUpdatedAt:
@@ -3023,6 +3311,12 @@ func (m *ChannelAccountMutation) OldField(ctx context.Context, name string) (ent
 		return m.OldConfigJSON(ctx)
 	case channelaccount.FieldMetadataJSON:
 		return m.OldMetadataJSON(ctx)
+	case channelaccount.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case channelaccount.FieldOwnerUserID:
+		return m.OldOwnerUserID(ctx)
+	case channelaccount.FieldVisibility:
+		return m.OldVisibility(ctx)
 	case channelaccount.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case channelaccount.FieldUpdatedAt:
@@ -3084,6 +3378,27 @@ func (m *ChannelAccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMetadataJSON(v)
+		return nil
+	case channelaccount.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case channelaccount.FieldOwnerUserID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnerUserID(v)
+		return nil
+	case channelaccount.FieldVisibility:
+		v, ok := value.(channelaccount.Visibility)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVisibility(v)
 		return nil
 	case channelaccount.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -3168,6 +3483,15 @@ func (m *ChannelAccountMutation) ResetField(name string) error {
 		return nil
 	case channelaccount.FieldMetadataJSON:
 		m.ResetMetadataJSON()
+		return nil
+	case channelaccount.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case channelaccount.FieldOwnerUserID:
+		m.ResetOwnerUserID()
+		return nil
+	case channelaccount.FieldVisibility:
+		m.ResetVisibility()
 		return nil
 	case channelaccount.FieldCreatedAt:
 		m.ResetCreatedAt()
@@ -3740,6 +4064,9 @@ type CronJobMutation struct {
 	addrun_count     *int
 	last_error       *string
 	last_success     *bool
+	tenant_id        *string
+	owner_user_id    *string
+	visibility       *cronjob.Visibility
 	clearedFields    map[string]struct{}
 	done             bool
 	oldValue         func(context.Context) (*CronJob, error)
@@ -4557,6 +4884,114 @@ func (m *CronJobMutation) ResetLastSuccess() {
 	m.last_success = nil
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (m *CronJobMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *CronJobMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *CronJobMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (m *CronJobMutation) SetOwnerUserID(s string) {
+	m.owner_user_id = &s
+}
+
+// OwnerUserID returns the value of the "owner_user_id" field in the mutation.
+func (m *CronJobMutation) OwnerUserID() (r string, exists bool) {
+	v := m.owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnerUserID returns the old "owner_user_id" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldOwnerUserID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnerUserID: %w", err)
+	}
+	return oldValue.OwnerUserID, nil
+}
+
+// ResetOwnerUserID resets all changes to the "owner_user_id" field.
+func (m *CronJobMutation) ResetOwnerUserID() {
+	m.owner_user_id = nil
+}
+
+// SetVisibility sets the "visibility" field.
+func (m *CronJobMutation) SetVisibility(c cronjob.Visibility) {
+	m.visibility = &c
+}
+
+// Visibility returns the value of the "visibility" field in the mutation.
+func (m *CronJobMutation) Visibility() (r cronjob.Visibility, exists bool) {
+	v := m.visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVisibility returns the old "visibility" field's value of the CronJob entity.
+// If the CronJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CronJobMutation) OldVisibility(ctx context.Context) (v cronjob.Visibility, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVisibility: %w", err)
+	}
+	return oldValue.Visibility, nil
+}
+
+// ResetVisibility resets all changes to the "visibility" field.
+func (m *CronJobMutation) ResetVisibility() {
+	m.visibility = nil
+}
+
 // Where appends a list predicates to the CronJobMutation builder.
 func (m *CronJobMutation) Where(ps ...predicate.CronJob) {
 	m.predicates = append(m.predicates, ps...)
@@ -4591,7 +5026,7 @@ func (m *CronJobMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CronJobMutation) Fields() []string {
-	fields := make([]string, 0, 18)
+	fields := make([]string, 0, 21)
 	if m.name != nil {
 		fields = append(fields, cronjob.FieldName)
 	}
@@ -4646,6 +5081,15 @@ func (m *CronJobMutation) Fields() []string {
 	if m.last_success != nil {
 		fields = append(fields, cronjob.FieldLastSuccess)
 	}
+	if m.tenant_id != nil {
+		fields = append(fields, cronjob.FieldTenantID)
+	}
+	if m.owner_user_id != nil {
+		fields = append(fields, cronjob.FieldOwnerUserID)
+	}
+	if m.visibility != nil {
+		fields = append(fields, cronjob.FieldVisibility)
+	}
 	return fields
 }
 
@@ -4690,6 +5134,12 @@ func (m *CronJobMutation) Field(name string) (ent.Value, bool) {
 		return m.LastError()
 	case cronjob.FieldLastSuccess:
 		return m.LastSuccess()
+	case cronjob.FieldTenantID:
+		return m.TenantID()
+	case cronjob.FieldOwnerUserID:
+		return m.OwnerUserID()
+	case cronjob.FieldVisibility:
+		return m.Visibility()
 	}
 	return nil, false
 }
@@ -4735,6 +5185,12 @@ func (m *CronJobMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldLastError(ctx)
 	case cronjob.FieldLastSuccess:
 		return m.OldLastSuccess(ctx)
+	case cronjob.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case cronjob.FieldOwnerUserID:
+		return m.OldOwnerUserID(ctx)
+	case cronjob.FieldVisibility:
+		return m.OldVisibility(ctx)
 	}
 	return nil, fmt.Errorf("unknown CronJob field %s", name)
 }
@@ -4869,6 +5325,27 @@ func (m *CronJobMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetLastSuccess(v)
+		return nil
+	case cronjob.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case cronjob.FieldOwnerUserID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnerUserID(v)
+		return nil
+	case cronjob.FieldVisibility:
+		v, ok := value.(cronjob.Visibility)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVisibility(v)
 		return nil
 	}
 	return fmt.Errorf("unknown CronJob field %s", name)
@@ -5008,6 +5485,15 @@ func (m *CronJobMutation) ResetField(name string) error {
 		return nil
 	case cronjob.FieldLastSuccess:
 		m.ResetLastSuccess()
+		return nil
+	case cronjob.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case cronjob.FieldOwnerUserID:
+		m.ResetOwnerUserID()
+		return nil
+	case cronjob.FieldVisibility:
+		m.ResetVisibility()
 		return nil
 	}
 	return fmt.Errorf("unknown CronJob field %s", name)
@@ -8248,6 +8734,9 @@ type PromptMutation struct {
 	template      *string
 	enabled       *bool
 	tags_json     *string
+	tenant_id     *string
+	owner_user_id *string
+	visibility    *prompt.Visibility
 	created_at    *time.Time
 	updated_at    *time.Time
 	clearedFields map[string]struct{}
@@ -8612,6 +9101,114 @@ func (m *PromptMutation) ResetTagsJSON() {
 	m.tags_json = nil
 }
 
+// SetTenantID sets the "tenant_id" field.
+func (m *PromptMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *PromptMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the Prompt entity.
+// If the Prompt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *PromptMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (m *PromptMutation) SetOwnerUserID(s string) {
+	m.owner_user_id = &s
+}
+
+// OwnerUserID returns the value of the "owner_user_id" field in the mutation.
+func (m *PromptMutation) OwnerUserID() (r string, exists bool) {
+	v := m.owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnerUserID returns the old "owner_user_id" field's value of the Prompt entity.
+// If the Prompt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptMutation) OldOwnerUserID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnerUserID: %w", err)
+	}
+	return oldValue.OwnerUserID, nil
+}
+
+// ResetOwnerUserID resets all changes to the "owner_user_id" field.
+func (m *PromptMutation) ResetOwnerUserID() {
+	m.owner_user_id = nil
+}
+
+// SetVisibility sets the "visibility" field.
+func (m *PromptMutation) SetVisibility(pr prompt.Visibility) {
+	m.visibility = &pr
+}
+
+// Visibility returns the value of the "visibility" field in the mutation.
+func (m *PromptMutation) Visibility() (r prompt.Visibility, exists bool) {
+	v := m.visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVisibility returns the old "visibility" field's value of the Prompt entity.
+// If the Prompt object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PromptMutation) OldVisibility(ctx context.Context) (v prompt.Visibility, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVisibility: %w", err)
+	}
+	return oldValue.Visibility, nil
+}
+
+// ResetVisibility resets all changes to the "visibility" field.
+func (m *PromptMutation) ResetVisibility() {
+	m.visibility = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *PromptMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -8718,7 +9315,7 @@ func (m *PromptMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PromptMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 12)
 	if m.prompt_key != nil {
 		fields = append(fields, prompt.FieldPromptKey)
 	}
@@ -8739,6 +9336,15 @@ func (m *PromptMutation) Fields() []string {
 	}
 	if m.tags_json != nil {
 		fields = append(fields, prompt.FieldTagsJSON)
+	}
+	if m.tenant_id != nil {
+		fields = append(fields, prompt.FieldTenantID)
+	}
+	if m.owner_user_id != nil {
+		fields = append(fields, prompt.FieldOwnerUserID)
+	}
+	if m.visibility != nil {
+		fields = append(fields, prompt.FieldVisibility)
 	}
 	if m.created_at != nil {
 		fields = append(fields, prompt.FieldCreatedAt)
@@ -8768,6 +9374,12 @@ func (m *PromptMutation) Field(name string) (ent.Value, bool) {
 		return m.Enabled()
 	case prompt.FieldTagsJSON:
 		return m.TagsJSON()
+	case prompt.FieldTenantID:
+		return m.TenantID()
+	case prompt.FieldOwnerUserID:
+		return m.OwnerUserID()
+	case prompt.FieldVisibility:
+		return m.Visibility()
 	case prompt.FieldCreatedAt:
 		return m.CreatedAt()
 	case prompt.FieldUpdatedAt:
@@ -8795,6 +9407,12 @@ func (m *PromptMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldEnabled(ctx)
 	case prompt.FieldTagsJSON:
 		return m.OldTagsJSON(ctx)
+	case prompt.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case prompt.FieldOwnerUserID:
+		return m.OldOwnerUserID(ctx)
+	case prompt.FieldVisibility:
+		return m.OldVisibility(ctx)
 	case prompt.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case prompt.FieldUpdatedAt:
@@ -8856,6 +9474,27 @@ func (m *PromptMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetTagsJSON(v)
+		return nil
+	case prompt.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case prompt.FieldOwnerUserID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnerUserID(v)
+		return nil
+	case prompt.FieldVisibility:
+		v, ok := value.(prompt.Visibility)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVisibility(v)
 		return nil
 	case prompt.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -8940,6 +9579,15 @@ func (m *PromptMutation) ResetField(name string) error {
 		return nil
 	case prompt.FieldTagsJSON:
 		m.ResetTagsJSON()
+		return nil
+	case prompt.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case prompt.FieldOwnerUserID:
+		m.ResetOwnerUserID()
+		return nil
+	case prompt.FieldVisibility:
+		m.ResetVisibility()
 		return nil
 	case prompt.FieldCreatedAt:
 		m.ResetCreatedAt()
