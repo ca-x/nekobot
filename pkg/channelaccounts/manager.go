@@ -37,7 +37,7 @@ func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Ma
 		return nil, fmt.Errorf("ent client is nil")
 	}
 	mgr := &Manager{cfg: cfg, log: log, client: client}
-	dbPath, _ := config.RuntimeDBPath(cfg)
+	dbPath, _ := config.RuntimeDBDisplayName(cfg)
 	log.Info("Channel account storage initialized", zap.String("db_path", dbPath))
 	return mgr, nil
 }

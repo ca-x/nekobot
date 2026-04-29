@@ -8,5 +8,11 @@ services:
       - "18791:18791" # webui (default)
     environment:
       - TZ=Asia/Shanghai
+      - NEKOBOT_DB_TYPE=sqlite
+      # For external databases, set both variables, for example:
+      # - NEKOBOT_DB_TYPE=postgres
+      # - NEKOBOT_DB_DSN=postgres://nekobot:secret@postgres:5432/nekobot?sslmode=disable
+      # - NEKOBOT_DB_TYPE=mysql
+      # - NEKOBOT_DB_DSN=nekobot:secret@tcp(mysql:3306)/nekobot?parseTime=true
     volumes:
       - ./data:/app/data

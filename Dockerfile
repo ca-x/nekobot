@@ -60,6 +60,7 @@ RUN mkdir -p /app/data/config /app/data/db /app/data/workspace && chown -R app:a
 USER app
 
 ENV NEKOBOT_CONFIG_FILE=/app/data/config/config.json
+ENV NEKOBOT_DB_TYPE=sqlite
 ENV NEKOBOT_DB_DIR=/app/data/db
 ENV NEKOBOT_WORKSPACE_DIR=/app/data/workspace
 

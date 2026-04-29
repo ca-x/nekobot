@@ -42,7 +42,7 @@ func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Ma
 	if client == nil {
 		return nil, fmt.Errorf("ent client is nil")
 	}
-	dbPath, _ := config.RuntimeDBPath(cfg)
+	dbPath, _ := config.RuntimeDBDisplayName(cfg)
 	log.Info("Model catalog storage initialized", zap.String("db_path", dbPath))
 	return &Manager{cfg: cfg, log: log, client: client}, nil
 }

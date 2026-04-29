@@ -31,17 +31,39 @@ export NEKOBOT_LOGGER_LEVEL="debug"
 nekobot agent
 ```
 
-### 运行时配置存储（SQLite）
+### 运行时配置存储（SQLite/PostgreSQL/MySQL）
 
 从当前版本开始，WebUI 变更的主要运行时配置默认写入同一个数据库文件：
 
 - 数据库文件名：`nekobot.db`
 - 数据库目录优先级：`NEKOBOT_DB_DIR` > `storage.db_dir` > 可执行文件目录 > 当前工作目录
+- 数据库类型：`NEKOBOT_DB_TYPE` > `storage.db_type` > `sqlite`
+- 数据库连接串：`NEKOBOT_DB_DSN` > `storage.db_dsn`
 - 表：`config_sections`（agents/channels/gateway/tools/heartbeat/approval/logger/webui）
 - providers 单独使用 `providers` 表（同一个 `nekobot.db`）
 
 这意味着 `config.json` 可以只保留基础启动配置（如 gateway/webui/logger），
 其余日常改动由数据库持久化。
+
+默认 `sqlite` 不需要额外配置。也可以通过环境变量切换到 Ent 支持的外部数据库：
+
+```bash
+# SQLite：纯路径会自动补齐 cache/pragmas
+export NEKOBOT_DB_TYPE=sqlite
+export NEKOBOT_DB_DSN=/var/lib/nekobot/nekobot.db
+
+# PostgreSQL
+export NEKOBOT_DB_TYPE=postgres
+export NEKOBOT_DB_DSN='postgres://nekobot:secret@postgres:5432/nekobot?sslmode=disable'
+
+# MySQL / MariaDB
+export NEKOBOT_DB_TYPE=mysql
+export NEKOBOT_DB_DSN='nekobot:secret@tcp(mysql:3306)/nekobot?parseTime=true'
+```
+
+使用 `postgres` 或 `mysql` 时，`db_dsn` 必填，启动时会直接在目标库上执行 Ent schema
+初始化。WebUI 的 SQLite 文件迁移只在旧库和新库都是 SQLite 时执行，避免误把本地
+`nekobot.db` 复制到外部数据库配置里。
 
 ---
 

@@ -48,7 +48,7 @@ func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Ma
 		return nil, err
 	}
 
-	dbPath, _ := config.RuntimeDBPath(cfg)
+	dbPath, _ := config.RuntimeDBDisplayName(cfg)
 	log.Info("Provider storage initialized", zap.String("db_path", dbPath))
 	return m, nil
 }
@@ -136,11 +136,11 @@ func (m *Manager) Update(ctx context.Context, name string, profile config.Provid
 	}
 
 	merged := config.ProviderProfile{
-		Name:          strings.TrimSpace(profile.Name),
-		ProviderKind:  strings.TrimSpace(profile.ProviderKind),
-		APIKey:        strings.TrimSpace(profile.APIKey),
-		APIBase:       strings.TrimSpace(profile.APIBase),
-		Proxy:         strings.TrimSpace(profile.Proxy),
+		Name:             strings.TrimSpace(profile.Name),
+		ProviderKind:     strings.TrimSpace(profile.ProviderKind),
+		APIKey:           strings.TrimSpace(profile.APIKey),
+		APIBase:          strings.TrimSpace(profile.APIBase),
+		Proxy:            strings.TrimSpace(profile.Proxy),
 		DefaultWeight:    profile.DefaultWeight,
 		Enabled:          profile.Enabled,
 		DefaultTestModel: strings.TrimSpace(profile.DefaultTestModel),
@@ -319,11 +319,11 @@ func toConfigProvider(rec *ent.Provider) (config.ProviderProfile, error) {
 		return config.ProviderProfile{}, fmt.Errorf("provider record is nil")
 	}
 	return config.ProviderProfile{
-		Name:          rec.Name,
-		ProviderKind:  rec.ProviderKind,
-		APIKey:        rec.APIKey,
-		APIBase:       rec.APIBase,
-		Proxy:         rec.Proxy,
+		Name:             rec.Name,
+		ProviderKind:     rec.ProviderKind,
+		APIKey:           rec.APIKey,
+		APIBase:          rec.APIBase,
+		Proxy:            rec.Proxy,
 		DefaultWeight:    rec.DefaultWeight,
 		Enabled:          rec.Enabled,
 		DefaultTestModel: rec.DefaultTestModel,

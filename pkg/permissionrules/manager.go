@@ -52,7 +52,7 @@ func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Ma
 		return nil, fmt.Errorf("ent client is nil")
 	}
 	if log != nil {
-		dbPath, _ := config.RuntimeDBPath(cfg)
+		dbPath, _ := config.RuntimeDBDisplayName(cfg)
 		log.Info("Permission rule storage initialized", zap.String("db_path", dbPath))
 	}
 	return &Manager{cfg: cfg, log: log, client: client}, nil

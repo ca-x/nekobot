@@ -5821,7 +5821,12 @@ func (s *Server) handleGetConfig(c *echo.Context) error {
 func (s *Server) handleSaveConfig(c *echo.Context) error {
 	previousStorage := s.config.Storage
 	oldRuntimeDBPath := ""
-	if currentPath, err := config.RuntimeDBPath(s.config); err == nil {
+	oldRuntimeDBIsSQLite := s.config.DatabaseType() == "sqlite"
+	if oldRuntimeDBIsSQLite {
+		currentPath, err := config.RuntimeDBPath(s.config)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
 		oldRuntimeDBPath = currentPath
 	}
 
@@ -5934,7 +5939,7 @@ func (s *Server) handleSaveConfig(c *echo.Context) error {
 
 	restartSections := make([]string, 0, 5)
 	if body.Storage != nil || body.Logger != nil || body.Gateway != nil || body.WebUI != nil || body.Webhook != nil {
-		if body.Storage != nil {
+		if body.Storage != nil && oldRuntimeDBIsSQLite && s.config.DatabaseType() == "sqlite" {
 			newRuntimeDBPath, err := config.RuntimeDBPath(s.config)
 			if err != nil {
 				s.config.Storage = previousStorage
@@ -6091,7 +6096,12 @@ func (s *Server) handleExportConfig(c *echo.Context) error {
 func (s *Server) handleImportConfig(c *echo.Context) error {
 	previousStorage := s.config.Storage
 	oldRuntimeDBPath := ""
-	if currentPath, err := config.RuntimeDBPath(s.config); err == nil {
+	oldRuntimeDBIsSQLite := s.config.DatabaseType() == "sqlite"
+	if oldRuntimeDBIsSQLite {
+		currentPath, err := config.RuntimeDBPath(s.config)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
 		oldRuntimeDBPath = currentPath
 	}
 
@@ -6205,7 +6215,7 @@ func (s *Server) handleImportConfig(c *echo.Context) error {
 
 	restartSections := make([]string, 0, 5)
 	if body.Storage != nil || body.Logger != nil || body.Gateway != nil || body.WebUI != nil || body.Webhook != nil {
-		if body.Storage != nil {
+		if body.Storage != nil && oldRuntimeDBIsSQLite && s.config.DatabaseType() == "sqlite" {
 			newRuntimeDBPath, err := config.RuntimeDBPath(s.config)
 			if err != nil {
 				s.config.Storage = previousStorage
@@ -6866,7 +6876,7 @@ func (s *Server) handleStatus(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	runtimeDBPath, err := config.RuntimeDBPath(s.config)
+	runtimeDBPath, err := config.RuntimeDBDisplayName(s.config)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -6898,6 +6908,7 @@ func (s *Server) handleStatus(c *echo.Context) error {
 		"memory_sys_bytes":             mem.Sys,
 		"provider_count":               len(s.config.Providers),
 		"config_path":                  configPath,
+		"runtime_db_type":              s.config.DatabaseType(),
 		"database_dir":                 s.config.Storage.DBDir,
 		"runtime_db_path":              runtimeDBPath,
 		"workspace_path":               s.config.Agents.Defaults.Workspace,

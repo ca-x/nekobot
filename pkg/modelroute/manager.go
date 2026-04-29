@@ -49,7 +49,7 @@ func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Ma
 	if err != nil {
 		return nil, err
 	}
-	dbPath, _ := config.RuntimeDBPath(cfg)
+	dbPath, _ := config.RuntimeDBDisplayName(cfg)
 	log.Info("Model route storage initialized", zap.String("db_path", dbPath))
 	return &Manager{cfg: cfg, log: log, client: client, providers: providers}, nil
 }

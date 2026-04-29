@@ -41,7 +41,7 @@ func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Ma
 		log:    log,
 		client: client,
 	}
-	dbPath, _ := config.RuntimeDBPath(cfg)
+	dbPath, _ := config.RuntimeDBDisplayName(cfg)
 	log.Info("Prompt storage initialized", zap.String("db_path", dbPath))
 	return mgr, nil
 }

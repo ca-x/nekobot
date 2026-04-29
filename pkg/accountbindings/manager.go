@@ -62,7 +62,7 @@ func NewManager(
 		runtimes: runtimes,
 		accounts: accounts,
 	}
-	dbPath, _ := config.RuntimeDBPath(cfg)
+	dbPath, _ := config.RuntimeDBDisplayName(cfg)
 	log.Info("Account binding storage initialized", zap.String("db_path", dbPath))
 	return mgr, nil
 }

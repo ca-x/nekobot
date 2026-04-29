@@ -45,11 +45,17 @@ const (
 	WorkspaceDirEnv = "NEKOBOT_WORKSPACE_DIR"
 	// DBDirEnv overrides SQLite database directory at runtime.
 	DBDirEnv = "NEKOBOT_DB_DIR"
+	// DBTypeEnv overrides runtime database type at runtime.
+	DBTypeEnv = "NEKOBOT_DB_TYPE"
+	// DBDSNEnv overrides runtime database DSN at runtime.
+	DBDSNEnv = "NEKOBOT_DB_DSN"
 )
 
 // StorageConfig holds local runtime storage paths.
 type StorageConfig struct {
-	DBDir string `mapstructure:"db_dir" json:"db_dir"`
+	DBDir  string `mapstructure:"db_dir" json:"db_dir"`
+	DBType string `mapstructure:"db_type" json:"db_type"`
+	DBDSN  string `mapstructure:"db_dsn" json:"db_dsn"`
 }
 
 // AgentsConfig contains agent-related configuration.
@@ -278,18 +284,18 @@ type ProvidersConfig []ProviderProfile
 
 // ProviderProfile defines a provider profile with type and alias.
 type ProviderProfile struct {
-	Name             string   `mapstructure:"name" json:"name"`                                     // Alias (e.g., "openai-primary", "my-api")
-	ProviderKind     string   `mapstructure:"provider_kind" json:"provider_kind"`                   // Type: "openai", "anthropic", "gemini"
+	Name             string   `mapstructure:"name" json:"name"`                   // Alias (e.g., "openai-primary", "my-api")
+	ProviderKind     string   `mapstructure:"provider_kind" json:"provider_kind"` // Type: "openai", "anthropic", "gemini"
 	APIKey           string   `mapstructure:"api_key" json:"api_key"`
 	APIBase          string   `mapstructure:"api_base" json:"api_base"`
-	Proxy            string   `mapstructure:"proxy" json:"proxy,omitempty"`                         // HTTP/SOCKS5 proxy URL (optional)
+	Proxy            string   `mapstructure:"proxy" json:"proxy,omitempty"` // HTTP/SOCKS5 proxy URL (optional)
 	DefaultWeight    int      `mapstructure:"default_weight" json:"default_weight,omitempty"`
 	Enabled          bool     `mapstructure:"enabled" json:"enabled"`
-	Models           []string `mapstructure:"models" json:"models,omitempty"`                       // Supported model list
-	DefaultModel     string   `mapstructure:"default_model" json:"default_model,omitempty"`         // Default model for this provider
+	Models           []string `mapstructure:"models" json:"models,omitempty"`                         // Supported model list
+	DefaultModel     string   `mapstructure:"default_model" json:"default_model,omitempty"`           // Default model for this provider
 	DefaultTestModel string   `mapstructure:"default_test_model" json:"default_test_model,omitempty"` // Default model for manual provider testing
-	APIFormat        string   `mapstructure:"api_format" json:"api_format,omitempty"`               // Wire format: openai/chat_completions or openai/responses
-	Timeout          int      `mapstructure:"timeout" json:"timeout,omitempty"`                     // Timeout in seconds, default 30s
+	APIFormat        string   `mapstructure:"api_format" json:"api_format,omitempty"`                 // Wire format: openai/chat_completions or openai/responses
+	Timeout          int      `mapstructure:"timeout" json:"timeout,omitempty"`                       // Timeout in seconds, default 30s
 }
 
 // LoggerConfig contains logger configuration.
@@ -379,7 +385,9 @@ func DefaultConfig() *Config {
 			Compress:   true,
 		},
 		Storage: StorageConfig{
-			DBDir: "", // Empty means executable directory.
+			DBDir:  "", // Empty means executable directory.
+			DBType: "sqlite",
+			DBDSN:  "",
 		},
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
@@ -674,6 +682,46 @@ func (c *Config) DatabaseDir() string {
 		return wd
 	}
 	return "."
+}
+
+// DatabaseType returns the runtime database type.
+// Priority: NEKOBOT_DB_TYPE > storage.db_type > sqlite.
+func (c *Config) DatabaseType() string {
+	if env := strings.TrimSpace(os.Getenv(DBTypeEnv)); env != "" {
+		return normalizeDatabaseType(env)
+	}
+	c.mu.RLock()
+	cfgType := strings.TrimSpace(c.Storage.DBType)
+	c.mu.RUnlock()
+	if cfgType == "" {
+		return "sqlite"
+	}
+	return normalizeDatabaseType(cfgType)
+}
+
+// DatabaseDSN returns the runtime database DSN, if explicitly configured.
+// Priority: NEKOBOT_DB_DSN > storage.db_dsn.
+func (c *Config) DatabaseDSN() string {
+	if env := strings.TrimSpace(os.Getenv(DBDSNEnv)); env != "" {
+		return expandPath(env)
+	}
+	c.mu.RLock()
+	dsn := strings.TrimSpace(c.Storage.DBDSN)
+	c.mu.RUnlock()
+	return expandPath(dsn)
+}
+
+func normalizeDatabaseType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "sqlite", "sqlite3":
+		return "sqlite"
+	case "postgres", "postgresql", "pg":
+		return "postgres"
+	case "mysql", "mariadb":
+		return "mysql"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
 }
 
 // GetProviderConfig returns the configuration for a specific provider.

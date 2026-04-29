@@ -76,15 +76,34 @@ requires an explicit migration/restart workflow. A minimal file looks like this:
   },
   "webui": {
     "enabled": true,
-    "port": 0,
-    "username": "admin",
-    "password": ""
+    "port": 0
   }
 }
 ```
 
 Most runtime settings, including providers / agents / tools / channels, should be
 edited in WebUI and are persisted in the runtime database `nekobot.db`.
+
+The runtime database defaults to SQLite. Operators can switch the Ent-backed
+runtime store with environment variables:
+
+```bash
+# sqlite (default)
+export NEKOBOT_DB_TYPE=sqlite
+export NEKOBOT_DB_DSN=/var/lib/nekobot/nekobot.db
+
+# PostgreSQL
+export NEKOBOT_DB_TYPE=postgres
+export NEKOBOT_DB_DSN='postgres://nekobot:secret@postgres:5432/nekobot?sslmode=disable'
+
+# MySQL / MariaDB
+export NEKOBOT_DB_TYPE=mysql
+export NEKOBOT_DB_DSN='nekobot:secret@tcp(mysql:3306)/nekobot?parseTime=true'
+```
+
+`NEKOBOT_DB_DIR` remains the simple SQLite directory override. If
+`NEKOBOT_DB_DSN` is set for SQLite and looks like a plain file path, nekobot wraps
+it in the tuned SQLite DSN automatically.
 
 Tool Sessions now support a runtime transport selection:
 
@@ -133,6 +152,10 @@ This persists all runtime state in `./data`:
 - `./data/config/config.json`: bootstrap config, auto-created on first boot
 - `./data/db/nekobot.db`: runtime database for WebUI-managed settings
 - `./data/workspace`: workspace and local runtime files
+
+For PostgreSQL or MySQL deployments, set `NEKOBOT_DB_TYPE` and `NEKOBOT_DB_DSN`
+in `docker-compose.yml`; the mounted `./data/db` directory is then only needed
+for any local SQLite fallback you keep configured.
 
 After startup, open `http://127.0.0.1:18791` and finish configuration in WebUI.
 

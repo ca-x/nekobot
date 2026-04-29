@@ -14,10 +14,13 @@ const (
 	RuntimeDBName = "nekobot.db"
 )
 
-// RuntimeDBPath returns the unified runtime database path.
+// RuntimeDBPath returns the unified SQLite runtime database path.
 func RuntimeDBPath(cfg *Config) (string, error) {
 	if cfg == nil {
 		return "", fmt.Errorf("config is nil")
+	}
+	if cfg.DatabaseType() != "sqlite" {
+		return "", fmt.Errorf("runtime database type %q does not use a local SQLite path", cfg.DatabaseType())
 	}
 
 	dbDir := strings.TrimSpace(cfg.DatabaseDir())
@@ -31,8 +34,78 @@ func RuntimeDBPath(cfg *Config) (string, error) {
 	return filepath.Join(dbDir, RuntimeDBName), nil
 }
 
-// EnsureRuntimeDBFile ensures the runtime database file exists and returns its path.
+// RuntimeDBDisplayName returns a redacted runtime database identifier for logs and status APIs.
+func RuntimeDBDisplayName(cfg *Config) (string, error) {
+	dbType, dsn, err := RuntimeDBOpenConfig(cfg)
+	if err != nil {
+		return "", err
+	}
+	if dbType == "sqlite" {
+		if path, ok := sqliteFilePathFromDSN(dsn); ok {
+			return path, nil
+		}
+	}
+	return dbType + ":" + RedactDatabaseDSN(dsn), nil
+}
+
+// RedactDatabaseDSN hides credentials in a database DSN for logs and status APIs.
+func RedactDatabaseDSN(dsn string) string {
+	trimmed := strings.TrimSpace(dsn)
+	if trimmed == "" {
+		return trimmed
+	}
+	schemeIdx := strings.Index(trimmed, "://")
+	if schemeIdx < 0 {
+		authorityEnd := strings.IndexAny(trimmed, "/?")
+		if authorityEnd < 0 {
+			authorityEnd = len(trimmed)
+		}
+		authority := trimmed[:authorityEnd]
+		if at := strings.LastIndex(authority, "@"); at >= 0 {
+			return "****@" + trimmed[at+1:]
+		}
+		return trimmed
+	}
+	authorityStart := schemeIdx + len("://")
+	authorityEnd := strings.IndexAny(trimmed[authorityStart:], "/?")
+	if authorityEnd < 0 {
+		authorityEnd = len(trimmed)
+	} else {
+		authorityEnd += authorityStart
+	}
+	authority := trimmed[authorityStart:authorityEnd]
+	at := strings.LastIndex(authority, "@")
+	if at < 0 {
+		return trimmed
+	}
+	return trimmed[:authorityStart] + "****@" + authority[at+1:] + trimmed[authorityEnd:]
+}
+
+// EnsureRuntimeDBFile ensures the local SQLite runtime database file exists and returns its path.
+// Non-SQLite runtime databases are remote DSNs and do not need local file creation.
 func EnsureRuntimeDBFile(cfg *Config) (string, error) {
+	dbType, dsn, err := RuntimeDBOpenConfig(cfg)
+	if err != nil {
+		return "", err
+	}
+	if dbType != "sqlite" {
+		return RuntimeDBDisplayName(cfg)
+	}
+
+	if dbPath, ok := sqliteFilePathFromDSN(dsn); ok {
+		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+			return "", fmt.Errorf("create database directory: %w", err)
+		}
+		f, err := os.OpenFile(dbPath, os.O_RDWR|os.O_CREATE, 0o644)
+		if err != nil {
+			return "", fmt.Errorf("create runtime database file: %w", err)
+		}
+		if err := f.Close(); err != nil {
+			return "", fmt.Errorf("close runtime database file: %w", err)
+		}
+		return dbPath, nil
+	}
+
 	dbPath, err := RuntimeDBPath(cfg)
 	if err != nil {
 		return "", err
@@ -45,6 +118,25 @@ func EnsureRuntimeDBFile(cfg *Config) (string, error) {
 		return "", fmt.Errorf("close runtime database file: %w", err)
 	}
 	return dbPath, nil
+}
+
+func sqliteFilePathFromDSN(dsn string) (string, bool) {
+	trimmed := strings.TrimSpace(dsn)
+	if trimmed == "" || trimmed == ":memory:" || strings.HasPrefix(trimmed, "file::memory:") {
+		return "", false
+	}
+	value := trimmed
+	if strings.HasPrefix(value, "file:") {
+		value = strings.TrimPrefix(value, "file:")
+	}
+	if idx := strings.IndexByte(value, '?'); idx >= 0 {
+		value = value[:idx]
+	}
+	value = strings.TrimSpace(value)
+	if value == "" || value == ":memory:" {
+		return "", false
+	}
+	return value, true
 }
 
 // MigrateRuntimeDB copies the unified runtime database to a new location.

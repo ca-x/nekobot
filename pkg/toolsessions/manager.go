@@ -60,7 +60,7 @@ func NewManager(cfg *config.Config, log *logger.Logger, client *ent.Client) (*Ma
 		otpTTL:    normalizeOTPTTLSeconds(cfg.WebUI.ToolSessionOTPTTLSeconds),
 		otpCodes:  map[string]sessionOTP{},
 	}
-	dbPath, _ := config.RuntimeDBPath(cfg)
+	dbPath, _ := config.RuntimeDBDisplayName(cfg)
 
 	log.Info("Tool session storage initialized",
 		zap.String("db_path", dbPath),

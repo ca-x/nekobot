@@ -61,6 +61,9 @@ func (v *Validator) Validate(cfg *Config) error {
 	// Validate providers configuration
 	v.validateProviders(&cfg.Providers)
 
+	// Validate storage configuration
+	v.validateStorage(cfg)
+
 	// Validate channels configuration
 	v.validateChannels(&cfg.Channels)
 
@@ -97,6 +100,20 @@ func (v *Validator) Validate(cfg *Config) error {
 	}
 
 	return nil
+}
+
+func (v *Validator) validateStorage(cfg *Config) {
+	dbType := cfg.DatabaseType()
+	switch dbType {
+	case "sqlite":
+		return
+	case "postgres", "mysql":
+		if strings.TrimSpace(cfg.DatabaseDSN()) == "" {
+			v.addError("storage.db_dsn", fmt.Sprintf("db_dsn is required when db_type is %s", dbType))
+		}
+	default:
+		v.addError("storage.db_type", "db_type must be one of sqlite, postgres, or mysql")
+	}
 }
 
 // validateAgents validates agent configuration.

@@ -87,9 +87,9 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 		t.Fatalf("LoadFromFile failed: %v", err)
 	}
 
-	runtimeDBPath, err := config.RuntimeDBPath(cfg)
+	runtimeDBPath, err := config.RuntimeDBDisplayName(cfg)
 	if err != nil {
-		t.Fatalf("RuntimeDBPath failed: %v", err)
+		t.Fatalf("RuntimeDBDisplayName failed: %v", err)
 	}
 
 	s := &Server{
@@ -130,6 +130,7 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 		"memory_sys_bytes",
 		"provider_count",
 		"config_path",
+		"runtime_db_type",
 		"database_dir",
 		"runtime_db_path",
 		"workspace_path",
@@ -151,6 +152,9 @@ func TestHandleStatus_ReturnsExtendedFields(t *testing.T) {
 	}
 	if payload["database_dir"] != cfg.Storage.DBDir {
 		t.Fatalf("unexpected database_dir: %+v", payload["database_dir"])
+	}
+	if payload["runtime_db_type"] != "sqlite" {
+		t.Fatalf("unexpected runtime_db_type: %+v", payload["runtime_db_type"])
 	}
 	if payload["runtime_db_path"] != runtimeDBPath {
 		t.Fatalf("unexpected runtime_db_path: %+v", payload["runtime_db_path"])
