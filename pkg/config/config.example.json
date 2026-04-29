@@ -19,9 +19,6 @@
     "enabled": true,
     "port": 0,
     "public_base_url": "",
-    "username": "admin",
-    "password": "",
-    "secret": "",
     "tool_session_otp_ttl_seconds": 180
   }
 }
