@@ -137,6 +137,126 @@ func (c *Client) ReadWorkspaceFile(req *daemonv1.ReadWorkspaceFileRequest) (*dae
 	}
 	return &resp, nil
 }
+func (c *Client) ListChannelsRemote(req *daemonv1.ListChannelsRequest) (*daemonv1.ListChannelsResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ListChannels(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ListThreadsRemote(req *daemonv1.ListThreadsRequest) (*daemonv1.ListThreadsResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ListThreads(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) GetThreadRemote(req *daemonv1.GetThreadRequest) (*daemonv1.GetThreadResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.GetThread(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ReadMessagesRemote(req *daemonv1.ReadMessagesRequest) (*daemonv1.ReadMessagesResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ReadMessages(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) SendMessageRemote(req *daemonv1.SendMessageRequest) (*daemonv1.SendMessageResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.SendMessage(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) FollowThreadRemote(req *daemonv1.FollowThreadRequest) (*daemonv1.FollowThreadResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.FollowThread(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) UnfollowThreadRemote(req *daemonv1.UnfollowThreadRequest) (*daemonv1.UnfollowThreadResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.UnfollowThread(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) CreateCollaborationTaskRemote(req *daemonv1.CreateCollaborationTaskRequest) (*daemonv1.CreateCollaborationTaskResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.CreateCollaborationTask(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ListCollaborationTasksRemote(req *daemonv1.ListCollaborationTasksRequest) (*daemonv1.ListCollaborationTasksResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ListCollaborationTasks(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ClaimCollaborationTaskRemote(req *daemonv1.ClaimCollaborationTaskRequest) (*daemonv1.ClaimCollaborationTaskResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ClaimCollaborationTask(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) GetServerInfoRemote(req *daemonv1.ServerInfoRequest) (*daemonv1.ServerInfoResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.GetServerInfo(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) GetAgentProfileRemote(req *daemonv1.GetAgentProfileRequest) (*daemonv1.GetAgentProfileResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.GetAgentProfile(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) SetAgentEnvRemote(req *daemonv1.SetAgentEnvRequest) (*daemonv1.SetAgentEnvResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.SetAgentEnv(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ListAgentProfilesRemote(req *daemonv1.ListAgentProfilesRequest) (*daemonv1.ListAgentProfilesResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ListAgentProfiles(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ListAgentDMsRemote(req *daemonv1.ListAgentDMsRequest) (*daemonv1.ListAgentDMsResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ListAgentDMs(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ScheduleReminderRemote(req *daemonv1.ScheduleReminderRequest) (*daemonv1.ScheduleReminderResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ScheduleReminder(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ListRemindersRemote(req *daemonv1.ListRemindersRequest) (*daemonv1.ListRemindersResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ListReminders(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) CancelReminderRemote(req *daemonv1.CancelReminderRequest) (*daemonv1.CancelReminderResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.CancelReminder(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) LogActivityRemote(req *daemonv1.LogActivityRequest) (*daemonv1.LogActivityResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.LogActivity(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ListActivityRemote(req *daemonv1.ListActivityRequest) (*daemonv1.ListActivityResponse, error) {
+	if c.grpcClient != nil {
+		return c.grpcClient.ListActivity(c.rpcContext(), req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
 func (c *Client) rpcContext() context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	_ = cancel

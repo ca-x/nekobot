@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/tasks"
 )
@@ -49,5 +52,13 @@ func TestGRPCServiceWorkspaceRPCsAreUnimplementedWithoutLoader(t *testing.T) {
 	_, err := grpcSvc.ListWorkspaceTree(context.Background(), &daemonv1.ListWorkspaceTreeRequest{WorkspaceId: "w"})
 	if err == nil {
 		t.Fatalf("expected unimplemented error")
+	}
+}
+
+func TestGRPCServiceCollaborationRPCsAreUnimplementedWithoutBackend(t *testing.T) {
+	grpcSvc := NewGRPCService(nil, nil, nil, nil)
+	_, err := grpcSvc.GetServerInfo(context.Background(), &daemonv1.ServerInfoRequest{})
+	if status.Code(err) != codes.Unimplemented {
+		t.Fatalf("expected unimplemented error, got %v", err)
 	}
 }

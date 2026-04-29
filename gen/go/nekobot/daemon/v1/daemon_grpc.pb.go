@@ -19,12 +19,32 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DaemonControlService_RegisterMachine_FullMethodName    = "/nekobot.daemon.v1.DaemonControlService/RegisterMachine"
-	DaemonControlService_HeartbeatMachine_FullMethodName   = "/nekobot.daemon.v1.DaemonControlService/HeartbeatMachine"
-	DaemonControlService_FetchAssignedTasks_FullMethodName = "/nekobot.daemon.v1.DaemonControlService/FetchAssignedTasks"
-	DaemonControlService_UpdateTaskStatus_FullMethodName   = "/nekobot.daemon.v1.DaemonControlService/UpdateTaskStatus"
-	DaemonControlService_ListWorkspaceTree_FullMethodName  = "/nekobot.daemon.v1.DaemonControlService/ListWorkspaceTree"
-	DaemonControlService_ReadWorkspaceFile_FullMethodName  = "/nekobot.daemon.v1.DaemonControlService/ReadWorkspaceFile"
+	DaemonControlService_RegisterMachine_FullMethodName         = "/nekobot.daemon.v1.DaemonControlService/RegisterMachine"
+	DaemonControlService_HeartbeatMachine_FullMethodName        = "/nekobot.daemon.v1.DaemonControlService/HeartbeatMachine"
+	DaemonControlService_FetchAssignedTasks_FullMethodName      = "/nekobot.daemon.v1.DaemonControlService/FetchAssignedTasks"
+	DaemonControlService_UpdateTaskStatus_FullMethodName        = "/nekobot.daemon.v1.DaemonControlService/UpdateTaskStatus"
+	DaemonControlService_ListWorkspaceTree_FullMethodName       = "/nekobot.daemon.v1.DaemonControlService/ListWorkspaceTree"
+	DaemonControlService_ReadWorkspaceFile_FullMethodName       = "/nekobot.daemon.v1.DaemonControlService/ReadWorkspaceFile"
+	DaemonControlService_ListChannels_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/ListChannels"
+	DaemonControlService_ListThreads_FullMethodName             = "/nekobot.daemon.v1.DaemonControlService/ListThreads"
+	DaemonControlService_GetThread_FullMethodName               = "/nekobot.daemon.v1.DaemonControlService/GetThread"
+	DaemonControlService_ReadMessages_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/ReadMessages"
+	DaemonControlService_SendMessage_FullMethodName             = "/nekobot.daemon.v1.DaemonControlService/SendMessage"
+	DaemonControlService_FollowThread_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/FollowThread"
+	DaemonControlService_UnfollowThread_FullMethodName          = "/nekobot.daemon.v1.DaemonControlService/UnfollowThread"
+	DaemonControlService_CreateCollaborationTask_FullMethodName = "/nekobot.daemon.v1.DaemonControlService/CreateCollaborationTask"
+	DaemonControlService_ListCollaborationTasks_FullMethodName  = "/nekobot.daemon.v1.DaemonControlService/ListCollaborationTasks"
+	DaemonControlService_ClaimCollaborationTask_FullMethodName  = "/nekobot.daemon.v1.DaemonControlService/ClaimCollaborationTask"
+	DaemonControlService_GetServerInfo_FullMethodName           = "/nekobot.daemon.v1.DaemonControlService/GetServerInfo"
+	DaemonControlService_GetAgentProfile_FullMethodName         = "/nekobot.daemon.v1.DaemonControlService/GetAgentProfile"
+	DaemonControlService_SetAgentEnv_FullMethodName             = "/nekobot.daemon.v1.DaemonControlService/SetAgentEnv"
+	DaemonControlService_ListAgentProfiles_FullMethodName       = "/nekobot.daemon.v1.DaemonControlService/ListAgentProfiles"
+	DaemonControlService_ListAgentDMs_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/ListAgentDMs"
+	DaemonControlService_ScheduleReminder_FullMethodName        = "/nekobot.daemon.v1.DaemonControlService/ScheduleReminder"
+	DaemonControlService_ListReminders_FullMethodName           = "/nekobot.daemon.v1.DaemonControlService/ListReminders"
+	DaemonControlService_CancelReminder_FullMethodName          = "/nekobot.daemon.v1.DaemonControlService/CancelReminder"
+	DaemonControlService_LogActivity_FullMethodName             = "/nekobot.daemon.v1.DaemonControlService/LogActivity"
+	DaemonControlService_ListActivity_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/ListActivity"
 )
 
 // DaemonControlServiceClient is the client API for DaemonControlService service.
@@ -37,6 +57,26 @@ type DaemonControlServiceClient interface {
 	UpdateTaskStatus(ctx context.Context, in *UpdateTaskStatusRequest, opts ...grpc.CallOption) (*UpdateTaskStatusResponse, error)
 	ListWorkspaceTree(ctx context.Context, in *ListWorkspaceTreeRequest, opts ...grpc.CallOption) (*ListWorkspaceTreeResponse, error)
 	ReadWorkspaceFile(ctx context.Context, in *ReadWorkspaceFileRequest, opts ...grpc.CallOption) (*ReadWorkspaceFileResponse, error)
+	ListChannels(ctx context.Context, in *ListChannelsRequest, opts ...grpc.CallOption) (*ListChannelsResponse, error)
+	ListThreads(ctx context.Context, in *ListThreadsRequest, opts ...grpc.CallOption) (*ListThreadsResponse, error)
+	GetThread(ctx context.Context, in *GetThreadRequest, opts ...grpc.CallOption) (*GetThreadResponse, error)
+	ReadMessages(ctx context.Context, in *ReadMessagesRequest, opts ...grpc.CallOption) (*ReadMessagesResponse, error)
+	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
+	FollowThread(ctx context.Context, in *FollowThreadRequest, opts ...grpc.CallOption) (*FollowThreadResponse, error)
+	UnfollowThread(ctx context.Context, in *UnfollowThreadRequest, opts ...grpc.CallOption) (*UnfollowThreadResponse, error)
+	CreateCollaborationTask(ctx context.Context, in *CreateCollaborationTaskRequest, opts ...grpc.CallOption) (*CreateCollaborationTaskResponse, error)
+	ListCollaborationTasks(ctx context.Context, in *ListCollaborationTasksRequest, opts ...grpc.CallOption) (*ListCollaborationTasksResponse, error)
+	ClaimCollaborationTask(ctx context.Context, in *ClaimCollaborationTaskRequest, opts ...grpc.CallOption) (*ClaimCollaborationTaskResponse, error)
+	GetServerInfo(ctx context.Context, in *ServerInfoRequest, opts ...grpc.CallOption) (*ServerInfoResponse, error)
+	GetAgentProfile(ctx context.Context, in *GetAgentProfileRequest, opts ...grpc.CallOption) (*GetAgentProfileResponse, error)
+	SetAgentEnv(ctx context.Context, in *SetAgentEnvRequest, opts ...grpc.CallOption) (*SetAgentEnvResponse, error)
+	ListAgentProfiles(ctx context.Context, in *ListAgentProfilesRequest, opts ...grpc.CallOption) (*ListAgentProfilesResponse, error)
+	ListAgentDMs(ctx context.Context, in *ListAgentDMsRequest, opts ...grpc.CallOption) (*ListAgentDMsResponse, error)
+	ScheduleReminder(ctx context.Context, in *ScheduleReminderRequest, opts ...grpc.CallOption) (*ScheduleReminderResponse, error)
+	ListReminders(ctx context.Context, in *ListRemindersRequest, opts ...grpc.CallOption) (*ListRemindersResponse, error)
+	CancelReminder(ctx context.Context, in *CancelReminderRequest, opts ...grpc.CallOption) (*CancelReminderResponse, error)
+	LogActivity(ctx context.Context, in *LogActivityRequest, opts ...grpc.CallOption) (*LogActivityResponse, error)
+	ListActivity(ctx context.Context, in *ListActivityRequest, opts ...grpc.CallOption) (*ListActivityResponse, error)
 }
 
 type daemonControlServiceClient struct {
@@ -107,6 +147,206 @@ func (c *daemonControlServiceClient) ReadWorkspaceFile(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *daemonControlServiceClient) ListChannels(ctx context.Context, in *ListChannelsRequest, opts ...grpc.CallOption) (*ListChannelsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListChannelsResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListChannels_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ListThreads(ctx context.Context, in *ListThreadsRequest, opts ...grpc.CallOption) (*ListThreadsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListThreadsResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListThreads_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) GetThread(ctx context.Context, in *GetThreadRequest, opts ...grpc.CallOption) (*GetThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetThreadResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_GetThread_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ReadMessages(ctx context.Context, in *ReadMessagesRequest, opts ...grpc.CallOption) (*ReadMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadMessagesResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ReadMessages_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SendMessageResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_SendMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) FollowThread(ctx context.Context, in *FollowThreadRequest, opts ...grpc.CallOption) (*FollowThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FollowThreadResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_FollowThread_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) UnfollowThread(ctx context.Context, in *UnfollowThreadRequest, opts ...grpc.CallOption) (*UnfollowThreadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnfollowThreadResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_UnfollowThread_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) CreateCollaborationTask(ctx context.Context, in *CreateCollaborationTaskRequest, opts ...grpc.CallOption) (*CreateCollaborationTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateCollaborationTaskResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_CreateCollaborationTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ListCollaborationTasks(ctx context.Context, in *ListCollaborationTasksRequest, opts ...grpc.CallOption) (*ListCollaborationTasksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCollaborationTasksResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListCollaborationTasks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ClaimCollaborationTask(ctx context.Context, in *ClaimCollaborationTaskRequest, opts ...grpc.CallOption) (*ClaimCollaborationTaskResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClaimCollaborationTaskResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ClaimCollaborationTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) GetServerInfo(ctx context.Context, in *ServerInfoRequest, opts ...grpc.CallOption) (*ServerInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ServerInfoResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_GetServerInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) GetAgentProfile(ctx context.Context, in *GetAgentProfileRequest, opts ...grpc.CallOption) (*GetAgentProfileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAgentProfileResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_GetAgentProfile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) SetAgentEnv(ctx context.Context, in *SetAgentEnvRequest, opts ...grpc.CallOption) (*SetAgentEnvResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetAgentEnvResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_SetAgentEnv_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ListAgentProfiles(ctx context.Context, in *ListAgentProfilesRequest, opts ...grpc.CallOption) (*ListAgentProfilesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAgentProfilesResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListAgentProfiles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ListAgentDMs(ctx context.Context, in *ListAgentDMsRequest, opts ...grpc.CallOption) (*ListAgentDMsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAgentDMsResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListAgentDMs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ScheduleReminder(ctx context.Context, in *ScheduleReminderRequest, opts ...grpc.CallOption) (*ScheduleReminderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ScheduleReminderResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ScheduleReminder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ListReminders(ctx context.Context, in *ListRemindersRequest, opts ...grpc.CallOption) (*ListRemindersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRemindersResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListReminders_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) CancelReminder(ctx context.Context, in *CancelReminderRequest, opts ...grpc.CallOption) (*CancelReminderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelReminderResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_CancelReminder_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) LogActivity(ctx context.Context, in *LogActivityRequest, opts ...grpc.CallOption) (*LogActivityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LogActivityResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_LogActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ListActivity(ctx context.Context, in *ListActivityRequest, opts ...grpc.CallOption) (*ListActivityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListActivityResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DaemonControlServiceServer is the server API for DaemonControlService service.
 // All implementations must embed UnimplementedDaemonControlServiceServer
 // for forward compatibility.
@@ -117,6 +357,26 @@ type DaemonControlServiceServer interface {
 	UpdateTaskStatus(context.Context, *UpdateTaskStatusRequest) (*UpdateTaskStatusResponse, error)
 	ListWorkspaceTree(context.Context, *ListWorkspaceTreeRequest) (*ListWorkspaceTreeResponse, error)
 	ReadWorkspaceFile(context.Context, *ReadWorkspaceFileRequest) (*ReadWorkspaceFileResponse, error)
+	ListChannels(context.Context, *ListChannelsRequest) (*ListChannelsResponse, error)
+	ListThreads(context.Context, *ListThreadsRequest) (*ListThreadsResponse, error)
+	GetThread(context.Context, *GetThreadRequest) (*GetThreadResponse, error)
+	ReadMessages(context.Context, *ReadMessagesRequest) (*ReadMessagesResponse, error)
+	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
+	FollowThread(context.Context, *FollowThreadRequest) (*FollowThreadResponse, error)
+	UnfollowThread(context.Context, *UnfollowThreadRequest) (*UnfollowThreadResponse, error)
+	CreateCollaborationTask(context.Context, *CreateCollaborationTaskRequest) (*CreateCollaborationTaskResponse, error)
+	ListCollaborationTasks(context.Context, *ListCollaborationTasksRequest) (*ListCollaborationTasksResponse, error)
+	ClaimCollaborationTask(context.Context, *ClaimCollaborationTaskRequest) (*ClaimCollaborationTaskResponse, error)
+	GetServerInfo(context.Context, *ServerInfoRequest) (*ServerInfoResponse, error)
+	GetAgentProfile(context.Context, *GetAgentProfileRequest) (*GetAgentProfileResponse, error)
+	SetAgentEnv(context.Context, *SetAgentEnvRequest) (*SetAgentEnvResponse, error)
+	ListAgentProfiles(context.Context, *ListAgentProfilesRequest) (*ListAgentProfilesResponse, error)
+	ListAgentDMs(context.Context, *ListAgentDMsRequest) (*ListAgentDMsResponse, error)
+	ScheduleReminder(context.Context, *ScheduleReminderRequest) (*ScheduleReminderResponse, error)
+	ListReminders(context.Context, *ListRemindersRequest) (*ListRemindersResponse, error)
+	CancelReminder(context.Context, *CancelReminderRequest) (*CancelReminderResponse, error)
+	LogActivity(context.Context, *LogActivityRequest) (*LogActivityResponse, error)
+	ListActivity(context.Context, *ListActivityRequest) (*ListActivityResponse, error)
 	mustEmbedUnimplementedDaemonControlServiceServer()
 }
 
@@ -144,6 +404,66 @@ func (UnimplementedDaemonControlServiceServer) ListWorkspaceTree(context.Context
 }
 func (UnimplementedDaemonControlServiceServer) ReadWorkspaceFile(context.Context, *ReadWorkspaceFileRequest) (*ReadWorkspaceFileResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReadWorkspaceFile not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListChannels(context.Context, *ListChannelsRequest) (*ListChannelsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListChannels not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListThreads(context.Context, *ListThreadsRequest) (*ListThreadsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListThreads not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) GetThread(context.Context, *GetThreadRequest) (*GetThreadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetThread not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ReadMessages(context.Context, *ReadMessagesRequest) (*ReadMessagesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReadMessages not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendMessage not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) FollowThread(context.Context, *FollowThreadRequest) (*FollowThreadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FollowThread not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) UnfollowThread(context.Context, *UnfollowThreadRequest) (*UnfollowThreadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnfollowThread not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) CreateCollaborationTask(context.Context, *CreateCollaborationTaskRequest) (*CreateCollaborationTaskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCollaborationTask not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListCollaborationTasks(context.Context, *ListCollaborationTasksRequest) (*ListCollaborationTasksResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListCollaborationTasks not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ClaimCollaborationTask(context.Context, *ClaimCollaborationTaskRequest) (*ClaimCollaborationTaskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClaimCollaborationTask not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) GetServerInfo(context.Context, *ServerInfoRequest) (*ServerInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetServerInfo not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) GetAgentProfile(context.Context, *GetAgentProfileRequest) (*GetAgentProfileResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAgentProfile not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) SetAgentEnv(context.Context, *SetAgentEnvRequest) (*SetAgentEnvResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetAgentEnv not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListAgentProfiles(context.Context, *ListAgentProfilesRequest) (*ListAgentProfilesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListAgentProfiles not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListAgentDMs(context.Context, *ListAgentDMsRequest) (*ListAgentDMsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListAgentDMs not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ScheduleReminder(context.Context, *ScheduleReminderRequest) (*ScheduleReminderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ScheduleReminder not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListReminders(context.Context, *ListRemindersRequest) (*ListRemindersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListReminders not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) CancelReminder(context.Context, *CancelReminderRequest) (*CancelReminderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CancelReminder not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) LogActivity(context.Context, *LogActivityRequest) (*LogActivityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LogActivity not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListActivity(context.Context, *ListActivityRequest) (*ListActivityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListActivity not implemented")
 }
 func (UnimplementedDaemonControlServiceServer) mustEmbedUnimplementedDaemonControlServiceServer() {}
 func (UnimplementedDaemonControlServiceServer) testEmbeddedByValue()                              {}
@@ -274,6 +594,366 @@ func _DaemonControlService_ReadWorkspaceFile_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonControlService_ListChannels_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListChannelsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListChannels(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListChannels_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListChannels(ctx, req.(*ListChannelsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ListThreads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListThreadsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListThreads(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListThreads_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListThreads(ctx, req.(*ListThreadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_GetThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).GetThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_GetThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).GetThread(ctx, req.(*GetThreadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ReadMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ReadMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ReadMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ReadMessages(ctx, req.(*ReadMessagesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_SendMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).SendMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_SendMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).SendMessage(ctx, req.(*SendMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_FollowThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FollowThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).FollowThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_FollowThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).FollowThread(ctx, req.(*FollowThreadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_UnfollowThread_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnfollowThreadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).UnfollowThread(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_UnfollowThread_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).UnfollowThread(ctx, req.(*UnfollowThreadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_CreateCollaborationTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateCollaborationTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).CreateCollaborationTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_CreateCollaborationTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).CreateCollaborationTask(ctx, req.(*CreateCollaborationTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ListCollaborationTasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCollaborationTasksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListCollaborationTasks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListCollaborationTasks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListCollaborationTasks(ctx, req.(*ListCollaborationTasksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ClaimCollaborationTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClaimCollaborationTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ClaimCollaborationTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ClaimCollaborationTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ClaimCollaborationTask(ctx, req.(*ClaimCollaborationTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_GetServerInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ServerInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).GetServerInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_GetServerInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).GetServerInfo(ctx, req.(*ServerInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_GetAgentProfile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAgentProfileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).GetAgentProfile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_GetAgentProfile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).GetAgentProfile(ctx, req.(*GetAgentProfileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_SetAgentEnv_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetAgentEnvRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).SetAgentEnv(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_SetAgentEnv_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).SetAgentEnv(ctx, req.(*SetAgentEnvRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ListAgentProfiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAgentProfilesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListAgentProfiles(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListAgentProfiles_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListAgentProfiles(ctx, req.(*ListAgentProfilesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ListAgentDMs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAgentDMsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListAgentDMs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListAgentDMs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListAgentDMs(ctx, req.(*ListAgentDMsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ScheduleReminder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScheduleReminderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ScheduleReminder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ScheduleReminder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ScheduleReminder(ctx, req.(*ScheduleReminderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ListReminders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRemindersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListReminders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListReminders_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListReminders(ctx, req.(*ListRemindersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_CancelReminder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelReminderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).CancelReminder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_CancelReminder_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).CancelReminder(ctx, req.(*CancelReminderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_LogActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LogActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).LogActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_LogActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).LogActivity(ctx, req.(*LogActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ListActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListActivity(ctx, req.(*ListActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DaemonControlService_ServiceDesc is the grpc.ServiceDesc for DaemonControlService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -304,6 +984,86 @@ var DaemonControlService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReadWorkspaceFile",
 			Handler:    _DaemonControlService_ReadWorkspaceFile_Handler,
+		},
+		{
+			MethodName: "ListChannels",
+			Handler:    _DaemonControlService_ListChannels_Handler,
+		},
+		{
+			MethodName: "ListThreads",
+			Handler:    _DaemonControlService_ListThreads_Handler,
+		},
+		{
+			MethodName: "GetThread",
+			Handler:    _DaemonControlService_GetThread_Handler,
+		},
+		{
+			MethodName: "ReadMessages",
+			Handler:    _DaemonControlService_ReadMessages_Handler,
+		},
+		{
+			MethodName: "SendMessage",
+			Handler:    _DaemonControlService_SendMessage_Handler,
+		},
+		{
+			MethodName: "FollowThread",
+			Handler:    _DaemonControlService_FollowThread_Handler,
+		},
+		{
+			MethodName: "UnfollowThread",
+			Handler:    _DaemonControlService_UnfollowThread_Handler,
+		},
+		{
+			MethodName: "CreateCollaborationTask",
+			Handler:    _DaemonControlService_CreateCollaborationTask_Handler,
+		},
+		{
+			MethodName: "ListCollaborationTasks",
+			Handler:    _DaemonControlService_ListCollaborationTasks_Handler,
+		},
+		{
+			MethodName: "ClaimCollaborationTask",
+			Handler:    _DaemonControlService_ClaimCollaborationTask_Handler,
+		},
+		{
+			MethodName: "GetServerInfo",
+			Handler:    _DaemonControlService_GetServerInfo_Handler,
+		},
+		{
+			MethodName: "GetAgentProfile",
+			Handler:    _DaemonControlService_GetAgentProfile_Handler,
+		},
+		{
+			MethodName: "SetAgentEnv",
+			Handler:    _DaemonControlService_SetAgentEnv_Handler,
+		},
+		{
+			MethodName: "ListAgentProfiles",
+			Handler:    _DaemonControlService_ListAgentProfiles_Handler,
+		},
+		{
+			MethodName: "ListAgentDMs",
+			Handler:    _DaemonControlService_ListAgentDMs_Handler,
+		},
+		{
+			MethodName: "ScheduleReminder",
+			Handler:    _DaemonControlService_ScheduleReminder_Handler,
+		},
+		{
+			MethodName: "ListReminders",
+			Handler:    _DaemonControlService_ListReminders_Handler,
+		},
+		{
+			MethodName: "CancelReminder",
+			Handler:    _DaemonControlService_CancelReminder_Handler,
+		},
+		{
+			MethodName: "LogActivity",
+			Handler:    _DaemonControlService_LogActivity_Handler,
+		},
+		{
+			MethodName: "ListActivity",
+			Handler:    _DaemonControlService_ListActivity_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

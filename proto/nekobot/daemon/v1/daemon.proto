@@ -141,6 +141,284 @@ message ReadWorkspaceFileResponse {
   int64 size_bytes = 5;
 }
 
+message ChannelRecord {
+  string target = 1;
+  string channel_id = 2;
+  string display_name = 3;
+  string channel_type = 4;
+  bool enabled = 5;
+}
+
+message ListChannelsRequest {
+  uint32 limit = 1;
+}
+
+message ListChannelsResponse {
+  repeated ChannelRecord channels = 1;
+}
+
+message ThreadRecord {
+  string target = 1;
+  string thread_id = 2;
+  string topic = 3;
+  string summary = 4;
+  string runtime_id = 5;
+  uint32 message_count = 6;
+  int64 created_time_unix = 7;
+  int64 updated_time_unix = 8;
+  bool followed = 9;
+}
+
+message ListThreadsRequest {
+  string target_prefix = 1;
+  uint32 limit = 2;
+}
+
+message ListThreadsResponse {
+  repeated ThreadRecord threads = 1;
+}
+
+message GetThreadRequest {
+  string target = 1;
+}
+
+message GetThreadResponse {
+  ThreadRecord thread = 1;
+}
+
+message CollaborationMessage {
+  string message_id = 1;
+  string target = 2;
+  string thread_id = 3;
+  string role = 4;
+  string content = 5;
+  string sender_runtime_id = 6;
+  string sender_display_name = 7;
+  string reply_to_message_id = 8;
+  int64 created_time_unix = 9;
+}
+
+message ReadMessagesRequest {
+  string target = 1;
+  uint32 limit = 2;
+}
+
+message ReadMessagesResponse {
+  repeated CollaborationMessage messages = 1;
+}
+
+message SendMessageRequest {
+  string target = 1;
+  string role = 2;
+  string content = 3;
+  string sender_runtime_id = 4;
+  string sender_display_name = 5;
+  string reply_to_message_id = 6;
+  bool emit_outbound = 7;
+}
+
+message SendMessageResponse {
+  bool accepted = 1;
+  CollaborationMessage message = 2;
+}
+
+message FollowThreadRequest {
+  string target = 1;
+  string runtime_id = 2;
+}
+
+message FollowThreadResponse {
+  bool accepted = 1;
+}
+
+message UnfollowThreadRequest {
+  string target = 1;
+  string runtime_id = 2;
+}
+
+message UnfollowThreadResponse {
+  bool accepted = 1;
+}
+
+message CreateCollaborationTaskRequest {
+  string target = 1;
+  string summary = 2;
+  string runtime_id = 3;
+  string created_by_user_id = 4;
+}
+
+message CreateCollaborationTaskResponse {
+  Task task = 1;
+}
+
+message ListCollaborationTasksRequest {
+  string target = 1;
+  string runtime_id = 2;
+  uint32 limit = 3;
+}
+
+message ListCollaborationTasksResponse {
+  repeated Task tasks = 1;
+}
+
+message ClaimCollaborationTaskRequest {
+  string task_id = 1;
+  string runtime_id = 2;
+}
+
+message ClaimCollaborationTaskResponse {
+  Task task = 1;
+}
+
+message ServerInfoRequest {
+}
+
+message ServerInfoResponse {
+  string server_name = 1;
+  string version = 2;
+  repeated ChannelRecord channels = 3;
+  repeated AgentProfile agents = 4;
+}
+
+message EnvVar {
+  string name = 1;
+  string value = 2;
+  bool secret = 3;
+}
+
+message SkillRecord {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string version = 4;
+  bool enabled = 5;
+  bool always = 6;
+  bool eligible = 7;
+  string file_path = 8;
+}
+
+message AgentProfile {
+  string runtime_id = 1;
+  string name = 2;
+  string display_name = 3;
+  string description = 4;
+  bool enabled = 5;
+  string provider = 6;
+  string model = 7;
+  repeated EnvVar env = 8;
+  repeated SkillRecord skills = 9;
+  repeated string dm_targets = 10;
+}
+
+message GetAgentProfileRequest {
+  string runtime_id = 1;
+}
+
+message GetAgentProfileResponse {
+  AgentProfile profile = 1;
+}
+
+message SetAgentEnvRequest {
+  string runtime_id = 1;
+  repeated EnvVar env = 2;
+}
+
+message SetAgentEnvResponse {
+  AgentProfile profile = 1;
+}
+
+message ListAgentProfilesRequest {
+  uint32 limit = 1;
+}
+
+message ListAgentProfilesResponse {
+  repeated AgentProfile profiles = 1;
+}
+
+message ListAgentDMsRequest {
+  string runtime_id = 1;
+  uint32 limit = 2;
+}
+
+message ListAgentDMsResponse {
+  repeated ChannelRecord dms = 1;
+}
+
+message ReminderRecord {
+  string reminder_id = 1;
+  string target = 2;
+  string schedule_kind = 3;
+  string schedule = 4;
+  string prompt = 5;
+  bool enabled = 6;
+  int64 next_run_unix = 7;
+  int64 last_run_unix = 8;
+  uint32 run_count = 9;
+  string last_error = 10;
+}
+
+message ScheduleReminderRequest {
+  string target = 1;
+  string name = 2;
+  string schedule_kind = 3;
+  string schedule = 4;
+  string prompt = 5;
+  repeated string skills = 6;
+}
+
+message ScheduleReminderResponse {
+  ReminderRecord reminder = 1;
+}
+
+message ListRemindersRequest {
+  string target = 1;
+  uint32 limit = 2;
+}
+
+message ListRemindersResponse {
+  repeated ReminderRecord reminders = 1;
+}
+
+message CancelReminderRequest {
+  string reminder_id = 1;
+}
+
+message CancelReminderResponse {
+  bool accepted = 1;
+}
+
+message ActivityRecord {
+  string activity_id = 1;
+  string target = 2;
+  string runtime_id = 3;
+  string kind = 4;
+  string summary = 5;
+  string detail = 6;
+  int64 created_time_unix = 7;
+}
+
+message LogActivityRequest {
+  string target = 1;
+  string runtime_id = 2;
+  string kind = 3;
+  string summary = 4;
+  string detail = 5;
+}
+
+message LogActivityResponse {
+  ActivityRecord activity = 1;
+}
+
+message ListActivityRequest {
+  string target = 1;
+  string runtime_id = 2;
+  uint32 limit = 3;
+}
+
+message ListActivityResponse {
+  repeated ActivityRecord activities = 1;
+}
+
 service DaemonControlService {
   rpc RegisterMachine(RegisterMachineRequest) returns (RegisterMachineResponse);
   rpc HeartbeatMachine(HeartbeatMachineRequest) returns (HeartbeatMachineResponse);
@@ -148,4 +426,24 @@ service DaemonControlService {
   rpc UpdateTaskStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);
   rpc ListWorkspaceTree(ListWorkspaceTreeRequest) returns (ListWorkspaceTreeResponse);
   rpc ReadWorkspaceFile(ReadWorkspaceFileRequest) returns (ReadWorkspaceFileResponse);
+  rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
+  rpc ListThreads(ListThreadsRequest) returns (ListThreadsResponse);
+  rpc GetThread(GetThreadRequest) returns (GetThreadResponse);
+  rpc ReadMessages(ReadMessagesRequest) returns (ReadMessagesResponse);
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc FollowThread(FollowThreadRequest) returns (FollowThreadResponse);
+  rpc UnfollowThread(UnfollowThreadRequest) returns (UnfollowThreadResponse);
+  rpc CreateCollaborationTask(CreateCollaborationTaskRequest) returns (CreateCollaborationTaskResponse);
+  rpc ListCollaborationTasks(ListCollaborationTasksRequest) returns (ListCollaborationTasksResponse);
+  rpc ClaimCollaborationTask(ClaimCollaborationTaskRequest) returns (ClaimCollaborationTaskResponse);
+  rpc GetServerInfo(ServerInfoRequest) returns (ServerInfoResponse);
+  rpc GetAgentProfile(GetAgentProfileRequest) returns (GetAgentProfileResponse);
+  rpc SetAgentEnv(SetAgentEnvRequest) returns (SetAgentEnvResponse);
+  rpc ListAgentProfiles(ListAgentProfilesRequest) returns (ListAgentProfilesResponse);
+  rpc ListAgentDMs(ListAgentDMsRequest) returns (ListAgentDMsResponse);
+  rpc ScheduleReminder(ScheduleReminderRequest) returns (ScheduleReminderResponse);
+  rpc ListReminders(ListRemindersRequest) returns (ListRemindersResponse);
+  rpc CancelReminder(CancelReminderRequest) returns (CancelReminderResponse);
+  rpc LogActivity(LogActivityRequest) returns (LogActivityResponse);
+  rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
 }

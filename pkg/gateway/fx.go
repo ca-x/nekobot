@@ -7,20 +7,41 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 
+	"nekobot/pkg/audit"
+	"nekobot/pkg/channels"
 	"nekobot/pkg/commands"
 	"nekobot/pkg/config"
+	"nekobot/pkg/cron"
 	"nekobot/pkg/logger"
+	"nekobot/pkg/runtimeagents"
+	"nekobot/pkg/skills"
 )
 
 // Module provides the gateway server for fx dependency injection.
 var Module = fx.Module("gateway",
 	fx.Provide(NewServer),
 	fx.Provide(provideGatewayController),
+	fx.Invoke(attachCollaborationManagers),
 	fx.Invoke(registerLifecycle),
 )
 
 func provideGatewayController(cfg *config.Config, loader *config.Loader, log *logger.Logger) commands.GatewayController {
 	return NewController(cfg, loader, log)
+}
+
+func attachCollaborationManagers(
+	s *Server,
+	chanMgr *channels.Manager,
+	cronMgr *cron.Manager,
+	skillsMgr *skills.Manager,
+	runtimeMgr *runtimeagents.Manager,
+	auditLogger *audit.Logger,
+) {
+	s.channels = chanMgr
+	s.cronMgr = cronMgr
+	s.skillsMgr = skillsMgr
+	s.runtimeMgr = runtimeMgr
+	s.auditLogger = auditLogger
 }
 
 func registerLifecycle(lc fx.Lifecycle, s *Server, cfg *config.Config, log *logger.Logger) {

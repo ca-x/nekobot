@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -25,13 +26,16 @@ import (
 	"nekobot/pkg/approval"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/config"
+	"nekobot/pkg/cron"
 	"nekobot/pkg/daemonhost"
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
 	"nekobot/pkg/providers"
+	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
+	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
@@ -189,6 +193,264 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 	if body["status"] != "ok" {
 		t.Fatalf("expected status ok, got %s", body["status"])
+	}
+}
+
+func TestDaemonCollaborationSendReadAndFollowThread(t *testing.T) {
+	s := newTestServer(t)
+	s.config.Sessions.Sources.Gateway = true
+	s.sessionMgr = session.NewManager(t.TempDir(), s.config.Sessions)
+	store, err := state.NewFileStore(s.logger, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-collab-state.json")})
+	if err != nil {
+		t.Fatalf("new state store: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("close state store: %v", err)
+		}
+	})
+	s.kvStore = store
+
+	sendResp, err := s.SendMessage(context.Background(), &daemonv1.SendMessageRequest{
+		Target:            "#websocket:thread-a",
+		Content:           "daemon reply",
+		SenderRuntimeId:   "runtime-a",
+		SenderDisplayName: "Agent A",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+	if !sendResp.Accepted || sendResp.Message.GetTarget() != "#websocket:thread-a" {
+		t.Fatalf("unexpected send response: %+v", sendResp)
+	}
+
+	readResp, err := s.ReadMessages(context.Background(), &daemonv1.ReadMessagesRequest{Target: "#websocket:thread-a", Limit: 10})
+	if err != nil {
+		t.Fatalf("ReadMessages failed: %v", err)
+	}
+	if len(readResp.Messages) != 1 || readResp.Messages[0].Content != "daemon reply" || readResp.Messages[0].Role != "assistant" {
+		t.Fatalf("unexpected messages: %+v", readResp.Messages)
+	}
+
+	if _, err := s.FollowThread(context.Background(), &daemonv1.FollowThreadRequest{Target: "#websocket:thread-a", RuntimeId: "runtime-a"}); err != nil {
+		t.Fatalf("FollowThread failed: %v", err)
+	}
+	listResp, err := s.ListThreads(context.Background(), &daemonv1.ListThreadsRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListThreads failed: %v", err)
+	}
+	if len(listResp.Threads) != 1 || !listResp.Threads[0].Followed || listResp.Threads[0].Target != "#websocket:thread-a" {
+		t.Fatalf("unexpected threads: %+v", listResp.Threads)
+	}
+
+	if _, err := s.SendMessage(context.Background(), &daemonv1.SendMessageRequest{Target: "dm:@runtime-b", Content: "hello peer"}); err != nil {
+		t.Fatalf("SendMessage DM failed: %v", err)
+	}
+	readDM, err := s.ReadMessages(context.Background(), &daemonv1.ReadMessagesRequest{Target: "dm:@runtime-b", Limit: 10})
+	if err != nil {
+		t.Fatalf("ReadMessages DM failed: %v", err)
+	}
+	if len(readDM.Messages) != 1 || readDM.Messages[0].Target != "dm:@runtime-b" {
+		t.Fatalf("unexpected DM messages: %+v", readDM.Messages)
+	}
+}
+
+func TestDaemonCollaborationTasks(t *testing.T) {
+	s := newTestServer(t)
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	log := s.logger
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	s.agent = ag
+
+	createResp, err := s.CreateCollaborationTask(context.Background(), &daemonv1.CreateCollaborationTaskRequest{
+		Target:          "#websocket:thread-task",
+		Summary:         "do work",
+		RuntimeId:       "runtime-a",
+		CreatedByUserId: "tester",
+	})
+	if err != nil {
+		t.Fatalf("CreateCollaborationTask failed: %v", err)
+	}
+	if createResp.Task.GetTaskId() == "" || createResp.Task.GetThreadId() != "thread-task" {
+		t.Fatalf("unexpected task: %+v", createResp.Task)
+	}
+
+	claimResp, err := s.ClaimCollaborationTask(context.Background(), &daemonv1.ClaimCollaborationTaskRequest{
+		TaskId:    createResp.Task.GetTaskId(),
+		RuntimeId: "runtime-a",
+	})
+	if err != nil {
+		t.Fatalf("ClaimCollaborationTask failed: %v", err)
+	}
+	if claimResp.Task.GetState() != string(tasks.StateClaimed) {
+		t.Fatalf("expected claimed task, got %+v", claimResp.Task)
+	}
+
+	listResp, err := s.ListCollaborationTasks(context.Background(), &daemonv1.ListCollaborationTasksRequest{Target: "#websocket:thread-task", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListCollaborationTasks failed: %v", err)
+	}
+	if len(listResp.Tasks) != 1 || listResp.Tasks[0].GetTaskId() != createResp.Task.GetTaskId() {
+		t.Fatalf("unexpected tasks: %+v", listResp.Tasks)
+	}
+}
+
+func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
+	s := newTestServer(t)
+	store, err := state.NewFileStore(s.logger, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-collab-state.json")})
+	if err != nil {
+		t.Fatalf("new state store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	s.kvStore = store
+
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	client, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := config.EnsureRuntimeEntSchema(client); err != nil {
+		t.Fatalf("ensure ent schema: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, s.logger, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	runtimeItem, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "codex",
+		DisplayName: "Codex Agent",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	s.runtimeMgr = runtimeMgr
+
+	workspaceDir := t.TempDir()
+	skillsDir := filepath.Join(workspaceDir, "skills", "review")
+	if err := os.MkdirAll(skillsDir, 0755); err != nil {
+		t.Fatalf("create skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "SKILL.md"), []byte("---\nid: review\nname: Review\ndescription: Review code\nenabled: true\n---\nDo review."), 0644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+	skillsMgr := skills.NewManager(s.logger, filepath.Join(workspaceDir, "skills"), false)
+	if err := skillsMgr.Discover(); err != nil {
+		t.Fatalf("discover skills: %v", err)
+	}
+	s.skillsMgr = skillsMgr
+
+	envResp, err := s.SetAgentEnv(context.Background(), &daemonv1.SetAgentEnvRequest{
+		RuntimeId: runtimeItem.ID,
+		Env: []*daemonv1.EnvVar{
+			{Name: "NEKOBOT_TEST", Value: "ok"},
+			{Name: "TOKEN", Value: "secret", Secret: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SetAgentEnv failed: %v", err)
+	}
+	if envResp.Profile.GetRuntimeId() != runtimeItem.ID || len(envResp.Profile.Env) != 2 {
+		t.Fatalf("unexpected env profile: %+v", envResp.Profile)
+	}
+	foundSkill := false
+	for _, skill := range envResp.Profile.Skills {
+		if skill.GetId() == "review" {
+			foundSkill = true
+		}
+	}
+	if !foundSkill {
+		t.Fatalf("expected skill inventory to include review, got %+v", envResp.Profile.Skills)
+	}
+
+	info, err := s.GetServerInfo(context.Background(), &daemonv1.ServerInfoRequest{})
+	if err != nil {
+		t.Fatalf("GetServerInfo failed: %v", err)
+	}
+	if len(info.Agents) != 1 || info.Agents[0].GetRuntimeId() != runtimeItem.ID {
+		t.Fatalf("unexpected server info agents: %+v", info.Agents)
+	}
+
+	activity, err := s.LogActivity(context.Background(), &daemonv1.LogActivityRequest{
+		Target:    "#websocket:thread-a",
+		RuntimeId: runtimeItem.ID,
+		Kind:      "review",
+		Summary:   "reviewed proto",
+	})
+	if err != nil {
+		t.Fatalf("LogActivity failed: %v", err)
+	}
+	if activity.Activity.GetActivityId() == "" {
+		t.Fatalf("expected activity id")
+	}
+	list, err := s.ListActivity(context.Background(), &daemonv1.ListActivityRequest{RuntimeId: runtimeItem.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListActivity failed: %v", err)
+	}
+	if len(list.Activities) != 1 || list.Activities[0].GetSummary() != "reviewed proto" {
+		t.Fatalf("unexpected activities: %+v", list.Activities)
+	}
+}
+
+func TestDaemonCollaborationReminders(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	log, err := logger.New(&logger.Config{Level: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := config.EnsureRuntimeEntSchema(client); err != nil {
+		t.Fatalf("ensure ent schema: %v", err)
+	}
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-collab-state.json")})
+	if err != nil {
+		t.Fatalf("new state store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	s := newTestServer(t)
+	s.kvStore = store
+	s.cronMgr = cron.New(log, &agent.Agent{}, client)
+	t.Cleanup(func() { _ = s.cronMgr.Stop() })
+
+	resp, err := s.ScheduleReminder(context.Background(), &daemonv1.ScheduleReminderRequest{
+		Target:       "#websocket:thread-reminder",
+		Name:         "check later",
+		ScheduleKind: "every",
+		Schedule:     "1h",
+		Prompt:       "check status",
+	})
+	if err != nil {
+		t.Fatalf("ScheduleReminder failed: %v", err)
+	}
+	if resp.Reminder.GetReminderId() == "" || resp.Reminder.GetTarget() != "#websocket:thread-reminder" {
+		t.Fatalf("unexpected reminder: %+v", resp.Reminder)
+	}
+	listResp, err := s.ListReminders(context.Background(), &daemonv1.ListRemindersRequest{Target: "#websocket:thread-reminder", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListReminders failed: %v", err)
+	}
+	if len(listResp.Reminders) != 1 || listResp.Reminders[0].GetReminderId() != resp.Reminder.GetReminderId() {
+		t.Fatalf("unexpected reminders: %+v", listResp.Reminders)
+	}
+	cancelResp, err := s.CancelReminder(context.Background(), &daemonv1.CancelReminderRequest{ReminderId: resp.Reminder.GetReminderId()})
+	if err != nil {
+		t.Fatalf("CancelReminder failed: %v", err)
+	}
+	if !cancelResp.Accepted {
+		t.Fatalf("expected cancel accepted")
 	}
 }
 
@@ -2764,5 +3026,100 @@ func TestGatewayGRPCFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 	}
 	if messages[len(messages)-1].Role != "assistant" || messages[len(messages)-1].Content != "grpc-ok" {
 		t.Fatalf("unexpected final session message: %+v", messages[len(messages)-1])
+	}
+}
+
+func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Port = 0
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Sessions.Sources.Gateway = true
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, store, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+	s := NewServer(cfg, log, ag, bus.NewLocalBus(log, 10), nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, process.NewManager(log), sessionMgr, nil, store)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	httpServer := &http.Server{Handler: h2c.NewHandler(s.mixedHandler(), &http2.Server{})}
+	defer func() { _ = httpServer.Shutdown(context.Background()) }()
+	go func() { _ = httpServer.Serve(ln) }()
+
+	token := "daemon-test-token"
+	if err := store.Set(context.Background(), "daemonhost.auth.token", token); err != nil {
+		t.Fatalf("seed daemon token: %v", err)
+	}
+	client, err := daemonhost.NewGRPCClient(ln.Addr().String(), token)
+	if err != nil {
+		t.Fatalf("new grpc client: %v", err)
+	}
+	defer client.Close()
+
+	sendResp, err := client.SendMessageRemote(&daemonv1.SendMessageRequest{Target: "#websocket:grpc-thread", Content: "hello from daemon"})
+	if err != nil {
+		t.Fatalf("SendMessageRemote failed: %v", err)
+	}
+	if !sendResp.Accepted {
+		t.Fatalf("expected accepted send response")
+	}
+	readResp, err := client.ReadMessagesRemote(&daemonv1.ReadMessagesRequest{Target: "#websocket:grpc-thread", Limit: 10})
+	if err != nil {
+		t.Fatalf("ReadMessagesRemote failed: %v", err)
+	}
+	if len(readResp.Messages) != 1 || readResp.Messages[0].Content != "hello from daemon" {
+		t.Fatalf("unexpected messages: %+v", readResp.Messages)
+	}
+	if _, err := client.FollowThreadRemote(&daemonv1.FollowThreadRequest{Target: "#websocket:grpc-thread", RuntimeId: "runtime-a"}); err != nil {
+		t.Fatalf("FollowThreadRemote failed: %v", err)
+	}
+	threads, err := client.ListThreadsRemote(&daemonv1.ListThreadsRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListThreadsRemote failed: %v", err)
+	}
+	if len(threads.Threads) != 1 || !threads.Threads[0].Followed {
+		t.Fatalf("unexpected threads: %+v", threads.Threads)
+	}
+	if _, err := client.SetAgentEnvRemote(&daemonv1.SetAgentEnvRequest{
+		RuntimeId: "default",
+		Env:       []*daemonv1.EnvVar{{Name: "NEKOBOT_MODE", Value: "test"}},
+	}); err != nil {
+		t.Fatalf("SetAgentEnvRemote failed: %v", err)
+	}
+	profiles, err := client.ListAgentProfilesRemote(&daemonv1.ListAgentProfilesRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAgentProfilesRemote failed: %v", err)
+	}
+	if len(profiles.Profiles) == 0 || len(profiles.Profiles[0].Env) != 1 {
+		t.Fatalf("unexpected profiles: %+v", profiles.Profiles)
+	}
+	activity, err := client.LogActivityRemote(&daemonv1.LogActivityRequest{Target: "#websocket:grpc-thread", RuntimeId: "default", Summary: "grpc activity"})
+	if err != nil {
+		t.Fatalf("LogActivityRemote failed: %v", err)
+	}
+	if activity.Activity.GetActivityId() == "" {
+		t.Fatalf("expected activity id")
+	}
+	taskResp, err := client.CreateCollaborationTaskRemote(&daemonv1.CreateCollaborationTaskRequest{Target: "#websocket:grpc-thread", Summary: "do grpc work", RuntimeId: "runtime-a"})
+	if err != nil {
+		t.Fatalf("CreateCollaborationTaskRemote failed: %v", err)
+	}
+	if taskResp.Task.GetTaskId() == "" {
+		t.Fatalf("expected task id")
 	}
 }

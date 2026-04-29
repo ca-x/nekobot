@@ -28,14 +28,18 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/approval"
+	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
+	"nekobot/pkg/channels"
 	"nekobot/pkg/config"
+	"nekobot/pkg/cron"
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
+	"nekobot/pkg/skills"
 	"nekobot/pkg/state"
 	"nekobot/pkg/storage/ent"
 	"nekobot/pkg/tasks"
@@ -89,6 +93,7 @@ type Server struct {
 	config                    *config.Config
 	logger                    *logger.Logger
 	agent                     *agent.Agent
+	channels                  *channels.Manager
 	bus                       bus.Bus
 	router                    websocketRouter
 	externalAgent             *externalagent.Manager
@@ -99,6 +104,10 @@ type Server struct {
 	entClient                 *ent.Client
 	taskStore                 *tasks.Store
 	kvStore                   state.KV
+	cronMgr                   *cron.Manager
+	skillsMgr                 *skills.Manager
+	runtimeMgr                *runtimeagents.Manager
+	auditLogger               *audit.Logger
 	grpcServer                *grpc.Server
 	mux                       *http.ServeMux
 	server                    *http.Server
@@ -203,6 +212,7 @@ func (s *Server) setupGRPC() {
 		func(ctx context.Context, task tasks.Task, req *daemonv1.UpdateTaskStatusRequest) error {
 			return s.appendDaemonTaskSessionUpdate(ctx, task, req)
 		},
+		s,
 	)
 	daemonv1.RegisterDaemonControlServiceServer(grpcServer, service)
 	s.grpcServer = grpcServer
