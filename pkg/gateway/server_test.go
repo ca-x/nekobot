@@ -3232,6 +3232,31 @@ func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 	if len(profiles.Profiles) == 0 || len(profiles.Profiles[0].Env) != 1 {
 		t.Fatalf("unexpected profiles: %+v", profiles.Profiles)
 	}
+	control, err := client.ControlAgentRemote(&daemonv1.ControlAgentRequest{
+		AgentId:   "default",
+		Action:    daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART,
+		Reason:    "grpc test",
+		RequestId: "control-grpc-test",
+	})
+	if err != nil {
+		t.Fatalf("ControlAgentRemote failed: %v", err)
+	}
+	if control.GetAccepted() || control.GetOperation().GetState() != "unsupported" || control.GetOperation().GetAction() != daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART {
+		t.Fatalf("unexpected control response: %+v", control)
+	}
+	direct, err := client.SendAgentDirectMessageRemote(&daemonv1.SendAgentDirectMessageRequest{
+		AgentId:           "default",
+		Content:           "hello direct agent",
+		SenderAgentId:     "runtime-a",
+		SenderDisplayName: "Runtime A",
+		RequestId:         "direct-grpc-test",
+	})
+	if err != nil {
+		t.Fatalf("SendAgentDirectMessageRemote failed: %v", err)
+	}
+	if !direct.GetAccepted() || direct.GetMessage().GetTarget() != "dm:@default" {
+		t.Fatalf("unexpected direct message response: %+v", direct)
+	}
 	activity, err := client.LogActivityRemote(&daemonv1.LogActivityRequest{Target: "#websocket:grpc-thread", AgentId: "default", Summary: "grpc activity"})
 	if err != nil {
 		t.Fatalf("LogActivityRemote failed: %v", err)

@@ -89,6 +89,30 @@ Current mapping:
 
 - Existing `AgentProfile.runtime_id` is close, but should become `agent_id` or explicitly reference an `agent_runtime_id`.
 
+### Agent Lifecycle Control
+
+Web/server control actions against an agent are explicit protocol operations, not implicit task or run status updates.
+
+Required actions:
+
+- `terminate`: stop the current agent process/session.
+- `restart`: restart the agent without clearing durable session state.
+- `restart_reset_session`: clear the current chat/session context, then restart.
+- `restart_full_reset`: clear runtime-local state/env/session cache where permitted, then restart.
+
+Required RPCs:
+
+- `ControlAgent(ControlAgentRequest)`: accepts an `agent_id`, optional `computer_id`/`runtime_profile_id`, action, reason, requesting agent, and `request_id`.
+- `SendAgentDirectMessage(SendAgentDirectMessageRequest)`: convenience wrapper for direct messages to an agent. It routes to the same DM target model as normal `SendMessage`.
+
+Rules:
+
+- Lifecycle controls require a runtime supervisor/adapter implementation before they can be accepted as completed work.
+- Until runtime supervision exists, implementations may return a callable operation with `state = unsupported`; they must not pretend an agent was stopped or restarted.
+- Lifecycle control requests must emit event-log facts such as `agent.control_requested`, then later `agent.terminated`, `agent.restarted`, `agent.session_reset`, or `agent.full_reset` when adapters perform the action.
+- Direct agent messages are normal collaboration messages whose target is `dm:@agent_id`; the convenience RPC exists so WebUI/server callers do not need to construct target strings.
+- Mutating lifecycle and direct-message calls must carry `request_id` and eventually participate in the same idempotency store as other mutating collaboration RPCs.
+
 ### RuntimeProfile
 
 Represents how to run an agent.

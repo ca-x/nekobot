@@ -48,6 +48,8 @@ const (
 	DaemonControlService_SetAgentEnv_FullMethodName             = "/nekobot.daemon.v1.DaemonControlService/SetAgentEnv"
 	DaemonControlService_ListAgentProfiles_FullMethodName       = "/nekobot.daemon.v1.DaemonControlService/ListAgentProfiles"
 	DaemonControlService_ListAgentDMs_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/ListAgentDMs"
+	DaemonControlService_ControlAgent_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/ControlAgent"
+	DaemonControlService_SendAgentDirectMessage_FullMethodName  = "/nekobot.daemon.v1.DaemonControlService/SendAgentDirectMessage"
 	DaemonControlService_ScheduleReminder_FullMethodName        = "/nekobot.daemon.v1.DaemonControlService/ScheduleReminder"
 	DaemonControlService_ListReminders_FullMethodName           = "/nekobot.daemon.v1.DaemonControlService/ListReminders"
 	DaemonControlService_CancelReminder_FullMethodName          = "/nekobot.daemon.v1.DaemonControlService/CancelReminder"
@@ -91,6 +93,8 @@ type DaemonControlServiceClient interface {
 	SetAgentEnv(ctx context.Context, in *SetAgentEnvRequest, opts ...grpc.CallOption) (*SetAgentEnvResponse, error)
 	ListAgentProfiles(ctx context.Context, in *ListAgentProfilesRequest, opts ...grpc.CallOption) (*ListAgentProfilesResponse, error)
 	ListAgentDMs(ctx context.Context, in *ListAgentDMsRequest, opts ...grpc.CallOption) (*ListAgentDMsResponse, error)
+	ControlAgent(ctx context.Context, in *ControlAgentRequest, opts ...grpc.CallOption) (*ControlAgentResponse, error)
+	SendAgentDirectMessage(ctx context.Context, in *SendAgentDirectMessageRequest, opts ...grpc.CallOption) (*SendAgentDirectMessageResponse, error)
 	ScheduleReminder(ctx context.Context, in *ScheduleReminderRequest, opts ...grpc.CallOption) (*ScheduleReminderResponse, error)
 	ListReminders(ctx context.Context, in *ListRemindersRequest, opts ...grpc.CallOption) (*ListRemindersResponse, error)
 	CancelReminder(ctx context.Context, in *CancelReminderRequest, opts ...grpc.CallOption) (*CancelReminderResponse, error)
@@ -399,6 +403,26 @@ func (c *daemonControlServiceClient) ListAgentDMs(ctx context.Context, in *ListA
 	return out, nil
 }
 
+func (c *daemonControlServiceClient) ControlAgent(ctx context.Context, in *ControlAgentRequest, opts ...grpc.CallOption) (*ControlAgentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ControlAgentResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ControlAgent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) SendAgentDirectMessage(ctx context.Context, in *SendAgentDirectMessageRequest, opts ...grpc.CallOption) (*SendAgentDirectMessageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SendAgentDirectMessageResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_SendAgentDirectMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *daemonControlServiceClient) ScheduleReminder(ctx context.Context, in *ScheduleReminderRequest, opts ...grpc.CallOption) (*ScheduleReminderResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ScheduleReminderResponse)
@@ -512,6 +536,8 @@ type DaemonControlServiceServer interface {
 	SetAgentEnv(context.Context, *SetAgentEnvRequest) (*SetAgentEnvResponse, error)
 	ListAgentProfiles(context.Context, *ListAgentProfilesRequest) (*ListAgentProfilesResponse, error)
 	ListAgentDMs(context.Context, *ListAgentDMsRequest) (*ListAgentDMsResponse, error)
+	ControlAgent(context.Context, *ControlAgentRequest) (*ControlAgentResponse, error)
+	SendAgentDirectMessage(context.Context, *SendAgentDirectMessageRequest) (*SendAgentDirectMessageResponse, error)
 	ScheduleReminder(context.Context, *ScheduleReminderRequest) (*ScheduleReminderResponse, error)
 	ListReminders(context.Context, *ListRemindersRequest) (*ListRemindersResponse, error)
 	CancelReminder(context.Context, *CancelReminderRequest) (*CancelReminderResponse, error)
@@ -616,6 +642,12 @@ func (UnimplementedDaemonControlServiceServer) ListAgentProfiles(context.Context
 }
 func (UnimplementedDaemonControlServiceServer) ListAgentDMs(context.Context, *ListAgentDMsRequest) (*ListAgentDMsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAgentDMs not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ControlAgent(context.Context, *ControlAgentRequest) (*ControlAgentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ControlAgent not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) SendAgentDirectMessage(context.Context, *SendAgentDirectMessageRequest) (*SendAgentDirectMessageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SendAgentDirectMessage not implemented")
 }
 func (UnimplementedDaemonControlServiceServer) ScheduleReminder(context.Context, *ScheduleReminderRequest) (*ScheduleReminderResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ScheduleReminder not implemented")
@@ -1184,6 +1216,42 @@ func _DaemonControlService_ListAgentDMs_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonControlService_ControlAgent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ControlAgentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ControlAgent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ControlAgent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ControlAgent(ctx, req.(*ControlAgentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_SendAgentDirectMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendAgentDirectMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).SendAgentDirectMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_SendAgentDirectMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).SendAgentDirectMessage(ctx, req.(*SendAgentDirectMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DaemonControlService_ScheduleReminder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ScheduleReminderRequest)
 	if err := dec(in); err != nil {
@@ -1450,6 +1518,14 @@ var DaemonControlService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAgentDMs",
 			Handler:    _DaemonControlService_ListAgentDMs_Handler,
+		},
+		{
+			MethodName: "ControlAgent",
+			Handler:    _DaemonControlService_ControlAgent_Handler,
+		},
+		{
+			MethodName: "SendAgentDirectMessage",
+			Handler:    _DaemonControlService_SendAgentDirectMessage_Handler,
 		},
 		{
 			MethodName: "ScheduleReminder",

@@ -960,6 +960,71 @@ func (s *Server) ListAgentDMs(ctx context.Context, req *daemonv1.ListAgentDMsReq
 	return &daemonv1.ListAgentDMsResponse{Dms: dms}, nil
 }
 
+func (s *Server) ControlAgent(ctx context.Context, req *daemonv1.ControlAgentRequest) (*daemonv1.ControlAgentResponse, error) {
+	agentID := strings.TrimSpace(req.GetAgentId())
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	if req.GetAction() == daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_UNSPECIFIED {
+		return nil, fmt.Errorf("action is required")
+	}
+	profile, err := s.findAgentProfile(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().Unix()
+	operation := &daemonv1.AgentControlOperation{
+		OperationId:        "agent-control-" + uuid.NewString(),
+		AgentId:            profile.GetAgentId(),
+		ComputerId:         firstNonEmpty(strings.TrimSpace(req.GetComputerId()), profile.GetComputerId()),
+		RuntimeProfileId:   firstNonEmpty(strings.TrimSpace(req.GetRuntimeProfileId()), profile.GetRuntimeProfileId()),
+		Action:             req.GetAction(),
+		State:              "unsupported",
+		Reason:             strings.TrimSpace(req.GetReason()),
+		RequestedByAgentId: strings.TrimSpace(req.GetRequestedByAgentId()),
+		CreatedTimeUnix:    now,
+		UpdatedTimeUnix:    now,
+	}
+	_, err = s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+		EventType:      "agent.control_requested",
+		ActorKind:      "agent",
+		ActorID:        operation.RequestedByAgentId,
+		SubjectKind:    "agent",
+		SubjectID:      operation.AgentId,
+		IdempotencyKey: strings.TrimSpace(req.GetRequestId()),
+		PayloadJSON:    mustMarshalJSON(operation),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &daemonv1.ControlAgentResponse{
+		Accepted:  false,
+		Operation: operation,
+		Profile:   profile,
+	}, nil
+}
+
+func (s *Server) SendAgentDirectMessage(ctx context.Context, req *daemonv1.SendAgentDirectMessageRequest) (*daemonv1.SendAgentDirectMessageResponse, error) {
+	agentID := strings.TrimSpace(req.GetAgentId())
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	resp, err := s.SendMessage(ctx, &daemonv1.SendMessageRequest{
+		Target:            agentDMTarget(agentID),
+		Role:              "user",
+		Content:           req.GetContent(),
+		SenderAgentId:     strings.TrimSpace(req.GetSenderAgentId()),
+		SenderDisplayName: strings.TrimSpace(req.GetSenderDisplayName()),
+		ReplyToMessageId:  strings.TrimSpace(req.GetReplyToMessageId()),
+		RequestId:         strings.TrimSpace(req.GetRequestId()),
+		AttachmentIds:     req.GetAttachmentIds(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &daemonv1.SendAgentDirectMessageResponse{Accepted: resp.GetAccepted(), Message: resp.GetMessage()}, nil
+}
+
 func (s *Server) ScheduleReminder(ctx context.Context, req *daemonv1.ScheduleReminderRequest) (*daemonv1.ScheduleReminderResponse, error) {
 	if s == nil || s.cronMgr == nil {
 		return nil, fmt.Errorf("reminder scheduler unavailable")
@@ -1379,6 +1444,26 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 	return out, nil
 }
 
+func (s *Server) findAgentProfile(ctx context.Context, agentID string) (*daemonv1.AgentProfile, error) {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	profiles, err := s.agentProfiles(ctx, 1000)
+	if err != nil {
+		return nil, err
+	}
+	for _, profile := range profiles {
+		if profile == nil {
+			continue
+		}
+		if profile.GetAgentId() == agentID || profile.GetName() == agentID {
+			return profile, nil
+		}
+	}
+	return nil, fmt.Errorf("agent profile not found: %s", agentID)
+}
+
 func (s *Server) runtimeDefinitions(ctx context.Context) ([]runtimeagents.AgentRuntime, error) {
 	if s == nil || s.runtimeMgr == nil {
 		return nil, nil
@@ -1448,6 +1533,15 @@ func agentDMTarget(runtimeID string) string {
 		runtimeID = "default"
 	}
 	return "dm:@" + runtimeID
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func normalizeEnvVars(items []*daemonv1.EnvVar) []*daemonv1.EnvVar {

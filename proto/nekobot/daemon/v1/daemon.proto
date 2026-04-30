@@ -595,6 +595,58 @@ message ListAgentDMsResponse {
   repeated ChannelRecord dms = 1;
 }
 
+enum AgentControlAction {
+  AGENT_CONTROL_ACTION_UNSPECIFIED = 0;
+  AGENT_CONTROL_ACTION_TERMINATE = 1;
+  AGENT_CONTROL_ACTION_RESTART = 2;
+  AGENT_CONTROL_ACTION_RESTART_RESET_SESSION = 3;
+  AGENT_CONTROL_ACTION_RESTART_FULL_RESET = 4;
+}
+
+message AgentControlOperation {
+  string operation_id = 1;
+  string agent_id = 2;
+  string computer_id = 3;
+  string runtime_profile_id = 4;
+  AgentControlAction action = 5;
+  string state = 6;  // requested | queued | running | completed | failed | unsupported
+  string reason = 7;
+  string requested_by_agent_id = 8;
+  int64 created_time_unix = 9;
+  int64 updated_time_unix = 10;
+}
+
+message ControlAgentRequest {
+  string agent_id = 1;
+  string computer_id = 2;
+  string runtime_profile_id = 3;
+  AgentControlAction action = 4;
+  string reason = 5;
+  string requested_by_agent_id = 6;
+  string request_id = 7;
+}
+
+message ControlAgentResponse {
+  bool accepted = 1;
+  AgentControlOperation operation = 2;
+  AgentProfile profile = 3;
+}
+
+message SendAgentDirectMessageRequest {
+  string agent_id = 1;
+  string content = 2;
+  string sender_agent_id = 3;
+  string sender_display_name = 4;
+  string request_id = 5;
+  repeated string attachment_ids = 6;
+  string reply_to_message_id = 7;
+}
+
+message SendAgentDirectMessageResponse {
+  bool accepted = 1;
+  CollaborationMessage message = 2;
+}
+
 message ReminderRecord {
   string reminder_id = 1;
   string target = 2;
@@ -752,6 +804,8 @@ service DaemonControlService {
   rpc SetAgentEnv(SetAgentEnvRequest) returns (SetAgentEnvResponse);
   rpc ListAgentProfiles(ListAgentProfilesRequest) returns (ListAgentProfilesResponse);
   rpc ListAgentDMs(ListAgentDMsRequest) returns (ListAgentDMsResponse);
+  rpc ControlAgent(ControlAgentRequest) returns (ControlAgentResponse);
+  rpc SendAgentDirectMessage(SendAgentDirectMessageRequest) returns (SendAgentDirectMessageResponse);
   rpc ScheduleReminder(ScheduleReminderRequest) returns (ScheduleReminderResponse);
   rpc ListReminders(ListRemindersRequest) returns (ListRemindersResponse);
   rpc CancelReminder(CancelReminderRequest) returns (CancelReminderResponse);

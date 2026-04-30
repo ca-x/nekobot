@@ -17,13 +17,13 @@ import (
 
 type GRPCService struct {
 	daemonv1.UnimplementedDaemonControlServiceServer
-	Registry          *Registry
-	TaskService       *tasks.Service
-	RunManager        *runs.Manager
-	IdempotencyStore  *idempotency.Store
-	InventoryLoader   func() (*daemonv1.ComputerInventory, error)
-	AppendSession     func(context.Context, tasks.Task, *daemonv1.UpdateRunStatusRequest) error
-	Collaboration     CollaborationService
+	Registry         *Registry
+	TaskService      *tasks.Service
+	RunManager       *runs.Manager
+	IdempotencyStore *idempotency.Store
+	InventoryLoader  func() (*daemonv1.ComputerInventory, error)
+	AppendSession    func(context.Context, tasks.Task, *daemonv1.UpdateRunStatusRequest) error
+	Collaboration    CollaborationService
 }
 
 type CollaborationService interface {
@@ -47,6 +47,8 @@ type CollaborationService interface {
 	SetAgentEnv(context.Context, *daemonv1.SetAgentEnvRequest) (*daemonv1.SetAgentEnvResponse, error)
 	ListAgentProfiles(context.Context, *daemonv1.ListAgentProfilesRequest) (*daemonv1.ListAgentProfilesResponse, error)
 	ListAgentDMs(context.Context, *daemonv1.ListAgentDMsRequest) (*daemonv1.ListAgentDMsResponse, error)
+	ControlAgent(context.Context, *daemonv1.ControlAgentRequest) (*daemonv1.ControlAgentResponse, error)
+	SendAgentDirectMessage(context.Context, *daemonv1.SendAgentDirectMessageRequest) (*daemonv1.SendAgentDirectMessageResponse, error)
 	ScheduleReminder(context.Context, *daemonv1.ScheduleReminderRequest) (*daemonv1.ScheduleReminderResponse, error)
 	ListReminders(context.Context, *daemonv1.ListRemindersRequest) (*daemonv1.ListRemindersResponse, error)
 	CancelReminder(context.Context, *daemonv1.CancelReminderRequest) (*daemonv1.CancelReminderResponse, error)
@@ -276,6 +278,20 @@ func (s *GRPCService) ListAgentDMs(ctx context.Context, req *daemonv1.ListAgentD
 		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
 	}
 	return s.Collaboration.ListAgentDMs(ctx, req)
+}
+
+func (s *GRPCService) ControlAgent(ctx context.Context, req *daemonv1.ControlAgentRequest) (*daemonv1.ControlAgentResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.ControlAgent(ctx, req)
+}
+
+func (s *GRPCService) SendAgentDirectMessage(ctx context.Context, req *daemonv1.SendAgentDirectMessageRequest) (*daemonv1.SendAgentDirectMessageResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.SendAgentDirectMessage(ctx, req)
 }
 
 func (s *GRPCService) ScheduleReminder(ctx context.Context, req *daemonv1.ScheduleReminderRequest) (*daemonv1.ScheduleReminderResponse, error) {
