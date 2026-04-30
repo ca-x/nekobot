@@ -119,6 +119,7 @@ type Server struct {
 	clients                   map[string]*Client
 	reservedPairingSessionIDs map[string]struct{}
 	rateLimiters              map[string]*rate.Limiter
+	splitProposals            map[string]*splitProposal
 	beforeWSUpgrade           func(sessionID string)
 	beforeWelcomeSend         func(client *Client)
 	mu                        sync.RWMutex

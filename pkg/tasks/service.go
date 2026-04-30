@@ -65,6 +65,20 @@ func (s *Service) List() []Task {
 	return result
 }
 
+// Get returns a single task by ID.
+func (s *Service) Get(taskID string) (Task, error) {
+	if s == nil {
+		return Task{}, fmt.Errorf("service is nil")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.tasks[taskID]
+	if !ok {
+		return Task{}, fmt.Errorf("task not found: %s", taskID)
+	}
+	return cloneTask(t), nil
+}
+
 // Enqueue creates a new managed task in pending state.
 func (s *Service) Enqueue(task Task) (Task, error) {
 	if s == nil {
