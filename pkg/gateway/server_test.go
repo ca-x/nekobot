@@ -691,6 +691,34 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if len(targetEvents.Events) != 2 || targetEvents.Events[0].GetTarget() != "#websocket:thread-a" || targetEvents.Events[1].GetKind() != "agent.status_updated" {
 		t.Fatalf("expected only thread-a events, got %+v", targetEvents.Events)
 	}
+	if _, err := s.UpdateAgentStatus(context.Background(), &daemonv1.UpdateAgentStatusRequest{
+		Status: &daemonv1.AgentStatusSnapshot{
+			AgentId:         runtimeItem.ID,
+			Presence:        daemonv1.AgentPresence_AGENT_PRESENCE_BUSY,
+			ActivityState:   daemonv1.AgentActivityState_AGENT_ACTIVITY_STATE_RUNNING_TEST,
+			Health:          daemonv1.AgentHealth_AGENT_HEALTH_OK,
+			Summary:         "expired test run",
+			Target:          "#websocket:thread-a",
+			ExpiresTimeUnix: time.Now().Add(-time.Second).Unix(),
+		},
+		RequestId: "status-expired-req-1",
+	}); err != nil {
+		t.Fatalf("UpdateAgentStatus expired status failed: %v", err)
+	}
+	expiredStatuses, err := s.ListAgentStatuses(context.Background(), &daemonv1.ListAgentStatusesRequest{AgentId: runtimeItem.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAgentStatuses after expired status failed: %v", err)
+	}
+	if len(expiredStatuses.Statuses) != 0 {
+		t.Fatalf("expected expired status to be hidden, got %+v", expiredStatuses.Statuses)
+	}
+	expiredProfile, err := s.GetAgentProfile(context.Background(), &daemonv1.GetAgentProfileRequest{AgentId: runtimeItem.ID})
+	if err != nil {
+		t.Fatalf("GetAgentProfile after expired status failed: %v", err)
+	}
+	if expiredProfile.Profile.GetStatus() != "" || expiredProfile.Profile.GetStatusSnapshot() != nil {
+		t.Fatalf("expected expired status to be hidden from profile, got %+v", expiredProfile.Profile)
+	}
 }
 
 func TestDaemonCollaborationAttachments(t *testing.T) {

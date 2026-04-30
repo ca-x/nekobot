@@ -7,13 +7,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/state"
 )
 
 const daemonRegistryKey = "daemonhost.registry.v1"
-const OfflineThreshold = 45 * time.Second
+const (
+	HeartbeatAfterSeconds = 15
+	StaleThreshold        = 30 * time.Second
+	OfflineThreshold      = 45 * time.Second
+)
 
 type Registry struct {
 	kv state.KV
@@ -43,6 +48,13 @@ func (r *Registry) Register(ctx context.Context, req *daemonv1.RegisterComputerR
 		return nil, fmt.Errorf("daemon info is required")
 	}
 	now := time.Now().Unix()
+	machineID := normalizedMachineID(req.Info)
+	if machineID == "" {
+		return nil, fmt.Errorf("computer_id or daemon_id is required")
+	}
+	lease := computerLease("", machineID, now)
+	req.Info.ComputerId = machineID
+	req.Info.LeaseId = lease.GetLeaseId()
 	req.Info.LastSeenUnix = now
 	if strings.TrimSpace(req.Info.Status) == "" {
 		req.Info.Status = "online"
@@ -50,7 +62,7 @@ func (r *Registry) Register(ctx context.Context, req *daemonv1.RegisterComputerR
 	if err := r.update(ctx, req.Info, req.Inventory); err != nil {
 		return nil, err
 	}
-	return &daemonv1.RegisterComputerResponse{Accepted: true, ServerTimeUnix: now}, nil
+	return &daemonv1.RegisterComputerResponse{Accepted: true, ServerTimeUnix: now, Lease: lease}, nil
 }
 
 func (r *Registry) Heartbeat(ctx context.Context, req *daemonv1.HeartbeatComputerRequest) (*daemonv1.HeartbeatComputerResponse, error) {
@@ -61,6 +73,25 @@ func (r *Registry) Heartbeat(ctx context.Context, req *daemonv1.HeartbeatCompute
 		return nil, fmt.Errorf("daemon info is required")
 	}
 	now := time.Now().Unix()
+	machineID := normalizedMachineID(req.Info)
+	if machineID == "" {
+		return nil, fmt.Errorf("computer_id or daemon_id is required")
+	}
+	currentLeaseID, err := r.currentLeaseID(ctx, machineID)
+	if err != nil {
+		return nil, err
+	}
+	reqLeaseID := strings.TrimSpace(req.GetLeaseId())
+	if reqLeaseID != "" && currentLeaseID != "" && reqLeaseID != currentLeaseID {
+		return nil, fmt.Errorf("lease mismatch for computer %s", machineID)
+	}
+	leaseID := reqLeaseID
+	if leaseID == "" {
+		leaseID = currentLeaseID
+	}
+	lease := computerLease(leaseID, machineID, now)
+	req.Info.ComputerId = machineID
+	req.Info.LeaseId = lease.GetLeaseId()
 	req.Info.LastSeenUnix = now
 	if strings.TrimSpace(req.Info.Status) == "" {
 		req.Info.Status = "online"
@@ -68,7 +99,22 @@ func (r *Registry) Heartbeat(ctx context.Context, req *daemonv1.HeartbeatCompute
 	if err := r.update(ctx, req.Info, req.Inventory); err != nil {
 		return nil, err
 	}
-	return &daemonv1.HeartbeatComputerResponse{Accepted: true, ServerTimeUnix: now, NextHeartbeatAfterSeconds: 15}, nil
+	return &daemonv1.HeartbeatComputerResponse{Accepted: true, ServerTimeUnix: now, NextHeartbeatAfterSeconds: HeartbeatAfterSeconds, Lease: lease}, nil
+}
+
+func (r *Registry) currentLeaseID(ctx context.Context, machineID string) (string, error) {
+	snapshot, err := r.Snapshot(ctx)
+	if err != nil {
+		return "", err
+	}
+	if snapshot == nil || snapshot.Machines == nil {
+		return "", nil
+	}
+	info := snapshot.Machines[machineID]
+	if info == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(info.GetLeaseId()), nil
 }
 
 func (r *Registry) Snapshot(ctx context.Context) (*Snapshot, error) {
@@ -125,6 +171,7 @@ func decodeSnapshot(raw map[string]interface{}) *Snapshot {
 					Status:       getString(item, "status"),
 					LastSeenUnix: getInt64(item, "last_seen_unix"),
 					DaemonUrl:    getString(item, "daemon_url"),
+					LeaseId:      getString(item, "lease_id"),
 				}
 			}
 		}
@@ -233,7 +280,37 @@ func DeriveMachineStatus(info *daemonv1.ComputerInfo, now time.Time) string {
 	if now.Sub(lastSeenAt) > OfflineThreshold {
 		return "offline"
 	}
+	if now.Sub(lastSeenAt) > StaleThreshold {
+		return "stale"
+	}
 	return current
+}
+
+func normalizedMachineID(info *daemonv1.ComputerInfo) string {
+	if info == nil {
+		return ""
+	}
+	machineID := strings.TrimSpace(info.GetComputerId())
+	if machineID == "" {
+		machineID = strings.TrimSpace(info.GetDaemonId())
+	}
+	return machineID
+}
+
+func computerLease(leaseID, machineID string, nowUnix int64) *daemonv1.Lease {
+	machineID = strings.TrimSpace(machineID)
+	leaseID = strings.TrimSpace(leaseID)
+	if leaseID == "" {
+		leaseID = "lease-" + uuid.NewString()
+	}
+	return &daemonv1.Lease{
+		LeaseId:               leaseID,
+		HolderId:              machineID,
+		ResourceType:          "computer",
+		ResourceId:            machineID,
+		ExpiresTimeUnix:       nowUnix + int64(OfflineThreshold/time.Second),
+		HeartbeatAfterSeconds: HeartbeatAfterSeconds,
+	}
 }
 
 func decodeInventory(raw map[string]interface{}) *daemonv1.ComputerInventory {
@@ -291,6 +368,7 @@ func encodeSnapshot(snapshot *Snapshot) map[string]interface{} {
 			"status":         item.Status,
 			"last_seen_unix": item.LastSeenUnix,
 			"daemon_url":     item.DaemonUrl,
+			"lease_id":       item.LeaseId,
 		}
 	}
 	inventories := result["inventories"].(map[string]interface{})
