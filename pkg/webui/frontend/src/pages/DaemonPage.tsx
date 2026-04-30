@@ -6,18 +6,32 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   useDaemonBootstrap,
   useDaemonExplorerWorkspaces,
+  useDaemonInventory,
   useDaemonWorkspaceFile,
   useDaemonWorkspaceTree,
   useNekoClientdBootstrap,
   useStatus,
+  type DaemonMachineInventory,
+  type DaemonRuntimeDetail,
 } from "@/hooks/useConfig";
 import { t } from "@/lib/i18n";
 import { toast } from "@/lib/notify";
 import { cn } from "@/lib/utils";
-import { Bot, Copy, FileText, Folder, RefreshCw } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  FileText,
+  Folder,
+  RefreshCw,
+  Server,
+  Zap,
+} from "lucide-react";
 
 export default function DaemonPage() {
-  const { data: status, isLoading, refetch, isFetching } = useStatus();
+  const { data: status, isLoading: statusLoading, refetch: refetchStatus, isFetching: statusFetching } = useStatus();
+  const { data: inventory, isLoading: inventoryLoading, refetch: refetchInventory, isFetching: inventoryFetching } = useDaemonInventory();
   const {
     data: daemonBootstrap,
     isLoading: daemonBootstrapLoading,
@@ -34,8 +48,10 @@ export default function DaemonPage() {
   const [selectedDaemonWorkspace, setSelectedDaemonWorkspace] = useState("");
   const [daemonPath, setDaemonPath] = useState("");
   const [selectedPreviewPath, setSelectedPreviewPath] = useState("");
+  const [expandedMachines, setExpandedMachines] = useState<Set<string>>(new Set());
 
   const daemonMachines = status?.daemon_machines ?? [];
+  const inventoryMachines = inventory?.machines ?? [];
   const daemonMachinesWithURL = daemonMachines.filter((machine) => machine.info.daemon_url);
   const selectedMachine = useMemo(
     () =>
@@ -100,6 +116,23 @@ export default function DaemonPage() {
     resetDaemonFile();
   }, [selectedMachine?.info.machine_id, selectedWorkspaceId, resetDaemonFile]);
 
+  function toggleMachine(machineId: string) {
+    setExpandedMachines((prev) => {
+      const next = new Set(prev);
+      if (next.has(machineId)) {
+        next.delete(machineId);
+      } else {
+        next.add(machineId);
+      }
+      return next;
+    });
+  }
+
+  function handleRefresh() {
+    refetchStatus();
+    refetchInventory();
+  }
+
   async function copyText(value: string) {
     try {
       await navigator.clipboard.writeText(value);
@@ -108,6 +141,9 @@ export default function DaemonPage() {
       toast.error(error instanceof Error ? error.message : t("copyFailed"));
     }
   }
+
+  const isLoading = statusLoading || inventoryLoading;
+  const isFetching = statusFetching || inventoryFetching;
 
   return (
     <div className="daemon-page flex h-full flex-col">
@@ -120,7 +156,7 @@ export default function DaemonPage() {
         <div className="lg:pt-4">
           <Button
             variant="outline"
-            onClick={() => refetch()}
+            onClick={handleRefresh}
             disabled={isFetching}
           >
             <RefreshCw className={cn("mr-2 h-4 w-4", isFetching && "animate-spin")} />
@@ -145,14 +181,14 @@ export default function DaemonPage() {
                 </p>
               </div>
               <div className="grid grid-cols-3 gap-2 text-center">
-                <DaemonStat label={t("daemonComputers")} value={String(daemonMachines.length)} />
+                <DaemonStat label={t("daemonComputers")} value={String(inventoryMachines.length)} />
                 <DaemonStat
                   label={t("daemonAgents")}
-                  value={String(daemonMachines.reduce((sum, machine) => sum + machine.runtime_count, 0))}
+                  value={String(inventoryMachines.reduce((sum, m) => sum + m.runtime_count, 0))}
                 />
                 <DaemonStat
                   label={t("daemonOnline")}
-                  value={String(daemonMachines.filter((machine) => machine.info.status === "online").length)}
+                  value={String(inventoryMachines.filter((m) => m.status === "online").length)}
                 />
               </div>
             </div>
@@ -161,45 +197,15 @@ export default function DaemonPage() {
               <div className="animate-pulse py-8 text-center text-muted-foreground">
                 {t("systemLoading")}
               </div>
-            ) : daemonMachines.length > 0 ? (
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                {daemonMachines.map((machine) => (
-                  <div
+            ) : inventoryMachines.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {inventoryMachines.map((machine) => (
+                  <MachineInventoryCard
                     key={machine.info.machine_id}
-                    className="rounded-2xl border border-border/70 bg-muted/35 p-4"
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em]",
-                              machine.info.status === "online"
-                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-                            )}
-                          >
-                            {machine.info.status || "-"}
-                          </span>
-                          <span className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground/80">
-                            {machine.info.os}/{machine.info.arch}
-                          </span>
-                        </div>
-                        <div className="mt-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-                          <Bot className="h-4 w-4 text-primary" />
-                          {machine.info.machine_name || machine.info.hostname}
-                        </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                          <span>{t("systemDaemonWorkspaces", String(machine.workspace_count))}</span>
-                          <span>{t("systemDaemonRuntimes", String(machine.runtime_count))}</span>
-                          <span>{t("systemDaemonInstalledRuntimes", String(machine.installed_runtime_count))}</span>
-                        </div>
-                      </div>
-                      <div className="break-all text-xs text-muted-foreground md:max-w-[14rem] md:text-right">
-                        {machine.info.machine_id}
-                      </div>
-                    </div>
-                  </div>
+                    machine={machine}
+                    expanded={expandedMachines.has(machine.info.machine_id)}
+                    onToggle={() => toggleMachine(machine.info.machine_id)}
+                  />
                 ))}
               </div>
             ) : (
@@ -491,6 +497,168 @@ export default function DaemonPage() {
         </div>
       </ScrollArea>
     </div>
+  );
+}
+
+function MachineInventoryCard({
+  machine,
+  expanded,
+  onToggle,
+}: {
+  machine: DaemonMachineInventory;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-border/70 bg-muted/35 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 p-4 text-left transition hover:bg-muted/50"
+      >
+        <div className="shrink-0 text-muted-foreground">
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={cn(
+                "rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em]",
+                machine.status === "online"
+                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                  : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+              )}
+            >
+              {machine.status || "-"}
+            </span>
+            <span className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground/80">
+              {machine.info.os}/{machine.info.arch}
+            </span>
+            {machine.goal_run_runnable && (
+              <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                {t("daemonGoalRunnable")}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Server className="h-4 w-4 text-primary" />
+            {machine.info.machine_name || machine.info.hostname}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span>{t("systemDaemonRuntimes", String(machine.runtime_count))}</span>
+            <span>{t("systemDaemonInstalledRuntimes", String(machine.installed_runtime_count))}</span>
+            <span>{t("daemonHealthyRuntimes", String(machine.healthy_runtime_count))}</span>
+          </div>
+        </div>
+        <div className="hidden shrink-0 break-all text-xs text-muted-foreground md:block md:max-w-[14rem] md:text-right">
+          {machine.info.machine_id}
+        </div>
+      </button>
+
+      {expanded && machine.runtimes.length > 0 && (
+        <div className="border-t border-border/50 px-4 pb-4 pt-2">
+          <div className="space-y-2">
+            {machine.runtimes.map((rt) => (
+              <RuntimeRow key={rt.runtime_id} runtime={rt} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {expanded && machine.runtimes.length === 0 && (
+        <div className="border-t border-border/50 px-4 py-3 text-xs text-muted-foreground">
+          {t("daemonNoRuntimes")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RuntimeRow({ runtime }: { runtime: DaemonRuntimeDetail }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-border/40 bg-background/60 p-3">
+      <div className="mt-0.5 shrink-0">
+        <Zap
+          className={cn(
+            "h-4 w-4",
+            runtime.installed && runtime.enabled
+              ? "text-emerald-500"
+              : runtime.installed
+                ? "text-amber-500"
+                : "text-muted-foreground",
+          )}
+        />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium text-foreground">
+            {runtime.display_name || runtime.runtime_id}
+          </span>
+          <RuntimeStatusBadge installed={runtime.installed} healthy={runtime.healthy} enabled={runtime.enabled} />
+          {runtime.kind && (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {runtime.kind}
+            </span>
+          )}
+        </div>
+        {(runtime.provider || runtime.model) && (
+          <div className="mt-1 text-xs text-muted-foreground">
+            {runtime.provider}{runtime.provider && runtime.model ? " / " : ""}{runtime.model}
+          </div>
+        )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          {runtime.current_task_count > 0 && (
+            <span>{t("daemonTasksRunning", String(runtime.current_task_count))}</span>
+          )}
+          {runtime.pending_task_count > 0 && (
+            <span>{t("daemonTasksPending", String(runtime.pending_task_count))}</span>
+          )}
+          {runtime.skill_names && runtime.skill_names.length > 0 && (
+            <span>{t("daemonSkills", String(runtime.skill_names.length))}</span>
+          )}
+          {runtime.env_count > 0 && (
+            <span>{t("daemonEnvVars", String(runtime.env_count))}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RuntimeStatusBadge({
+  installed,
+  healthy,
+  enabled,
+}: {
+  installed: boolean;
+  healthy: boolean;
+  enabled: boolean;
+}) {
+  if (!installed) {
+    return (
+      <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-600 dark:text-red-400">
+        {t("daemonNotInstalled")}
+      </span>
+    );
+  }
+  if (!enabled) {
+    return (
+      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+        {t("daemonDisabled")}
+      </span>
+    );
+  }
+  if (!healthy) {
+    return (
+      <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+        {t("daemonUnhealthy")}
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+      {t("daemonHealthy")}
+    </span>
   );
 }
 

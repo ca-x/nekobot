@@ -33,6 +33,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/accountbindings"
@@ -530,6 +531,7 @@ func (s *Server) setup() {
 	api.POST("/external-agents/resolve-session", s.handleResolveExternalAgentSession)
 	api.GET("/external-agents/catalog", s.handleGetExternalAgentCatalog)
 	api.GET("/daemon/registry", s.handleGetDaemonRegistry)
+	api.GET("/daemon/inventory", s.handleGetDaemonInventory)
 	api.GET("/daemon/bootstrap", s.handleGetDaemonBootstrap)
 	api.GET("/daemon/explorer/workspaces", s.handleDaemonExplorerWorkspaces)
 	api.POST("/daemon/explorer/tree", s.handleDaemonExplorerTree)
@@ -2445,6 +2447,151 @@ func (s *Server) handleGetDaemonRegistry(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{
 		"machines": daemonhost.MachineStatuses(snapshot),
 	})
+}
+
+// handleGetDaemonInventory returns a two-level computer→agent inventory view
+// that merges daemon registry data (machines + per-runtime details) with agent
+// profile definitions (provider, model, skills, env).
+func (s *Server) handleGetDaemonInventory(c *echo.Context) error {
+	ctx := c.Request().Context()
+
+	type runtimeDetail struct {
+		RuntimeID        string   `json:"runtime_id"`
+		MachineID        string   `json:"machine_id"`
+		WorkspaceID      string   `json:"workspace_id"`
+		Kind             string   `json:"kind"`
+		DisplayName      string   `json:"display_name"`
+		Tool             string   `json:"tool"`
+		Command          string   `json:"command"`
+		Installed        bool     `json:"installed"`
+		Healthy          bool     `json:"healthy"`
+		CurrentTaskCount uint32   `json:"current_task_count"`
+		PendingTaskCount uint32   `json:"pending_task_count"`
+		Provider         string   `json:"provider,omitempty"`
+		Model            string   `json:"model,omitempty"`
+		Enabled          bool     `json:"enabled"`
+		SkillNames       []string `json:"skill_names,omitempty"`
+		EnvCount         int      `json:"env_count"`
+	}
+
+	type machineInventory struct {
+		Info                  *daemonv1.DaemonInfo `json:"info"`
+		Status                string               `json:"status"`
+		WorkspaceCount        int                  `json:"workspace_count"`
+		RuntimeCount          int                  `json:"runtime_count"`
+		InstalledRuntimeCount int                  `json:"installed_runtime_count"`
+		HealthyRuntimeCount   int                  `json:"healthy_runtime_count"`
+		GoalRunRunnable       bool                 `json:"goal_run_runnable"`
+		Runtimes              []runtimeDetail      `json:"runtimes"`
+	}
+
+	emptyResponse := map[string]any{"machines": []machineInventory{}}
+	if s.kvStore == nil {
+		return c.JSON(http.StatusOK, emptyResponse)
+	}
+
+	snapshot, err := daemonhost.NewRegistry(s.kvStore).Snapshot(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	// Build agent profile lookup by runtime_id.
+	type profileInfo struct {
+		Provider   string
+		Model      string
+		Enabled    bool
+		SkillNames []string
+		EnvCount   int
+	}
+	profileByRuntime := map[string]profileInfo{}
+	if s.runtimeMgr != nil {
+		if items, listErr := s.runtimeMgr.List(ctx); listErr == nil {
+			envByRuntime := map[string]int{}
+			if s.kvStore != nil {
+				if raw, ok, _ := s.kvStore.Get(ctx, "daemon.collaboration.agent_env.v1"); ok {
+					if envMap, castOK := raw.(map[string]interface{}); castOK {
+						for rtID, varsRaw := range envMap {
+							if varsSlice, sliceOK := varsRaw.([]interface{}); sliceOK {
+								envByRuntime[rtID] = len(varsSlice)
+							}
+						}
+					}
+				}
+			}
+			for _, item := range items {
+				skillNames := make([]string, 0, len(item.Skills))
+				skillNames = append(skillNames, item.Skills...)
+				profileByRuntime[item.ID] = profileInfo{
+					Provider:   item.Provider,
+					Model:      item.Model,
+					Enabled:    item.Enabled,
+					SkillNames: skillNames,
+					EnvCount:   envByRuntime[item.ID],
+				}
+			}
+		}
+	}
+
+	// Build per-machine inventory with runtime details.
+	machineIDs := make([]string, 0, len(snapshot.Machines))
+	for id := range snapshot.Machines {
+		machineIDs = append(machineIDs, id)
+	}
+	sort.Strings(machineIDs)
+	now := time.Now()
+	machines := make([]machineInventory, 0, len(machineIDs))
+	for _, id := range machineIDs {
+		info := snapshot.Machines[id]
+		if info == nil {
+			continue
+		}
+		cloned := proto.Clone(info).(*daemonv1.DaemonInfo)
+		cloned.Status = daemonhost.DeriveMachineStatus(info, now)
+		mi := machineInventory{
+			Info:   cloned,
+			Status: cloned.Status,
+		}
+		if inv, ok := snapshot.Inventories[id]; ok && inv != nil {
+			mi.WorkspaceCount = len(inv.Workspaces)
+			mi.RuntimeCount = len(inv.Runtimes)
+			mi.Runtimes = make([]runtimeDetail, 0, len(inv.Runtimes))
+			for _, rt := range inv.Runtimes {
+				if rt == nil {
+					continue
+				}
+				if rt.Installed {
+					mi.InstalledRuntimeCount++
+				}
+				if rt.Installed && rt.Healthy {
+					mi.HealthyRuntimeCount++
+				}
+				rd := runtimeDetail{
+					RuntimeID:        rt.RuntimeId,
+					MachineID:        rt.MachineId,
+					WorkspaceID:      rt.WorkspaceId,
+					Kind:             rt.Kind,
+					DisplayName:      rt.DisplayName,
+					Tool:             rt.Tool,
+					Command:          rt.Command,
+					Installed:        rt.Installed,
+					Healthy:          rt.Healthy,
+					CurrentTaskCount: rt.CurrentTaskCount,
+					PendingTaskCount: rt.PendingTaskCount,
+				}
+				if p, ok := profileByRuntime[rt.RuntimeId]; ok {
+					rd.Provider = p.Provider
+					rd.Model = p.Model
+					rd.Enabled = p.Enabled
+					rd.SkillNames = p.SkillNames
+					rd.EnvCount = p.EnvCount
+				}
+				mi.Runtimes = append(mi.Runtimes, rd)
+			}
+			_, _, mi.GoalRunRunnable = daemonhost.SelectRunnableWorkspaceRuntime(inv)
+		}
+		machines = append(machines, mi)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"machines": machines})
 }
 
 func (s *Server) daemonClientForMachine(ctx context.Context, machineID string) (*daemonhost.Client, *daemonv1.RuntimeInventory, error) {

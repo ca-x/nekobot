@@ -174,6 +174,47 @@ export interface DaemonMachineStatus {
   goal_run_runnable: boolean;
 }
 
+export interface DaemonRuntimeDetail {
+  runtime_id: string;
+  machine_id: string;
+  workspace_id: string;
+  kind: string;
+  display_name: string;
+  tool: string;
+  command: string;
+  installed: boolean;
+  healthy: boolean;
+  current_task_count: number;
+  pending_task_count: number;
+  provider?: string;
+  model?: string;
+  enabled: boolean;
+  skill_names?: string[];
+  env_count: number;
+}
+
+export interface DaemonMachineInventory {
+  info: {
+    daemon_id: string;
+    machine_id: string;
+    machine_name: string;
+    hostname: string;
+    os: string;
+    arch: string;
+    version: string;
+    status: string;
+    last_seen_unix: number;
+    daemon_url?: string;
+  };
+  status: string;
+  workspace_count: number;
+  runtime_count: number;
+  installed_runtime_count: number;
+  healthy_runtime_count: number;
+  goal_run_runnable: boolean;
+  runtimes: DaemonRuntimeDetail[];
+}
+
 export interface DaemonBootstrapData {
   server_url: string;
   daemon_token: string;
@@ -492,6 +533,14 @@ export function useDaemonExplorerWorkspaces(machineID: string | null) {
     queryKey: ["daemon-explorer-workspaces", machineID],
     queryFn: () => api.get(`/api/daemon/explorer/workspaces?machine_id=${encodeURIComponent(machineID ?? "")}`),
     enabled: Boolean(machineID),
+    staleTime: 10_000,
+  });
+}
+
+export function useDaemonInventory() {
+  return useQuery<{ machines: DaemonMachineInventory[] }>({
+    queryKey: ["daemon-inventory"],
+    queryFn: () => api.get("/api/daemon/inventory"),
     staleTime: 10_000,
   });
 }
