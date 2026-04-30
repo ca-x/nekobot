@@ -15,6 +15,15 @@ func TestRegistryGetReturnsSupportedAdapter(t *testing.T) {
 	if adapter.Tool() != "codex" || adapter.Command() != "codex" {
 		t.Fatalf("unexpected adapter contract: tool=%q command=%q", adapter.Tool(), adapter.Command())
 	}
+	if !capabilityEnabled(adapter.Capabilities(), "runtime.launch") {
+		t.Fatalf("expected codex adapter to advertise runtime.launch capability")
+	}
+	if !capabilityEnabled(adapter.Capabilities(), "agent.control.terminate") {
+		t.Fatalf("expected codex adapter to advertise terminate capability")
+	}
+	if capabilityEnabled(adapter.Capabilities(), "agent.control.restart_full_reset") {
+		t.Fatalf("full reset must stay disabled until an adapter implements it")
+	}
 }
 
 func TestDetectInstalledFindsExistingConfigDirs(t *testing.T) {
@@ -42,4 +51,13 @@ func TestInstallHintReturnsExpectedCommand(t *testing.T) {
 	if !reflect.DeepEqual(cmd, want) {
 		t.Fatalf("unexpected install hint: got=%v want=%v", cmd, want)
 	}
+}
+
+func capabilityEnabled(items []Capability, name string) bool {
+	for _, item := range items {
+		if item.Name == name {
+			return item.Enabled
+		}
+	}
+	return false
 }

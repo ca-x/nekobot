@@ -14,8 +14,18 @@ type Adapter interface {
 	Tool() string
 	Command() string
 	ConfigDir(homeDir string) string
+	Capabilities() []Capability
 	SupportsAutoInstall() bool
 	InstallCommand(osName string) []string
+}
+
+// Capability describes one stable adapter capability advertised to the daemon
+// control plane. Disabled entries are intentional: they let callers distinguish
+// known-unsupported actions from unknown adapter behavior.
+type Capability struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Enabled     bool   `json:"enabled"`
 }
 
 type staticAdapter struct {
@@ -23,6 +33,7 @@ type staticAdapter struct {
 	tool               string
 	command            string
 	configDirResolver  func(string) string
+	capabilities       []Capability
 	autoInstall        bool
 	installCommandFunc func(string) []string
 }
@@ -31,6 +42,9 @@ func (a staticAdapter) Kind() string              { return a.kind }
 func (a staticAdapter) Tool() string              { return a.tool }
 func (a staticAdapter) Command() string           { return a.command }
 func (a staticAdapter) SupportsAutoInstall() bool { return a.autoInstall }
+func (a staticAdapter) Capabilities() []Capability {
+	return cloneCapabilities(a.capabilities)
+}
 func (a staticAdapter) InstallCommand(osName string) []string {
 	return append([]string(nil), a.installCommandFunc(osName)...)
 }
@@ -48,6 +62,7 @@ func defaultAdapters() []Adapter {
 			tool:              "codex",
 			command:           "codex",
 			configDirResolver: func(home string) string { return filepath.Join(home, ".codex") },
+			capabilities:      defaultAdapterCapabilities(),
 			autoInstall:       true,
 			installCommandFunc: func(osName string) []string {
 				return []string{"npm", "install", "-g", "@openai/codex"}
@@ -58,6 +73,7 @@ func defaultAdapters() []Adapter {
 			tool:              "claude",
 			command:           "claude",
 			configDirResolver: func(home string) string { return filepath.Join(home, ".claude") },
+			capabilities:      defaultAdapterCapabilities(),
 			autoInstall:       true,
 			installCommandFunc: func(osName string) []string {
 				return []string{"npm", "install", "-g", "@anthropic-ai/claude-code"}
@@ -68,6 +84,7 @@ func defaultAdapters() []Adapter {
 			tool:              "opencode",
 			command:           "opencode",
 			configDirResolver: func(home string) string { return filepath.Join(home, ".config", "opencode") },
+			capabilities:      defaultAdapterCapabilities(),
 			autoInstall:       true,
 			installCommandFunc: func(osName string) []string {
 				if strings.EqualFold(strings.TrimSpace(osName), "darwin") {
@@ -81,12 +98,45 @@ func defaultAdapters() []Adapter {
 			tool:              "aider",
 			command:           "aider",
 			configDirResolver: func(home string) string { return filepath.Join(home, ".aider") },
+			capabilities:      defaultAdapterCapabilities(),
 			autoInstall:       false,
 			installCommandFunc: func(osName string) []string {
 				return nil
 			},
 		},
 	}
+}
+
+func defaultAdapterCapabilities() []Capability {
+	return []Capability{
+		{Name: "runtime.launch", Description: "Launch a runtime-backed agent process", Enabled: true},
+		{Name: "runtime.attach", Description: "Attach or reattach to the runtime session", Enabled: true},
+		{Name: "agent.control.terminate", Description: "Terminate the active runtime session", Enabled: true},
+		{Name: "agent.control.restart", Description: "Restart without clearing durable collaboration state", Enabled: false},
+		{Name: "agent.control.restart_reset_session", Description: "Restart after clearing adapter-local session state", Enabled: false},
+		{Name: "agent.control.restart_full_reset", Description: "Restart after clearing adapter-local cache/state", Enabled: false},
+	}
+}
+
+func cloneCapabilities(items []Capability) []Capability {
+	out := make([]Capability, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			continue
+		}
+		if _, dup := seen[name]; dup {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, Capability{
+			Name:        name,
+			Description: strings.TrimSpace(item.Description),
+			Enabled:     item.Enabled,
+		})
+	}
+	return out
 }
 
 // Registry provides adapter lookup.

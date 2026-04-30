@@ -97,6 +97,13 @@ func BuildInventory(homeDir string) (*daemonv1.ComputerInventory, error) {
 			Installed:           false,
 			Healthy:             false,
 			SupportsAutoInstall: adapter.SupportsAutoInstall(),
+			Capabilities:        adapterCapabilitiesToProto(adapter.Capabilities()),
+		}
+		runtimeItem.RuntimeProfile = &daemonv1.RuntimeProfile{
+			RuntimeProfileId: runtimeItem.RuntimeId,
+			Kind:             adapter.Kind(),
+			WorkspaceId:      workspace.WorkspaceId,
+			Capabilities:     cloneProtoCapabilities(runtimeItem.Capabilities),
 		}
 		if adapter.SupportsAutoInstall() {
 			runtimeItem.InstallHint = append([]string(nil), adapter.InstallCommand(runtime.GOOS)...)
@@ -107,8 +114,39 @@ func BuildInventory(homeDir string) (*daemonv1.ComputerInventory, error) {
 			runtimeItem.ConfigDir = configDir
 		}
 		result.Runtimes = append(result.Runtimes, runtimeItem)
+		result.RuntimeProfiles = append(result.RuntimeProfiles, runtimeItem.RuntimeProfile)
 	}
 	return result, nil
+}
+
+func adapterCapabilitiesToProto(items []externalagent.Capability) []*daemonv1.Capability {
+	out := make([]*daemonv1.Capability, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		out = append(out, &daemonv1.Capability{
+			Name:        strings.TrimSpace(item.Name),
+			Description: strings.TrimSpace(item.Description),
+			Enabled:     item.Enabled,
+		})
+	}
+	return out
+}
+
+func cloneProtoCapabilities(items []*daemonv1.Capability) []*daemonv1.Capability {
+	out := make([]*daemonv1.Capability, 0, len(items))
+	for _, item := range items {
+		if item == nil || strings.TrimSpace(item.GetName()) == "" {
+			continue
+		}
+		out = append(out, &daemonv1.Capability{
+			Name:        strings.TrimSpace(item.GetName()),
+			Description: strings.TrimSpace(item.GetDescription()),
+			Enabled:     item.GetEnabled(),
+		})
+	}
+	return out
 }
 
 type Server struct {
@@ -263,6 +301,7 @@ func snapshotToMessage(snapshot *Snapshot) *daemonv1.ComputerInventory {
 		}
 		result.Workspaces = append(result.Workspaces, inventory.Workspaces...)
 		result.Runtimes = append(result.Runtimes, inventory.Runtimes...)
+		result.RuntimeProfiles = append(result.RuntimeProfiles, inventory.RuntimeProfiles...)
 	}
 	return result
 }

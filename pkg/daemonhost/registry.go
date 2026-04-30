@@ -172,6 +172,7 @@ func decodeSnapshot(raw map[string]interface{}) *Snapshot {
 					LastSeenUnix: getInt64(item, "last_seen_unix"),
 					DaemonUrl:    getString(item, "daemon_url"),
 					LeaseId:      getString(item, "lease_id"),
+					Capabilities: decodeCapabilities(item["capabilities"]),
 				}
 			}
 		}
@@ -342,7 +343,14 @@ func decodeInventory(raw map[string]interface{}) *daemonv1.ComputerInventory {
 			ConfigDir:           getString(rt, "config_dir"),
 			CurrentTaskCount:    uint32(getInt64(rt, "current_task_count")),
 			PendingTaskCount:    uint32(getInt64(rt, "pending_task_count")),
+			Capabilities:        decodeCapabilities(rt["capabilities"]),
+			RuntimeProfile:      decodeRuntimeProfile(rt["runtime_profile"]),
 		})
+	}
+	for _, profile := range getMapSlice(raw, "runtime_profiles") {
+		if decoded := decodeRuntimeProfile(profile); decoded != nil {
+			inventory.RuntimeProfiles = append(inventory.RuntimeProfiles, decoded)
+		}
 	}
 	return inventory
 }
@@ -369,14 +377,16 @@ func encodeSnapshot(snapshot *Snapshot) map[string]interface{} {
 			"last_seen_unix": item.LastSeenUnix,
 			"daemon_url":     item.DaemonUrl,
 			"lease_id":       item.LeaseId,
+			"capabilities":   encodeCapabilities(item.Capabilities),
 		}
 	}
 	inventories := result["inventories"].(map[string]interface{})
 	for _, id := range machineIDs {
 		if inv, ok := snapshot.Inventories[id]; ok && inv != nil {
 			inventories[id] = map[string]interface{}{
-				"workspaces": encodeWorkspaces(inv.Workspaces),
-				"runtimes":   encodeRuntimes(inv.Runtimes),
+				"workspaces":       encodeWorkspaces(inv.Workspaces),
+				"runtimes":         encodeRuntimes(inv.Runtimes),
+				"runtime_profiles": encodeRuntimeProfiles(inv.RuntimeProfiles),
 			}
 		}
 	}
@@ -423,9 +433,180 @@ func encodeRuntimes(items []*daemonv1.Runtime) []map[string]interface{} {
 			"config_dir":            item.ConfigDir,
 			"current_task_count":    item.CurrentTaskCount,
 			"pending_task_count":    item.PendingTaskCount,
+			"capabilities":          encodeCapabilities(item.Capabilities),
+			"runtime_profile":       encodeRuntimeProfile(item.RuntimeProfile),
 		})
 	}
 	return out
+}
+
+func encodeRuntimeProfiles(items []*daemonv1.RuntimeProfile) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		if encoded := encodeRuntimeProfile(item); encoded != nil {
+			out = append(out, encoded)
+		}
+	}
+	return out
+}
+
+func encodeRuntimeProfile(item *daemonv1.RuntimeProfile) map[string]interface{} {
+	if item == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"runtime_profile_id":  item.RuntimeProfileId,
+		"kind":                item.Kind,
+		"provider":            item.Provider,
+		"model":               item.Model,
+		"adapter_config_json": item.AdapterConfigJson,
+		"workspace_id":        item.WorkspaceId,
+		"env":                 encodeEnvVars(item.Env),
+		"skills":              encodeSkillRecords(item.Skills),
+		"capabilities":        encodeCapabilities(item.Capabilities),
+	}
+}
+
+func decodeRuntimeProfile(raw interface{}) *daemonv1.RuntimeProfile {
+	item, ok := raw.(map[string]interface{})
+	if !ok || item == nil {
+		return nil
+	}
+	return &daemonv1.RuntimeProfile{
+		RuntimeProfileId:  getString(item, "runtime_profile_id"),
+		Kind:              getString(item, "kind"),
+		Provider:          getString(item, "provider"),
+		Model:             getString(item, "model"),
+		AdapterConfigJson: getString(item, "adapter_config_json"),
+		WorkspaceId:       getString(item, "workspace_id"),
+		Env:               decodeEnvVars(item["env"]),
+		Skills:            decodeSkillRecords(item["skills"]),
+		Capabilities:      decodeCapabilities(item["capabilities"]),
+	}
+}
+
+func encodeCapabilities(items []*daemonv1.Capability) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		out = append(out, map[string]interface{}{
+			"name":        item.Name,
+			"description": item.Description,
+			"enabled":     item.Enabled,
+		})
+	}
+	return out
+}
+
+func decodeCapabilities(raw interface{}) []*daemonv1.Capability {
+	items := interfaceSlice(raw)
+	out := make([]*daemonv1.Capability, 0, len(items))
+	for _, rawItem := range items {
+		item, ok := rawItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(getString(item, "name"))
+		if name == "" {
+			continue
+		}
+		out = append(out, &daemonv1.Capability{
+			Name:        name,
+			Description: strings.TrimSpace(getString(item, "description")),
+			Enabled:     getBool(item, "enabled"),
+		})
+	}
+	return out
+}
+
+func encodeEnvVars(items []*daemonv1.EnvVar) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		out = append(out, map[string]interface{}{
+			"name":   item.Name,
+			"value":  item.Value,
+			"secret": item.Secret,
+		})
+	}
+	return out
+}
+
+func decodeEnvVars(raw interface{}) []*daemonv1.EnvVar {
+	items := interfaceSlice(raw)
+	out := make([]*daemonv1.EnvVar, 0, len(items))
+	for _, rawItem := range items {
+		item, ok := rawItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		out = append(out, &daemonv1.EnvVar{
+			Name:   getString(item, "name"),
+			Value:  getString(item, "value"),
+			Secret: getBool(item, "secret"),
+		})
+	}
+	return out
+}
+
+func encodeSkillRecords(items []*daemonv1.SkillRecord) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		out = append(out, map[string]interface{}{
+			"id":          item.Id,
+			"name":        item.Name,
+			"description": item.Description,
+			"version":     item.Version,
+			"enabled":     item.Enabled,
+			"always":      item.Always,
+			"eligible":    item.Eligible,
+			"file_path":   item.FilePath,
+		})
+	}
+	return out
+}
+
+func decodeSkillRecords(raw interface{}) []*daemonv1.SkillRecord {
+	items := interfaceSlice(raw)
+	out := make([]*daemonv1.SkillRecord, 0, len(items))
+	for _, rawItem := range items {
+		item, ok := rawItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		out = append(out, &daemonv1.SkillRecord{
+			Id:          getString(item, "id"),
+			Name:        getString(item, "name"),
+			Description: getString(item, "description"),
+			Version:     getString(item, "version"),
+			Enabled:     getBool(item, "enabled"),
+			Always:      getBool(item, "always"),
+			Eligible:    getBool(item, "eligible"),
+			FilePath:    getString(item, "file_path"),
+		})
+	}
+	return out
+}
+
+func interfaceSlice(raw interface{}) []interface{} {
+	if items, ok := raw.([]interface{}); ok {
+		return items
+	}
+	if items, ok := raw.([]map[string]interface{}); ok {
+		out := make([]interface{}, 0, len(items))
+		for _, item := range items {
+			out = append(out, item)
+		}
+		return out
+	}
+	return nil
 }
 
 func getString(m map[string]interface{}, key string) string { v, _ := m[key].(string); return v }
