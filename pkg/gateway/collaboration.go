@@ -442,7 +442,7 @@ type splitProposal struct {
 	ProposedTasks []*daemonv1.Task
 }
 
-func (s *Server) ProposeTaskSplit(_ context.Context, req *daemonv1.ProposeTaskSplitRequest) (*daemonv1.ProposeTaskSplitResponse, error) {
+func (s *Server) ProposeTaskSplit(ctx context.Context, req *daemonv1.ProposeTaskSplitRequest) (*daemonv1.ProposeTaskSplitResponse, error) {
 	if s == nil || s.agent == nil || s.agent.TaskService() == nil {
 		return nil, fmt.Errorf("task service unavailable")
 	}
@@ -455,14 +455,49 @@ func (s *Server) ProposeTaskSplit(_ context.Context, req *daemonv1.ProposeTaskSp
 		return nil, fmt.Errorf("parent task not found: %s", parentID)
 	}
 
+	reqID := strings.TrimSpace(req.GetRequestId())
+	var idemKey idempotency.Key
+	idemReserved := false
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"parent_task_id", parentID,
+			"proposed_tasks", protoHashProposedSubtaskSlice(req.GetProposedTasks()),
+		)
+		idemKey = idempotency.Key{
+			CallerKind: "agent",
+			CallerID:   parentID,
+			Method:     "ProposeTaskSplit",
+			RequestID:  reqID,
+		}
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 30*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replayProposeTaskSplit(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+		idemReserved = true
+	}
+
 	// Map client_proposed_id → server-assigned proposed ID.
 	proposedIDMap := map[string]string{}
 	for _, p := range req.GetProposedTasks() {
 		cid := strings.TrimSpace(p.GetClientProposedId())
 		if cid == "" {
+			if idemReserved {
+				failIdempotency(ctx, s.idempotencyStore, idemKey, fmt.Errorf("client_proposed_id is required for each proposed subtask"))
+			}
 			return nil, fmt.Errorf("client_proposed_id is required for each proposed subtask")
 		}
 		if _, dup := proposedIDMap[cid]; dup {
+			if idemReserved {
+				failIdempotency(ctx, s.idempotencyStore, idemKey, fmt.Errorf("duplicate client_proposed_id: %s", cid))
+			}
 			return nil, fmt.Errorf("duplicate client_proposed_id: %s", cid)
 		}
 		proposedIDMap[cid] = "proposed-" + uuid.NewString()
@@ -471,33 +506,67 @@ func (s *Server) ProposeTaskSplit(_ context.Context, req *daemonv1.ProposeTaskSp
 	proposedTasks := make([]*daemonv1.Task, 0, len(req.GetProposedTasks()))
 	for _, p := range req.GetProposedTasks() {
 		cid := p.GetClientProposedId()
+		dependsOn := make([]string, 0, len(p.GetDependsOnProposedIds()))
+		for _, depClientID := range p.GetDependsOnProposedIds() {
+			depID, ok := proposedIDMap[strings.TrimSpace(depClientID)]
+			if !ok {
+				err := fmt.Errorf("depends_on_proposed_ids references unknown client_proposed_id: %s", depClientID)
+				if idemReserved {
+					failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+				}
+				return nil, err
+			}
+			if depID == proposedIDMap[cid] {
+				err := fmt.Errorf("proposed task %s cannot depend on itself", cid)
+				if idemReserved {
+					failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+				}
+				return nil, err
+			}
+			dependsOn = append(dependsOn, depID)
+		}
 		proposedTasks = append(proposedTasks, &daemonv1.Task{
 			TaskId:               proposedIDMap[cid],
 			Summary:              p.GetSummary(),
 			AssigneeId:           p.GetAssigneeId(),
+			DependsOnTaskIds:     dependsOn,
 			RequiredCapabilities: p.GetRequiredCapabilities(),
-			RootTaskId:           metadataString(parentTask.Metadata, "root_task_id"),
+			RootTaskId:           graphRootTaskID(parentTask),
 			ParentTaskId:         parentID,
 			Source:               "agent",
 		})
 	}
 
 	proposalID := "split-" + uuid.NewString()
-	if s.splitProposals == nil {
-		s.splitProposals = map[string]*splitProposal{}
-	}
-	s.splitProposals[proposalID] = &splitProposal{
+	proposal := &splitProposal{
 		ProposalID:    proposalID,
 		ParentTaskID:  parentID,
 		ProposedTasks: proposedTasks,
 	}
+	s.splitProposalsMu.Lock()
+	if s.splitProposals == nil {
+		s.splitProposals = map[string]*splitProposal{}
+	}
+	s.splitProposals[proposalID] = proposal
+	s.splitProposalsMu.Unlock()
 
-	return &daemonv1.ProposeTaskSplitResponse{
+	resp := &daemonv1.ProposeTaskSplitResponse{
 		ProposalId:    proposalID,
 		ParentTask:    daemonhost.CollaborationTaskToProto(parentTask),
 		ProposedTasks: proposedTasks,
 		Accepted:      true,
-	}, nil
+	}
+	if idemReserved {
+		if err := completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:ProposeTaskSplitResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "task_split_proposal",
+			ResourceID:   proposalID,
+		}); err != nil {
+			// Mutation succeeded but idempotency completion failed.
+		}
+	}
+	return resp, nil
 }
 
 func (s *Server) ApplyTaskSplit(ctx context.Context, req *daemonv1.ApplyTaskSplitRequest) (*daemonv1.ApplyTaskSplitResponse, error) {
@@ -536,6 +605,8 @@ func (s *Server) ApplyTaskSplit(ctx context.Context, req *daemonv1.ApplyTaskSpli
 	}
 
 	proposalID := strings.TrimSpace(req.GetProposalId())
+	s.splitProposalsMu.Lock()
+	defer s.splitProposalsMu.Unlock()
 	if s.splitProposals == nil || s.splitProposals[proposalID] == nil {
 		if idemReserved {
 			failIdempotency(ctx, s.idempotencyStore, idemKey, fmt.Errorf("split proposal not found: %s", proposalID))
@@ -566,6 +637,10 @@ func (s *Server) ApplyTaskSplit(ctx context.Context, req *daemonv1.ApplyTaskSpli
 			return nil, fmt.Errorf("selected task %s not in proposal %s", sid, proposalID)
 		}
 	}
+	selectedSet := make(map[string]struct{}, len(selectedIDs))
+	for _, sid := range selectedIDs {
+		selectedSet[sid] = struct{}{}
+	}
 
 	parentID := proposal.ParentTaskID
 	parentTask, err := s.agent.TaskService().Get(parentID)
@@ -588,27 +663,55 @@ func (s *Server) ApplyTaskSplit(ctx context.Context, req *daemonv1.ApplyTaskSpli
 	currentVersion := metadataInt64(parentTask.Metadata, "graph_version")
 	newVersion := currentVersion + int64(len(selectedIDs)) + 1
 
+	rootTaskID := graphRootTaskID(parentTask)
+	actualIDsByProposedID := make(map[string]string, len(selectedIDs))
+	for _, sid := range selectedIDs {
+		actualIDsByProposedID[sid] = "collab-task-" + uuid.NewString()
+	}
+
 	createdSubtasks := make([]*daemonv1.Task, 0, len(selectedIDs))
 	for _, sid := range selectedIDs {
 		pt := proposedByID[sid]
-		newID := "collab-task-" + uuid.NewString()
+		dependsOnTaskIDs := make([]string, 0, len(pt.GetDependsOnTaskIds()))
+		for _, proposedDepID := range pt.GetDependsOnTaskIds() {
+			if _, selected := selectedSet[proposedDepID]; !selected {
+				err := fmt.Errorf("selected task %s depends on unselected proposed task %s", sid, proposedDepID)
+				if idemReserved {
+					failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+				}
+				return nil, err
+			}
+			actualDepID, ok := actualIDsByProposedID[proposedDepID]
+			if !ok {
+				err := fmt.Errorf("missing actual task id for proposed dependency %s", proposedDepID)
+				if idemReserved {
+					failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+				}
+				return nil, err
+			}
+			dependsOnTaskIDs = append(dependsOnTaskIDs, actualDepID)
+		}
+		meta := map[string]any{
+			"target":                target,
+			"source":                "agent",
+			"root_task_id":          rootTaskID,
+			"parent_task_id":        parentID,
+			"split_proposal_id":     proposalID,
+			"assignee_id":           pt.GetAssigneeId(),
+			"required_capabilities": pt.GetRequiredCapabilities(),
+			"graph_version":         newVersion,
+			"delivery":              "daemon-collaboration",
+		}
+		if len(dependsOnTaskIDs) > 0 {
+			meta["depends_on_task_ids"] = toAnySlice(dependsOnTaskIDs)
+		}
 		subTask, err := s.agent.TaskService().Enqueue(tasks.Task{
-			ID:        newID,
+			ID:        actualIDsByProposedID[sid],
 			Type:      tasks.TypeRemoteAgent,
 			Summary:   pt.GetSummary(),
 			SessionID: sessionID,
 			RuntimeID: strings.TrimSpace(pt.GetRuntimeId()),
-			Metadata: map[string]any{
-				"target":                target,
-				"source":                "agent",
-				"root_task_id":          metadataString(parentTask.Metadata, "root_task_id"),
-				"parent_task_id":        parentID,
-				"split_proposal_id":     proposalID,
-				"assignee_id":           pt.GetAssigneeId(),
-				"required_capabilities": pt.GetRequiredCapabilities(),
-				"graph_version":         newVersion,
-				"delivery":              "daemon-collaboration",
-			},
+			Metadata:  meta,
 		})
 		if err != nil {
 			// Best-effort cleanup: cancel already-created subtasks in this batch.
@@ -2047,6 +2150,13 @@ func metadataStringSlice(values map[string]any, key string) []string {
 	return result
 }
 
+func graphRootTaskID(task tasks.Task) string {
+	if rootID := metadataString(task.Metadata, "root_task_id"); rootID != "" {
+		return rootID
+	}
+	return strings.TrimSpace(task.ID)
+}
+
 // ---------------------------------------------------------------------------
 // Idempotency helpers
 // ---------------------------------------------------------------------------
@@ -2145,6 +2255,19 @@ func replayLogActivity(rec *idempotency.Record) (*daemonv1.LogActivityResponse, 
 	return nil, fmt.Errorf("idempotency record missing response data")
 }
 
+func replayProposeTaskSplit(rec *idempotency.Record) (*daemonv1.ProposeTaskSplitResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.ProposeTaskSplitResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return nil, fmt.Errorf("idempotency record missing response data")
+}
+
 func replayCreateTaskGraph(rec *idempotency.Record) (*daemonv1.CreateTaskGraphResponse, error) {
 	if rec != nil && rec.Status == idempotency.StatusFailed {
 		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
@@ -2173,6 +2296,11 @@ func replayApplyTaskSplit(rec *idempotency.Record) (*daemonv1.ApplyTaskSplitResp
 
 func protoHashString(msg *daemonv1.Task) string {
 	b, _ := json.Marshal(msg)
+	return idempotency.Hash(b)
+}
+
+func protoHashProposedSubtaskSlice(tasks []*daemonv1.ProposedSubtask) string {
+	b, _ := json.Marshal(tasks)
 	return idempotency.Hash(b)
 }
 
