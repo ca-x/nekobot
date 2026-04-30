@@ -448,12 +448,75 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if replayActivity.Activity.GetActivityId() != activity.Activity.GetActivityId() {
 		t.Fatalf("expected replay activity %q, got %q", activity.Activity.GetActivityId(), replayActivity.Activity.GetActivityId())
 	}
+	control, err := s.ControlAgent(context.Background(), &daemonv1.ControlAgentRequest{
+		AgentId:            runtimeItem.ID,
+		Action:             daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART,
+		Reason:             "restart after config change",
+		RequestedByAgentId: runtimeItem.ID,
+		RequestId:          "control-req-1",
+	})
+	if err != nil {
+		t.Fatalf("ControlAgent failed: %v", err)
+	}
+	if control.GetAccepted() || control.GetOperation().GetState() != "unsupported" {
+		t.Fatalf("unexpected control response: %+v", control)
+	}
+	controlEvents, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince after ControlAgent failed: %v", err)
+	}
+	if len(controlEvents.Events) != 2 || controlEvents.Events[1].GetKind() != "agent.control_requested" || controlEvents.Events[1].GetTaskId() != "" {
+		t.Fatalf("unexpected control events: %+v", controlEvents.Events)
+	}
+	controlID := control.GetOperation().GetOperationId()
+	replayControl, err := s.ControlAgent(context.Background(), &daemonv1.ControlAgentRequest{
+		AgentId:            runtimeItem.ID,
+		Action:             daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART,
+		Reason:             "restart after config change",
+		RequestedByAgentId: runtimeItem.ID,
+		RequestId:          "control-req-1",
+	})
+	if err != nil {
+		t.Fatalf("ControlAgent replay failed: %v", err)
+	}
+	if replayControl.GetOperation().GetOperationId() != controlID {
+		t.Fatalf("expected replay operation %q, got %q", controlID, replayControl.GetOperation().GetOperationId())
+	}
+	afterReplayEvents, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince after ControlAgent replay failed: %v", err)
+	}
+	if len(afterReplayEvents.Events) != len(controlEvents.Events) {
+		t.Fatalf("expected replay to avoid duplicate events, before=%d after=%d", len(controlEvents.Events), len(afterReplayEvents.Events))
+	}
+	controlIdem, err := s.idempotencyStore.Check(context.Background(), idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   runtimeItem.ID,
+		Method:     "ControlAgent",
+		RequestID:  "control-req-1",
+	})
+	if err != nil {
+		t.Fatalf("check control idempotency: %v", err)
+	}
+	if controlIdem.Record == nil || controlIdem.Record.EventID != controlEvents.Events[1].GetEventId() {
+		t.Fatalf("expected control idempotency event_id %q, got %+v", controlEvents.Events[1].GetEventId(), controlIdem.Record)
+	}
+	_, err = s.ControlAgent(context.Background(), &daemonv1.ControlAgentRequest{
+		AgentId:            runtimeItem.ID,
+		Action:             daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART_FULL_RESET,
+		Reason:             "restart after config change",
+		RequestedByAgentId: runtimeItem.ID,
+		RequestId:          "control-req-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "idempotency conflict") {
+		t.Fatalf("expected control idempotency conflict, got %v", err)
+	}
 	nextEvents, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Cursor: events.NextCursor, Limit: 10})
 	if err != nil {
 		t.Fatalf("ListEventsSince from cursor failed: %v", err)
 	}
-	if len(nextEvents.Events) != 0 {
-		t.Fatalf("expected no events after cursor, got %+v", nextEvents.Events)
+	if len(nextEvents.Events) != 1 || nextEvents.Events[0].GetEventId() != controlEvents.Events[1].GetEventId() {
+		t.Fatalf("expected control event after cursor, got %+v", nextEvents.Events)
 	}
 	if _, err := s.LogActivity(context.Background(), &daemonv1.LogActivityRequest{
 		Target:  "#websocket:thread-b",

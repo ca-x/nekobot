@@ -1071,8 +1071,42 @@ func (s *Server) ControlAgent(ctx context.Context, req *daemonv1.ControlAgentReq
 	if req.GetAction() == daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_UNSPECIFIED {
 		return nil, fmt.Errorf("action is required")
 	}
+	reqID := strings.TrimSpace(req.GetRequestId())
+	callerID := firstNonEmpty(strings.TrimSpace(req.GetRequestedByAgentId()), agentID)
+	idemKey := idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   callerID,
+		Method:     "ControlAgent",
+		RequestID:  reqID,
+	}
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"agent_id", agentID,
+			"computer_id", req.GetComputerId(),
+			"runtime_profile_id", req.GetRuntimeProfileId(),
+			"action", fmt.Sprintf("%d", req.GetAction()),
+			"reason", req.GetReason(),
+			"requested_by_agent_id", req.GetRequestedByAgentId(),
+		)
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 30*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replayControlAgent(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+	}
+	idemReserved := reqID != "" && s.idempotencyStore != nil
 	profile, err := s.findAgentProfile(ctx, agentID)
 	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, err
 	}
 	now := time.Now().Unix()
@@ -1088,23 +1122,40 @@ func (s *Server) ControlAgent(ctx context.Context, req *daemonv1.ControlAgentReq
 		CreatedTimeUnix:    now,
 		UpdatedTimeUnix:    now,
 	}
-	_, err = s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+	eventID := ""
+	event, err := s.appendCollaborationEvent(ctx, eventlog.EventRecord{
 		EventType:      "agent.control_requested",
 		ActorKind:      "agent",
 		ActorID:        operation.RequestedByAgentId,
 		SubjectKind:    "agent",
 		SubjectID:      operation.AgentId,
-		IdempotencyKey: strings.TrimSpace(req.GetRequestId()),
+		IdempotencyKey: reqID,
 		PayloadJSON:    mustMarshalJSON(operation),
 	})
 	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, err
 	}
-	return &daemonv1.ControlAgentResponse{
+	if event != nil {
+		eventID = event.EventID
+	}
+	resp := &daemonv1.ControlAgentResponse{
 		Accepted:  false,
 		Operation: operation,
 		Profile:   profile,
-	}, nil
+	}
+	if idemReserved {
+		_ = completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:ControlAgentResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "agent_control_operation",
+			ResourceID:   operation.OperationId,
+			EventID:      eventID,
+		})
+	}
+	return resp, nil
 }
 
 func (s *Server) SendAgentDirectMessage(ctx context.Context, req *daemonv1.SendAgentDirectMessageRequest) (*daemonv1.SendAgentDirectMessageResponse, error) {
@@ -2248,6 +2299,19 @@ func replayLogActivity(rec *idempotency.Record) (*daemonv1.LogActivityResponse, 
 	}
 	if rec != nil && rec.ResponseJSON != "" {
 		var resp daemonv1.LogActivityResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return nil, fmt.Errorf("idempotency record missing response data")
+}
+
+func replayControlAgent(rec *idempotency.Record) (*daemonv1.ControlAgentResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.ControlAgentResponse
 		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
 			return &resp, nil
 		}
