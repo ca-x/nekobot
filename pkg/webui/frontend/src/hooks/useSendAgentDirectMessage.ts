@@ -33,7 +33,7 @@ export function useSendAgentDirectMessage() {
       try {
         // Call the protected WebUI endpoint which proxies to daemon SendMessage RPC
         const response = await api.post<SendAgentDirectMessageResponse>(
-          `/daemon/agents/${encodeURIComponent(agentId)}/message`,
+          `/api/daemon/agents/${encodeURIComponent(agentId)}/message`,
           body
         );
         return response;
