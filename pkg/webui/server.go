@@ -2717,8 +2717,41 @@ func (s *Server) handleSendAgentDirectMessage(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "request_id is required"})
 	}
 
+	// Get daemon inventory to find which machine has this agent
+	snapshot, err := daemonhost.NewRegistry(s.kvStore).Snapshot(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get daemon inventory"})
+	}
+
+	// Find the machine that has this agent
+	var targetMachineID string
+	for machineID, inventory := range snapshot.Inventories {
+		if inventory == nil || inventory.Agents == nil {
+			continue
+		}
+		for _, agent := range inventory.Agents {
+			if agent != nil && agent.AgentId == agentID {
+				targetMachineID = machineID
+				break
+			}
+		}
+		if targetMachineID != "" {
+			break
+		}
+	}
+
+	if targetMachineID == "" {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "agent not found in any daemon"})
+	}
+
+	// Get daemon client for the target machine
+	client, _, err := s.daemonClientForMachine(c.Request().Context(), targetMachineID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
 	// Call SendMessage RPC with dm:@agent_id target
-	resp, err := s.agent.Collaboration().SendMessage(c.Request().Context(), &daemonv1.SendMessageRequest{
+	resp, err := client.SendMessageRemote(&daemonv1.SendMessageRequest{
 		Target:             fmt.Sprintf("dm:@%s", agentID),
 		Content:            strings.TrimSpace(body.Content),
 		AttachmentIds:      body.AttachmentIds,
@@ -2731,7 +2764,7 @@ func (s *Server) handleSendAgentDirectMessage(c *echo.Context) error {
 
 	// Map response to frontend shape
 	return c.JSON(http.StatusOK, map[string]any{
-		"message_id": resp.MessageId,
+		"message_id": resp.Message.MessageId,
 		"agent_id":   agentID,
 		"content":    body.Content,
 		"created_at": time.Now().Format(time.RFC3339),
