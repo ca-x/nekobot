@@ -17,7 +17,7 @@ export interface DirectAgentMessageDialogProps {
   agentName?: string;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  onSendMessage?: (agentId: string, content: string, requestId: string) => Promise<void>;
+  onSendMessage: (agentId: string, content: string, requestId: string) => Promise<void>;
 }
 
 export default function DirectAgentMessageDialog({
@@ -39,8 +39,7 @@ export default function DirectAgentMessageDialog({
     setIsLoading(true);
     try {
       const requestId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      await onSendMessage?.(agentId, content, requestId);
-      toast.success(`Message sent to ${agentName || agentId}`);
+      await onSendMessage(agentId, content, requestId);
       setContent("");
       onOpenChange?.(false);
     } catch (error) {
@@ -94,3 +93,4 @@ export default function DirectAgentMessageDialog({
     </Dialog>
   );
 }
+

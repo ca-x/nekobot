@@ -1,6 +1,6 @@
 /**
  * Integration: Direct Agent Message UI/API Wiring
- * 
+ *
  * This shows how to integrate DirectAgentMessageDialog into agent display components.
  * Reuses dm:@agent_id target and SendMessage/SendAgentDirectMessage semantics.
  */
@@ -59,9 +59,9 @@ export function AgentWithDirectMessage({
 
 /**
  * Example: Minimal integration into agent row
- * 
+ *
  * Usage in agent list/table:
- * 
+ *
  * <div className="flex items-center justify-between">
  *   <div>
  *     <div className="font-semibold">{agent.name}</div>
@@ -70,3 +70,4 @@ export function AgentWithDirectMessage({
  *   <AgentWithDirectMessage agentId={agent.id} agentName={agent.name} />
  * </div>
  */
+

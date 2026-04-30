@@ -361,6 +361,7 @@ func (s *Server) setup() {
 	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
 	e.POST("/api/daemon/runs/fetch", s.handleFetchDaemonRuns)
 	e.POST("/api/daemon/runs/update", s.handleUpdateDaemonRunStatus)
+	e.POST("/api/daemon/agents/:agent_id/message", s.handleSendAgentDirectMessage)
 	e.GET("/api/nekoclientd/bootstrap", s.handleGetNekoClientdBootstrap)
 
 	// Chat WebSocket (auth handled inside via token query param)
@@ -2975,6 +2976,57 @@ func (s *Server) handleUpdateDaemonRunStatus(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleSendAgentDirectMessage(c *echo.Context) error {
+	agentID := strings.TrimSpace(c.Param("agent_id"))
+	if agentID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "agent_id is required"})
+	}
+
+	var req struct {
+		Content            string   `json:"content"`
+		AttachmentIDs      []string `json:"attachment_ids,omitempty"`
+		ReplyToMessageID   string   `json:"reply_to_message_id,omitempty"`
+		RequestID          string   `json:"request_id"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	if strings.TrimSpace(req.Content) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "content cannot be empty"})
+	}
+
+	if s.agent == nil || s.agent.Collaboration() == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "collaboration service unavailable"})
+	}
+
+	// Call the gRPC SendMessage with dm:@agent_id target
+	target := fmt.Sprintf("dm:@%s", agentID)
+	grpcReq := &daemonv1.SendMessageRequest{
+		Target:              target,
+		Content:             req.Content,
+		Role:                "user",
+		SenderAgentId:       "webui",
+		SenderDisplayName:   "WebUI",
+		ReplyToMessageId:    req.ReplyToMessageID,
+		RequestId:           req.RequestID,
+		EmitOutbound:        false,
+	}
+
+	resp, err := s.agent.Collaboration().SendMessage(c.Request().Context(), grpcReq)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message_id": resp.MessageId,
+		"agent_id":   agentID,
+		"content":    req.Content,
+		"created_at": time.Now().Format(time.RFC3339),
+		"target":     target,
+	})
 }
 
 func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.Task, req *daemonv1.UpdateRunStatusRequest) error {

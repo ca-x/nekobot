@@ -21,11 +21,11 @@ export function useSendAgentDirectMessage() {
   return useMutation({
     mutationFn: async (req: SendAgentDirectMessageRequest & { agentId: string }) => {
       const { agentId, ...body } = req;
-      
+
       if (!agentId) {
         throw new Error("Agent ID is required");
       }
-      
+
       if (!body.content || !body.content.trim()) {
         throw new Error("Message content cannot be empty");
       }
@@ -35,7 +35,7 @@ export function useSendAgentDirectMessage() {
           `/api/daemon/agents/${agentId}/message`,
           body
         );
-        return response.data;
+        return response;
       } catch (error) {
         if (error instanceof Error) {
           throw error;
@@ -52,3 +52,4 @@ export function useSendAgentDirectMessage() {
     },
   });
 }
+
