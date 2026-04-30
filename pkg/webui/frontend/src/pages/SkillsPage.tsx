@@ -6,13 +6,13 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  useDisableMarketplaceSkill,
-  useEnableMarketplaceSkill,
-  useMarketplaceSkillContent,
-  useMarketplaceSkillItem,
-  useMarketplaceSkills,
-  type MarketplaceSkill,
-} from '@/hooks/useMarketplace';
+  useDisableSkill,
+  useEnableSkill,
+  useSkillContent,
+  useSkillItem,
+  useSkills,
+  type SkillItem,
+} from '@/hooks/useSkills';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
@@ -29,15 +29,15 @@ import {
 import type { ReactNode } from 'react';
 
 export default function SkillsPage() {
-  const { data: skills, isLoading } = useMarketplaceSkills();
-  const enableSkill = useEnableMarketplaceSkill();
-  const disableSkill = useDisableMarketplaceSkill();
+  const { data: skills, isLoading } = useSkills();
+  const enableSkill = useEnableSkill();
+  const disableSkill = useDisableSkill();
 
   const [query, setQuery] = useState('');
   const [selectedSkillID, setSelectedSkillID] = useState<string | null>(null);
 
-  const { data: selectedSkill, isLoading: isLoadingItem } = useMarketplaceSkillItem(selectedSkillID);
-  const { data: selectedContent, isLoading: isLoadingContent } = useMarketplaceSkillContent(selectedSkillID);
+  const { data: selectedSkill, isLoading: isLoadingItem } = useSkillItem(selectedSkillID);
+  const { data: selectedContent, isLoading: isLoadingContent } = useSkillContent(selectedSkillID);
 
   const filteredSkills = useMemo(() => {
     if (!skills) return [];
@@ -333,7 +333,7 @@ export default function SkillsPage() {
   );
 }
 
-function readyCount(skills: MarketplaceSkill[]): number {
+function readyCount(skills: SkillItem[]): number {
   return skills.filter((s) => s.eligible && s.enabled).length;
 }
 
@@ -342,7 +342,7 @@ function SkillListItem({
   selected,
   onSelect,
 }: {
-  skill: MarketplaceSkill;
+  skill: SkillItem;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -412,7 +412,7 @@ function SkillDetailHeader({
   onEnable,
   onDisable,
 }: {
-  skill: MarketplaceSkill;
+  skill: SkillItem;
   isBusy: boolean;
   onEnable: (id: string) => void;
   onDisable: (id: string) => void;

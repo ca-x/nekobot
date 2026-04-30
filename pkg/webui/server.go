@@ -55,7 +55,6 @@ import (
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
-	"nekobot/pkg/memory"
 	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/modelroute"
 	"nekobot/pkg/modelstore"
@@ -497,25 +496,12 @@ func (s *Server) setup() {
 	api.PUT("/threads/:id", s.handleUpdateThread)
 	api.POST("/sessions/cleanup", s.handleCleanupSessions)
 
-	// Marketplace routes
-	api.GET("/marketplace/skills", s.handleListMarketplaceSkills)
-	api.GET("/marketplace/skills/installed", s.handleListInstalledMarketplaceSkills)
-	api.GET("/marketplace/skills/search", s.handleSearchMarketplaceSkills)
-	api.GET("/marketplace/skills/items/:id", s.handleGetMarketplaceSkillItem)
-	api.GET("/marketplace/skills/items/:id/content", s.handleGetMarketplaceSkillContent)
-	api.POST("/marketplace/skills/items/:id/workspace-draft", s.handleCreateMarketplaceSkillWorkspaceDraft)
-	api.POST("/marketplace/skills/install", s.handleInstallMarketplaceSkill)
-	api.GET("/marketplace/skills/inventory", s.handleGetMarketplaceInventory)
-	api.GET("/marketplace/skills/evolution-review", s.handleGetMarketplaceSkillEvolutionReview)
-	api.GET("/marketplace/skills/snapshots", s.handleListMarketplaceSkillSnapshots)
-	api.POST("/marketplace/skills/snapshots", s.handleCreateMarketplaceSkillSnapshot)
-	api.POST("/marketplace/skills/snapshots/prune", s.handlePruneMarketplaceSkillSnapshots)
-	api.POST("/marketplace/skills/versions/cleanup", s.handleCleanupMarketplaceSkillVersions)
-	api.POST("/marketplace/skills/snapshots/:id/restore", s.handleRestoreMarketplaceSkillSnapshot)
-	api.DELETE("/marketplace/skills/snapshots/:id", s.handleDeleteMarketplaceSkillSnapshot)
-	api.POST("/marketplace/skills/:id/enable", s.handleEnableMarketplaceSkill)
-	api.POST("/marketplace/skills/:id/disable", s.handleDisableMarketplaceSkill)
-	api.POST("/marketplace/skills/:id/install-deps", s.handleInstallMarketplaceSkillDependencies)
+	// Skills management
+	api.GET("/skills", s.handleListSkills)
+	api.GET("/skills/:id", s.handleGetSkill)
+	api.GET("/skills/:id/content", s.handleGetSkillContent)
+	api.POST("/skills/:id/enable", s.handleEnableSkill)
+	api.POST("/skills/:id/disable", s.handleDisableSkill)
 	api.GET("/workspace/status", s.handleGetWorkspaceStatus)
 	api.POST("/workspace/repair", s.handleRepairWorkspace)
 	api.POST("/webhooks/test", s.handleTestWebhook)
@@ -4163,7 +4149,7 @@ func requestScheme(c *echo.Context) string {
 	return scheme
 }
 
-func (s *Server) resolveMarketplaceSkill(id string) (*skills.Skill, bool) {
+func (s *Server) resolveSkill(id string) (*skills.Skill, bool) {
 	trimmedID := strings.TrimSpace(id)
 	if trimmedID == "" {
 		return nil, false
@@ -4180,7 +4166,7 @@ func (s *Server) resolveMarketplaceSkill(id string) (*skills.Skill, bool) {
 
 // --- Marketplace Handlers ---
 
-func (s *Server) handleListMarketplaceSkills(c *echo.Context) error {
+func (s *Server) handleListSkills(c *echo.Context) error {
 	if s.skillsMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
 	}
@@ -4197,119 +4183,40 @@ func (s *Server) handleListMarketplaceSkills(c *echo.Context) error {
 
 	items := make([]map[string]interface{}, 0, len(skillsList))
 	for _, skill := range skillsList {
-		items = append(items, s.marketplaceSkillItem(skill))
+		items = append(items, s.skillItem(skill))
 	}
 
 	return c.JSON(http.StatusOK, items)
 }
 
-func (s *Server) handleListInstalledMarketplaceSkills(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	skillsList := s.skillsMgr.ListEnabled()
-	sort.Slice(skillsList, func(i, j int) bool {
-		left := strings.TrimSpace(skillsList[i].ID)
-		right := strings.TrimSpace(skillsList[j].ID)
-		if left == right {
-			return strings.TrimSpace(skillsList[i].Name) < strings.TrimSpace(skillsList[j].Name)
-		}
-		return left < right
-	})
-
-	records := make([]map[string]interface{}, 0, len(skillsList))
-	for _, skill := range skillsList {
-		if !s.marketplaceSkillIsInstalled(skill) {
-			continue
-		}
-		records = append(records, s.marketplaceSkillItem(skill))
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"total":   len(records),
-		"records": records,
-	})
-}
-
-func (s *Server) handleSearchMarketplaceSkills(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	query := strings.TrimSpace(c.QueryParam("q"))
-	if query == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "query is required"})
-	}
-
-	output, err := s.skillsMgr.SearchRegistry(c.Request().Context(), query)
-	success := err == nil
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"query":      query,
-		"success":    success,
-		"proxy":      s.skillsMgr.SkillsProxy(),
-		"output":     strings.TrimSpace(output),
-		"error":      errorString(err),
-		"has_output": strings.TrimSpace(output) != "",
-	})
-}
-
-func (s *Server) marketplaceSkillIsInstalled(skill *skills.Skill) bool {
-	if skill == nil {
-		return false
-	}
-
-	filePath := strings.TrimSpace(skill.FilePath)
-	if filePath == "" || strings.HasPrefix(filePath, "builtin://") {
-		return false
-	}
-	if s.skillsMgr == nil {
-		return true
-	}
-
-	skillsDir := strings.TrimSpace(s.skillsMgr.SkillsDir())
-	if skillsDir == "" {
-		return true
-	}
-
-	relPath, err := filepath.Rel(filepath.Clean(skillsDir), filepath.Clean(filePath))
-	if err != nil {
-		return false
-	}
-	if relPath == "." {
-		return true
-	}
-	return relPath != ".." && !strings.HasPrefix(relPath, ".."+string(os.PathSeparator))
-}
-
-func (s *Server) handleGetMarketplaceSkillItem(c *echo.Context) error {
+func (s *Server) handleGetSkill(c *echo.Context) error {
 	if s.skillsMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
 	}
 
 	skillID := strings.TrimSpace(c.Param("id"))
-	skill, ok := s.resolveMarketplaceSkill(skillID)
+	skill, ok := s.resolveSkill(skillID)
 	if !ok {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
 	}
 
-	return c.JSON(http.StatusOK, s.marketplaceSkillItem(skill))
+	return c.JSON(http.StatusOK, s.skillItem(skill))
 }
 
-func (s *Server) handleGetMarketplaceSkillContent(c *echo.Context) error {
+func (s *Server) handleGetSkillContent(c *echo.Context) error {
 	if s.skillsMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
 	}
 
 	skillID := strings.TrimSpace(c.Param("id"))
-	skill, ok := s.resolveMarketplaceSkill(skillID)
+	skill, ok := s.resolveSkill(skillID)
 	if !ok {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
 	}
 
-	raw, bodyRaw, err := readMarketplaceSkillContent(skill)
+	raw, bodyRaw, err := readSkillContent(skill)
 	if err != nil {
-		s.logger.Error("Failed to read marketplace skill content",
+		s.logger.Error("Failed to read skill content",
 			zap.String("skill_id", skillID),
 			zap.Error(err))
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read skill content"})
@@ -4321,318 +4228,6 @@ func (s *Server) handleGetMarketplaceSkillContent(c *echo.Context) error {
 		"file_path": strings.TrimSpace(skill.FilePath),
 		"raw":       raw,
 		"body_raw":  bodyRaw,
-	})
-}
-
-func (s *Server) handleInstallMarketplaceSkill(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	var body struct {
-		Source string `json:"source"`
-	}
-	if err := c.Bind(&body); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
-
-	source := strings.TrimSpace(body.Source)
-	if source == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "source is required"})
-	}
-
-	targetPath, err := s.skillsMgr.InstallSkill(c.Request().Context(), source)
-	if err != nil {
-		s.logger.Error("Failed to install marketplace skill",
-			zap.String("source", source),
-			zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to install skill"})
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"source":    source,
-		"target":    targetPath,
-		"proxy":     s.skillsMgr.SkillsProxy(),
-		"installed": true,
-		"refreshed": true,
-	})
-}
-
-func (s *Server) handleGetMarketplaceSkillEvolutionReview(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	inventory := map[string]any{}
-	if invCtx := c.Request().Context(); true {
-		sources := s.skillsMgr.GetSkillSources()
-		versionStats := s.skillsMgr.VersionHistoryStats()
-		inventory = map[string]any{
-			"source_count": len(sources),
-			"version_history": map[string]any{
-				"skill_count":   versionStats["skill_count"],
-				"version_count": versionStats["version_count"],
-			},
-			"enabled_count":  len(s.skillsMgr.ListEnabled()),
-			"eligible_count": len(s.skillsMgr.ListEligibleEnabled()),
-		}
-		_ = invCtx
-	}
-
-	var activeLearnings string
-	var learningEntries []memory.LearningEntry
-	if mgr, err := memory.NewLearningsManager(s.config); err == nil {
-		activeLearnings = strings.TrimSpace(mgr.ReadActive())
-		if entries, listErr := mgr.List(); listErr == nil {
-			learningEntries = entries
-		}
-	}
-
-	snapshotList, _ := s.skillsMgr.ListSnapshots()
-	skillsList := s.skillsMgr.List()
-	suggestions := make([]map[string]any, 0)
-	for _, skill := range skillsList {
-		if skill == nil {
-			continue
-		}
-		reasons := make([]string, 0)
-		lowerName := strings.ToLower(strings.TrimSpace(skill.Name + " " + skill.ID + " " + skill.Description))
-		if activeLearnings != "" {
-			activeLower := strings.ToLower(activeLearnings)
-			if strings.Contains(activeLower, "cron") && strings.Contains(lowerName, "cron") {
-				reasons = append(reasons, "Active learnings mention cron workflows that may need stronger skill guidance.")
-			}
-			if strings.Contains(activeLower, "provider") && (strings.Contains(lowerName, "provider") || strings.Contains(lowerName, "model")) {
-				reasons = append(reasons, "Recent learnings mention provider/model behavior relevant to this skill.")
-			}
-		}
-		if !skill.Enabled {
-			reasons = append(reasons, "Skill is installed but currently disabled.")
-		}
-		if len(reasons) == 0 {
-			continue
-		}
-		suggestions = append(suggestions, map[string]any{
-			"skill_id": skill.ID,
-			"name":     skill.Name,
-			"enabled":  skill.Enabled,
-			"always":   skill.Always,
-			"reasons":  reasons,
-		})
-	}
-
-	return c.JSON(http.StatusOK, map[string]any{
-		"active_learnings":     activeLearnings,
-		"learning_entry_count": len(learningEntries),
-		"snapshot_count":       len(snapshotList),
-		"inventory":            inventory,
-		"suggestions":          suggestions,
-	})
-}
-
-func (s *Server) handleGetMarketplaceInventory(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	sources := s.skillsMgr.GetSkillSources()
-	sourceItems := make([]map[string]interface{}, 0, len(sources))
-	for _, source := range sources {
-		exists := true
-		if source.Type != skills.SourceBuiltin {
-			if _, err := os.Stat(source.Path); err != nil {
-				if os.IsNotExist(err) {
-					exists = false
-				} else {
-					return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to inspect skill source"})
-				}
-			}
-		}
-
-		sourceItems = append(sourceItems, map[string]interface{}{
-			"path":     strings.TrimSpace(source.Path),
-			"priority": source.Priority,
-			"type":     string(source.Type),
-			"exists":   exists,
-			"builtin":  source.Type == skills.SourceBuiltin,
-		})
-	}
-
-	enabledCount := 0
-	alwaysCount := 0
-	for _, skill := range s.skillsMgr.List() {
-		if skill.Enabled {
-			enabledCount++
-		}
-		if skill.Always {
-			alwaysCount++
-		}
-	}
-	versionStats := s.skillsMgr.VersionHistoryStats()
-	versionPolicy := s.skillVersionPolicy()
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"writable_dir":  strings.TrimSpace(s.skillsMgr.SkillsDir()),
-		"proxy":         strings.TrimSpace(s.skillsMgr.SkillsProxy()),
-		"source_count":  len(sourceItems),
-		"enabled_count": enabledCount,
-		"always_count":  alwaysCount,
-		"version_history": map[string]interface{}{
-			"enabled":       versionPolicy.Enabled,
-			"max_count":     versionPolicy.MaxCount,
-			"skill_count":   versionStats["skill_count"],
-			"version_count": versionStats["version_count"],
-		},
-		"sources": sourceItems,
-	})
-}
-
-func (s *Server) handleListMarketplaceSkillSnapshots(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	snapshotList, err := s.skillsMgr.ListSnapshots()
-	if err != nil {
-		s.logger.Error("Failed to list skill snapshots", zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list skill snapshots"})
-	}
-
-	snapshotPolicy := s.skillSnapshotPolicy()
-
-	items := make([]map[string]interface{}, 0, len(snapshotList))
-	for _, snapshot := range snapshotList {
-		enabledCount := 0
-		for _, item := range snapshot.Skills {
-			if item.Enabled {
-				enabledCount++
-			}
-		}
-
-		items = append(items, map[string]interface{}{
-			"id":            snapshot.ID,
-			"timestamp":     snapshot.Timestamp.Format(time.RFC3339),
-			"skill_count":   len(snapshot.Skills),
-			"enabled_count": enabledCount,
-			"metadata":      snapshot.Metadata,
-		})
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"total":      len(items),
-		"snapshots":  items,
-		"auto_prune": snapshotPolicy.AutoPrune,
-		"max_count":  snapshotPolicy.MaxCount,
-	})
-}
-
-func (s *Server) handleCreateMarketplaceSkillWorkspaceDraft(c *echo.Context) error {
-	return c.JSON(http.StatusNotImplemented, map[string]string{"error": "workspace draft creation is not implemented yet"})
-}
-
-func (s *Server) handleCreateMarketplaceSkillSnapshot(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	var body struct {
-		Label string `json:"label"`
-		Note  string `json:"note"`
-	}
-	if err := c.Bind(&body); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
-
-	metadata := map[string]string{
-		"source": "webui",
-	}
-	if label := strings.TrimSpace(body.Label); label != "" {
-		metadata["label"] = label
-	}
-	if note := strings.TrimSpace(body.Note); note != "" {
-		metadata["note"] = note
-	}
-
-	snapshot, err := s.skillsMgr.CreateSnapshot(metadata)
-	if err != nil {
-		s.logger.Error("Failed to create skill snapshot", zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create skill snapshot"})
-	}
-
-	enabledCount := 0
-	for _, item := range snapshot.Skills {
-		if item.Enabled {
-			enabledCount++
-		}
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"id":            snapshot.ID,
-		"timestamp":     snapshot.Timestamp.Format(time.RFC3339),
-		"skill_count":   len(snapshot.Skills),
-		"enabled_count": enabledCount,
-		"metadata":      snapshot.Metadata,
-	})
-}
-
-func (s *Server) handlePruneMarketplaceSkillSnapshots(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	snapshotPolicy := s.skillSnapshotPolicy()
-	maxCount := snapshotPolicy.MaxCount
-	if maxCount < 1 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "skill snapshot max_count must be at least 1"})
-	}
-
-	deleted, err := s.skillsMgr.PruneSnapshots(maxCount)
-	if err != nil {
-		s.logger.Error("Failed to prune skill snapshots", zap.Int("max_count", maxCount), zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prune skill snapshots"})
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"deleted":    deleted,
-		"max_count":  maxCount,
-		"auto_prune": snapshotPolicy.AutoPrune,
-	})
-}
-
-func (s *Server) handleCleanupMarketplaceSkillVersions(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	policy := s.skillVersionPolicy()
-	if !policy.Enabled {
-		deleted, err := s.skillsMgr.ClearVersionHistory()
-		if err != nil {
-			s.logger.Error("Failed to clear skill version history", zap.Error(err))
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to clear skill version history"})
-		}
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"deleted":   deleted,
-			"max_count": policy.MaxCount,
-			"enabled":   policy.Enabled,
-			"mode":      "clear_all",
-		})
-	}
-
-	if policy.MaxCount < 1 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "skill version history max_count must be at least 1"})
-	}
-
-	if err := s.skillsMgr.PruneVersionHistory(policy.MaxCount); err != nil {
-		s.logger.Error("Failed to prune skill version history", zap.Int("max_count", policy.MaxCount), zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prune skill version history"})
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"deleted":   0,
-		"max_count": policy.MaxCount,
-		"enabled":   policy.Enabled,
-		"mode":      "prune_to_policy",
 	})
 }
 
@@ -4650,59 +4245,7 @@ func (s *Server) skillVersionPolicy() config.SkillVersionsConfig {
 	return s.config.WebUI.SkillVersions
 }
 
-func (s *Server) handleRestoreMarketplaceSkillSnapshot(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	snapshotID := strings.TrimSpace(c.Param("id"))
-	if snapshotID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "snapshot id is required"})
-	}
-
-	if err := s.skillsMgr.RestoreSnapshot(snapshotID); err != nil {
-		if os.IsNotExist(err) {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "snapshot not found"})
-		}
-		s.logger.Error("Failed to restore skill snapshot",
-			zap.String("snapshot_id", snapshotID),
-			zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to restore skill snapshot"})
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{
-		"id":     snapshotID,
-		"status": "restored",
-	})
-}
-
-func (s *Server) handleDeleteMarketplaceSkillSnapshot(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	snapshotID := strings.TrimSpace(c.Param("id"))
-	if snapshotID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "snapshot id is required"})
-	}
-
-	if err := s.skillsMgr.DeleteSnapshot(snapshotID); err != nil {
-		if os.IsNotExist(err) {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "snapshot not found"})
-		}
-		s.logger.Error("Failed to delete skill snapshot",
-			zap.String("snapshot_id", snapshotID),
-			zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete skill snapshot"})
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{
-		"id":     snapshotID,
-		"status": "deleted",
-	})
-}
-
-func (s *Server) marketplaceSkillItem(skill *skills.Skill) map[string]interface{} {
+func (s *Server) skillItem(skill *skills.Skill) map[string]interface{} {
 	var report *skills.SkillEntry
 	if s != nil && s.skillsMgr != nil && skill != nil {
 		report, _ = s.skillsMgr.CheckRequirementsReport(skill.ID)
@@ -4741,7 +4284,7 @@ func (s *Server) marketplaceSkillItem(skill *skills.Skill) map[string]interface{
 			"python_packages": nonNilStrings(report.MissingPythonPackages),
 			"node_packages":   nonNilStrings(report.MissingNodePackages),
 		},
-		"install_specs": marketplaceInstallSpecs(skill),
+		"install_specs": installSpecs(skill),
 		"is_installed":  report.Installed,
 	}
 }
@@ -4984,7 +4527,7 @@ func (s *Server) resolveQMDCommand() (string, string) {
 	return "qmd", "path"
 }
 
-func marketplaceInstallSpecs(skill *skills.Skill) []map[string]interface{} {
+func installSpecs(skill *skills.Skill) []map[string]interface{} {
 	if skill == nil || skill.Requirements == nil {
 		return nil
 	}
@@ -5007,7 +4550,7 @@ func marketplaceInstallSpecs(skill *skills.Skill) []map[string]interface{} {
 	return out
 }
 
-func readMarketplaceSkillContent(skill *skills.Skill) (string, string, error) {
+func readSkillContent(skill *skills.Skill) (string, string, error) {
 	filePath := strings.TrimSpace(skill.FilePath)
 	var raw string
 	if strings.HasPrefix(filePath, "builtin://") {
@@ -5035,13 +4578,13 @@ func readMarketplaceSkillContent(skill *skills.Skill) (string, string, error) {
 	return raw, bodyRaw, nil
 }
 
-func (s *Server) handleEnableMarketplaceSkill(c *echo.Context) error {
+func (s *Server) handleEnableSkill(c *echo.Context) error {
 	if s.skillsMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
 	}
 
 	skillID := strings.TrimSpace(c.Param("id"))
-	if _, ok := s.resolveMarketplaceSkill(skillID); !ok {
+	if _, ok := s.resolveSkill(skillID); !ok {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
 	}
 	if err := s.skillsMgr.Enable(skillID); err != nil {
@@ -5051,13 +4594,13 @@ func (s *Server) handleEnableMarketplaceSkill(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "enabled"})
 }
 
-func (s *Server) handleDisableMarketplaceSkill(c *echo.Context) error {
+func (s *Server) handleDisableSkill(c *echo.Context) error {
 	if s.skillsMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
 	}
 
 	skillID := strings.TrimSpace(c.Param("id"))
-	if _, ok := s.resolveMarketplaceSkill(skillID); !ok {
+	if _, ok := s.resolveSkill(skillID); !ok {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
 	}
 	if err := s.skillsMgr.Disable(skillID); err != nil {
@@ -5065,48 +4608,6 @@ func (s *Server) handleDisableMarketplaceSkill(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "disabled"})
-}
-
-func (s *Server) handleInstallMarketplaceSkillDependencies(c *echo.Context) error {
-	if s.skillsMgr == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "skills manager not available"})
-	}
-
-	skillID := strings.TrimSpace(c.Param("id"))
-	if _, ok := s.resolveMarketplaceSkill(skillID); !ok {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "skill not found"})
-	}
-
-	results, err := s.skillsMgr.InstallDependencies(c.Request().Context(), skillID)
-	if err != nil {
-		s.logger.Error("Failed to install marketplace skill dependencies",
-			zap.String("skill_id", skillID),
-			zap.Error(err))
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to install dependencies"})
-	}
-
-	success := true
-	payload := make([]map[string]interface{}, 0, len(results))
-	for _, result := range results {
-		if !result.Success {
-			success = false
-		}
-		payload = append(payload, map[string]interface{}{
-			"success":      result.Success,
-			"method":       result.Method,
-			"package":      result.Package,
-			"output":       result.Output,
-			"error":        errorString(result.Error),
-			"duration_ms":  result.Duration.Milliseconds(),
-			"installed_at": result.InstalledAt,
-		})
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"skill_id": skillID,
-		"success":  success,
-		"results":  payload,
-	})
 }
 
 func errorString(err error) string {

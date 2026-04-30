@@ -467,31 +467,6 @@ export function useCleanupToolSessionEvents() {
   });
 }
 
-export function useCleanupSkillVersions() {
-  return useMutation({
-    mutationFn: () =>
-      api.post<{
-        deleted: number;
-        max_count: number;
-        enabled: boolean;
-        mode: string;
-      }>("/api/marketplace/skills/versions/cleanup", {}),
-    onSuccess: (result) => {
-      if (result.mode === "clear_all") {
-        toast.success(
-          t("webuiSkillVersionsCleanupDone", String(result.deleted ?? 0)),
-        );
-        return;
-      }
-      toast.success(
-        t("webuiSkillVersionsPruned", String(result.max_count ?? 0)),
-      );
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-}
-
-
 export function useDaemonWorkspaceTree(machineID: string | null, workspaceID: string | null, path: string) {
   return useQuery<DaemonWorkspaceTreeData>({
     queryKey: ["daemon-workspace-tree", machineID, workspaceID, path],

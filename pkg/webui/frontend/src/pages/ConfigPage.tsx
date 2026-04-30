@@ -7,7 +7,6 @@ import Header from '@/components/layout/Header';
 import {
   useWatchStatus,
   useCleanupSessions,
-  useCleanupSkillVersions,
   useCleanupToolSessionEvents,
   useConfig,
   useExportConfig,
@@ -1672,16 +1671,12 @@ function WebUISectionForm({
   onChange,
   onCleanupToolSessionEvents,
   cleanupEventsPending,
-  onCleanupSkillVersions,
-  cleanupSkillVersionsPending,
 }: {
   data: Record<string, unknown>;
   runtimeTransports: Array<{ name: string; available: boolean; is_default: boolean }>;
   onChange: (key: string, value: unknown) => void;
   onCleanupToolSessionEvents: () => void;
   cleanupEventsPending: boolean;
-  onCleanupSkillVersions: () => void;
-  cleanupSkillVersionsPending: boolean;
 }) {
   const readBool = (path: string) => Boolean(getNestedValue(data, path));
   const readNumber = (path: string) => Number(getNestedValue(data, path) ?? 0);
@@ -1841,46 +1836,6 @@ function WebUISectionForm({
             </CardContent>
           </Card>
 
-          <Card className="border-border/70 bg-card/92 shadow-none">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">{t('webuiSkillVersionsTitle')}</CardTitle>
-              <CardDescription>{t('webuiSkillVersionsDesc')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-card/92 p-4">
-                <div>
-                  <Label className="text-sm font-semibold text-foreground">{t('webuiSkillVersionsEnabled')}</Label>
-                  <div className="mt-1 text-xs text-muted-foreground">{t('webuiSkillVersionsEnabledDesc')}</div>
-                </div>
-                <Switch checked={readBool('skill_versions.enabled')} onCheckedChange={(next) => onChange('skill_versions.enabled', next)} />
-              </div>
-
-              <div className="rounded-2xl border border-[hsl(var(--gray-200))] bg-white/82 p-4">
-                <Label className="text-sm font-semibold text-foreground">{t('webuiSkillVersionsMaxCount')}</Label>
-                <div className="mt-1 mb-3 text-xs text-muted-foreground">{t('webuiSkillVersionsMaxCountDesc')}</div>
-                <Input
-                  type="number"
-                  min={1}
-                  value={String(readNumber('skill_versions.max_count'))}
-                  onChange={(event) => onChange('skill_versions.max_count', Number(event.target.value || 0))}
-                />
-              </div>
-
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-xl"
-                  onClick={onCleanupSkillVersions}
-                  disabled={cleanupSkillVersionsPending}
-                >
-                  <RefreshCw className={`mr-2 h-4 w-4 ${cleanupSkillVersionsPending ? 'animate-spin' : ''}`} />
-                  {cleanupSkillVersionsPending ? t('webuiSkillVersionsCleanupRunning') : t('webuiSkillVersionsCleanupNow')}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
           <div className="rounded-2xl border border-dashed border-border/70 bg-card/70 px-4 py-3 text-xs leading-6 text-muted-foreground">
             {t('webuiDiskHint')}
           </div>
@@ -1907,7 +1862,6 @@ export default function ConfigPage() {
   const importConfig = useImportConfig();
   const cleanupSessions = useCleanupSessions();
   const cleanupToolSessionEvents = useCleanupToolSessionEvents();
-  const cleanupSkillVersions = useCleanupSkillVersions();
   const hasBlockingConfigError = configQuery.isError && configQuery.data == null;
 
   if (hasBlockingConfigError) {
@@ -2242,8 +2196,6 @@ export default function ConfigPage() {
                   onChange={handleFieldChange}
                   onCleanupToolSessionEvents={() => cleanupToolSessionEvents.mutate()}
                   cleanupEventsPending={cleanupToolSessionEvents.isPending}
-                  onCleanupSkillVersions={() => cleanupSkillVersions.mutate()}
-                  cleanupSkillVersionsPending={cleanupSkillVersions.isPending}
                 />
               ) : section === 'watch' ? (
                 <WatchSectionForm data={currentData} onChange={handleFieldChange} />
