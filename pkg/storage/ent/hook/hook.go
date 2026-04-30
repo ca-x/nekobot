@@ -56,6 +56,18 @@ func (f ChannelAccountFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Val
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ChannelAccountMutation", m)
 }
 
+// The CollaborationEventFunc type is an adapter to allow the use of ordinary
+// function as CollaborationEvent mutator.
+type CollaborationEventFunc func(context.Context, *ent.CollaborationEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CollaborationEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CollaborationEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CollaborationEventMutation", m)
+}
+
 // The ConfigSectionFunc type is an adapter to allow the use of ordinary
 // function as ConfigSection mutator.
 type ConfigSectionFunc func(context.Context, *ent.ConfigSectionMutation) (ent.Value, error)

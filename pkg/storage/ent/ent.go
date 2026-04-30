@@ -10,6 +10,7 @@ import (
 	"nekobot/pkg/storage/ent/agentruntime"
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/channelaccount"
+	"nekobot/pkg/storage/ent/collaborationevent"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
@@ -97,6 +98,7 @@ func checkColumn(t, c string) error {
 			agentruntime.Table:        agentruntime.ValidColumn,
 			attachtoken.Table:         attachtoken.ValidColumn,
 			channelaccount.Table:      channelaccount.ValidColumn,
+			collaborationevent.Table:  collaborationevent.ValidColumn,
 			configsection.Table:       configsection.ValidColumn,
 			cronjob.Table:             cronjob.ValidColumn,
 			membership.Table:          membership.ValidColumn,

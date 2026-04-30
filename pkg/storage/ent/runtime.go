@@ -7,6 +7,7 @@ import (
 	"nekobot/pkg/storage/ent/agentruntime"
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/channelaccount"
+	"nekobot/pkg/storage/ent/collaborationevent"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
@@ -206,6 +207,96 @@ func init() {
 	channelaccountDescID := channelaccountFields[0].Descriptor()
 	// channelaccount.DefaultID holds the default value on creation for the id field.
 	channelaccount.DefaultID = channelaccountDescID.Default.(func() string)
+	collaborationeventFields := schema.CollaborationEvent{}.Fields()
+	_ = collaborationeventFields
+	// collaborationeventDescTenantID is the schema descriptor for tenant_id field.
+	collaborationeventDescTenantID := collaborationeventFields[1].Descriptor()
+	// collaborationevent.DefaultTenantID holds the default value on creation for the tenant_id field.
+	collaborationevent.DefaultTenantID = collaborationeventDescTenantID.Default.(string)
+	// collaborationeventDescServerID is the schema descriptor for server_id field.
+	collaborationeventDescServerID := collaborationeventFields[2].Descriptor()
+	// collaborationevent.DefaultServerID holds the default value on creation for the server_id field.
+	collaborationevent.DefaultServerID = collaborationeventDescServerID.Default.(string)
+	// collaborationeventDescStream is the schema descriptor for stream field.
+	collaborationeventDescStream := collaborationeventFields[3].Descriptor()
+	// collaborationevent.DefaultStream holds the default value on creation for the stream field.
+	collaborationevent.DefaultStream = collaborationeventDescStream.Default.(string)
+	// collaborationeventDescSequence is the schema descriptor for sequence field.
+	collaborationeventDescSequence := collaborationeventFields[4].Descriptor()
+	// collaborationevent.DefaultSequence holds the default value on creation for the sequence field.
+	collaborationevent.DefaultSequence = collaborationeventDescSequence.Default.(int64)
+	// collaborationeventDescEventID is the schema descriptor for event_id field.
+	collaborationeventDescEventID := collaborationeventFields[5].Descriptor()
+	// collaborationevent.DefaultEventID holds the default value on creation for the event_id field.
+	collaborationevent.DefaultEventID = collaborationeventDescEventID.Default.(func() string)
+	// collaborationeventDescEventType is the schema descriptor for event_type field.
+	collaborationeventDescEventType := collaborationeventFields[6].Descriptor()
+	// collaborationevent.EventTypeValidator is a validator for the "event_type" field. It is called by the builders before save.
+	collaborationevent.EventTypeValidator = collaborationeventDescEventType.Validators[0].(func(string) error)
+	// collaborationeventDescTarget is the schema descriptor for target field.
+	collaborationeventDescTarget := collaborationeventFields[7].Descriptor()
+	// collaborationevent.DefaultTarget holds the default value on creation for the target field.
+	collaborationevent.DefaultTarget = collaborationeventDescTarget.Default.(string)
+	// collaborationeventDescThreadID is the schema descriptor for thread_id field.
+	collaborationeventDescThreadID := collaborationeventFields[8].Descriptor()
+	// collaborationevent.DefaultThreadID holds the default value on creation for the thread_id field.
+	collaborationevent.DefaultThreadID = collaborationeventDescThreadID.Default.(string)
+	// collaborationeventDescActorKind is the schema descriptor for actor_kind field.
+	collaborationeventDescActorKind := collaborationeventFields[9].Descriptor()
+	// collaborationevent.DefaultActorKind holds the default value on creation for the actor_kind field.
+	collaborationevent.DefaultActorKind = collaborationeventDescActorKind.Default.(string)
+	// collaborationeventDescActorID is the schema descriptor for actor_id field.
+	collaborationeventDescActorID := collaborationeventFields[10].Descriptor()
+	// collaborationevent.DefaultActorID holds the default value on creation for the actor_id field.
+	collaborationevent.DefaultActorID = collaborationeventDescActorID.Default.(string)
+	// collaborationeventDescSubjectKind is the schema descriptor for subject_kind field.
+	collaborationeventDescSubjectKind := collaborationeventFields[11].Descriptor()
+	// collaborationevent.DefaultSubjectKind holds the default value on creation for the subject_kind field.
+	collaborationevent.DefaultSubjectKind = collaborationeventDescSubjectKind.Default.(string)
+	// collaborationeventDescSubjectID is the schema descriptor for subject_id field.
+	collaborationeventDescSubjectID := collaborationeventFields[12].Descriptor()
+	// collaborationevent.DefaultSubjectID holds the default value on creation for the subject_id field.
+	collaborationevent.DefaultSubjectID = collaborationeventDescSubjectID.Default.(string)
+	// collaborationeventDescParentSubjectKind is the schema descriptor for parent_subject_kind field.
+	collaborationeventDescParentSubjectKind := collaborationeventFields[13].Descriptor()
+	// collaborationevent.DefaultParentSubjectKind holds the default value on creation for the parent_subject_kind field.
+	collaborationevent.DefaultParentSubjectKind = collaborationeventDescParentSubjectKind.Default.(string)
+	// collaborationeventDescParentSubjectID is the schema descriptor for parent_subject_id field.
+	collaborationeventDescParentSubjectID := collaborationeventFields[14].Descriptor()
+	// collaborationevent.DefaultParentSubjectID holds the default value on creation for the parent_subject_id field.
+	collaborationevent.DefaultParentSubjectID = collaborationeventDescParentSubjectID.Default.(string)
+	// collaborationeventDescAssigneeID is the schema descriptor for assignee_id field.
+	collaborationeventDescAssigneeID := collaborationeventFields[15].Descriptor()
+	// collaborationevent.DefaultAssigneeID holds the default value on creation for the assignee_id field.
+	collaborationevent.DefaultAssigneeID = collaborationeventDescAssigneeID.Default.(string)
+	// collaborationeventDescMentionedAgentIdsJSON is the schema descriptor for mentioned_agent_ids_json field.
+	collaborationeventDescMentionedAgentIdsJSON := collaborationeventFields[16].Descriptor()
+	// collaborationevent.DefaultMentionedAgentIdsJSON holds the default value on creation for the mentioned_agent_ids_json field.
+	collaborationevent.DefaultMentionedAgentIdsJSON = collaborationeventDescMentionedAgentIdsJSON.Default.(string)
+	// collaborationeventDescCapabilityKeysJSON is the schema descriptor for capability_keys_json field.
+	collaborationeventDescCapabilityKeysJSON := collaborationeventFields[17].Descriptor()
+	// collaborationevent.DefaultCapabilityKeysJSON holds the default value on creation for the capability_keys_json field.
+	collaborationevent.DefaultCapabilityKeysJSON = collaborationeventDescCapabilityKeysJSON.Default.(string)
+	// collaborationeventDescGraphVersion is the schema descriptor for graph_version field.
+	collaborationeventDescGraphVersion := collaborationeventFields[18].Descriptor()
+	// collaborationevent.DefaultGraphVersion holds the default value on creation for the graph_version field.
+	collaborationevent.DefaultGraphVersion = collaborationeventDescGraphVersion.Default.(int64)
+	// collaborationeventDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	collaborationeventDescIdempotencyKey := collaborationeventFields[19].Descriptor()
+	// collaborationevent.DefaultIdempotencyKey holds the default value on creation for the idempotency_key field.
+	collaborationevent.DefaultIdempotencyKey = collaborationeventDescIdempotencyKey.Default.(string)
+	// collaborationeventDescPayloadJSON is the schema descriptor for payload_json field.
+	collaborationeventDescPayloadJSON := collaborationeventFields[20].Descriptor()
+	// collaborationevent.DefaultPayloadJSON holds the default value on creation for the payload_json field.
+	collaborationevent.DefaultPayloadJSON = collaborationeventDescPayloadJSON.Default.(string)
+	// collaborationeventDescCreatedAt is the schema descriptor for created_at field.
+	collaborationeventDescCreatedAt := collaborationeventFields[21].Descriptor()
+	// collaborationevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	collaborationevent.DefaultCreatedAt = collaborationeventDescCreatedAt.Default.(func() time.Time)
+	// collaborationeventDescID is the schema descriptor for id field.
+	collaborationeventDescID := collaborationeventFields[0].Descriptor()
+	// collaborationevent.DefaultID holds the default value on creation for the id field.
+	collaborationevent.DefaultID = collaborationeventDescID.Default.(func() string)
 	configsectionFields := schema.ConfigSection{}.Fields()
 	_ = configsectionFields
 	// configsectionDescSection is the schema descriptor for section field.

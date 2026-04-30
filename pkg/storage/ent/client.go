@@ -15,6 +15,7 @@ import (
 	"nekobot/pkg/storage/ent/agentruntime"
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/channelaccount"
+	"nekobot/pkg/storage/ent/collaborationevent"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
@@ -52,6 +53,8 @@ type Client struct {
 	AttachToken *AttachTokenClient
 	// ChannelAccount is the client for interacting with the ChannelAccount builders.
 	ChannelAccount *ChannelAccountClient
+	// CollaborationEvent is the client for interacting with the CollaborationEvent builders.
+	CollaborationEvent *CollaborationEventClient
 	// ConfigSection is the client for interacting with the ConfigSection builders.
 	ConfigSection *ConfigSectionClient
 	// CronJob is the client for interacting with the CronJob builders.
@@ -101,6 +104,7 @@ func (c *Client) init() {
 	c.AgentRuntime = NewAgentRuntimeClient(c.config)
 	c.AttachToken = NewAttachTokenClient(c.config)
 	c.ChannelAccount = NewChannelAccountClient(c.config)
+	c.CollaborationEvent = NewCollaborationEventClient(c.config)
 	c.ConfigSection = NewConfigSectionClient(c.config)
 	c.CronJob = NewCronJobClient(c.config)
 	c.Membership = NewMembershipClient(c.config)
@@ -214,6 +218,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AgentRuntime:        NewAgentRuntimeClient(cfg),
 		AttachToken:         NewAttachTokenClient(cfg),
 		ChannelAccount:      NewChannelAccountClient(cfg),
+		CollaborationEvent:  NewCollaborationEventClient(cfg),
 		ConfigSection:       NewConfigSectionClient(cfg),
 		CronJob:             NewCronJobClient(cfg),
 		Membership:          NewMembershipClient(cfg),
@@ -254,6 +259,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AgentRuntime:        NewAgentRuntimeClient(cfg),
 		AttachToken:         NewAttachTokenClient(cfg),
 		ChannelAccount:      NewChannelAccountClient(cfg),
+		CollaborationEvent:  NewCollaborationEventClient(cfg),
 		ConfigSection:       NewConfigSectionClient(cfg),
 		CronJob:             NewCronJobClient(cfg),
 		Membership:          NewMembershipClient(cfg),
@@ -301,9 +307,9 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
-		c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog, c.ModelRoute,
-		c.NotificationBinding, c.NotificationRoute, c.PermissionRule, c.Prompt,
-		c.PromptBinding, c.Provider, c.Run, c.RunStep, c.Tenant, c.ToolEvent,
+		c.CollaborationEvent, c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog,
+		c.ModelRoute, c.NotificationBinding, c.NotificationRoute, c.PermissionRule,
+		c.Prompt, c.PromptBinding, c.Provider, c.Run, c.RunStep, c.Tenant, c.ToolEvent,
 		c.ToolSession, c.User,
 	} {
 		n.Use(hooks...)
@@ -315,9 +321,9 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
-		c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog, c.ModelRoute,
-		c.NotificationBinding, c.NotificationRoute, c.PermissionRule, c.Prompt,
-		c.PromptBinding, c.Provider, c.Run, c.RunStep, c.Tenant, c.ToolEvent,
+		c.CollaborationEvent, c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog,
+		c.ModelRoute, c.NotificationBinding, c.NotificationRoute, c.PermissionRule,
+		c.Prompt, c.PromptBinding, c.Provider, c.Run, c.RunStep, c.Tenant, c.ToolEvent,
 		c.ToolSession, c.User,
 	} {
 		n.Intercept(interceptors...)
@@ -335,6 +341,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AttachToken.mutate(ctx, m)
 	case *ChannelAccountMutation:
 		return c.ChannelAccount.mutate(ctx, m)
+	case *CollaborationEventMutation:
+		return c.CollaborationEvent.mutate(ctx, m)
 	case *ConfigSectionMutation:
 		return c.ConfigSection.mutate(ctx, m)
 	case *CronJobMutation:
@@ -903,6 +911,139 @@ func (c *ChannelAccountClient) mutate(ctx context.Context, m *ChannelAccountMuta
 		return (&ChannelAccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown ChannelAccount mutation op: %q", m.Op())
+	}
+}
+
+// CollaborationEventClient is a client for the CollaborationEvent schema.
+type CollaborationEventClient struct {
+	config
+}
+
+// NewCollaborationEventClient returns a client for the CollaborationEvent from the given config.
+func NewCollaborationEventClient(c config) *CollaborationEventClient {
+	return &CollaborationEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `collaborationevent.Hooks(f(g(h())))`.
+func (c *CollaborationEventClient) Use(hooks ...Hook) {
+	c.hooks.CollaborationEvent = append(c.hooks.CollaborationEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `collaborationevent.Intercept(f(g(h())))`.
+func (c *CollaborationEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CollaborationEvent = append(c.inters.CollaborationEvent, interceptors...)
+}
+
+// Create returns a builder for creating a CollaborationEvent entity.
+func (c *CollaborationEventClient) Create() *CollaborationEventCreate {
+	mutation := newCollaborationEventMutation(c.config, OpCreate)
+	return &CollaborationEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CollaborationEvent entities.
+func (c *CollaborationEventClient) CreateBulk(builders ...*CollaborationEventCreate) *CollaborationEventCreateBulk {
+	return &CollaborationEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CollaborationEventClient) MapCreateBulk(slice any, setFunc func(*CollaborationEventCreate, int)) *CollaborationEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CollaborationEventCreateBulk{err: fmt.Errorf("calling to CollaborationEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CollaborationEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CollaborationEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CollaborationEvent.
+func (c *CollaborationEventClient) Update() *CollaborationEventUpdate {
+	mutation := newCollaborationEventMutation(c.config, OpUpdate)
+	return &CollaborationEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CollaborationEventClient) UpdateOne(_m *CollaborationEvent) *CollaborationEventUpdateOne {
+	mutation := newCollaborationEventMutation(c.config, OpUpdateOne, withCollaborationEvent(_m))
+	return &CollaborationEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CollaborationEventClient) UpdateOneID(id string) *CollaborationEventUpdateOne {
+	mutation := newCollaborationEventMutation(c.config, OpUpdateOne, withCollaborationEventID(id))
+	return &CollaborationEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CollaborationEvent.
+func (c *CollaborationEventClient) Delete() *CollaborationEventDelete {
+	mutation := newCollaborationEventMutation(c.config, OpDelete)
+	return &CollaborationEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CollaborationEventClient) DeleteOne(_m *CollaborationEvent) *CollaborationEventDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CollaborationEventClient) DeleteOneID(id string) *CollaborationEventDeleteOne {
+	builder := c.Delete().Where(collaborationevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CollaborationEventDeleteOne{builder}
+}
+
+// Query returns a query builder for CollaborationEvent.
+func (c *CollaborationEventClient) Query() *CollaborationEventQuery {
+	return &CollaborationEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCollaborationEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CollaborationEvent entity by its id.
+func (c *CollaborationEventClient) Get(ctx context.Context, id string) (*CollaborationEvent, error) {
+	return c.Query().Where(collaborationevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CollaborationEventClient) GetX(ctx context.Context, id string) *CollaborationEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *CollaborationEventClient) Hooks() []Hook {
+	return c.hooks.CollaborationEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *CollaborationEventClient) Interceptors() []Interceptor {
+	return c.inters.CollaborationEvent
+}
+
+func (c *CollaborationEventClient) mutate(ctx context.Context, m *CollaborationEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CollaborationEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CollaborationEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CollaborationEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CollaborationEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CollaborationEvent mutation op: %q", m.Op())
 	}
 }
 
@@ -3234,15 +3375,15 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
-		CronJob, Membership, ModelCatalog, ModelRoute, NotificationBinding,
-		NotificationRoute, PermissionRule, Prompt, PromptBinding, Provider, Run,
-		RunStep, Tenant, ToolEvent, ToolSession, User []ent.Hook
+		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, CollaborationEvent,
+		ConfigSection, CronJob, Membership, ModelCatalog, ModelRoute,
+		NotificationBinding, NotificationRoute, PermissionRule, Prompt, PromptBinding,
+		Provider, Run, RunStep, Tenant, ToolEvent, ToolSession, User []ent.Hook
 	}
 	inters struct {
-		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
-		CronJob, Membership, ModelCatalog, ModelRoute, NotificationBinding,
-		NotificationRoute, PermissionRule, Prompt, PromptBinding, Provider, Run,
-		RunStep, Tenant, ToolEvent, ToolSession, User []ent.Interceptor
+		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, CollaborationEvent,
+		ConfigSection, CronJob, Membership, ModelCatalog, ModelRoute,
+		NotificationBinding, NotificationRoute, PermissionRule, Prompt, PromptBinding,
+		Provider, Run, RunStep, Tenant, ToolEvent, ToolSession, User []ent.Interceptor
 	}
 )

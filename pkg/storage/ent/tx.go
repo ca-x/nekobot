@@ -20,6 +20,8 @@ type Tx struct {
 	AttachToken *AttachTokenClient
 	// ChannelAccount is the client for interacting with the ChannelAccount builders.
 	ChannelAccount *ChannelAccountClient
+	// CollaborationEvent is the client for interacting with the CollaborationEvent builders.
+	CollaborationEvent *CollaborationEventClient
 	// ConfigSection is the client for interacting with the ConfigSection builders.
 	ConfigSection *ConfigSectionClient
 	// CronJob is the client for interacting with the CronJob builders.
@@ -189,6 +191,7 @@ func (tx *Tx) init() {
 	tx.AgentRuntime = NewAgentRuntimeClient(tx.config)
 	tx.AttachToken = NewAttachTokenClient(tx.config)
 	tx.ChannelAccount = NewChannelAccountClient(tx.config)
+	tx.CollaborationEvent = NewCollaborationEventClient(tx.config)
 	tx.ConfigSection = NewConfigSectionClient(tx.config)
 	tx.CronJob = NewCronJobClient(tx.config)
 	tx.Membership = NewMembershipClient(tx.config)

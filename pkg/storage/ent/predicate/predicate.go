@@ -18,6 +18,9 @@ type AttachToken func(*sql.Selector)
 // ChannelAccount is the predicate function for channelaccount builders.
 type ChannelAccount func(*sql.Selector)
 
+// CollaborationEvent is the predicate function for collaborationevent builders.
+type CollaborationEvent func(*sql.Selector)
+
 // ConfigSection is the predicate function for configsection builders.
 type ConfigSection func(*sql.Selector)
 

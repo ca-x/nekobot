@@ -10,6 +10,7 @@ import (
 	"nekobot/pkg/storage/ent/agentruntime"
 	"nekobot/pkg/storage/ent/attachtoken"
 	"nekobot/pkg/storage/ent/channelaccount"
+	"nekobot/pkg/storage/ent/collaborationevent"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
 	"nekobot/pkg/storage/ent/membership"
@@ -48,6 +49,7 @@ const (
 	TypeAgentRuntime        = "AgentRuntime"
 	TypeAttachToken         = "AttachToken"
 	TypeChannelAccount      = "ChannelAccount"
+	TypeCollaborationEvent  = "CollaborationEvent"
 	TypeConfigSection       = "ConfigSection"
 	TypeCronJob             = "CronJob"
 	TypeMembership          = "Membership"
@@ -3557,6 +3559,1487 @@ func (m *ChannelAccountMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ChannelAccountMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ChannelAccount edge %s", name)
+}
+
+// CollaborationEventMutation represents an operation that mutates the CollaborationEvent nodes in the graph.
+type CollaborationEventMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *string
+	tenant_id                *string
+	server_id                *string
+	stream                   *string
+	sequence                 *int64
+	addsequence              *int64
+	event_id                 *string
+	event_type               *string
+	target                   *string
+	thread_id                *string
+	actor_kind               *string
+	actor_id                 *string
+	subject_kind             *string
+	subject_id               *string
+	parent_subject_kind      *string
+	parent_subject_id        *string
+	assignee_id              *string
+	mentioned_agent_ids_json *string
+	capability_keys_json     *string
+	graph_version            *int64
+	addgraph_version         *int64
+	idempotency_key          *string
+	payload_json             *string
+	created_at               *time.Time
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*CollaborationEvent, error)
+	predicates               []predicate.CollaborationEvent
+}
+
+var _ ent.Mutation = (*CollaborationEventMutation)(nil)
+
+// collaborationeventOption allows management of the mutation configuration using functional options.
+type collaborationeventOption func(*CollaborationEventMutation)
+
+// newCollaborationEventMutation creates new mutation for the CollaborationEvent entity.
+func newCollaborationEventMutation(c config, op Op, opts ...collaborationeventOption) *CollaborationEventMutation {
+	m := &CollaborationEventMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeCollaborationEvent,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withCollaborationEventID sets the ID field of the mutation.
+func withCollaborationEventID(id string) collaborationeventOption {
+	return func(m *CollaborationEventMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *CollaborationEvent
+		)
+		m.oldValue = func(ctx context.Context) (*CollaborationEvent, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().CollaborationEvent.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withCollaborationEvent sets the old CollaborationEvent of the mutation.
+func withCollaborationEvent(node *CollaborationEvent) collaborationeventOption {
+	return func(m *CollaborationEventMutation) {
+		m.oldValue = func(context.Context) (*CollaborationEvent, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m CollaborationEventMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m CollaborationEventMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of CollaborationEvent entities.
+func (m *CollaborationEventMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *CollaborationEventMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *CollaborationEventMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().CollaborationEvent.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetTenantID sets the "tenant_id" field.
+func (m *CollaborationEventMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *CollaborationEventMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *CollaborationEventMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetServerID sets the "server_id" field.
+func (m *CollaborationEventMutation) SetServerID(s string) {
+	m.server_id = &s
+}
+
+// ServerID returns the value of the "server_id" field in the mutation.
+func (m *CollaborationEventMutation) ServerID() (r string, exists bool) {
+	v := m.server_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldServerID returns the old "server_id" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldServerID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldServerID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldServerID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldServerID: %w", err)
+	}
+	return oldValue.ServerID, nil
+}
+
+// ResetServerID resets all changes to the "server_id" field.
+func (m *CollaborationEventMutation) ResetServerID() {
+	m.server_id = nil
+}
+
+// SetStream sets the "stream" field.
+func (m *CollaborationEventMutation) SetStream(s string) {
+	m.stream = &s
+}
+
+// Stream returns the value of the "stream" field in the mutation.
+func (m *CollaborationEventMutation) Stream() (r string, exists bool) {
+	v := m.stream
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStream returns the old "stream" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldStream(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStream is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStream requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStream: %w", err)
+	}
+	return oldValue.Stream, nil
+}
+
+// ResetStream resets all changes to the "stream" field.
+func (m *CollaborationEventMutation) ResetStream() {
+	m.stream = nil
+}
+
+// SetSequence sets the "sequence" field.
+func (m *CollaborationEventMutation) SetSequence(i int64) {
+	m.sequence = &i
+	m.addsequence = nil
+}
+
+// Sequence returns the value of the "sequence" field in the mutation.
+func (m *CollaborationEventMutation) Sequence() (r int64, exists bool) {
+	v := m.sequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSequence returns the old "sequence" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldSequence(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSequence is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSequence requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSequence: %w", err)
+	}
+	return oldValue.Sequence, nil
+}
+
+// AddSequence adds i to the "sequence" field.
+func (m *CollaborationEventMutation) AddSequence(i int64) {
+	if m.addsequence != nil {
+		*m.addsequence += i
+	} else {
+		m.addsequence = &i
+	}
+}
+
+// AddedSequence returns the value that was added to the "sequence" field in this mutation.
+func (m *CollaborationEventMutation) AddedSequence() (r int64, exists bool) {
+	v := m.addsequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSequence resets all changes to the "sequence" field.
+func (m *CollaborationEventMutation) ResetSequence() {
+	m.sequence = nil
+	m.addsequence = nil
+}
+
+// SetEventID sets the "event_id" field.
+func (m *CollaborationEventMutation) SetEventID(s string) {
+	m.event_id = &s
+}
+
+// EventID returns the value of the "event_id" field in the mutation.
+func (m *CollaborationEventMutation) EventID() (r string, exists bool) {
+	v := m.event_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventID returns the old "event_id" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldEventID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventID: %w", err)
+	}
+	return oldValue.EventID, nil
+}
+
+// ResetEventID resets all changes to the "event_id" field.
+func (m *CollaborationEventMutation) ResetEventID() {
+	m.event_id = nil
+}
+
+// SetEventType sets the "event_type" field.
+func (m *CollaborationEventMutation) SetEventType(s string) {
+	m.event_type = &s
+}
+
+// EventType returns the value of the "event_type" field in the mutation.
+func (m *CollaborationEventMutation) EventType() (r string, exists bool) {
+	v := m.event_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventType returns the old "event_type" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldEventType(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventType: %w", err)
+	}
+	return oldValue.EventType, nil
+}
+
+// ResetEventType resets all changes to the "event_type" field.
+func (m *CollaborationEventMutation) ResetEventType() {
+	m.event_type = nil
+}
+
+// SetTarget sets the "target" field.
+func (m *CollaborationEventMutation) SetTarget(s string) {
+	m.target = &s
+}
+
+// Target returns the value of the "target" field in the mutation.
+func (m *CollaborationEventMutation) Target() (r string, exists bool) {
+	v := m.target
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTarget returns the old "target" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldTarget(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTarget is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTarget requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTarget: %w", err)
+	}
+	return oldValue.Target, nil
+}
+
+// ResetTarget resets all changes to the "target" field.
+func (m *CollaborationEventMutation) ResetTarget() {
+	m.target = nil
+}
+
+// SetThreadID sets the "thread_id" field.
+func (m *CollaborationEventMutation) SetThreadID(s string) {
+	m.thread_id = &s
+}
+
+// ThreadID returns the value of the "thread_id" field in the mutation.
+func (m *CollaborationEventMutation) ThreadID() (r string, exists bool) {
+	v := m.thread_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldThreadID returns the old "thread_id" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldThreadID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldThreadID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldThreadID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldThreadID: %w", err)
+	}
+	return oldValue.ThreadID, nil
+}
+
+// ResetThreadID resets all changes to the "thread_id" field.
+func (m *CollaborationEventMutation) ResetThreadID() {
+	m.thread_id = nil
+}
+
+// SetActorKind sets the "actor_kind" field.
+func (m *CollaborationEventMutation) SetActorKind(s string) {
+	m.actor_kind = &s
+}
+
+// ActorKind returns the value of the "actor_kind" field in the mutation.
+func (m *CollaborationEventMutation) ActorKind() (r string, exists bool) {
+	v := m.actor_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActorKind returns the old "actor_kind" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldActorKind(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActorKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActorKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActorKind: %w", err)
+	}
+	return oldValue.ActorKind, nil
+}
+
+// ResetActorKind resets all changes to the "actor_kind" field.
+func (m *CollaborationEventMutation) ResetActorKind() {
+	m.actor_kind = nil
+}
+
+// SetActorID sets the "actor_id" field.
+func (m *CollaborationEventMutation) SetActorID(s string) {
+	m.actor_id = &s
+}
+
+// ActorID returns the value of the "actor_id" field in the mutation.
+func (m *CollaborationEventMutation) ActorID() (r string, exists bool) {
+	v := m.actor_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldActorID returns the old "actor_id" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldActorID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldActorID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldActorID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldActorID: %w", err)
+	}
+	return oldValue.ActorID, nil
+}
+
+// ResetActorID resets all changes to the "actor_id" field.
+func (m *CollaborationEventMutation) ResetActorID() {
+	m.actor_id = nil
+}
+
+// SetSubjectKind sets the "subject_kind" field.
+func (m *CollaborationEventMutation) SetSubjectKind(s string) {
+	m.subject_kind = &s
+}
+
+// SubjectKind returns the value of the "subject_kind" field in the mutation.
+func (m *CollaborationEventMutation) SubjectKind() (r string, exists bool) {
+	v := m.subject_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubjectKind returns the old "subject_kind" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldSubjectKind(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubjectKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubjectKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubjectKind: %w", err)
+	}
+	return oldValue.SubjectKind, nil
+}
+
+// ResetSubjectKind resets all changes to the "subject_kind" field.
+func (m *CollaborationEventMutation) ResetSubjectKind() {
+	m.subject_kind = nil
+}
+
+// SetSubjectID sets the "subject_id" field.
+func (m *CollaborationEventMutation) SetSubjectID(s string) {
+	m.subject_id = &s
+}
+
+// SubjectID returns the value of the "subject_id" field in the mutation.
+func (m *CollaborationEventMutation) SubjectID() (r string, exists bool) {
+	v := m.subject_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubjectID returns the old "subject_id" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldSubjectID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubjectID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubjectID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubjectID: %w", err)
+	}
+	return oldValue.SubjectID, nil
+}
+
+// ResetSubjectID resets all changes to the "subject_id" field.
+func (m *CollaborationEventMutation) ResetSubjectID() {
+	m.subject_id = nil
+}
+
+// SetParentSubjectKind sets the "parent_subject_kind" field.
+func (m *CollaborationEventMutation) SetParentSubjectKind(s string) {
+	m.parent_subject_kind = &s
+}
+
+// ParentSubjectKind returns the value of the "parent_subject_kind" field in the mutation.
+func (m *CollaborationEventMutation) ParentSubjectKind() (r string, exists bool) {
+	v := m.parent_subject_kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldParentSubjectKind returns the old "parent_subject_kind" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldParentSubjectKind(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldParentSubjectKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldParentSubjectKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldParentSubjectKind: %w", err)
+	}
+	return oldValue.ParentSubjectKind, nil
+}
+
+// ResetParentSubjectKind resets all changes to the "parent_subject_kind" field.
+func (m *CollaborationEventMutation) ResetParentSubjectKind() {
+	m.parent_subject_kind = nil
+}
+
+// SetParentSubjectID sets the "parent_subject_id" field.
+func (m *CollaborationEventMutation) SetParentSubjectID(s string) {
+	m.parent_subject_id = &s
+}
+
+// ParentSubjectID returns the value of the "parent_subject_id" field in the mutation.
+func (m *CollaborationEventMutation) ParentSubjectID() (r string, exists bool) {
+	v := m.parent_subject_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldParentSubjectID returns the old "parent_subject_id" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldParentSubjectID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldParentSubjectID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldParentSubjectID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldParentSubjectID: %w", err)
+	}
+	return oldValue.ParentSubjectID, nil
+}
+
+// ResetParentSubjectID resets all changes to the "parent_subject_id" field.
+func (m *CollaborationEventMutation) ResetParentSubjectID() {
+	m.parent_subject_id = nil
+}
+
+// SetAssigneeID sets the "assignee_id" field.
+func (m *CollaborationEventMutation) SetAssigneeID(s string) {
+	m.assignee_id = &s
+}
+
+// AssigneeID returns the value of the "assignee_id" field in the mutation.
+func (m *CollaborationEventMutation) AssigneeID() (r string, exists bool) {
+	v := m.assignee_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAssigneeID returns the old "assignee_id" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldAssigneeID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAssigneeID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAssigneeID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAssigneeID: %w", err)
+	}
+	return oldValue.AssigneeID, nil
+}
+
+// ResetAssigneeID resets all changes to the "assignee_id" field.
+func (m *CollaborationEventMutation) ResetAssigneeID() {
+	m.assignee_id = nil
+}
+
+// SetMentionedAgentIdsJSON sets the "mentioned_agent_ids_json" field.
+func (m *CollaborationEventMutation) SetMentionedAgentIdsJSON(s string) {
+	m.mentioned_agent_ids_json = &s
+}
+
+// MentionedAgentIdsJSON returns the value of the "mentioned_agent_ids_json" field in the mutation.
+func (m *CollaborationEventMutation) MentionedAgentIdsJSON() (r string, exists bool) {
+	v := m.mentioned_agent_ids_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMentionedAgentIdsJSON returns the old "mentioned_agent_ids_json" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldMentionedAgentIdsJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMentionedAgentIdsJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMentionedAgentIdsJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMentionedAgentIdsJSON: %w", err)
+	}
+	return oldValue.MentionedAgentIdsJSON, nil
+}
+
+// ResetMentionedAgentIdsJSON resets all changes to the "mentioned_agent_ids_json" field.
+func (m *CollaborationEventMutation) ResetMentionedAgentIdsJSON() {
+	m.mentioned_agent_ids_json = nil
+}
+
+// SetCapabilityKeysJSON sets the "capability_keys_json" field.
+func (m *CollaborationEventMutation) SetCapabilityKeysJSON(s string) {
+	m.capability_keys_json = &s
+}
+
+// CapabilityKeysJSON returns the value of the "capability_keys_json" field in the mutation.
+func (m *CollaborationEventMutation) CapabilityKeysJSON() (r string, exists bool) {
+	v := m.capability_keys_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCapabilityKeysJSON returns the old "capability_keys_json" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldCapabilityKeysJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCapabilityKeysJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCapabilityKeysJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCapabilityKeysJSON: %w", err)
+	}
+	return oldValue.CapabilityKeysJSON, nil
+}
+
+// ResetCapabilityKeysJSON resets all changes to the "capability_keys_json" field.
+func (m *CollaborationEventMutation) ResetCapabilityKeysJSON() {
+	m.capability_keys_json = nil
+}
+
+// SetGraphVersion sets the "graph_version" field.
+func (m *CollaborationEventMutation) SetGraphVersion(i int64) {
+	m.graph_version = &i
+	m.addgraph_version = nil
+}
+
+// GraphVersion returns the value of the "graph_version" field in the mutation.
+func (m *CollaborationEventMutation) GraphVersion() (r int64, exists bool) {
+	v := m.graph_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGraphVersion returns the old "graph_version" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldGraphVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGraphVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGraphVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGraphVersion: %w", err)
+	}
+	return oldValue.GraphVersion, nil
+}
+
+// AddGraphVersion adds i to the "graph_version" field.
+func (m *CollaborationEventMutation) AddGraphVersion(i int64) {
+	if m.addgraph_version != nil {
+		*m.addgraph_version += i
+	} else {
+		m.addgraph_version = &i
+	}
+}
+
+// AddedGraphVersion returns the value that was added to the "graph_version" field in this mutation.
+func (m *CollaborationEventMutation) AddedGraphVersion() (r int64, exists bool) {
+	v := m.addgraph_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetGraphVersion resets all changes to the "graph_version" field.
+func (m *CollaborationEventMutation) ResetGraphVersion() {
+	m.graph_version = nil
+	m.addgraph_version = nil
+}
+
+// SetIdempotencyKey sets the "idempotency_key" field.
+func (m *CollaborationEventMutation) SetIdempotencyKey(s string) {
+	m.idempotency_key = &s
+}
+
+// IdempotencyKey returns the value of the "idempotency_key" field in the mutation.
+func (m *CollaborationEventMutation) IdempotencyKey() (r string, exists bool) {
+	v := m.idempotency_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIdempotencyKey returns the old "idempotency_key" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldIdempotencyKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIdempotencyKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIdempotencyKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIdempotencyKey: %w", err)
+	}
+	return oldValue.IdempotencyKey, nil
+}
+
+// ResetIdempotencyKey resets all changes to the "idempotency_key" field.
+func (m *CollaborationEventMutation) ResetIdempotencyKey() {
+	m.idempotency_key = nil
+}
+
+// SetPayloadJSON sets the "payload_json" field.
+func (m *CollaborationEventMutation) SetPayloadJSON(s string) {
+	m.payload_json = &s
+}
+
+// PayloadJSON returns the value of the "payload_json" field in the mutation.
+func (m *CollaborationEventMutation) PayloadJSON() (r string, exists bool) {
+	v := m.payload_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPayloadJSON returns the old "payload_json" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldPayloadJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPayloadJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPayloadJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPayloadJSON: %w", err)
+	}
+	return oldValue.PayloadJSON, nil
+}
+
+// ResetPayloadJSON resets all changes to the "payload_json" field.
+func (m *CollaborationEventMutation) ResetPayloadJSON() {
+	m.payload_json = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *CollaborationEventMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *CollaborationEventMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the CollaborationEvent entity.
+// If the CollaborationEvent object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CollaborationEventMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *CollaborationEventMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// Where appends a list predicates to the CollaborationEventMutation builder.
+func (m *CollaborationEventMutation) Where(ps ...predicate.CollaborationEvent) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the CollaborationEventMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *CollaborationEventMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.CollaborationEvent, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *CollaborationEventMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *CollaborationEventMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (CollaborationEvent).
+func (m *CollaborationEventMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *CollaborationEventMutation) Fields() []string {
+	fields := make([]string, 0, 21)
+	if m.tenant_id != nil {
+		fields = append(fields, collaborationevent.FieldTenantID)
+	}
+	if m.server_id != nil {
+		fields = append(fields, collaborationevent.FieldServerID)
+	}
+	if m.stream != nil {
+		fields = append(fields, collaborationevent.FieldStream)
+	}
+	if m.sequence != nil {
+		fields = append(fields, collaborationevent.FieldSequence)
+	}
+	if m.event_id != nil {
+		fields = append(fields, collaborationevent.FieldEventID)
+	}
+	if m.event_type != nil {
+		fields = append(fields, collaborationevent.FieldEventType)
+	}
+	if m.target != nil {
+		fields = append(fields, collaborationevent.FieldTarget)
+	}
+	if m.thread_id != nil {
+		fields = append(fields, collaborationevent.FieldThreadID)
+	}
+	if m.actor_kind != nil {
+		fields = append(fields, collaborationevent.FieldActorKind)
+	}
+	if m.actor_id != nil {
+		fields = append(fields, collaborationevent.FieldActorID)
+	}
+	if m.subject_kind != nil {
+		fields = append(fields, collaborationevent.FieldSubjectKind)
+	}
+	if m.subject_id != nil {
+		fields = append(fields, collaborationevent.FieldSubjectID)
+	}
+	if m.parent_subject_kind != nil {
+		fields = append(fields, collaborationevent.FieldParentSubjectKind)
+	}
+	if m.parent_subject_id != nil {
+		fields = append(fields, collaborationevent.FieldParentSubjectID)
+	}
+	if m.assignee_id != nil {
+		fields = append(fields, collaborationevent.FieldAssigneeID)
+	}
+	if m.mentioned_agent_ids_json != nil {
+		fields = append(fields, collaborationevent.FieldMentionedAgentIdsJSON)
+	}
+	if m.capability_keys_json != nil {
+		fields = append(fields, collaborationevent.FieldCapabilityKeysJSON)
+	}
+	if m.graph_version != nil {
+		fields = append(fields, collaborationevent.FieldGraphVersion)
+	}
+	if m.idempotency_key != nil {
+		fields = append(fields, collaborationevent.FieldIdempotencyKey)
+	}
+	if m.payload_json != nil {
+		fields = append(fields, collaborationevent.FieldPayloadJSON)
+	}
+	if m.created_at != nil {
+		fields = append(fields, collaborationevent.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *CollaborationEventMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case collaborationevent.FieldTenantID:
+		return m.TenantID()
+	case collaborationevent.FieldServerID:
+		return m.ServerID()
+	case collaborationevent.FieldStream:
+		return m.Stream()
+	case collaborationevent.FieldSequence:
+		return m.Sequence()
+	case collaborationevent.FieldEventID:
+		return m.EventID()
+	case collaborationevent.FieldEventType:
+		return m.EventType()
+	case collaborationevent.FieldTarget:
+		return m.Target()
+	case collaborationevent.FieldThreadID:
+		return m.ThreadID()
+	case collaborationevent.FieldActorKind:
+		return m.ActorKind()
+	case collaborationevent.FieldActorID:
+		return m.ActorID()
+	case collaborationevent.FieldSubjectKind:
+		return m.SubjectKind()
+	case collaborationevent.FieldSubjectID:
+		return m.SubjectID()
+	case collaborationevent.FieldParentSubjectKind:
+		return m.ParentSubjectKind()
+	case collaborationevent.FieldParentSubjectID:
+		return m.ParentSubjectID()
+	case collaborationevent.FieldAssigneeID:
+		return m.AssigneeID()
+	case collaborationevent.FieldMentionedAgentIdsJSON:
+		return m.MentionedAgentIdsJSON()
+	case collaborationevent.FieldCapabilityKeysJSON:
+		return m.CapabilityKeysJSON()
+	case collaborationevent.FieldGraphVersion:
+		return m.GraphVersion()
+	case collaborationevent.FieldIdempotencyKey:
+		return m.IdempotencyKey()
+	case collaborationevent.FieldPayloadJSON:
+		return m.PayloadJSON()
+	case collaborationevent.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *CollaborationEventMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case collaborationevent.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case collaborationevent.FieldServerID:
+		return m.OldServerID(ctx)
+	case collaborationevent.FieldStream:
+		return m.OldStream(ctx)
+	case collaborationevent.FieldSequence:
+		return m.OldSequence(ctx)
+	case collaborationevent.FieldEventID:
+		return m.OldEventID(ctx)
+	case collaborationevent.FieldEventType:
+		return m.OldEventType(ctx)
+	case collaborationevent.FieldTarget:
+		return m.OldTarget(ctx)
+	case collaborationevent.FieldThreadID:
+		return m.OldThreadID(ctx)
+	case collaborationevent.FieldActorKind:
+		return m.OldActorKind(ctx)
+	case collaborationevent.FieldActorID:
+		return m.OldActorID(ctx)
+	case collaborationevent.FieldSubjectKind:
+		return m.OldSubjectKind(ctx)
+	case collaborationevent.FieldSubjectID:
+		return m.OldSubjectID(ctx)
+	case collaborationevent.FieldParentSubjectKind:
+		return m.OldParentSubjectKind(ctx)
+	case collaborationevent.FieldParentSubjectID:
+		return m.OldParentSubjectID(ctx)
+	case collaborationevent.FieldAssigneeID:
+		return m.OldAssigneeID(ctx)
+	case collaborationevent.FieldMentionedAgentIdsJSON:
+		return m.OldMentionedAgentIdsJSON(ctx)
+	case collaborationevent.FieldCapabilityKeysJSON:
+		return m.OldCapabilityKeysJSON(ctx)
+	case collaborationevent.FieldGraphVersion:
+		return m.OldGraphVersion(ctx)
+	case collaborationevent.FieldIdempotencyKey:
+		return m.OldIdempotencyKey(ctx)
+	case collaborationevent.FieldPayloadJSON:
+		return m.OldPayloadJSON(ctx)
+	case collaborationevent.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown CollaborationEvent field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *CollaborationEventMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case collaborationevent.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case collaborationevent.FieldServerID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetServerID(v)
+		return nil
+	case collaborationevent.FieldStream:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStream(v)
+		return nil
+	case collaborationevent.FieldSequence:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSequence(v)
+		return nil
+	case collaborationevent.FieldEventID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventID(v)
+		return nil
+	case collaborationevent.FieldEventType:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventType(v)
+		return nil
+	case collaborationevent.FieldTarget:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTarget(v)
+		return nil
+	case collaborationevent.FieldThreadID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetThreadID(v)
+		return nil
+	case collaborationevent.FieldActorKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActorKind(v)
+		return nil
+	case collaborationevent.FieldActorID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetActorID(v)
+		return nil
+	case collaborationevent.FieldSubjectKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubjectKind(v)
+		return nil
+	case collaborationevent.FieldSubjectID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubjectID(v)
+		return nil
+	case collaborationevent.FieldParentSubjectKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetParentSubjectKind(v)
+		return nil
+	case collaborationevent.FieldParentSubjectID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetParentSubjectID(v)
+		return nil
+	case collaborationevent.FieldAssigneeID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAssigneeID(v)
+		return nil
+	case collaborationevent.FieldMentionedAgentIdsJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMentionedAgentIdsJSON(v)
+		return nil
+	case collaborationevent.FieldCapabilityKeysJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCapabilityKeysJSON(v)
+		return nil
+	case collaborationevent.FieldGraphVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGraphVersion(v)
+		return nil
+	case collaborationevent.FieldIdempotencyKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIdempotencyKey(v)
+		return nil
+	case collaborationevent.FieldPayloadJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPayloadJSON(v)
+		return nil
+	case collaborationevent.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown CollaborationEvent field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *CollaborationEventMutation) AddedFields() []string {
+	var fields []string
+	if m.addsequence != nil {
+		fields = append(fields, collaborationevent.FieldSequence)
+	}
+	if m.addgraph_version != nil {
+		fields = append(fields, collaborationevent.FieldGraphVersion)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *CollaborationEventMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case collaborationevent.FieldSequence:
+		return m.AddedSequence()
+	case collaborationevent.FieldGraphVersion:
+		return m.AddedGraphVersion()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *CollaborationEventMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case collaborationevent.FieldSequence:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSequence(v)
+		return nil
+	case collaborationevent.FieldGraphVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddGraphVersion(v)
+		return nil
+	}
+	return fmt.Errorf("unknown CollaborationEvent numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *CollaborationEventMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *CollaborationEventMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *CollaborationEventMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown CollaborationEvent nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *CollaborationEventMutation) ResetField(name string) error {
+	switch name {
+	case collaborationevent.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case collaborationevent.FieldServerID:
+		m.ResetServerID()
+		return nil
+	case collaborationevent.FieldStream:
+		m.ResetStream()
+		return nil
+	case collaborationevent.FieldSequence:
+		m.ResetSequence()
+		return nil
+	case collaborationevent.FieldEventID:
+		m.ResetEventID()
+		return nil
+	case collaborationevent.FieldEventType:
+		m.ResetEventType()
+		return nil
+	case collaborationevent.FieldTarget:
+		m.ResetTarget()
+		return nil
+	case collaborationevent.FieldThreadID:
+		m.ResetThreadID()
+		return nil
+	case collaborationevent.FieldActorKind:
+		m.ResetActorKind()
+		return nil
+	case collaborationevent.FieldActorID:
+		m.ResetActorID()
+		return nil
+	case collaborationevent.FieldSubjectKind:
+		m.ResetSubjectKind()
+		return nil
+	case collaborationevent.FieldSubjectID:
+		m.ResetSubjectID()
+		return nil
+	case collaborationevent.FieldParentSubjectKind:
+		m.ResetParentSubjectKind()
+		return nil
+	case collaborationevent.FieldParentSubjectID:
+		m.ResetParentSubjectID()
+		return nil
+	case collaborationevent.FieldAssigneeID:
+		m.ResetAssigneeID()
+		return nil
+	case collaborationevent.FieldMentionedAgentIdsJSON:
+		m.ResetMentionedAgentIdsJSON()
+		return nil
+	case collaborationevent.FieldCapabilityKeysJSON:
+		m.ResetCapabilityKeysJSON()
+		return nil
+	case collaborationevent.FieldGraphVersion:
+		m.ResetGraphVersion()
+		return nil
+	case collaborationevent.FieldIdempotencyKey:
+		m.ResetIdempotencyKey()
+		return nil
+	case collaborationevent.FieldPayloadJSON:
+		m.ResetPayloadJSON()
+		return nil
+	case collaborationevent.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown CollaborationEvent field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *CollaborationEventMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *CollaborationEventMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *CollaborationEventMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *CollaborationEventMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *CollaborationEventMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *CollaborationEventMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *CollaborationEventMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown CollaborationEvent unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *CollaborationEventMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown CollaborationEvent edge %s", name)
 }
 
 // ConfigSectionMutation represents an operation that mutates the ConfigSection nodes in the graph.
