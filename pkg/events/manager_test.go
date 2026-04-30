@@ -149,3 +149,35 @@ func TestListSinceFiltersEventTypes(t *testing.T) {
 		t.Fatalf("events = %+v, want activity then run step", events)
 	}
 }
+
+func TestListSinceFiltersServerID(t *testing.T) {
+	mgr, _ := newTestManager(t)
+	ctx := context.Background()
+
+	for _, item := range []EventRecord{
+		{ServerID: "server-a", EventType: "message.created", Target: "#ops", SubjectID: "a1"},
+		{ServerID: "server-b", EventType: "message.created", Target: "#ops", SubjectID: "b1"},
+		{ServerID: "server-a", EventType: "run.step_appended", Target: "#ops", SubjectID: "a2"},
+	} {
+		if _, err := mgr.Append(ctx, item); err != nil {
+			t.Fatalf("append: %v", err)
+		}
+	}
+
+	filter := ListFilter{ServerID: "server-a", Target: "#ops"}
+	events, cursor, err := mgr.ListSince(ctx, "", filter, 10)
+	if err != nil {
+		t.Fatalf("list server-a events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].SubjectID != "a1" || events[1].SubjectID != "a2" {
+		t.Fatalf("events = %+v, want only server-a events", events)
+	}
+
+	_, _, err = mgr.ListSince(ctx, cursor, ListFilter{ServerID: "server-b", Target: "#ops"}, 10)
+	if !errors.Is(err, ErrCursorFilterMismatch) {
+		t.Fatalf("err = %v, want ErrCursorFilterMismatch", err)
+	}
+}

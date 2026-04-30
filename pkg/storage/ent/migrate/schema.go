@@ -241,6 +241,11 @@ var (
 				Columns: []*schema.Column{CollaborationEventsColumns[1], CollaborationEventsColumns[5]},
 			},
 			{
+				Name:    "collaborationevent_tenant_id_server_id_stream_sequence",
+				Unique:  false,
+				Columns: []*schema.Column{CollaborationEventsColumns[1], CollaborationEventsColumns[2], CollaborationEventsColumns[3], CollaborationEventsColumns[4]},
+			},
+			{
 				Name:    "collaborationevent_tenant_id_target_sequence",
 				Unique:  false,
 				Columns: []*schema.Column{CollaborationEventsColumns[1], CollaborationEventsColumns[7], CollaborationEventsColumns[4]},

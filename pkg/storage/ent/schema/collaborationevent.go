@@ -56,6 +56,7 @@ func (CollaborationEvent) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("tenant_id", "stream", "sequence").Unique(),
 		index.Fields("tenant_id", "event_id").Unique(),
+		index.Fields("tenant_id", "server_id", "stream", "sequence"),
 		index.Fields("tenant_id", "target", "sequence"),
 		index.Fields("tenant_id", "assignee_id", "sequence"),
 		index.Fields("tenant_id", "actor_id", "sequence"),

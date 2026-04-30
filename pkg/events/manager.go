@@ -164,6 +164,9 @@ func (m *Manager) ListSince(ctx context.Context, cursor string, filter ListFilte
 		Order(ent.Asc(collaborationevent.FieldSequence)).
 		Limit(limit)
 
+	if filter.ServerID != "" {
+		q = q.Where(collaborationevent.ServerIDEQ(filter.ServerID))
+	}
 	if filter.Target != "" {
 		q = q.Where(collaborationevent.TargetEQ(filter.Target))
 	}
