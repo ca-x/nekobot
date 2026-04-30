@@ -3,6 +3,8 @@ import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import DirectAgentMessageDialog from "@/components/DirectAgentMessageDialog";
+import { useSendAgentDirectMessage } from "@/hooks/useSendAgentDirectMessage";
 import {
   useDaemonBootstrap,
   useDaemonExplorerWorkspaces,
@@ -24,6 +26,7 @@ import {
   Copy,
   FileText,
   Folder,
+  MessageSquare,
   RefreshCw,
   Server,
   Zap,
@@ -575,53 +578,89 @@ function MachineInventoryCard({
 }
 
 function RuntimeRow({ runtime }: { runtime: DaemonRuntimeDetail }) {
+  const [dmOpen, setDmOpen] = useState(false);
+  const { mutateAsync: sendDirectMessage } = useSendAgentDirectMessage();
+
+  const handleSendMessage = async (
+    id: string,
+    content: string,
+    requestId: string
+  ) => {
+    await sendDirectMessage({
+      agentId: id,
+      content,
+      request_id: requestId,
+    });
+  };
+
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-border/40 bg-background/60 p-3">
-      <div className="mt-0.5 shrink-0">
-        <Zap
-          className={cn(
-            "h-4 w-4",
-            runtime.installed && runtime.enabled
-              ? "text-emerald-500"
-              : runtime.installed
-                ? "text-amber-500"
-                : "text-muted-foreground",
-          )}
-        />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-foreground">
-            {runtime.display_name || runtime.runtime_id}
-          </span>
-          <RuntimeStatusBadge installed={runtime.installed} healthy={runtime.healthy} enabled={runtime.enabled} />
-          {runtime.kind && (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-              {runtime.kind}
+    <>
+      <div className="flex items-start gap-3 rounded-xl border border-border/40 bg-background/60 p-3">
+        <div className="mt-0.5 shrink-0">
+          <Zap
+            className={cn(
+              "h-4 w-4",
+              runtime.installed && runtime.enabled
+                ? "text-emerald-500"
+                : runtime.installed
+                  ? "text-amber-500"
+                  : "text-muted-foreground",
+            )}
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-foreground">
+              {runtime.display_name || runtime.runtime_id}
             </span>
-          )}
-        </div>
-        {(runtime.provider || runtime.model) && (
-          <div className="mt-1 text-xs text-muted-foreground">
-            {runtime.provider}{runtime.provider && runtime.model ? " / " : ""}{runtime.model}
+            <RuntimeStatusBadge installed={runtime.installed} healthy={runtime.healthy} enabled={runtime.enabled} />
+            {runtime.kind && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {runtime.kind}
+              </span>
+            )}
           </div>
-        )}
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-          {runtime.current_task_count > 0 && (
-            <span>{t("daemonTasksRunning", String(runtime.current_task_count))}</span>
+          {(runtime.provider || runtime.model) && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              {runtime.provider}{runtime.provider && runtime.model ? " / " : ""}{runtime.model}
+            </div>
           )}
-          {runtime.pending_task_count > 0 && (
-            <span>{t("daemonTasksPending", String(runtime.pending_task_count))}</span>
-          )}
-          {runtime.skill_names && runtime.skill_names.length > 0 && (
-            <span>{t("daemonSkills", String(runtime.skill_names.length))}</span>
-          )}
-          {runtime.env_count > 0 && (
-            <span>{t("daemonEnvVars", String(runtime.env_count))}</span>
-          )}
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+            {runtime.current_task_count > 0 && (
+              <span>{t("daemonTasksRunning", String(runtime.current_task_count))}</span>
+            )}
+            {runtime.pending_task_count > 0 && (
+              <span>{t("daemonTasksPending", String(runtime.pending_task_count))}</span>
+            )}
+            {runtime.skill_names && runtime.skill_names.length > 0 && (
+              <span>{t("daemonSkills", String(runtime.skill_names.length))}</span>
+            )}
+            {runtime.env_count > 0 && (
+              <span>{t("daemonEnvVars", String(runtime.env_count))}</span>
+            )}
+          </div>
+        </div>
+        <div className="shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDmOpen(true)}
+            className="gap-2"
+            title="Send direct message to agent"
+          >
+            <MessageSquare className="h-4 w-4" />
+          </Button>
         </div>
       </div>
-    </div>
+
+      <DirectAgentMessageDialog
+        agentId={runtime.runtime_id}
+        agentName={runtime.display_name || runtime.runtime_id}
+        open={dmOpen}
+        onOpenChange={setDmOpen}
+        onSendMessage={handleSendMessage}
+      />
+    </>
   );
 }
 

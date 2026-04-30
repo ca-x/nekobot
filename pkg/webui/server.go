@@ -536,6 +536,7 @@ func (s *Server) setup() {
 	api.GET("/daemon/explorer/workspaces", s.handleDaemonExplorerWorkspaces)
 	api.POST("/daemon/explorer/tree", s.handleDaemonExplorerTree)
 	api.POST("/daemon/explorer/file", s.handleDaemonExplorerFile)
+	api.POST("/daemon/agents/:agent_id/message", s.handleSendAgentDirectMessage)
 	api.GET("/goal-runs", s.handleListGoalRuns)
 	api.POST("/goal-runs", s.handleCreateGoalRun)
 	api.GET("/goal-runs/:id", s.handleGetGoalRun)
@@ -2690,6 +2691,52 @@ func (s *Server) handleDaemonExplorerFile(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleSendAgentDirectMessage(c *echo.Context) error {
+	agentID := strings.TrimSpace(c.Param("agent_id"))
+	if agentID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "agent_id is required"})
+	}
+
+	var body struct {
+		Content            string   `json:"content"`
+		AttachmentIds      []string `json:"attachment_ids"`
+		ReplyToMessageId   string   `json:"reply_to_message_id"`
+		RequestId          string   `json:"request_id"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	if strings.TrimSpace(body.Content) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "message content cannot be empty"})
+	}
+
+	if strings.TrimSpace(body.RequestId) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "request_id is required"})
+	}
+
+	// Call SendMessage RPC with dm:@agent_id target
+	resp, err := s.agent.Collaboration().SendMessage(c.Request().Context(), &daemonv1.SendMessageRequest{
+		Target:             fmt.Sprintf("dm:@%s", agentID),
+		Content:            strings.TrimSpace(body.Content),
+		AttachmentIds:      body.AttachmentIds,
+		ReplyToMessageId:   strings.TrimSpace(body.ReplyToMessageId),
+		RequestId:          strings.TrimSpace(body.RequestId),
+	})
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	// Map response to frontend shape
+	return c.JSON(http.StatusOK, map[string]any{
+		"message_id": resp.MessageId,
+		"agent_id":   agentID,
+		"content":    body.Content,
+		"created_at": time.Now().Format(time.RFC3339),
+		"target":     fmt.Sprintf("dm:@%s", agentID),
+	})
 }
 
 func (s *Server) handleListGoalRuns(c *echo.Context) error {

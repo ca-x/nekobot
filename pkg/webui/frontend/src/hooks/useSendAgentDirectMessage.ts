@@ -31,8 +31,7 @@ export function useSendAgentDirectMessage() {
       }
 
       try {
-        // Call the gRPC SendMessage RPC through daemon client
-        // This uses the existing collaboration protocol, not a new HTTP wrapper
+        // Call the protected WebUI endpoint which internally calls SendMessage RPC
         const response = await api.post<SendAgentDirectMessageResponse>(
           `/daemon/agents/${agentId}/message`,
           body
@@ -54,5 +53,4 @@ export function useSendAgentDirectMessage() {
     },
   });
 }
-
 
