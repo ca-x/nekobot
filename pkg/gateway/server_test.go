@@ -421,6 +421,24 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if len(nextEvents.Events) != 0 {
 		t.Fatalf("expected no events after cursor, got %+v", nextEvents.Events)
 	}
+	if _, err := s.LogActivity(context.Background(), &daemonv1.LogActivityRequest{
+		Target:  "#websocket:thread-b",
+		AgentId: "runtime-b",
+		Kind:    "review",
+		Summary: "reviewed other proto",
+	}); err != nil {
+		t.Fatalf("LogActivity thread-b failed: %v", err)
+	}
+	targetEvents, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{
+		Cursor: &daemonv1.EventCursor{Target: "#websocket:thread-a"},
+		Limit:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListEventsSince target filter failed: %v", err)
+	}
+	if len(targetEvents.Events) != 1 || targetEvents.Events[0].GetTarget() != "#websocket:thread-a" {
+		t.Fatalf("expected only thread-a events, got %+v", targetEvents.Events)
+	}
 }
 
 func TestDaemonCollaborationAttachments(t *testing.T) {

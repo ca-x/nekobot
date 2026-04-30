@@ -560,8 +560,10 @@ func (s *Server) ListEventsSince(ctx context.Context, req *daemonv1.ListEventsSi
 	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
 	cursor := req.GetCursor()
 	afterActivityID := ""
+	target := ""
 	if cursor != nil {
 		afterActivityID = strings.TrimSpace(cursor.GetLastActivityId())
+		target = strings.TrimSpace(cursor.GetTarget())
 	}
 	activities := s.activityLog(ctx)
 	events := make([]*daemonv1.CollaborationEvent, 0, len(activities))
@@ -574,6 +576,9 @@ func (s *Server) ListEventsSince(ctx context.Context, req *daemonv1.ListEventsSi
 			if activity.GetActivityId() == afterActivityID {
 				seenCursor = true
 			}
+			continue
+		}
+		if target != "" && activity.GetTarget() != target {
 			continue
 		}
 		if len(events) >= limit {
