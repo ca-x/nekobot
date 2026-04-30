@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/agent"
@@ -429,6 +431,189 @@ func (s *Server) ClaimCollaborationTask(ctx context.Context, req *daemonv1.Claim
 		}
 	}
 	return resp, nil
+}
+
+// --- Task Graph RPCs ---
+
+func (s *Server) ProposeTaskSplit(_ context.Context, _ *daemonv1.ProposeTaskSplitRequest) (*daemonv1.ProposeTaskSplitResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "ProposeTaskSplit not yet implemented")
+}
+
+func (s *Server) ApplyTaskSplit(_ context.Context, _ *daemonv1.ApplyTaskSplitRequest) (*daemonv1.ApplyTaskSplitResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "ApplyTaskSplit not yet implemented")
+}
+
+func (s *Server) CreateTaskGraph(ctx context.Context, req *daemonv1.CreateTaskGraphRequest) (*daemonv1.CreateTaskGraphResponse, error) {
+	if s == nil || s.agent == nil || s.agent.TaskService() == nil {
+		return nil, fmt.Errorf("task service unavailable")
+	}
+
+	// Idempotency guard.
+	reqID := strings.TrimSpace(req.GetRequestId())
+	var idemKey idempotency.Key
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash("root_task", protoHashString(req.GetRootTask()))
+		idemKey = idempotency.Key{Method: "CreateTaskGraph", RequestID: reqID}
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 30*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replayCreateTaskGraph(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+	}
+
+	root := req.GetRootTask()
+	if root == nil {
+		return nil, fmt.Errorf("root_task is required")
+	}
+	target := strings.TrimSpace(root.GetTarget())
+	if _, err := daemonhost.ValidateCollaborationTarget(target); err != nil {
+		return nil, err
+	}
+	sessionID, err := collaborationSessionID(target)
+	if err != nil {
+		return nil, err
+	}
+
+	graphVersion := int64(1)
+	rootID := "collab-task-" + uuid.NewString()
+
+	// Pre-allocate subtask IDs and build dependency graph.
+	subtaskIDs := make([]string, len(req.GetSubtasks()))
+	for i := range req.GetSubtasks() {
+		subtaskIDs[i] = "collab-task-" + uuid.NewString()
+	}
+
+	// Enqueue subtasks first so we know their IDs for the root.
+	createdSubtasks := []*daemonv1.Task{}
+	for i, st := range req.GetSubtasks() {
+		graphVersion++
+		subTask, err := s.agent.TaskService().Enqueue(tasks.Task{
+			ID:        subtaskIDs[i],
+			Type:      tasks.TypeRemoteAgent,
+			Summary:   st.GetSummary(),
+			SessionID: sessionID,
+			RuntimeID: strings.TrimSpace(st.GetRuntimeId()),
+			Metadata: map[string]any{
+				"target":                target,
+				"created_by_user_id":    st.GetCreatedByUserId(),
+				"source":                "agent",
+				"root_task_id":          rootID,
+				"parent_task_id":        rootID,
+				"graph_version":         graphVersion,
+				"delivery":              "daemon-collaboration",
+				"required_capabilities": st.GetRequiredCapabilities(),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		createdSubtasks = append(createdSubtasks, daemonhost.CollaborationTaskToProto(subTask))
+	}
+
+	// Enqueue root task with subtask IDs already known.
+	graphVersion++
+	rootTask, err := s.agent.TaskService().Enqueue(tasks.Task{
+		ID:        rootID,
+		Type:      tasks.TypeRemoteAgent,
+		Summary:   root.GetSummary(),
+		SessionID: sessionID,
+		RuntimeID: strings.TrimSpace(root.GetRuntimeId()),
+		Metadata: map[string]any{
+			"target":              target,
+			"created_by_user_id":  root.GetCreatedByUserId(),
+			"source":              "agent",
+			"created_by_agent_id": root.GetCreatedByAgentId(),
+			"root_task_id":        rootID,
+			"subtask_ids":         subtaskIDs,
+			"graph_version":       graphVersion,
+			"delivery":            "daemon-collaboration",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	snapshot := &daemonv1.TaskGraphSnapshot{
+		RootTaskId:    rootID,
+		GraphVersion:  graphVersion,
+		Nodes:         append([]*daemonv1.Task{daemonhost.CollaborationTaskToProto(rootTask)}, createdSubtasks...),
+	}
+
+	resp := &daemonv1.CreateTaskGraphResponse{Graph: snapshot}
+	if reqID != "" && s.idempotencyStore != nil {
+		completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:CreateTaskGraphResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "task_graph",
+			ResourceID:   rootID,
+		})
+	}
+	return resp, nil
+}
+
+func (s *Server) ListTaskGraph(_ context.Context, req *daemonv1.ListTaskGraphRequest) (*daemonv1.ListTaskGraphResponse, error) {
+	if s == nil || s.agent == nil || s.agent.TaskService() == nil {
+		return nil, fmt.Errorf("task service unavailable")
+	}
+	rootID := strings.TrimSpace(req.GetRootTaskId())
+	if rootID == "" {
+		return nil, fmt.Errorf("root_task_id is required")
+	}
+
+	allTasks := s.agent.TaskService().List()
+	var nodes []*daemonv1.Task
+	var maxVersion int64
+	for _, t := range allTasks {
+		if metadataString(t.Metadata, "root_task_id") == rootID || t.ID == rootID {
+			proto := daemonhost.CollaborationTaskToProto(t)
+			nodes = append(nodes, proto)
+			if proto.GraphVersion > maxVersion {
+				maxVersion = proto.GraphVersion
+			}
+		}
+	}
+	if nodes == nil {
+		return nil, fmt.Errorf("task graph not found: %s", rootID)
+	}
+
+	// Build edges from parent/child relationships.
+	var edges []*daemonv1.TaskEdge
+	for _, n := range nodes {
+		if n.ParentTaskId != "" && n.ParentTaskId != n.TaskId {
+			edges = append(edges, &daemonv1.TaskEdge{
+				FromTaskId: n.ParentTaskId,
+				ToTaskId:   n.TaskId,
+				Kind:       "parent_child",
+			})
+		}
+		for _, depID := range n.DependsOnTaskIds {
+			edges = append(edges, &daemonv1.TaskEdge{
+				FromTaskId: depID,
+				ToTaskId:   n.TaskId,
+				Kind:       "depends_on",
+			})
+		}
+	}
+
+	return &daemonv1.ListTaskGraphResponse{
+		Graph: &daemonv1.TaskGraphSnapshot{
+			RootTaskId:   rootID,
+			GraphVersion: maxVersion,
+			Nodes:        nodes,
+			Edges:        edges,
+		},
+	}, nil
+}
+
+func (s *Server) UpdateTaskGraph(_ context.Context, _ *daemonv1.UpdateTaskGraphRequest) (*daemonv1.UpdateTaskGraphResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "UpdateTaskGraph not yet implemented")
 }
 
 func (s *Server) GetServerInfo(ctx context.Context, req *daemonv1.GetServerInfoRequest) (*daemonv1.GetServerInfoResponse, error) {
@@ -1408,4 +1593,27 @@ func replayClaimTask(rec *idempotency.Record) (*daemonv1.ClaimCollaborationTaskR
 		}
 	}
 	return &daemonv1.ClaimCollaborationTaskResponse{}, nil
+}
+
+func replayCreateTaskGraph(rec *idempotency.Record) (*daemonv1.CreateTaskGraphResponse, error) {
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.CreateTaskGraphResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return &daemonv1.CreateTaskGraphResponse{}, nil
+}
+
+func protoHashString(msg *daemonv1.Task) string {
+	b, _ := json.Marshal(msg)
+	return idempotency.Hash(b)
+}
+
+func extractProtoIDs(tasks []*daemonv1.Task) []string {
+	ids := make([]string, len(tasks))
+	for i, t := range tasks {
+		ids[i] = t.GetTaskId()
+	}
+	return ids
 }

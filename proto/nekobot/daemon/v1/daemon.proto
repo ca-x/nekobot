@@ -147,6 +147,25 @@ message Task {
   string target = 10;
   string assignee_id = 11;
   string current_run_id = 12;
+
+  // --- graph relationships ---
+  string root_task_id = 13;
+  string parent_task_id = 14;
+  repeated string subtask_ids = 15;
+  repeated string depends_on_task_ids = 16;
+  repeated string blocked_by_task_ids = 17;
+
+  // --- provenance ---
+  string source = 18;                     // human | agent | server_rule | scheduler | import
+  string created_by_agent_id = 19;
+  string server_rule_id = 20;
+  string split_proposal_id = 21;
+
+  // --- graph versioning ---
+  int64 graph_version = 22;
+
+  // --- capability requirements ---
+  repeated string required_capabilities = 23;
 }
 
 message Run {
@@ -411,6 +430,90 @@ message ClaimCollaborationTaskResponse {
   Task task = 1;
 }
 
+// --- Task Graph ---
+
+message TaskEdge {
+  string from_task_id = 1;
+  string to_task_id = 2;
+  string kind = 3;  // depends_on | blocks | parent_child
+}
+
+message TaskGraphSnapshot {
+  string root_task_id = 1;
+  int64 graph_version = 2;
+  repeated Task nodes = 3;
+  repeated TaskEdge edges = 4;
+}
+
+message ProposedSubtask {
+  string client_proposed_id = 1;
+  string summary = 2;
+  string assignee_id = 3;
+  repeated string depends_on_proposed_ids = 4;
+  repeated string required_capabilities = 5;
+}
+
+message ProposeTaskSplitRequest {
+  string parent_task_id = 1;
+  repeated ProposedSubtask proposed_tasks = 2;
+  string request_id = 3;
+}
+
+message ProposeTaskSplitResponse {
+  string proposal_id = 1;
+  Task parent_task = 2;
+  repeated Task proposed_tasks = 3;
+  bool accepted = 4;
+  string rejection_reason = 5;
+}
+
+message ApplyTaskSplitRequest {
+  string parent_task_id = 1;
+  string proposal_id = 2;
+  repeated string selected_task_ids = 3;
+  string request_id = 4;
+}
+
+message ApplyTaskSplitResponse {
+  Task parent_task = 1;
+  repeated Task created_subtasks = 2;
+  int64 new_graph_version = 3;
+}
+
+message CreateTaskGraphRequest {
+  Task root_task = 1;
+  repeated Task subtasks = 2;
+  repeated TaskEdge dependencies = 3;
+  string request_id = 4;
+}
+
+message CreateTaskGraphResponse {
+  TaskGraphSnapshot graph = 1;
+}
+
+message ListTaskGraphRequest {
+  string root_task_id = 1;
+  int64 since_graph_version = 2;
+}
+
+message ListTaskGraphResponse {
+  TaskGraphSnapshot graph = 1;
+}
+
+message UpdateTaskGraphRequest {
+  string task_id = 1;
+  optional string new_assignee_id = 2;
+  repeated string add_dependencies = 3;
+  repeated string remove_dependencies = 4;
+  optional string new_parent_task_id = 5;
+  string request_id = 6;
+}
+
+message UpdateTaskGraphResponse {
+  Task task = 1;
+  int64 new_graph_version = 2;
+}
+
 message GetServerInfoRequest {
 }
 
@@ -639,6 +742,11 @@ service DaemonControlService {
   rpc CreateCollaborationTask(CreateCollaborationTaskRequest) returns (CreateCollaborationTaskResponse);
   rpc ListCollaborationTasks(ListCollaborationTasksRequest) returns (ListCollaborationTasksResponse);
   rpc ClaimCollaborationTask(ClaimCollaborationTaskRequest) returns (ClaimCollaborationTaskResponse);
+  rpc ProposeTaskSplit(ProposeTaskSplitRequest) returns (ProposeTaskSplitResponse);
+  rpc ApplyTaskSplit(ApplyTaskSplitRequest) returns (ApplyTaskSplitResponse);
+  rpc CreateTaskGraph(CreateTaskGraphRequest) returns (CreateTaskGraphResponse);
+  rpc ListTaskGraph(ListTaskGraphRequest) returns (ListTaskGraphResponse);
+  rpc UpdateTaskGraph(UpdateTaskGraphRequest) returns (UpdateTaskGraphResponse);
   rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
   rpc GetAgentProfile(GetAgentProfileRequest) returns (GetAgentProfileResponse);
   rpc SetAgentEnv(SetAgentEnvRequest) returns (SetAgentEnvResponse);

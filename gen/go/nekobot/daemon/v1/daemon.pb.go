@@ -1243,8 +1243,23 @@ type Task struct {
 	Target          string                 `protobuf:"bytes,10,opt,name=target,proto3" json:"target,omitempty"`
 	AssigneeId      string                 `protobuf:"bytes,11,opt,name=assignee_id,json=assigneeId,proto3" json:"assignee_id,omitempty"`
 	CurrentRunId    string                 `protobuf:"bytes,12,opt,name=current_run_id,json=currentRunId,proto3" json:"current_run_id,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// --- graph relationships ---
+	RootTaskId       string   `protobuf:"bytes,13,opt,name=root_task_id,json=rootTaskId,proto3" json:"root_task_id,omitempty"`
+	ParentTaskId     string   `protobuf:"bytes,14,opt,name=parent_task_id,json=parentTaskId,proto3" json:"parent_task_id,omitempty"`
+	SubtaskIds       []string `protobuf:"bytes,15,rep,name=subtask_ids,json=subtaskIds,proto3" json:"subtask_ids,omitempty"`
+	DependsOnTaskIds []string `protobuf:"bytes,16,rep,name=depends_on_task_ids,json=dependsOnTaskIds,proto3" json:"depends_on_task_ids,omitempty"`
+	BlockedByTaskIds []string `protobuf:"bytes,17,rep,name=blocked_by_task_ids,json=blockedByTaskIds,proto3" json:"blocked_by_task_ids,omitempty"`
+	// --- provenance ---
+	Source           string `protobuf:"bytes,18,opt,name=source,proto3" json:"source,omitempty"` // human | agent | server_rule | scheduler | import
+	CreatedByAgentId string `protobuf:"bytes,19,opt,name=created_by_agent_id,json=createdByAgentId,proto3" json:"created_by_agent_id,omitempty"`
+	ServerRuleId     string `protobuf:"bytes,20,opt,name=server_rule_id,json=serverRuleId,proto3" json:"server_rule_id,omitempty"`
+	SplitProposalId  string `protobuf:"bytes,21,opt,name=split_proposal_id,json=splitProposalId,proto3" json:"split_proposal_id,omitempty"`
+	// --- graph versioning ---
+	GraphVersion int64 `protobuf:"varint,22,opt,name=graph_version,json=graphVersion,proto3" json:"graph_version,omitempty"`
+	// --- capability requirements ---
+	RequiredCapabilities []string `protobuf:"bytes,23,rep,name=required_capabilities,json=requiredCapabilities,proto3" json:"required_capabilities,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Task) Reset() {
@@ -1359,6 +1374,83 @@ func (x *Task) GetCurrentRunId() string {
 		return x.CurrentRunId
 	}
 	return ""
+}
+
+func (x *Task) GetRootTaskId() string {
+	if x != nil {
+		return x.RootTaskId
+	}
+	return ""
+}
+
+func (x *Task) GetParentTaskId() string {
+	if x != nil {
+		return x.ParentTaskId
+	}
+	return ""
+}
+
+func (x *Task) GetSubtaskIds() []string {
+	if x != nil {
+		return x.SubtaskIds
+	}
+	return nil
+}
+
+func (x *Task) GetDependsOnTaskIds() []string {
+	if x != nil {
+		return x.DependsOnTaskIds
+	}
+	return nil
+}
+
+func (x *Task) GetBlockedByTaskIds() []string {
+	if x != nil {
+		return x.BlockedByTaskIds
+	}
+	return nil
+}
+
+func (x *Task) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *Task) GetCreatedByAgentId() string {
+	if x != nil {
+		return x.CreatedByAgentId
+	}
+	return ""
+}
+
+func (x *Task) GetServerRuleId() string {
+	if x != nil {
+		return x.ServerRuleId
+	}
+	return ""
+}
+
+func (x *Task) GetSplitProposalId() string {
+	if x != nil {
+		return x.SplitProposalId
+	}
+	return ""
+}
+
+func (x *Task) GetGraphVersion() int64 {
+	if x != nil {
+		return x.GraphVersion
+	}
+	return 0
+}
+
+func (x *Task) GetRequiredCapabilities() []string {
+	if x != nil {
+		return x.RequiredCapabilities
+	}
+	return nil
 }
 
 type Run struct {
@@ -3937,6 +4029,818 @@ func (x *ClaimCollaborationTaskResponse) GetTask() *Task {
 	return nil
 }
 
+type TaskEdge struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FromTaskId    string                 `protobuf:"bytes,1,opt,name=from_task_id,json=fromTaskId,proto3" json:"from_task_id,omitempty"`
+	ToTaskId      string                 `protobuf:"bytes,2,opt,name=to_task_id,json=toTaskId,proto3" json:"to_task_id,omitempty"`
+	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"` // depends_on | blocks | parent_child
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskEdge) Reset() {
+	*x = TaskEdge{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskEdge) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskEdge) ProtoMessage() {}
+
+func (x *TaskEdge) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskEdge.ProtoReflect.Descriptor instead.
+func (*TaskEdge) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *TaskEdge) GetFromTaskId() string {
+	if x != nil {
+		return x.FromTaskId
+	}
+	return ""
+}
+
+func (x *TaskEdge) GetToTaskId() string {
+	if x != nil {
+		return x.ToTaskId
+	}
+	return ""
+}
+
+func (x *TaskEdge) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+type TaskGraphSnapshot struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RootTaskId    string                 `protobuf:"bytes,1,opt,name=root_task_id,json=rootTaskId,proto3" json:"root_task_id,omitempty"`
+	GraphVersion  int64                  `protobuf:"varint,2,opt,name=graph_version,json=graphVersion,proto3" json:"graph_version,omitempty"`
+	Nodes         []*Task                `protobuf:"bytes,3,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	Edges         []*TaskEdge            `protobuf:"bytes,4,rep,name=edges,proto3" json:"edges,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TaskGraphSnapshot) Reset() {
+	*x = TaskGraphSnapshot{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TaskGraphSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TaskGraphSnapshot) ProtoMessage() {}
+
+func (x *TaskGraphSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TaskGraphSnapshot.ProtoReflect.Descriptor instead.
+func (*TaskGraphSnapshot) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *TaskGraphSnapshot) GetRootTaskId() string {
+	if x != nil {
+		return x.RootTaskId
+	}
+	return ""
+}
+
+func (x *TaskGraphSnapshot) GetGraphVersion() int64 {
+	if x != nil {
+		return x.GraphVersion
+	}
+	return 0
+}
+
+func (x *TaskGraphSnapshot) GetNodes() []*Task {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+func (x *TaskGraphSnapshot) GetEdges() []*TaskEdge {
+	if x != nil {
+		return x.Edges
+	}
+	return nil
+}
+
+type ProposedSubtask struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	ClientProposedId     string                 `protobuf:"bytes,1,opt,name=client_proposed_id,json=clientProposedId,proto3" json:"client_proposed_id,omitempty"`
+	Summary              string                 `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
+	AssigneeId           string                 `protobuf:"bytes,3,opt,name=assignee_id,json=assigneeId,proto3" json:"assignee_id,omitempty"`
+	DependsOnProposedIds []string               `protobuf:"bytes,4,rep,name=depends_on_proposed_ids,json=dependsOnProposedIds,proto3" json:"depends_on_proposed_ids,omitempty"`
+	RequiredCapabilities []string               `protobuf:"bytes,5,rep,name=required_capabilities,json=requiredCapabilities,proto3" json:"required_capabilities,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *ProposedSubtask) Reset() {
+	*x = ProposedSubtask{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProposedSubtask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProposedSubtask) ProtoMessage() {}
+
+func (x *ProposedSubtask) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProposedSubtask.ProtoReflect.Descriptor instead.
+func (*ProposedSubtask) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *ProposedSubtask) GetClientProposedId() string {
+	if x != nil {
+		return x.ClientProposedId
+	}
+	return ""
+}
+
+func (x *ProposedSubtask) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *ProposedSubtask) GetAssigneeId() string {
+	if x != nil {
+		return x.AssigneeId
+	}
+	return ""
+}
+
+func (x *ProposedSubtask) GetDependsOnProposedIds() []string {
+	if x != nil {
+		return x.DependsOnProposedIds
+	}
+	return nil
+}
+
+func (x *ProposedSubtask) GetRequiredCapabilities() []string {
+	if x != nil {
+		return x.RequiredCapabilities
+	}
+	return nil
+}
+
+type ProposeTaskSplitRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ParentTaskId  string                 `protobuf:"bytes,1,opt,name=parent_task_id,json=parentTaskId,proto3" json:"parent_task_id,omitempty"`
+	ProposedTasks []*ProposedSubtask     `protobuf:"bytes,2,rep,name=proposed_tasks,json=proposedTasks,proto3" json:"proposed_tasks,omitempty"`
+	RequestId     string                 `protobuf:"bytes,3,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProposeTaskSplitRequest) Reset() {
+	*x = ProposeTaskSplitRequest{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProposeTaskSplitRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProposeTaskSplitRequest) ProtoMessage() {}
+
+func (x *ProposeTaskSplitRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProposeTaskSplitRequest.ProtoReflect.Descriptor instead.
+func (*ProposeTaskSplitRequest) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *ProposeTaskSplitRequest) GetParentTaskId() string {
+	if x != nil {
+		return x.ParentTaskId
+	}
+	return ""
+}
+
+func (x *ProposeTaskSplitRequest) GetProposedTasks() []*ProposedSubtask {
+	if x != nil {
+		return x.ProposedTasks
+	}
+	return nil
+}
+
+func (x *ProposeTaskSplitRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type ProposeTaskSplitResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ProposalId      string                 `protobuf:"bytes,1,opt,name=proposal_id,json=proposalId,proto3" json:"proposal_id,omitempty"`
+	ParentTask      *Task                  `protobuf:"bytes,2,opt,name=parent_task,json=parentTask,proto3" json:"parent_task,omitempty"`
+	ProposedTasks   []*Task                `protobuf:"bytes,3,rep,name=proposed_tasks,json=proposedTasks,proto3" json:"proposed_tasks,omitempty"`
+	Accepted        bool                   `protobuf:"varint,4,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	RejectionReason string                 `protobuf:"bytes,5,opt,name=rejection_reason,json=rejectionReason,proto3" json:"rejection_reason,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ProposeTaskSplitResponse) Reset() {
+	*x = ProposeTaskSplitResponse{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProposeTaskSplitResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProposeTaskSplitResponse) ProtoMessage() {}
+
+func (x *ProposeTaskSplitResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProposeTaskSplitResponse.ProtoReflect.Descriptor instead.
+func (*ProposeTaskSplitResponse) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *ProposeTaskSplitResponse) GetProposalId() string {
+	if x != nil {
+		return x.ProposalId
+	}
+	return ""
+}
+
+func (x *ProposeTaskSplitResponse) GetParentTask() *Task {
+	if x != nil {
+		return x.ParentTask
+	}
+	return nil
+}
+
+func (x *ProposeTaskSplitResponse) GetProposedTasks() []*Task {
+	if x != nil {
+		return x.ProposedTasks
+	}
+	return nil
+}
+
+func (x *ProposeTaskSplitResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *ProposeTaskSplitResponse) GetRejectionReason() string {
+	if x != nil {
+		return x.RejectionReason
+	}
+	return ""
+}
+
+type ApplyTaskSplitRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ParentTaskId    string                 `protobuf:"bytes,1,opt,name=parent_task_id,json=parentTaskId,proto3" json:"parent_task_id,omitempty"`
+	ProposalId      string                 `protobuf:"bytes,2,opt,name=proposal_id,json=proposalId,proto3" json:"proposal_id,omitempty"`
+	SelectedTaskIds []string               `protobuf:"bytes,3,rep,name=selected_task_ids,json=selectedTaskIds,proto3" json:"selected_task_ids,omitempty"`
+	RequestId       string                 `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ApplyTaskSplitRequest) Reset() {
+	*x = ApplyTaskSplitRequest{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyTaskSplitRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyTaskSplitRequest) ProtoMessage() {}
+
+func (x *ApplyTaskSplitRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyTaskSplitRequest.ProtoReflect.Descriptor instead.
+func (*ApplyTaskSplitRequest) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *ApplyTaskSplitRequest) GetParentTaskId() string {
+	if x != nil {
+		return x.ParentTaskId
+	}
+	return ""
+}
+
+func (x *ApplyTaskSplitRequest) GetProposalId() string {
+	if x != nil {
+		return x.ProposalId
+	}
+	return ""
+}
+
+func (x *ApplyTaskSplitRequest) GetSelectedTaskIds() []string {
+	if x != nil {
+		return x.SelectedTaskIds
+	}
+	return nil
+}
+
+func (x *ApplyTaskSplitRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type ApplyTaskSplitResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	ParentTask      *Task                  `protobuf:"bytes,1,opt,name=parent_task,json=parentTask,proto3" json:"parent_task,omitempty"`
+	CreatedSubtasks []*Task                `protobuf:"bytes,2,rep,name=created_subtasks,json=createdSubtasks,proto3" json:"created_subtasks,omitempty"`
+	NewGraphVersion int64                  `protobuf:"varint,3,opt,name=new_graph_version,json=newGraphVersion,proto3" json:"new_graph_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ApplyTaskSplitResponse) Reset() {
+	*x = ApplyTaskSplitResponse{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApplyTaskSplitResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApplyTaskSplitResponse) ProtoMessage() {}
+
+func (x *ApplyTaskSplitResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApplyTaskSplitResponse.ProtoReflect.Descriptor instead.
+func (*ApplyTaskSplitResponse) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *ApplyTaskSplitResponse) GetParentTask() *Task {
+	if x != nil {
+		return x.ParentTask
+	}
+	return nil
+}
+
+func (x *ApplyTaskSplitResponse) GetCreatedSubtasks() []*Task {
+	if x != nil {
+		return x.CreatedSubtasks
+	}
+	return nil
+}
+
+func (x *ApplyTaskSplitResponse) GetNewGraphVersion() int64 {
+	if x != nil {
+		return x.NewGraphVersion
+	}
+	return 0
+}
+
+type CreateTaskGraphRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RootTask      *Task                  `protobuf:"bytes,1,opt,name=root_task,json=rootTask,proto3" json:"root_task,omitempty"`
+	Subtasks      []*Task                `protobuf:"bytes,2,rep,name=subtasks,proto3" json:"subtasks,omitempty"`
+	Dependencies  []*TaskEdge            `protobuf:"bytes,3,rep,name=dependencies,proto3" json:"dependencies,omitempty"`
+	RequestId     string                 `protobuf:"bytes,4,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateTaskGraphRequest) Reset() {
+	*x = CreateTaskGraphRequest{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateTaskGraphRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateTaskGraphRequest) ProtoMessage() {}
+
+func (x *CreateTaskGraphRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateTaskGraphRequest.ProtoReflect.Descriptor instead.
+func (*CreateTaskGraphRequest) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *CreateTaskGraphRequest) GetRootTask() *Task {
+	if x != nil {
+		return x.RootTask
+	}
+	return nil
+}
+
+func (x *CreateTaskGraphRequest) GetSubtasks() []*Task {
+	if x != nil {
+		return x.Subtasks
+	}
+	return nil
+}
+
+func (x *CreateTaskGraphRequest) GetDependencies() []*TaskEdge {
+	if x != nil {
+		return x.Dependencies
+	}
+	return nil
+}
+
+func (x *CreateTaskGraphRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type CreateTaskGraphResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Graph         *TaskGraphSnapshot     `protobuf:"bytes,1,opt,name=graph,proto3" json:"graph,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateTaskGraphResponse) Reset() {
+	*x = CreateTaskGraphResponse{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateTaskGraphResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateTaskGraphResponse) ProtoMessage() {}
+
+func (x *CreateTaskGraphResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateTaskGraphResponse.ProtoReflect.Descriptor instead.
+func (*CreateTaskGraphResponse) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *CreateTaskGraphResponse) GetGraph() *TaskGraphSnapshot {
+	if x != nil {
+		return x.Graph
+	}
+	return nil
+}
+
+type ListTaskGraphRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	RootTaskId        string                 `protobuf:"bytes,1,opt,name=root_task_id,json=rootTaskId,proto3" json:"root_task_id,omitempty"`
+	SinceGraphVersion int64                  `protobuf:"varint,2,opt,name=since_graph_version,json=sinceGraphVersion,proto3" json:"since_graph_version,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ListTaskGraphRequest) Reset() {
+	*x = ListTaskGraphRequest{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTaskGraphRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTaskGraphRequest) ProtoMessage() {}
+
+func (x *ListTaskGraphRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTaskGraphRequest.ProtoReflect.Descriptor instead.
+func (*ListTaskGraphRequest) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *ListTaskGraphRequest) GetRootTaskId() string {
+	if x != nil {
+		return x.RootTaskId
+	}
+	return ""
+}
+
+func (x *ListTaskGraphRequest) GetSinceGraphVersion() int64 {
+	if x != nil {
+		return x.SinceGraphVersion
+	}
+	return 0
+}
+
+type ListTaskGraphResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Graph         *TaskGraphSnapshot     `protobuf:"bytes,1,opt,name=graph,proto3" json:"graph,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTaskGraphResponse) Reset() {
+	*x = ListTaskGraphResponse{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTaskGraphResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTaskGraphResponse) ProtoMessage() {}
+
+func (x *ListTaskGraphResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTaskGraphResponse.ProtoReflect.Descriptor instead.
+func (*ListTaskGraphResponse) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *ListTaskGraphResponse) GetGraph() *TaskGraphSnapshot {
+	if x != nil {
+		return x.Graph
+	}
+	return nil
+}
+
+type UpdateTaskGraphRequest struct {
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	TaskId             string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	NewAssigneeId      *string                `protobuf:"bytes,2,opt,name=new_assignee_id,json=newAssigneeId,proto3,oneof" json:"new_assignee_id,omitempty"`
+	AddDependencies    []string               `protobuf:"bytes,3,rep,name=add_dependencies,json=addDependencies,proto3" json:"add_dependencies,omitempty"`
+	RemoveDependencies []string               `protobuf:"bytes,4,rep,name=remove_dependencies,json=removeDependencies,proto3" json:"remove_dependencies,omitempty"`
+	NewParentTaskId    *string                `protobuf:"bytes,5,opt,name=new_parent_task_id,json=newParentTaskId,proto3,oneof" json:"new_parent_task_id,omitempty"`
+	RequestId          string                 `protobuf:"bytes,6,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *UpdateTaskGraphRequest) Reset() {
+	*x = UpdateTaskGraphRequest{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateTaskGraphRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTaskGraphRequest) ProtoMessage() {}
+
+func (x *UpdateTaskGraphRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTaskGraphRequest.ProtoReflect.Descriptor instead.
+func (*UpdateTaskGraphRequest) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *UpdateTaskGraphRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *UpdateTaskGraphRequest) GetNewAssigneeId() string {
+	if x != nil && x.NewAssigneeId != nil {
+		return *x.NewAssigneeId
+	}
+	return ""
+}
+
+func (x *UpdateTaskGraphRequest) GetAddDependencies() []string {
+	if x != nil {
+		return x.AddDependencies
+	}
+	return nil
+}
+
+func (x *UpdateTaskGraphRequest) GetRemoveDependencies() []string {
+	if x != nil {
+		return x.RemoveDependencies
+	}
+	return nil
+}
+
+func (x *UpdateTaskGraphRequest) GetNewParentTaskId() string {
+	if x != nil && x.NewParentTaskId != nil {
+		return *x.NewParentTaskId
+	}
+	return ""
+}
+
+func (x *UpdateTaskGraphRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type UpdateTaskGraphResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Task            *Task                  `protobuf:"bytes,1,opt,name=task,proto3" json:"task,omitempty"`
+	NewGraphVersion int64                  `protobuf:"varint,2,opt,name=new_graph_version,json=newGraphVersion,proto3" json:"new_graph_version,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *UpdateTaskGraphResponse) Reset() {
+	*x = UpdateTaskGraphResponse{}
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateTaskGraphResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTaskGraphResponse) ProtoMessage() {}
+
+func (x *UpdateTaskGraphResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTaskGraphResponse.ProtoReflect.Descriptor instead.
+func (*UpdateTaskGraphResponse) Descriptor() ([]byte, []int) {
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *UpdateTaskGraphResponse) GetTask() *Task {
+	if x != nil {
+		return x.Task
+	}
+	return nil
+}
+
+func (x *UpdateTaskGraphResponse) GetNewGraphVersion() int64 {
+	if x != nil {
+		return x.NewGraphVersion
+	}
+	return 0
+}
+
 type GetServerInfoRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -3945,7 +4849,7 @@ type GetServerInfoRequest struct {
 
 func (x *GetServerInfoRequest) Reset() {
 	*x = GetServerInfoRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[55]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3957,7 +4861,7 @@ func (x *GetServerInfoRequest) String() string {
 func (*GetServerInfoRequest) ProtoMessage() {}
 
 func (x *GetServerInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[55]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3970,7 +4874,7 @@ func (x *GetServerInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetServerInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetServerInfoRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{55}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{68}
 }
 
 type GetServerInfoResponse struct {
@@ -3985,7 +4889,7 @@ type GetServerInfoResponse struct {
 
 func (x *GetServerInfoResponse) Reset() {
 	*x = GetServerInfoResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[56]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3997,7 +4901,7 @@ func (x *GetServerInfoResponse) String() string {
 func (*GetServerInfoResponse) ProtoMessage() {}
 
 func (x *GetServerInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[56]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4010,7 +4914,7 @@ func (x *GetServerInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetServerInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetServerInfoResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{56}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *GetServerInfoResponse) GetServerName() string {
@@ -4052,7 +4956,7 @@ type EnvVar struct {
 
 func (x *EnvVar) Reset() {
 	*x = EnvVar{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[57]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4064,7 +4968,7 @@ func (x *EnvVar) String() string {
 func (*EnvVar) ProtoMessage() {}
 
 func (x *EnvVar) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[57]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4077,7 +4981,7 @@ func (x *EnvVar) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnvVar.ProtoReflect.Descriptor instead.
 func (*EnvVar) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{57}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *EnvVar) GetName() string {
@@ -4117,7 +5021,7 @@ type SkillRecord struct {
 
 func (x *SkillRecord) Reset() {
 	*x = SkillRecord{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[58]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4129,7 +5033,7 @@ func (x *SkillRecord) String() string {
 func (*SkillRecord) ProtoMessage() {}
 
 func (x *SkillRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[58]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4142,7 +5046,7 @@ func (x *SkillRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkillRecord.ProtoReflect.Descriptor instead.
 func (*SkillRecord) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{58}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *SkillRecord) GetId() string {
@@ -4225,7 +5129,7 @@ type AgentProfile struct {
 
 func (x *AgentProfile) Reset() {
 	*x = AgentProfile{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[59]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4237,7 +5141,7 @@ func (x *AgentProfile) String() string {
 func (*AgentProfile) ProtoMessage() {}
 
 func (x *AgentProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[59]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4250,7 +5154,7 @@ func (x *AgentProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentProfile.ProtoReflect.Descriptor instead.
 func (*AgentProfile) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{59}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *AgentProfile) GetAgentId() string {
@@ -4374,7 +5278,7 @@ type GetAgentProfileRequest struct {
 
 func (x *GetAgentProfileRequest) Reset() {
 	*x = GetAgentProfileRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[60]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4386,7 +5290,7 @@ func (x *GetAgentProfileRequest) String() string {
 func (*GetAgentProfileRequest) ProtoMessage() {}
 
 func (x *GetAgentProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[60]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4399,7 +5303,7 @@ func (x *GetAgentProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentProfileRequest.ProtoReflect.Descriptor instead.
 func (*GetAgentProfileRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{60}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *GetAgentProfileRequest) GetAgentId() string {
@@ -4418,7 +5322,7 @@ type GetAgentProfileResponse struct {
 
 func (x *GetAgentProfileResponse) Reset() {
 	*x = GetAgentProfileResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[61]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4430,7 +5334,7 @@ func (x *GetAgentProfileResponse) String() string {
 func (*GetAgentProfileResponse) ProtoMessage() {}
 
 func (x *GetAgentProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[61]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4443,7 +5347,7 @@ func (x *GetAgentProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentProfileResponse.ProtoReflect.Descriptor instead.
 func (*GetAgentProfileResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{61}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *GetAgentProfileResponse) GetProfile() *AgentProfile {
@@ -4464,7 +5368,7 @@ type SetAgentEnvRequest struct {
 
 func (x *SetAgentEnvRequest) Reset() {
 	*x = SetAgentEnvRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[62]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4476,7 +5380,7 @@ func (x *SetAgentEnvRequest) String() string {
 func (*SetAgentEnvRequest) ProtoMessage() {}
 
 func (x *SetAgentEnvRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[62]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4489,7 +5393,7 @@ func (x *SetAgentEnvRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAgentEnvRequest.ProtoReflect.Descriptor instead.
 func (*SetAgentEnvRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{62}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *SetAgentEnvRequest) GetAgentId() string {
@@ -4522,7 +5426,7 @@ type SetAgentEnvResponse struct {
 
 func (x *SetAgentEnvResponse) Reset() {
 	*x = SetAgentEnvResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[63]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4534,7 +5438,7 @@ func (x *SetAgentEnvResponse) String() string {
 func (*SetAgentEnvResponse) ProtoMessage() {}
 
 func (x *SetAgentEnvResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[63]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4547,7 +5451,7 @@ func (x *SetAgentEnvResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetAgentEnvResponse.ProtoReflect.Descriptor instead.
 func (*SetAgentEnvResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{63}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *SetAgentEnvResponse) GetProfile() *AgentProfile {
@@ -4566,7 +5470,7 @@ type ListAgentProfilesRequest struct {
 
 func (x *ListAgentProfilesRequest) Reset() {
 	*x = ListAgentProfilesRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[64]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4578,7 +5482,7 @@ func (x *ListAgentProfilesRequest) String() string {
 func (*ListAgentProfilesRequest) ProtoMessage() {}
 
 func (x *ListAgentProfilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[64]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4591,7 +5495,7 @@ func (x *ListAgentProfilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentProfilesRequest.ProtoReflect.Descriptor instead.
 func (*ListAgentProfilesRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{64}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *ListAgentProfilesRequest) GetLimit() uint32 {
@@ -4610,7 +5514,7 @@ type ListAgentProfilesResponse struct {
 
 func (x *ListAgentProfilesResponse) Reset() {
 	*x = ListAgentProfilesResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[65]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4622,7 +5526,7 @@ func (x *ListAgentProfilesResponse) String() string {
 func (*ListAgentProfilesResponse) ProtoMessage() {}
 
 func (x *ListAgentProfilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[65]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4635,7 +5539,7 @@ func (x *ListAgentProfilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentProfilesResponse.ProtoReflect.Descriptor instead.
 func (*ListAgentProfilesResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{65}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *ListAgentProfilesResponse) GetProfiles() []*AgentProfile {
@@ -4655,7 +5559,7 @@ type ListAgentDMsRequest struct {
 
 func (x *ListAgentDMsRequest) Reset() {
 	*x = ListAgentDMsRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[66]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4667,7 +5571,7 @@ func (x *ListAgentDMsRequest) String() string {
 func (*ListAgentDMsRequest) ProtoMessage() {}
 
 func (x *ListAgentDMsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[66]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4680,7 +5584,7 @@ func (x *ListAgentDMsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentDMsRequest.ProtoReflect.Descriptor instead.
 func (*ListAgentDMsRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{66}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ListAgentDMsRequest) GetAgentId() string {
@@ -4706,7 +5610,7 @@ type ListAgentDMsResponse struct {
 
 func (x *ListAgentDMsResponse) Reset() {
 	*x = ListAgentDMsResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[67]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4718,7 +5622,7 @@ func (x *ListAgentDMsResponse) String() string {
 func (*ListAgentDMsResponse) ProtoMessage() {}
 
 func (x *ListAgentDMsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[67]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4731,7 +5635,7 @@ func (x *ListAgentDMsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAgentDMsResponse.ProtoReflect.Descriptor instead.
 func (*ListAgentDMsResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{67}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *ListAgentDMsResponse) GetDms() []*ChannelRecord {
@@ -4759,7 +5663,7 @@ type ReminderRecord struct {
 
 func (x *ReminderRecord) Reset() {
 	*x = ReminderRecord{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[68]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4771,7 +5675,7 @@ func (x *ReminderRecord) String() string {
 func (*ReminderRecord) ProtoMessage() {}
 
 func (x *ReminderRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[68]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4784,7 +5688,7 @@ func (x *ReminderRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReminderRecord.ProtoReflect.Descriptor instead.
 func (*ReminderRecord) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{68}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *ReminderRecord) GetReminderId() string {
@@ -4872,7 +5776,7 @@ type ScheduleReminderRequest struct {
 
 func (x *ScheduleReminderRequest) Reset() {
 	*x = ScheduleReminderRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[69]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4884,7 +5788,7 @@ func (x *ScheduleReminderRequest) String() string {
 func (*ScheduleReminderRequest) ProtoMessage() {}
 
 func (x *ScheduleReminderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[69]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4897,7 +5801,7 @@ func (x *ScheduleReminderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleReminderRequest.ProtoReflect.Descriptor instead.
 func (*ScheduleReminderRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{69}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *ScheduleReminderRequest) GetTarget() string {
@@ -4958,7 +5862,7 @@ type ScheduleReminderResponse struct {
 
 func (x *ScheduleReminderResponse) Reset() {
 	*x = ScheduleReminderResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[70]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4970,7 +5874,7 @@ func (x *ScheduleReminderResponse) String() string {
 func (*ScheduleReminderResponse) ProtoMessage() {}
 
 func (x *ScheduleReminderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[70]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4983,7 +5887,7 @@ func (x *ScheduleReminderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleReminderResponse.ProtoReflect.Descriptor instead.
 func (*ScheduleReminderResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{70}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ScheduleReminderResponse) GetReminder() *ReminderRecord {
@@ -5003,7 +5907,7 @@ type ListRemindersRequest struct {
 
 func (x *ListRemindersRequest) Reset() {
 	*x = ListRemindersRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[71]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5015,7 +5919,7 @@ func (x *ListRemindersRequest) String() string {
 func (*ListRemindersRequest) ProtoMessage() {}
 
 func (x *ListRemindersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[71]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5028,7 +5932,7 @@ func (x *ListRemindersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRemindersRequest.ProtoReflect.Descriptor instead.
 func (*ListRemindersRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{71}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *ListRemindersRequest) GetTarget() string {
@@ -5054,7 +5958,7 @@ type ListRemindersResponse struct {
 
 func (x *ListRemindersResponse) Reset() {
 	*x = ListRemindersResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[72]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5066,7 +5970,7 @@ func (x *ListRemindersResponse) String() string {
 func (*ListRemindersResponse) ProtoMessage() {}
 
 func (x *ListRemindersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[72]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5079,7 +5983,7 @@ func (x *ListRemindersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRemindersResponse.ProtoReflect.Descriptor instead.
 func (*ListRemindersResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{72}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ListRemindersResponse) GetReminders() []*ReminderRecord {
@@ -5099,7 +6003,7 @@ type CancelReminderRequest struct {
 
 func (x *CancelReminderRequest) Reset() {
 	*x = CancelReminderRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[73]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5111,7 +6015,7 @@ func (x *CancelReminderRequest) String() string {
 func (*CancelReminderRequest) ProtoMessage() {}
 
 func (x *CancelReminderRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[73]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5124,7 +6028,7 @@ func (x *CancelReminderRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelReminderRequest.ProtoReflect.Descriptor instead.
 func (*CancelReminderRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{73}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *CancelReminderRequest) GetReminderId() string {
@@ -5150,7 +6054,7 @@ type CancelReminderResponse struct {
 
 func (x *CancelReminderResponse) Reset() {
 	*x = CancelReminderResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[74]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5162,7 +6066,7 @@ func (x *CancelReminderResponse) String() string {
 func (*CancelReminderResponse) ProtoMessage() {}
 
 func (x *CancelReminderResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[74]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5175,7 +6079,7 @@ func (x *CancelReminderResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelReminderResponse.ProtoReflect.Descriptor instead.
 func (*CancelReminderResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{74}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *CancelReminderResponse) GetAccepted() bool {
@@ -5202,7 +6106,7 @@ type ActivityRecord struct {
 
 func (x *ActivityRecord) Reset() {
 	*x = ActivityRecord{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[75]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5214,7 +6118,7 @@ func (x *ActivityRecord) String() string {
 func (*ActivityRecord) ProtoMessage() {}
 
 func (x *ActivityRecord) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[75]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5227,7 +6131,7 @@ func (x *ActivityRecord) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivityRecord.ProtoReflect.Descriptor instead.
 func (*ActivityRecord) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{75}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *ActivityRecord) GetActivityId() string {
@@ -5309,7 +6213,7 @@ type LogActivityRequest struct {
 
 func (x *LogActivityRequest) Reset() {
 	*x = LogActivityRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[76]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5321,7 +6225,7 @@ func (x *LogActivityRequest) String() string {
 func (*LogActivityRequest) ProtoMessage() {}
 
 func (x *LogActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[76]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5334,7 +6238,7 @@ func (x *LogActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogActivityRequest.ProtoReflect.Descriptor instead.
 func (*LogActivityRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{76}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *LogActivityRequest) GetTarget() string {
@@ -5402,7 +6306,7 @@ type LogActivityResponse struct {
 
 func (x *LogActivityResponse) Reset() {
 	*x = LogActivityResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[77]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5414,7 +6318,7 @@ func (x *LogActivityResponse) String() string {
 func (*LogActivityResponse) ProtoMessage() {}
 
 func (x *LogActivityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[77]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5427,7 +6331,7 @@ func (x *LogActivityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogActivityResponse.ProtoReflect.Descriptor instead.
 func (*LogActivityResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{77}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *LogActivityResponse) GetActivity() *ActivityRecord {
@@ -5449,7 +6353,7 @@ type ListActivityRequest struct {
 
 func (x *ListActivityRequest) Reset() {
 	*x = ListActivityRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[78]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5461,7 +6365,7 @@ func (x *ListActivityRequest) String() string {
 func (*ListActivityRequest) ProtoMessage() {}
 
 func (x *ListActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[78]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5474,7 +6378,7 @@ func (x *ListActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivityRequest.ProtoReflect.Descriptor instead.
 func (*ListActivityRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{78}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *ListActivityRequest) GetTarget() string {
@@ -5515,7 +6419,7 @@ type ListActivityResponse struct {
 
 func (x *ListActivityResponse) Reset() {
 	*x = ListActivityResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[79]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5527,7 +6431,7 @@ func (x *ListActivityResponse) String() string {
 func (*ListActivityResponse) ProtoMessage() {}
 
 func (x *ListActivityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[79]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5540,7 +6444,7 @@ func (x *ListActivityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivityResponse.ProtoReflect.Descriptor instead.
 func (*ListActivityResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{79}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *ListActivityResponse) GetActivities() []*ActivityRecord {
@@ -5571,7 +6475,7 @@ type UploadAttachmentRequest struct {
 
 func (x *UploadAttachmentRequest) Reset() {
 	*x = UploadAttachmentRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[80]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5583,7 +6487,7 @@ func (x *UploadAttachmentRequest) String() string {
 func (*UploadAttachmentRequest) ProtoMessage() {}
 
 func (x *UploadAttachmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[80]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5596,7 +6500,7 @@ func (x *UploadAttachmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadAttachmentRequest.ProtoReflect.Descriptor instead.
 func (*UploadAttachmentRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{80}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *UploadAttachmentRequest) GetTarget() string {
@@ -5650,7 +6554,7 @@ type UploadAttachmentResponse struct {
 
 func (x *UploadAttachmentResponse) Reset() {
 	*x = UploadAttachmentResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[81]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5662,7 +6566,7 @@ func (x *UploadAttachmentResponse) String() string {
 func (*UploadAttachmentResponse) ProtoMessage() {}
 
 func (x *UploadAttachmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[81]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5675,7 +6579,7 @@ func (x *UploadAttachmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadAttachmentResponse.ProtoReflect.Descriptor instead.
 func (*UploadAttachmentResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{81}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *UploadAttachmentResponse) GetAttachment() *AttachmentRecord {
@@ -5694,7 +6598,7 @@ type GetAttachmentRequest struct {
 
 func (x *GetAttachmentRequest) Reset() {
 	*x = GetAttachmentRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[82]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5706,7 +6610,7 @@ func (x *GetAttachmentRequest) String() string {
 func (*GetAttachmentRequest) ProtoMessage() {}
 
 func (x *GetAttachmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[82]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5719,7 +6623,7 @@ func (x *GetAttachmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAttachmentRequest.ProtoReflect.Descriptor instead.
 func (*GetAttachmentRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{82}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *GetAttachmentRequest) GetAttachmentId() string {
@@ -5739,7 +6643,7 @@ type GetAttachmentResponse struct {
 
 func (x *GetAttachmentResponse) Reset() {
 	*x = GetAttachmentResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[83]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5751,7 +6655,7 @@ func (x *GetAttachmentResponse) String() string {
 func (*GetAttachmentResponse) ProtoMessage() {}
 
 func (x *GetAttachmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[83]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5764,7 +6668,7 @@ func (x *GetAttachmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAttachmentResponse.ProtoReflect.Descriptor instead.
 func (*GetAttachmentResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{83}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *GetAttachmentResponse) GetAttachment() *AttachmentRecord {
@@ -5791,7 +6695,7 @@ type ListEventsSinceRequest struct {
 
 func (x *ListEventsSinceRequest) Reset() {
 	*x = ListEventsSinceRequest{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[84]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5803,7 +6707,7 @@ func (x *ListEventsSinceRequest) String() string {
 func (*ListEventsSinceRequest) ProtoMessage() {}
 
 func (x *ListEventsSinceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[84]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5816,7 +6720,7 @@ func (x *ListEventsSinceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsSinceRequest.ProtoReflect.Descriptor instead.
 func (*ListEventsSinceRequest) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{84}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *ListEventsSinceRequest) GetCursor() *EventCursor {
@@ -5849,7 +6753,7 @@ type CollaborationEvent struct {
 
 func (x *CollaborationEvent) Reset() {
 	*x = CollaborationEvent{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[85]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5861,7 +6765,7 @@ func (x *CollaborationEvent) String() string {
 func (*CollaborationEvent) ProtoMessage() {}
 
 func (x *CollaborationEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[85]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5874,7 +6778,7 @@ func (x *CollaborationEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CollaborationEvent.ProtoReflect.Descriptor instead.
 func (*CollaborationEvent) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{85}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *CollaborationEvent) GetEventId() string {
@@ -5943,7 +6847,7 @@ type ListEventsSinceResponse struct {
 
 func (x *ListEventsSinceResponse) Reset() {
 	*x = ListEventsSinceResponse{}
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[86]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5955,7 +6859,7 @@ func (x *ListEventsSinceResponse) String() string {
 func (*ListEventsSinceResponse) ProtoMessage() {}
 
 func (x *ListEventsSinceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[86]
+	mi := &file_nekobot_daemon_v1_daemon_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5968,7 +6872,7 @@ func (x *ListEventsSinceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsSinceResponse.ProtoReflect.Descriptor instead.
 func (*ListEventsSinceResponse) Descriptor() ([]byte, []int) {
-	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{86}
+	return file_nekobot_daemon_v1_daemon_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *ListEventsSinceResponse) GetEvents() []*CollaborationEvent {
@@ -6109,7 +7013,7 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12(\n" +
 	"\x10server_time_unix\x18\x02 \x01(\x03R\x0eserverTimeUnix\x12?\n" +
 	"\x1cnext_heartbeat_after_seconds\x18\x03 \x01(\rR\x19nextHeartbeatAfterSeconds\x12.\n" +
-	"\x05lease\x18\x04 \x01(\v2\x18.nekobot.daemon.v1.LeaseR\x05lease\"\x82\x03\n" +
+	"\x05lease\x18\x04 \x01(\v2\x18.nekobot.daemon.v1.LeaseR\x05lease\"\xbc\x06\n" +
 	"\x04Task\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
@@ -6126,7 +7030,20 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	" \x01(\tR\x06target\x12\x1f\n" +
 	"\vassignee_id\x18\v \x01(\tR\n" +
 	"assigneeId\x12$\n" +
-	"\x0ecurrent_run_id\x18\f \x01(\tR\fcurrentRunId\"\xae\x04\n" +
+	"\x0ecurrent_run_id\x18\f \x01(\tR\fcurrentRunId\x12 \n" +
+	"\froot_task_id\x18\r \x01(\tR\n" +
+	"rootTaskId\x12$\n" +
+	"\x0eparent_task_id\x18\x0e \x01(\tR\fparentTaskId\x12\x1f\n" +
+	"\vsubtask_ids\x18\x0f \x03(\tR\n" +
+	"subtaskIds\x12-\n" +
+	"\x13depends_on_task_ids\x18\x10 \x03(\tR\x10dependsOnTaskIds\x12-\n" +
+	"\x13blocked_by_task_ids\x18\x11 \x03(\tR\x10blockedByTaskIds\x12\x16\n" +
+	"\x06source\x18\x12 \x01(\tR\x06source\x12-\n" +
+	"\x13created_by_agent_id\x18\x13 \x01(\tR\x10createdByAgentId\x12$\n" +
+	"\x0eserver_rule_id\x18\x14 \x01(\tR\fserverRuleId\x12*\n" +
+	"\x11split_proposal_id\x18\x15 \x01(\tR\x0fsplitProposalId\x12#\n" +
+	"\rgraph_version\x18\x16 \x01(\x03R\fgraphVersion\x123\n" +
+	"\x15required_capabilities\x18\x17 \x03(\tR\x14requiredCapabilities\"\xae\x04\n" +
 	"\x03Run\x12\x15\n" +
 	"\x06run_id\x18\x01 \x01(\tR\x05runId\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x16\n" +
@@ -6330,7 +7247,78 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x03 \x01(\tR\trequestId\"M\n" +
 	"\x1eClaimCollaborationTaskResponse\x12+\n" +
-	"\x04task\x18\x01 \x01(\v2\x17.nekobot.daemon.v1.TaskR\x04task\"\x16\n" +
+	"\x04task\x18\x01 \x01(\v2\x17.nekobot.daemon.v1.TaskR\x04task\"^\n" +
+	"\bTaskEdge\x12 \n" +
+	"\ffrom_task_id\x18\x01 \x01(\tR\n" +
+	"fromTaskId\x12\x1c\n" +
+	"\n" +
+	"to_task_id\x18\x02 \x01(\tR\btoTaskId\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\"\xbc\x01\n" +
+	"\x11TaskGraphSnapshot\x12 \n" +
+	"\froot_task_id\x18\x01 \x01(\tR\n" +
+	"rootTaskId\x12#\n" +
+	"\rgraph_version\x18\x02 \x01(\x03R\fgraphVersion\x12-\n" +
+	"\x05nodes\x18\x03 \x03(\v2\x17.nekobot.daemon.v1.TaskR\x05nodes\x121\n" +
+	"\x05edges\x18\x04 \x03(\v2\x1b.nekobot.daemon.v1.TaskEdgeR\x05edges\"\xe6\x01\n" +
+	"\x0fProposedSubtask\x12,\n" +
+	"\x12client_proposed_id\x18\x01 \x01(\tR\x10clientProposedId\x12\x18\n" +
+	"\asummary\x18\x02 \x01(\tR\asummary\x12\x1f\n" +
+	"\vassignee_id\x18\x03 \x01(\tR\n" +
+	"assigneeId\x125\n" +
+	"\x17depends_on_proposed_ids\x18\x04 \x03(\tR\x14dependsOnProposedIds\x123\n" +
+	"\x15required_capabilities\x18\x05 \x03(\tR\x14requiredCapabilities\"\xa9\x01\n" +
+	"\x17ProposeTaskSplitRequest\x12$\n" +
+	"\x0eparent_task_id\x18\x01 \x01(\tR\fparentTaskId\x12I\n" +
+	"\x0eproposed_tasks\x18\x02 \x03(\v2\".nekobot.daemon.v1.ProposedSubtaskR\rproposedTasks\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x03 \x01(\tR\trequestId\"\xfc\x01\n" +
+	"\x18ProposeTaskSplitResponse\x12\x1f\n" +
+	"\vproposal_id\x18\x01 \x01(\tR\n" +
+	"proposalId\x128\n" +
+	"\vparent_task\x18\x02 \x01(\v2\x17.nekobot.daemon.v1.TaskR\n" +
+	"parentTask\x12>\n" +
+	"\x0eproposed_tasks\x18\x03 \x03(\v2\x17.nekobot.daemon.v1.TaskR\rproposedTasks\x12\x1a\n" +
+	"\baccepted\x18\x04 \x01(\bR\baccepted\x12)\n" +
+	"\x10rejection_reason\x18\x05 \x01(\tR\x0frejectionReason\"\xa9\x01\n" +
+	"\x15ApplyTaskSplitRequest\x12$\n" +
+	"\x0eparent_task_id\x18\x01 \x01(\tR\fparentTaskId\x12\x1f\n" +
+	"\vproposal_id\x18\x02 \x01(\tR\n" +
+	"proposalId\x12*\n" +
+	"\x11selected_task_ids\x18\x03 \x03(\tR\x0fselectedTaskIds\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x04 \x01(\tR\trequestId\"\xc2\x01\n" +
+	"\x16ApplyTaskSplitResponse\x128\n" +
+	"\vparent_task\x18\x01 \x01(\v2\x17.nekobot.daemon.v1.TaskR\n" +
+	"parentTask\x12B\n" +
+	"\x10created_subtasks\x18\x02 \x03(\v2\x17.nekobot.daemon.v1.TaskR\x0fcreatedSubtasks\x12*\n" +
+	"\x11new_graph_version\x18\x03 \x01(\x03R\x0fnewGraphVersion\"\xe3\x01\n" +
+	"\x16CreateTaskGraphRequest\x124\n" +
+	"\troot_task\x18\x01 \x01(\v2\x17.nekobot.daemon.v1.TaskR\brootTask\x123\n" +
+	"\bsubtasks\x18\x02 \x03(\v2\x17.nekobot.daemon.v1.TaskR\bsubtasks\x12?\n" +
+	"\fdependencies\x18\x03 \x03(\v2\x1b.nekobot.daemon.v1.TaskEdgeR\fdependencies\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x04 \x01(\tR\trequestId\"U\n" +
+	"\x17CreateTaskGraphResponse\x12:\n" +
+	"\x05graph\x18\x01 \x01(\v2$.nekobot.daemon.v1.TaskGraphSnapshotR\x05graph\"h\n" +
+	"\x14ListTaskGraphRequest\x12 \n" +
+	"\froot_task_id\x18\x01 \x01(\tR\n" +
+	"rootTaskId\x12.\n" +
+	"\x13since_graph_version\x18\x02 \x01(\x03R\x11sinceGraphVersion\"S\n" +
+	"\x15ListTaskGraphResponse\x12:\n" +
+	"\x05graph\x18\x01 \x01(\v2$.nekobot.daemon.v1.TaskGraphSnapshotR\x05graph\"\xb6\x02\n" +
+	"\x16UpdateTaskGraphRequest\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12+\n" +
+	"\x0fnew_assignee_id\x18\x02 \x01(\tH\x00R\rnewAssigneeId\x88\x01\x01\x12)\n" +
+	"\x10add_dependencies\x18\x03 \x03(\tR\x0faddDependencies\x12/\n" +
+	"\x13remove_dependencies\x18\x04 \x03(\tR\x12removeDependencies\x120\n" +
+	"\x12new_parent_task_id\x18\x05 \x01(\tH\x01R\x0fnewParentTaskId\x88\x01\x01\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x06 \x01(\tR\trequestIdB\x12\n" +
+	"\x10_new_assignee_idB\x15\n" +
+	"\x13_new_parent_task_id\"r\n" +
+	"\x17UpdateTaskGraphResponse\x12+\n" +
+	"\x04task\x18\x01 \x01(\v2\x17.nekobot.daemon.v1.TaskR\x04task\x12*\n" +
+	"\x11new_graph_version\x18\x02 \x01(\x03R\x0fnewGraphVersion\"\x16\n" +
 	"\x14GetServerInfoRequest\"\xc9\x01\n" +
 	"\x15GetServerInfoResponse\x12\x1f\n" +
 	"\vserver_name\x18\x01 \x01(\tR\n" +
@@ -6498,7 +7486,7 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\x17ListEventsSinceResponse\x12=\n" +
 	"\x06events\x18\x01 \x03(\v2%.nekobot.daemon.v1.CollaborationEventR\x06events\x12?\n" +
 	"\vnext_cursor\x18\x02 \x01(\v2\x1e.nekobot.daemon.v1.EventCursorR\n" +
-	"nextCursor2\x83\x1a\n" +
+	"nextCursor2\x8f\x1e\n" +
 	"\x14DaemonControlService\x12k\n" +
 	"\x10RegisterComputer\x12*.nekobot.daemon.v1.RegisterComputerRequest\x1a+.nekobot.daemon.v1.RegisterComputerResponse\x12n\n" +
 	"\x11HeartbeatComputer\x12+.nekobot.daemon.v1.HeartbeatComputerRequest\x1a,.nekobot.daemon.v1.HeartbeatComputerResponse\x12n\n" +
@@ -6518,7 +7506,12 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\x0eUnfollowThread\x12(.nekobot.daemon.v1.UnfollowThreadRequest\x1a).nekobot.daemon.v1.UnfollowThreadResponse\x12\x80\x01\n" +
 	"\x17CreateCollaborationTask\x121.nekobot.daemon.v1.CreateCollaborationTaskRequest\x1a2.nekobot.daemon.v1.CreateCollaborationTaskResponse\x12}\n" +
 	"\x16ListCollaborationTasks\x120.nekobot.daemon.v1.ListCollaborationTasksRequest\x1a1.nekobot.daemon.v1.ListCollaborationTasksResponse\x12}\n" +
-	"\x16ClaimCollaborationTask\x120.nekobot.daemon.v1.ClaimCollaborationTaskRequest\x1a1.nekobot.daemon.v1.ClaimCollaborationTaskResponse\x12b\n" +
+	"\x16ClaimCollaborationTask\x120.nekobot.daemon.v1.ClaimCollaborationTaskRequest\x1a1.nekobot.daemon.v1.ClaimCollaborationTaskResponse\x12k\n" +
+	"\x10ProposeTaskSplit\x12*.nekobot.daemon.v1.ProposeTaskSplitRequest\x1a+.nekobot.daemon.v1.ProposeTaskSplitResponse\x12e\n" +
+	"\x0eApplyTaskSplit\x12(.nekobot.daemon.v1.ApplyTaskSplitRequest\x1a).nekobot.daemon.v1.ApplyTaskSplitResponse\x12h\n" +
+	"\x0fCreateTaskGraph\x12).nekobot.daemon.v1.CreateTaskGraphRequest\x1a*.nekobot.daemon.v1.CreateTaskGraphResponse\x12b\n" +
+	"\rListTaskGraph\x12'.nekobot.daemon.v1.ListTaskGraphRequest\x1a(.nekobot.daemon.v1.ListTaskGraphResponse\x12h\n" +
+	"\x0fUpdateTaskGraph\x12).nekobot.daemon.v1.UpdateTaskGraphRequest\x1a*.nekobot.daemon.v1.UpdateTaskGraphResponse\x12b\n" +
 	"\rGetServerInfo\x12'.nekobot.daemon.v1.GetServerInfoRequest\x1a(.nekobot.daemon.v1.GetServerInfoResponse\x12h\n" +
 	"\x0fGetAgentProfile\x12).nekobot.daemon.v1.GetAgentProfileRequest\x1a*.nekobot.daemon.v1.GetAgentProfileResponse\x12\\\n" +
 	"\vSetAgentEnv\x12%.nekobot.daemon.v1.SetAgentEnvRequest\x1a&.nekobot.daemon.v1.SetAgentEnvResponse\x12n\n" +
@@ -6545,7 +7538,7 @@ func file_nekobot_daemon_v1_daemon_proto_rawDescGZIP() []byte {
 	return file_nekobot_daemon_v1_daemon_proto_rawDescData
 }
 
-var file_nekobot_daemon_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 87)
+var file_nekobot_daemon_v1_daemon_proto_msgTypes = make([]protoimpl.MessageInfo, 100)
 var file_nekobot_daemon_v1_daemon_proto_goTypes = []any{
 	(*Capability)(nil),                      // 0: nekobot.daemon.v1.Capability
 	(*Permission)(nil),                      // 1: nekobot.daemon.v1.Permission
@@ -6602,163 +7595,199 @@ var file_nekobot_daemon_v1_daemon_proto_goTypes = []any{
 	(*ListCollaborationTasksResponse)(nil),  // 52: nekobot.daemon.v1.ListCollaborationTasksResponse
 	(*ClaimCollaborationTaskRequest)(nil),   // 53: nekobot.daemon.v1.ClaimCollaborationTaskRequest
 	(*ClaimCollaborationTaskResponse)(nil),  // 54: nekobot.daemon.v1.ClaimCollaborationTaskResponse
-	(*GetServerInfoRequest)(nil),            // 55: nekobot.daemon.v1.GetServerInfoRequest
-	(*GetServerInfoResponse)(nil),           // 56: nekobot.daemon.v1.GetServerInfoResponse
-	(*EnvVar)(nil),                          // 57: nekobot.daemon.v1.EnvVar
-	(*SkillRecord)(nil),                     // 58: nekobot.daemon.v1.SkillRecord
-	(*AgentProfile)(nil),                    // 59: nekobot.daemon.v1.AgentProfile
-	(*GetAgentProfileRequest)(nil),          // 60: nekobot.daemon.v1.GetAgentProfileRequest
-	(*GetAgentProfileResponse)(nil),         // 61: nekobot.daemon.v1.GetAgentProfileResponse
-	(*SetAgentEnvRequest)(nil),              // 62: nekobot.daemon.v1.SetAgentEnvRequest
-	(*SetAgentEnvResponse)(nil),             // 63: nekobot.daemon.v1.SetAgentEnvResponse
-	(*ListAgentProfilesRequest)(nil),        // 64: nekobot.daemon.v1.ListAgentProfilesRequest
-	(*ListAgentProfilesResponse)(nil),       // 65: nekobot.daemon.v1.ListAgentProfilesResponse
-	(*ListAgentDMsRequest)(nil),             // 66: nekobot.daemon.v1.ListAgentDMsRequest
-	(*ListAgentDMsResponse)(nil),            // 67: nekobot.daemon.v1.ListAgentDMsResponse
-	(*ReminderRecord)(nil),                  // 68: nekobot.daemon.v1.ReminderRecord
-	(*ScheduleReminderRequest)(nil),         // 69: nekobot.daemon.v1.ScheduleReminderRequest
-	(*ScheduleReminderResponse)(nil),        // 70: nekobot.daemon.v1.ScheduleReminderResponse
-	(*ListRemindersRequest)(nil),            // 71: nekobot.daemon.v1.ListRemindersRequest
-	(*ListRemindersResponse)(nil),           // 72: nekobot.daemon.v1.ListRemindersResponse
-	(*CancelReminderRequest)(nil),           // 73: nekobot.daemon.v1.CancelReminderRequest
-	(*CancelReminderResponse)(nil),          // 74: nekobot.daemon.v1.CancelReminderResponse
-	(*ActivityRecord)(nil),                  // 75: nekobot.daemon.v1.ActivityRecord
-	(*LogActivityRequest)(nil),              // 76: nekobot.daemon.v1.LogActivityRequest
-	(*LogActivityResponse)(nil),             // 77: nekobot.daemon.v1.LogActivityResponse
-	(*ListActivityRequest)(nil),             // 78: nekobot.daemon.v1.ListActivityRequest
-	(*ListActivityResponse)(nil),            // 79: nekobot.daemon.v1.ListActivityResponse
-	(*UploadAttachmentRequest)(nil),         // 80: nekobot.daemon.v1.UploadAttachmentRequest
-	(*UploadAttachmentResponse)(nil),        // 81: nekobot.daemon.v1.UploadAttachmentResponse
-	(*GetAttachmentRequest)(nil),            // 82: nekobot.daemon.v1.GetAttachmentRequest
-	(*GetAttachmentResponse)(nil),           // 83: nekobot.daemon.v1.GetAttachmentResponse
-	(*ListEventsSinceRequest)(nil),          // 84: nekobot.daemon.v1.ListEventsSinceRequest
-	(*CollaborationEvent)(nil),              // 85: nekobot.daemon.v1.CollaborationEvent
-	(*ListEventsSinceResponse)(nil),         // 86: nekobot.daemon.v1.ListEventsSinceResponse
+	(*TaskEdge)(nil),                        // 55: nekobot.daemon.v1.TaskEdge
+	(*TaskGraphSnapshot)(nil),               // 56: nekobot.daemon.v1.TaskGraphSnapshot
+	(*ProposedSubtask)(nil),                 // 57: nekobot.daemon.v1.ProposedSubtask
+	(*ProposeTaskSplitRequest)(nil),         // 58: nekobot.daemon.v1.ProposeTaskSplitRequest
+	(*ProposeTaskSplitResponse)(nil),        // 59: nekobot.daemon.v1.ProposeTaskSplitResponse
+	(*ApplyTaskSplitRequest)(nil),           // 60: nekobot.daemon.v1.ApplyTaskSplitRequest
+	(*ApplyTaskSplitResponse)(nil),          // 61: nekobot.daemon.v1.ApplyTaskSplitResponse
+	(*CreateTaskGraphRequest)(nil),          // 62: nekobot.daemon.v1.CreateTaskGraphRequest
+	(*CreateTaskGraphResponse)(nil),         // 63: nekobot.daemon.v1.CreateTaskGraphResponse
+	(*ListTaskGraphRequest)(nil),            // 64: nekobot.daemon.v1.ListTaskGraphRequest
+	(*ListTaskGraphResponse)(nil),           // 65: nekobot.daemon.v1.ListTaskGraphResponse
+	(*UpdateTaskGraphRequest)(nil),          // 66: nekobot.daemon.v1.UpdateTaskGraphRequest
+	(*UpdateTaskGraphResponse)(nil),         // 67: nekobot.daemon.v1.UpdateTaskGraphResponse
+	(*GetServerInfoRequest)(nil),            // 68: nekobot.daemon.v1.GetServerInfoRequest
+	(*GetServerInfoResponse)(nil),           // 69: nekobot.daemon.v1.GetServerInfoResponse
+	(*EnvVar)(nil),                          // 70: nekobot.daemon.v1.EnvVar
+	(*SkillRecord)(nil),                     // 71: nekobot.daemon.v1.SkillRecord
+	(*AgentProfile)(nil),                    // 72: nekobot.daemon.v1.AgentProfile
+	(*GetAgentProfileRequest)(nil),          // 73: nekobot.daemon.v1.GetAgentProfileRequest
+	(*GetAgentProfileResponse)(nil),         // 74: nekobot.daemon.v1.GetAgentProfileResponse
+	(*SetAgentEnvRequest)(nil),              // 75: nekobot.daemon.v1.SetAgentEnvRequest
+	(*SetAgentEnvResponse)(nil),             // 76: nekobot.daemon.v1.SetAgentEnvResponse
+	(*ListAgentProfilesRequest)(nil),        // 77: nekobot.daemon.v1.ListAgentProfilesRequest
+	(*ListAgentProfilesResponse)(nil),       // 78: nekobot.daemon.v1.ListAgentProfilesResponse
+	(*ListAgentDMsRequest)(nil),             // 79: nekobot.daemon.v1.ListAgentDMsRequest
+	(*ListAgentDMsResponse)(nil),            // 80: nekobot.daemon.v1.ListAgentDMsResponse
+	(*ReminderRecord)(nil),                  // 81: nekobot.daemon.v1.ReminderRecord
+	(*ScheduleReminderRequest)(nil),         // 82: nekobot.daemon.v1.ScheduleReminderRequest
+	(*ScheduleReminderResponse)(nil),        // 83: nekobot.daemon.v1.ScheduleReminderResponse
+	(*ListRemindersRequest)(nil),            // 84: nekobot.daemon.v1.ListRemindersRequest
+	(*ListRemindersResponse)(nil),           // 85: nekobot.daemon.v1.ListRemindersResponse
+	(*CancelReminderRequest)(nil),           // 86: nekobot.daemon.v1.CancelReminderRequest
+	(*CancelReminderResponse)(nil),          // 87: nekobot.daemon.v1.CancelReminderResponse
+	(*ActivityRecord)(nil),                  // 88: nekobot.daemon.v1.ActivityRecord
+	(*LogActivityRequest)(nil),              // 89: nekobot.daemon.v1.LogActivityRequest
+	(*LogActivityResponse)(nil),             // 90: nekobot.daemon.v1.LogActivityResponse
+	(*ListActivityRequest)(nil),             // 91: nekobot.daemon.v1.ListActivityRequest
+	(*ListActivityResponse)(nil),            // 92: nekobot.daemon.v1.ListActivityResponse
+	(*UploadAttachmentRequest)(nil),         // 93: nekobot.daemon.v1.UploadAttachmentRequest
+	(*UploadAttachmentResponse)(nil),        // 94: nekobot.daemon.v1.UploadAttachmentResponse
+	(*GetAttachmentRequest)(nil),            // 95: nekobot.daemon.v1.GetAttachmentRequest
+	(*GetAttachmentResponse)(nil),           // 96: nekobot.daemon.v1.GetAttachmentResponse
+	(*ListEventsSinceRequest)(nil),          // 97: nekobot.daemon.v1.ListEventsSinceRequest
+	(*CollaborationEvent)(nil),              // 98: nekobot.daemon.v1.CollaborationEvent
+	(*ListEventsSinceResponse)(nil),         // 99: nekobot.daemon.v1.ListEventsSinceResponse
 }
 var file_nekobot_daemon_v1_daemon_proto_depIdxs = []int32{
-	57, // 0: nekobot.daemon.v1.RuntimeProfile.env:type_name -> nekobot.daemon.v1.EnvVar
-	58, // 1: nekobot.daemon.v1.RuntimeProfile.skills:type_name -> nekobot.daemon.v1.SkillRecord
-	0,  // 2: nekobot.daemon.v1.RuntimeProfile.capabilities:type_name -> nekobot.daemon.v1.Capability
-	0,  // 3: nekobot.daemon.v1.Runtime.capabilities:type_name -> nekobot.daemon.v1.Capability
-	6,  // 4: nekobot.daemon.v1.Runtime.runtime_profile:type_name -> nekobot.daemon.v1.RuntimeProfile
-	5,  // 5: nekobot.daemon.v1.ComputerInventory.workspaces:type_name -> nekobot.daemon.v1.Workspace
-	7,  // 6: nekobot.daemon.v1.ComputerInventory.runtimes:type_name -> nekobot.daemon.v1.Runtime
-	59, // 7: nekobot.daemon.v1.ComputerInventory.agents:type_name -> nekobot.daemon.v1.AgentProfile
-	6,  // 8: nekobot.daemon.v1.ComputerInventory.runtime_profiles:type_name -> nekobot.daemon.v1.RuntimeProfile
-	0,  // 9: nekobot.daemon.v1.ComputerInfo.capabilities:type_name -> nekobot.daemon.v1.Capability
-	9,  // 10: nekobot.daemon.v1.RegisterComputerRequest.info:type_name -> nekobot.daemon.v1.ComputerInfo
-	8,  // 11: nekobot.daemon.v1.RegisterComputerRequest.inventory:type_name -> nekobot.daemon.v1.ComputerInventory
-	2,  // 12: nekobot.daemon.v1.RegisterComputerResponse.lease:type_name -> nekobot.daemon.v1.Lease
-	9,  // 13: nekobot.daemon.v1.HeartbeatComputerRequest.info:type_name -> nekobot.daemon.v1.ComputerInfo
-	8,  // 14: nekobot.daemon.v1.HeartbeatComputerRequest.inventory:type_name -> nekobot.daemon.v1.ComputerInventory
-	2,  // 15: nekobot.daemon.v1.HeartbeatComputerResponse.lease:type_name -> nekobot.daemon.v1.Lease
-	15, // 16: nekobot.daemon.v1.FetchAssignedRunsResponse.runs:type_name -> nekobot.daemon.v1.Run
-	16, // 17: nekobot.daemon.v1.AppendRunStepRequest.step:type_name -> nekobot.daemon.v1.RunStep
-	16, // 18: nekobot.daemon.v1.AppendRunStepResponse.step:type_name -> nekobot.daemon.v1.RunStep
-	15, // 19: nekobot.daemon.v1.ListRunsResponse.runs:type_name -> nekobot.daemon.v1.Run
-	15, // 20: nekobot.daemon.v1.GetRunResponse.run:type_name -> nekobot.daemon.v1.Run
-	16, // 21: nekobot.daemon.v1.GetRunResponse.steps:type_name -> nekobot.daemon.v1.RunStep
-	27, // 22: nekobot.daemon.v1.ListWorkspaceTreeResponse.entries:type_name -> nekobot.daemon.v1.WorkspaceTreeEntry
-	32, // 23: nekobot.daemon.v1.ListChannelsResponse.channels:type_name -> nekobot.daemon.v1.ChannelRecord
-	35, // 24: nekobot.daemon.v1.ListThreadsResponse.threads:type_name -> nekobot.daemon.v1.ThreadRecord
-	35, // 25: nekobot.daemon.v1.GetThreadResponse.thread:type_name -> nekobot.daemon.v1.ThreadRecord
-	4,  // 26: nekobot.daemon.v1.CollaborationMessage.attachments:type_name -> nekobot.daemon.v1.AttachmentRecord
-	40, // 27: nekobot.daemon.v1.ReadMessagesResponse.messages:type_name -> nekobot.daemon.v1.CollaborationMessage
-	40, // 28: nekobot.daemon.v1.SendMessageResponse.message:type_name -> nekobot.daemon.v1.CollaborationMessage
-	14, // 29: nekobot.daemon.v1.CreateCollaborationTaskResponse.task:type_name -> nekobot.daemon.v1.Task
-	14, // 30: nekobot.daemon.v1.ListCollaborationTasksResponse.tasks:type_name -> nekobot.daemon.v1.Task
-	14, // 31: nekobot.daemon.v1.ClaimCollaborationTaskResponse.task:type_name -> nekobot.daemon.v1.Task
-	32, // 32: nekobot.daemon.v1.GetServerInfoResponse.channels:type_name -> nekobot.daemon.v1.ChannelRecord
-	59, // 33: nekobot.daemon.v1.GetServerInfoResponse.agents:type_name -> nekobot.daemon.v1.AgentProfile
-	57, // 34: nekobot.daemon.v1.AgentProfile.env:type_name -> nekobot.daemon.v1.EnvVar
-	58, // 35: nekobot.daemon.v1.AgentProfile.skills:type_name -> nekobot.daemon.v1.SkillRecord
-	0,  // 36: nekobot.daemon.v1.AgentProfile.capabilities:type_name -> nekobot.daemon.v1.Capability
-	1,  // 37: nekobot.daemon.v1.AgentProfile.permissions:type_name -> nekobot.daemon.v1.Permission
-	59, // 38: nekobot.daemon.v1.GetAgentProfileResponse.profile:type_name -> nekobot.daemon.v1.AgentProfile
-	57, // 39: nekobot.daemon.v1.SetAgentEnvRequest.env:type_name -> nekobot.daemon.v1.EnvVar
-	59, // 40: nekobot.daemon.v1.SetAgentEnvResponse.profile:type_name -> nekobot.daemon.v1.AgentProfile
-	59, // 41: nekobot.daemon.v1.ListAgentProfilesResponse.profiles:type_name -> nekobot.daemon.v1.AgentProfile
-	32, // 42: nekobot.daemon.v1.ListAgentDMsResponse.dms:type_name -> nekobot.daemon.v1.ChannelRecord
-	68, // 43: nekobot.daemon.v1.ScheduleReminderResponse.reminder:type_name -> nekobot.daemon.v1.ReminderRecord
-	68, // 44: nekobot.daemon.v1.ListRemindersResponse.reminders:type_name -> nekobot.daemon.v1.ReminderRecord
-	75, // 45: nekobot.daemon.v1.LogActivityResponse.activity:type_name -> nekobot.daemon.v1.ActivityRecord
-	3,  // 46: nekobot.daemon.v1.ListActivityRequest.cursor:type_name -> nekobot.daemon.v1.EventCursor
-	75, // 47: nekobot.daemon.v1.ListActivityResponse.activities:type_name -> nekobot.daemon.v1.ActivityRecord
-	3,  // 48: nekobot.daemon.v1.ListActivityResponse.next_cursor:type_name -> nekobot.daemon.v1.EventCursor
-	4,  // 49: nekobot.daemon.v1.UploadAttachmentResponse.attachment:type_name -> nekobot.daemon.v1.AttachmentRecord
-	4,  // 50: nekobot.daemon.v1.GetAttachmentResponse.attachment:type_name -> nekobot.daemon.v1.AttachmentRecord
-	3,  // 51: nekobot.daemon.v1.ListEventsSinceRequest.cursor:type_name -> nekobot.daemon.v1.EventCursor
-	85, // 52: nekobot.daemon.v1.ListEventsSinceResponse.events:type_name -> nekobot.daemon.v1.CollaborationEvent
-	3,  // 53: nekobot.daemon.v1.ListEventsSinceResponse.next_cursor:type_name -> nekobot.daemon.v1.EventCursor
-	10, // 54: nekobot.daemon.v1.DaemonControlService.RegisterComputer:input_type -> nekobot.daemon.v1.RegisterComputerRequest
-	12, // 55: nekobot.daemon.v1.DaemonControlService.HeartbeatComputer:input_type -> nekobot.daemon.v1.HeartbeatComputerRequest
-	17, // 56: nekobot.daemon.v1.DaemonControlService.FetchAssignedRuns:input_type -> nekobot.daemon.v1.FetchAssignedRunsRequest
-	19, // 57: nekobot.daemon.v1.DaemonControlService.UpdateRunStatus:input_type -> nekobot.daemon.v1.UpdateRunStatusRequest
-	21, // 58: nekobot.daemon.v1.DaemonControlService.AppendRunStep:input_type -> nekobot.daemon.v1.AppendRunStepRequest
-	23, // 59: nekobot.daemon.v1.DaemonControlService.ListRuns:input_type -> nekobot.daemon.v1.ListRunsRequest
-	25, // 60: nekobot.daemon.v1.DaemonControlService.GetRun:input_type -> nekobot.daemon.v1.GetRunRequest
-	28, // 61: nekobot.daemon.v1.DaemonControlService.ListWorkspaceTree:input_type -> nekobot.daemon.v1.ListWorkspaceTreeRequest
-	30, // 62: nekobot.daemon.v1.DaemonControlService.ReadWorkspaceFile:input_type -> nekobot.daemon.v1.ReadWorkspaceFileRequest
-	33, // 63: nekobot.daemon.v1.DaemonControlService.ListChannels:input_type -> nekobot.daemon.v1.ListChannelsRequest
-	36, // 64: nekobot.daemon.v1.DaemonControlService.ListThreads:input_type -> nekobot.daemon.v1.ListThreadsRequest
-	38, // 65: nekobot.daemon.v1.DaemonControlService.GetThread:input_type -> nekobot.daemon.v1.GetThreadRequest
-	41, // 66: nekobot.daemon.v1.DaemonControlService.ReadMessages:input_type -> nekobot.daemon.v1.ReadMessagesRequest
-	43, // 67: nekobot.daemon.v1.DaemonControlService.SendMessage:input_type -> nekobot.daemon.v1.SendMessageRequest
-	45, // 68: nekobot.daemon.v1.DaemonControlService.FollowThread:input_type -> nekobot.daemon.v1.FollowThreadRequest
-	47, // 69: nekobot.daemon.v1.DaemonControlService.UnfollowThread:input_type -> nekobot.daemon.v1.UnfollowThreadRequest
-	49, // 70: nekobot.daemon.v1.DaemonControlService.CreateCollaborationTask:input_type -> nekobot.daemon.v1.CreateCollaborationTaskRequest
-	51, // 71: nekobot.daemon.v1.DaemonControlService.ListCollaborationTasks:input_type -> nekobot.daemon.v1.ListCollaborationTasksRequest
-	53, // 72: nekobot.daemon.v1.DaemonControlService.ClaimCollaborationTask:input_type -> nekobot.daemon.v1.ClaimCollaborationTaskRequest
-	55, // 73: nekobot.daemon.v1.DaemonControlService.GetServerInfo:input_type -> nekobot.daemon.v1.GetServerInfoRequest
-	60, // 74: nekobot.daemon.v1.DaemonControlService.GetAgentProfile:input_type -> nekobot.daemon.v1.GetAgentProfileRequest
-	62, // 75: nekobot.daemon.v1.DaemonControlService.SetAgentEnv:input_type -> nekobot.daemon.v1.SetAgentEnvRequest
-	64, // 76: nekobot.daemon.v1.DaemonControlService.ListAgentProfiles:input_type -> nekobot.daemon.v1.ListAgentProfilesRequest
-	66, // 77: nekobot.daemon.v1.DaemonControlService.ListAgentDMs:input_type -> nekobot.daemon.v1.ListAgentDMsRequest
-	69, // 78: nekobot.daemon.v1.DaemonControlService.ScheduleReminder:input_type -> nekobot.daemon.v1.ScheduleReminderRequest
-	71, // 79: nekobot.daemon.v1.DaemonControlService.ListReminders:input_type -> nekobot.daemon.v1.ListRemindersRequest
-	73, // 80: nekobot.daemon.v1.DaemonControlService.CancelReminder:input_type -> nekobot.daemon.v1.CancelReminderRequest
-	80, // 81: nekobot.daemon.v1.DaemonControlService.UploadAttachment:input_type -> nekobot.daemon.v1.UploadAttachmentRequest
-	82, // 82: nekobot.daemon.v1.DaemonControlService.GetAttachment:input_type -> nekobot.daemon.v1.GetAttachmentRequest
-	76, // 83: nekobot.daemon.v1.DaemonControlService.LogActivity:input_type -> nekobot.daemon.v1.LogActivityRequest
-	78, // 84: nekobot.daemon.v1.DaemonControlService.ListActivity:input_type -> nekobot.daemon.v1.ListActivityRequest
-	84, // 85: nekobot.daemon.v1.DaemonControlService.ListEventsSince:input_type -> nekobot.daemon.v1.ListEventsSinceRequest
-	11, // 86: nekobot.daemon.v1.DaemonControlService.RegisterComputer:output_type -> nekobot.daemon.v1.RegisterComputerResponse
-	13, // 87: nekobot.daemon.v1.DaemonControlService.HeartbeatComputer:output_type -> nekobot.daemon.v1.HeartbeatComputerResponse
-	18, // 88: nekobot.daemon.v1.DaemonControlService.FetchAssignedRuns:output_type -> nekobot.daemon.v1.FetchAssignedRunsResponse
-	20, // 89: nekobot.daemon.v1.DaemonControlService.UpdateRunStatus:output_type -> nekobot.daemon.v1.UpdateRunStatusResponse
-	22, // 90: nekobot.daemon.v1.DaemonControlService.AppendRunStep:output_type -> nekobot.daemon.v1.AppendRunStepResponse
-	24, // 91: nekobot.daemon.v1.DaemonControlService.ListRuns:output_type -> nekobot.daemon.v1.ListRunsResponse
-	26, // 92: nekobot.daemon.v1.DaemonControlService.GetRun:output_type -> nekobot.daemon.v1.GetRunResponse
-	29, // 93: nekobot.daemon.v1.DaemonControlService.ListWorkspaceTree:output_type -> nekobot.daemon.v1.ListWorkspaceTreeResponse
-	31, // 94: nekobot.daemon.v1.DaemonControlService.ReadWorkspaceFile:output_type -> nekobot.daemon.v1.ReadWorkspaceFileResponse
-	34, // 95: nekobot.daemon.v1.DaemonControlService.ListChannels:output_type -> nekobot.daemon.v1.ListChannelsResponse
-	37, // 96: nekobot.daemon.v1.DaemonControlService.ListThreads:output_type -> nekobot.daemon.v1.ListThreadsResponse
-	39, // 97: nekobot.daemon.v1.DaemonControlService.GetThread:output_type -> nekobot.daemon.v1.GetThreadResponse
-	42, // 98: nekobot.daemon.v1.DaemonControlService.ReadMessages:output_type -> nekobot.daemon.v1.ReadMessagesResponse
-	44, // 99: nekobot.daemon.v1.DaemonControlService.SendMessage:output_type -> nekobot.daemon.v1.SendMessageResponse
-	46, // 100: nekobot.daemon.v1.DaemonControlService.FollowThread:output_type -> nekobot.daemon.v1.FollowThreadResponse
-	48, // 101: nekobot.daemon.v1.DaemonControlService.UnfollowThread:output_type -> nekobot.daemon.v1.UnfollowThreadResponse
-	50, // 102: nekobot.daemon.v1.DaemonControlService.CreateCollaborationTask:output_type -> nekobot.daemon.v1.CreateCollaborationTaskResponse
-	52, // 103: nekobot.daemon.v1.DaemonControlService.ListCollaborationTasks:output_type -> nekobot.daemon.v1.ListCollaborationTasksResponse
-	54, // 104: nekobot.daemon.v1.DaemonControlService.ClaimCollaborationTask:output_type -> nekobot.daemon.v1.ClaimCollaborationTaskResponse
-	56, // 105: nekobot.daemon.v1.DaemonControlService.GetServerInfo:output_type -> nekobot.daemon.v1.GetServerInfoResponse
-	61, // 106: nekobot.daemon.v1.DaemonControlService.GetAgentProfile:output_type -> nekobot.daemon.v1.GetAgentProfileResponse
-	63, // 107: nekobot.daemon.v1.DaemonControlService.SetAgentEnv:output_type -> nekobot.daemon.v1.SetAgentEnvResponse
-	65, // 108: nekobot.daemon.v1.DaemonControlService.ListAgentProfiles:output_type -> nekobot.daemon.v1.ListAgentProfilesResponse
-	67, // 109: nekobot.daemon.v1.DaemonControlService.ListAgentDMs:output_type -> nekobot.daemon.v1.ListAgentDMsResponse
-	70, // 110: nekobot.daemon.v1.DaemonControlService.ScheduleReminder:output_type -> nekobot.daemon.v1.ScheduleReminderResponse
-	72, // 111: nekobot.daemon.v1.DaemonControlService.ListReminders:output_type -> nekobot.daemon.v1.ListRemindersResponse
-	74, // 112: nekobot.daemon.v1.DaemonControlService.CancelReminder:output_type -> nekobot.daemon.v1.CancelReminderResponse
-	81, // 113: nekobot.daemon.v1.DaemonControlService.UploadAttachment:output_type -> nekobot.daemon.v1.UploadAttachmentResponse
-	83, // 114: nekobot.daemon.v1.DaemonControlService.GetAttachment:output_type -> nekobot.daemon.v1.GetAttachmentResponse
-	77, // 115: nekobot.daemon.v1.DaemonControlService.LogActivity:output_type -> nekobot.daemon.v1.LogActivityResponse
-	79, // 116: nekobot.daemon.v1.DaemonControlService.ListActivity:output_type -> nekobot.daemon.v1.ListActivityResponse
-	86, // 117: nekobot.daemon.v1.DaemonControlService.ListEventsSince:output_type -> nekobot.daemon.v1.ListEventsSinceResponse
-	86, // [86:118] is the sub-list for method output_type
-	54, // [54:86] is the sub-list for method input_type
-	54, // [54:54] is the sub-list for extension type_name
-	54, // [54:54] is the sub-list for extension extendee
-	0,  // [0:54] is the sub-list for field type_name
+	70,  // 0: nekobot.daemon.v1.RuntimeProfile.env:type_name -> nekobot.daemon.v1.EnvVar
+	71,  // 1: nekobot.daemon.v1.RuntimeProfile.skills:type_name -> nekobot.daemon.v1.SkillRecord
+	0,   // 2: nekobot.daemon.v1.RuntimeProfile.capabilities:type_name -> nekobot.daemon.v1.Capability
+	0,   // 3: nekobot.daemon.v1.Runtime.capabilities:type_name -> nekobot.daemon.v1.Capability
+	6,   // 4: nekobot.daemon.v1.Runtime.runtime_profile:type_name -> nekobot.daemon.v1.RuntimeProfile
+	5,   // 5: nekobot.daemon.v1.ComputerInventory.workspaces:type_name -> nekobot.daemon.v1.Workspace
+	7,   // 6: nekobot.daemon.v1.ComputerInventory.runtimes:type_name -> nekobot.daemon.v1.Runtime
+	72,  // 7: nekobot.daemon.v1.ComputerInventory.agents:type_name -> nekobot.daemon.v1.AgentProfile
+	6,   // 8: nekobot.daemon.v1.ComputerInventory.runtime_profiles:type_name -> nekobot.daemon.v1.RuntimeProfile
+	0,   // 9: nekobot.daemon.v1.ComputerInfo.capabilities:type_name -> nekobot.daemon.v1.Capability
+	9,   // 10: nekobot.daemon.v1.RegisterComputerRequest.info:type_name -> nekobot.daemon.v1.ComputerInfo
+	8,   // 11: nekobot.daemon.v1.RegisterComputerRequest.inventory:type_name -> nekobot.daemon.v1.ComputerInventory
+	2,   // 12: nekobot.daemon.v1.RegisterComputerResponse.lease:type_name -> nekobot.daemon.v1.Lease
+	9,   // 13: nekobot.daemon.v1.HeartbeatComputerRequest.info:type_name -> nekobot.daemon.v1.ComputerInfo
+	8,   // 14: nekobot.daemon.v1.HeartbeatComputerRequest.inventory:type_name -> nekobot.daemon.v1.ComputerInventory
+	2,   // 15: nekobot.daemon.v1.HeartbeatComputerResponse.lease:type_name -> nekobot.daemon.v1.Lease
+	15,  // 16: nekobot.daemon.v1.FetchAssignedRunsResponse.runs:type_name -> nekobot.daemon.v1.Run
+	16,  // 17: nekobot.daemon.v1.AppendRunStepRequest.step:type_name -> nekobot.daemon.v1.RunStep
+	16,  // 18: nekobot.daemon.v1.AppendRunStepResponse.step:type_name -> nekobot.daemon.v1.RunStep
+	15,  // 19: nekobot.daemon.v1.ListRunsResponse.runs:type_name -> nekobot.daemon.v1.Run
+	15,  // 20: nekobot.daemon.v1.GetRunResponse.run:type_name -> nekobot.daemon.v1.Run
+	16,  // 21: nekobot.daemon.v1.GetRunResponse.steps:type_name -> nekobot.daemon.v1.RunStep
+	27,  // 22: nekobot.daemon.v1.ListWorkspaceTreeResponse.entries:type_name -> nekobot.daemon.v1.WorkspaceTreeEntry
+	32,  // 23: nekobot.daemon.v1.ListChannelsResponse.channels:type_name -> nekobot.daemon.v1.ChannelRecord
+	35,  // 24: nekobot.daemon.v1.ListThreadsResponse.threads:type_name -> nekobot.daemon.v1.ThreadRecord
+	35,  // 25: nekobot.daemon.v1.GetThreadResponse.thread:type_name -> nekobot.daemon.v1.ThreadRecord
+	4,   // 26: nekobot.daemon.v1.CollaborationMessage.attachments:type_name -> nekobot.daemon.v1.AttachmentRecord
+	40,  // 27: nekobot.daemon.v1.ReadMessagesResponse.messages:type_name -> nekobot.daemon.v1.CollaborationMessage
+	40,  // 28: nekobot.daemon.v1.SendMessageResponse.message:type_name -> nekobot.daemon.v1.CollaborationMessage
+	14,  // 29: nekobot.daemon.v1.CreateCollaborationTaskResponse.task:type_name -> nekobot.daemon.v1.Task
+	14,  // 30: nekobot.daemon.v1.ListCollaborationTasksResponse.tasks:type_name -> nekobot.daemon.v1.Task
+	14,  // 31: nekobot.daemon.v1.ClaimCollaborationTaskResponse.task:type_name -> nekobot.daemon.v1.Task
+	14,  // 32: nekobot.daemon.v1.TaskGraphSnapshot.nodes:type_name -> nekobot.daemon.v1.Task
+	55,  // 33: nekobot.daemon.v1.TaskGraphSnapshot.edges:type_name -> nekobot.daemon.v1.TaskEdge
+	57,  // 34: nekobot.daemon.v1.ProposeTaskSplitRequest.proposed_tasks:type_name -> nekobot.daemon.v1.ProposedSubtask
+	14,  // 35: nekobot.daemon.v1.ProposeTaskSplitResponse.parent_task:type_name -> nekobot.daemon.v1.Task
+	14,  // 36: nekobot.daemon.v1.ProposeTaskSplitResponse.proposed_tasks:type_name -> nekobot.daemon.v1.Task
+	14,  // 37: nekobot.daemon.v1.ApplyTaskSplitResponse.parent_task:type_name -> nekobot.daemon.v1.Task
+	14,  // 38: nekobot.daemon.v1.ApplyTaskSplitResponse.created_subtasks:type_name -> nekobot.daemon.v1.Task
+	14,  // 39: nekobot.daemon.v1.CreateTaskGraphRequest.root_task:type_name -> nekobot.daemon.v1.Task
+	14,  // 40: nekobot.daemon.v1.CreateTaskGraphRequest.subtasks:type_name -> nekobot.daemon.v1.Task
+	55,  // 41: nekobot.daemon.v1.CreateTaskGraphRequest.dependencies:type_name -> nekobot.daemon.v1.TaskEdge
+	56,  // 42: nekobot.daemon.v1.CreateTaskGraphResponse.graph:type_name -> nekobot.daemon.v1.TaskGraphSnapshot
+	56,  // 43: nekobot.daemon.v1.ListTaskGraphResponse.graph:type_name -> nekobot.daemon.v1.TaskGraphSnapshot
+	14,  // 44: nekobot.daemon.v1.UpdateTaskGraphResponse.task:type_name -> nekobot.daemon.v1.Task
+	32,  // 45: nekobot.daemon.v1.GetServerInfoResponse.channels:type_name -> nekobot.daemon.v1.ChannelRecord
+	72,  // 46: nekobot.daemon.v1.GetServerInfoResponse.agents:type_name -> nekobot.daemon.v1.AgentProfile
+	70,  // 47: nekobot.daemon.v1.AgentProfile.env:type_name -> nekobot.daemon.v1.EnvVar
+	71,  // 48: nekobot.daemon.v1.AgentProfile.skills:type_name -> nekobot.daemon.v1.SkillRecord
+	0,   // 49: nekobot.daemon.v1.AgentProfile.capabilities:type_name -> nekobot.daemon.v1.Capability
+	1,   // 50: nekobot.daemon.v1.AgentProfile.permissions:type_name -> nekobot.daemon.v1.Permission
+	72,  // 51: nekobot.daemon.v1.GetAgentProfileResponse.profile:type_name -> nekobot.daemon.v1.AgentProfile
+	70,  // 52: nekobot.daemon.v1.SetAgentEnvRequest.env:type_name -> nekobot.daemon.v1.EnvVar
+	72,  // 53: nekobot.daemon.v1.SetAgentEnvResponse.profile:type_name -> nekobot.daemon.v1.AgentProfile
+	72,  // 54: nekobot.daemon.v1.ListAgentProfilesResponse.profiles:type_name -> nekobot.daemon.v1.AgentProfile
+	32,  // 55: nekobot.daemon.v1.ListAgentDMsResponse.dms:type_name -> nekobot.daemon.v1.ChannelRecord
+	81,  // 56: nekobot.daemon.v1.ScheduleReminderResponse.reminder:type_name -> nekobot.daemon.v1.ReminderRecord
+	81,  // 57: nekobot.daemon.v1.ListRemindersResponse.reminders:type_name -> nekobot.daemon.v1.ReminderRecord
+	88,  // 58: nekobot.daemon.v1.LogActivityResponse.activity:type_name -> nekobot.daemon.v1.ActivityRecord
+	3,   // 59: nekobot.daemon.v1.ListActivityRequest.cursor:type_name -> nekobot.daemon.v1.EventCursor
+	88,  // 60: nekobot.daemon.v1.ListActivityResponse.activities:type_name -> nekobot.daemon.v1.ActivityRecord
+	3,   // 61: nekobot.daemon.v1.ListActivityResponse.next_cursor:type_name -> nekobot.daemon.v1.EventCursor
+	4,   // 62: nekobot.daemon.v1.UploadAttachmentResponse.attachment:type_name -> nekobot.daemon.v1.AttachmentRecord
+	4,   // 63: nekobot.daemon.v1.GetAttachmentResponse.attachment:type_name -> nekobot.daemon.v1.AttachmentRecord
+	3,   // 64: nekobot.daemon.v1.ListEventsSinceRequest.cursor:type_name -> nekobot.daemon.v1.EventCursor
+	98,  // 65: nekobot.daemon.v1.ListEventsSinceResponse.events:type_name -> nekobot.daemon.v1.CollaborationEvent
+	3,   // 66: nekobot.daemon.v1.ListEventsSinceResponse.next_cursor:type_name -> nekobot.daemon.v1.EventCursor
+	10,  // 67: nekobot.daemon.v1.DaemonControlService.RegisterComputer:input_type -> nekobot.daemon.v1.RegisterComputerRequest
+	12,  // 68: nekobot.daemon.v1.DaemonControlService.HeartbeatComputer:input_type -> nekobot.daemon.v1.HeartbeatComputerRequest
+	17,  // 69: nekobot.daemon.v1.DaemonControlService.FetchAssignedRuns:input_type -> nekobot.daemon.v1.FetchAssignedRunsRequest
+	19,  // 70: nekobot.daemon.v1.DaemonControlService.UpdateRunStatus:input_type -> nekobot.daemon.v1.UpdateRunStatusRequest
+	21,  // 71: nekobot.daemon.v1.DaemonControlService.AppendRunStep:input_type -> nekobot.daemon.v1.AppendRunStepRequest
+	23,  // 72: nekobot.daemon.v1.DaemonControlService.ListRuns:input_type -> nekobot.daemon.v1.ListRunsRequest
+	25,  // 73: nekobot.daemon.v1.DaemonControlService.GetRun:input_type -> nekobot.daemon.v1.GetRunRequest
+	28,  // 74: nekobot.daemon.v1.DaemonControlService.ListWorkspaceTree:input_type -> nekobot.daemon.v1.ListWorkspaceTreeRequest
+	30,  // 75: nekobot.daemon.v1.DaemonControlService.ReadWorkspaceFile:input_type -> nekobot.daemon.v1.ReadWorkspaceFileRequest
+	33,  // 76: nekobot.daemon.v1.DaemonControlService.ListChannels:input_type -> nekobot.daemon.v1.ListChannelsRequest
+	36,  // 77: nekobot.daemon.v1.DaemonControlService.ListThreads:input_type -> nekobot.daemon.v1.ListThreadsRequest
+	38,  // 78: nekobot.daemon.v1.DaemonControlService.GetThread:input_type -> nekobot.daemon.v1.GetThreadRequest
+	41,  // 79: nekobot.daemon.v1.DaemonControlService.ReadMessages:input_type -> nekobot.daemon.v1.ReadMessagesRequest
+	43,  // 80: nekobot.daemon.v1.DaemonControlService.SendMessage:input_type -> nekobot.daemon.v1.SendMessageRequest
+	45,  // 81: nekobot.daemon.v1.DaemonControlService.FollowThread:input_type -> nekobot.daemon.v1.FollowThreadRequest
+	47,  // 82: nekobot.daemon.v1.DaemonControlService.UnfollowThread:input_type -> nekobot.daemon.v1.UnfollowThreadRequest
+	49,  // 83: nekobot.daemon.v1.DaemonControlService.CreateCollaborationTask:input_type -> nekobot.daemon.v1.CreateCollaborationTaskRequest
+	51,  // 84: nekobot.daemon.v1.DaemonControlService.ListCollaborationTasks:input_type -> nekobot.daemon.v1.ListCollaborationTasksRequest
+	53,  // 85: nekobot.daemon.v1.DaemonControlService.ClaimCollaborationTask:input_type -> nekobot.daemon.v1.ClaimCollaborationTaskRequest
+	58,  // 86: nekobot.daemon.v1.DaemonControlService.ProposeTaskSplit:input_type -> nekobot.daemon.v1.ProposeTaskSplitRequest
+	60,  // 87: nekobot.daemon.v1.DaemonControlService.ApplyTaskSplit:input_type -> nekobot.daemon.v1.ApplyTaskSplitRequest
+	62,  // 88: nekobot.daemon.v1.DaemonControlService.CreateTaskGraph:input_type -> nekobot.daemon.v1.CreateTaskGraphRequest
+	64,  // 89: nekobot.daemon.v1.DaemonControlService.ListTaskGraph:input_type -> nekobot.daemon.v1.ListTaskGraphRequest
+	66,  // 90: nekobot.daemon.v1.DaemonControlService.UpdateTaskGraph:input_type -> nekobot.daemon.v1.UpdateTaskGraphRequest
+	68,  // 91: nekobot.daemon.v1.DaemonControlService.GetServerInfo:input_type -> nekobot.daemon.v1.GetServerInfoRequest
+	73,  // 92: nekobot.daemon.v1.DaemonControlService.GetAgentProfile:input_type -> nekobot.daemon.v1.GetAgentProfileRequest
+	75,  // 93: nekobot.daemon.v1.DaemonControlService.SetAgentEnv:input_type -> nekobot.daemon.v1.SetAgentEnvRequest
+	77,  // 94: nekobot.daemon.v1.DaemonControlService.ListAgentProfiles:input_type -> nekobot.daemon.v1.ListAgentProfilesRequest
+	79,  // 95: nekobot.daemon.v1.DaemonControlService.ListAgentDMs:input_type -> nekobot.daemon.v1.ListAgentDMsRequest
+	82,  // 96: nekobot.daemon.v1.DaemonControlService.ScheduleReminder:input_type -> nekobot.daemon.v1.ScheduleReminderRequest
+	84,  // 97: nekobot.daemon.v1.DaemonControlService.ListReminders:input_type -> nekobot.daemon.v1.ListRemindersRequest
+	86,  // 98: nekobot.daemon.v1.DaemonControlService.CancelReminder:input_type -> nekobot.daemon.v1.CancelReminderRequest
+	93,  // 99: nekobot.daemon.v1.DaemonControlService.UploadAttachment:input_type -> nekobot.daemon.v1.UploadAttachmentRequest
+	95,  // 100: nekobot.daemon.v1.DaemonControlService.GetAttachment:input_type -> nekobot.daemon.v1.GetAttachmentRequest
+	89,  // 101: nekobot.daemon.v1.DaemonControlService.LogActivity:input_type -> nekobot.daemon.v1.LogActivityRequest
+	91,  // 102: nekobot.daemon.v1.DaemonControlService.ListActivity:input_type -> nekobot.daemon.v1.ListActivityRequest
+	97,  // 103: nekobot.daemon.v1.DaemonControlService.ListEventsSince:input_type -> nekobot.daemon.v1.ListEventsSinceRequest
+	11,  // 104: nekobot.daemon.v1.DaemonControlService.RegisterComputer:output_type -> nekobot.daemon.v1.RegisterComputerResponse
+	13,  // 105: nekobot.daemon.v1.DaemonControlService.HeartbeatComputer:output_type -> nekobot.daemon.v1.HeartbeatComputerResponse
+	18,  // 106: nekobot.daemon.v1.DaemonControlService.FetchAssignedRuns:output_type -> nekobot.daemon.v1.FetchAssignedRunsResponse
+	20,  // 107: nekobot.daemon.v1.DaemonControlService.UpdateRunStatus:output_type -> nekobot.daemon.v1.UpdateRunStatusResponse
+	22,  // 108: nekobot.daemon.v1.DaemonControlService.AppendRunStep:output_type -> nekobot.daemon.v1.AppendRunStepResponse
+	24,  // 109: nekobot.daemon.v1.DaemonControlService.ListRuns:output_type -> nekobot.daemon.v1.ListRunsResponse
+	26,  // 110: nekobot.daemon.v1.DaemonControlService.GetRun:output_type -> nekobot.daemon.v1.GetRunResponse
+	29,  // 111: nekobot.daemon.v1.DaemonControlService.ListWorkspaceTree:output_type -> nekobot.daemon.v1.ListWorkspaceTreeResponse
+	31,  // 112: nekobot.daemon.v1.DaemonControlService.ReadWorkspaceFile:output_type -> nekobot.daemon.v1.ReadWorkspaceFileResponse
+	34,  // 113: nekobot.daemon.v1.DaemonControlService.ListChannels:output_type -> nekobot.daemon.v1.ListChannelsResponse
+	37,  // 114: nekobot.daemon.v1.DaemonControlService.ListThreads:output_type -> nekobot.daemon.v1.ListThreadsResponse
+	39,  // 115: nekobot.daemon.v1.DaemonControlService.GetThread:output_type -> nekobot.daemon.v1.GetThreadResponse
+	42,  // 116: nekobot.daemon.v1.DaemonControlService.ReadMessages:output_type -> nekobot.daemon.v1.ReadMessagesResponse
+	44,  // 117: nekobot.daemon.v1.DaemonControlService.SendMessage:output_type -> nekobot.daemon.v1.SendMessageResponse
+	46,  // 118: nekobot.daemon.v1.DaemonControlService.FollowThread:output_type -> nekobot.daemon.v1.FollowThreadResponse
+	48,  // 119: nekobot.daemon.v1.DaemonControlService.UnfollowThread:output_type -> nekobot.daemon.v1.UnfollowThreadResponse
+	50,  // 120: nekobot.daemon.v1.DaemonControlService.CreateCollaborationTask:output_type -> nekobot.daemon.v1.CreateCollaborationTaskResponse
+	52,  // 121: nekobot.daemon.v1.DaemonControlService.ListCollaborationTasks:output_type -> nekobot.daemon.v1.ListCollaborationTasksResponse
+	54,  // 122: nekobot.daemon.v1.DaemonControlService.ClaimCollaborationTask:output_type -> nekobot.daemon.v1.ClaimCollaborationTaskResponse
+	59,  // 123: nekobot.daemon.v1.DaemonControlService.ProposeTaskSplit:output_type -> nekobot.daemon.v1.ProposeTaskSplitResponse
+	61,  // 124: nekobot.daemon.v1.DaemonControlService.ApplyTaskSplit:output_type -> nekobot.daemon.v1.ApplyTaskSplitResponse
+	63,  // 125: nekobot.daemon.v1.DaemonControlService.CreateTaskGraph:output_type -> nekobot.daemon.v1.CreateTaskGraphResponse
+	65,  // 126: nekobot.daemon.v1.DaemonControlService.ListTaskGraph:output_type -> nekobot.daemon.v1.ListTaskGraphResponse
+	67,  // 127: nekobot.daemon.v1.DaemonControlService.UpdateTaskGraph:output_type -> nekobot.daemon.v1.UpdateTaskGraphResponse
+	69,  // 128: nekobot.daemon.v1.DaemonControlService.GetServerInfo:output_type -> nekobot.daemon.v1.GetServerInfoResponse
+	74,  // 129: nekobot.daemon.v1.DaemonControlService.GetAgentProfile:output_type -> nekobot.daemon.v1.GetAgentProfileResponse
+	76,  // 130: nekobot.daemon.v1.DaemonControlService.SetAgentEnv:output_type -> nekobot.daemon.v1.SetAgentEnvResponse
+	78,  // 131: nekobot.daemon.v1.DaemonControlService.ListAgentProfiles:output_type -> nekobot.daemon.v1.ListAgentProfilesResponse
+	80,  // 132: nekobot.daemon.v1.DaemonControlService.ListAgentDMs:output_type -> nekobot.daemon.v1.ListAgentDMsResponse
+	83,  // 133: nekobot.daemon.v1.DaemonControlService.ScheduleReminder:output_type -> nekobot.daemon.v1.ScheduleReminderResponse
+	85,  // 134: nekobot.daemon.v1.DaemonControlService.ListReminders:output_type -> nekobot.daemon.v1.ListRemindersResponse
+	87,  // 135: nekobot.daemon.v1.DaemonControlService.CancelReminder:output_type -> nekobot.daemon.v1.CancelReminderResponse
+	94,  // 136: nekobot.daemon.v1.DaemonControlService.UploadAttachment:output_type -> nekobot.daemon.v1.UploadAttachmentResponse
+	96,  // 137: nekobot.daemon.v1.DaemonControlService.GetAttachment:output_type -> nekobot.daemon.v1.GetAttachmentResponse
+	90,  // 138: nekobot.daemon.v1.DaemonControlService.LogActivity:output_type -> nekobot.daemon.v1.LogActivityResponse
+	92,  // 139: nekobot.daemon.v1.DaemonControlService.ListActivity:output_type -> nekobot.daemon.v1.ListActivityResponse
+	99,  // 140: nekobot.daemon.v1.DaemonControlService.ListEventsSince:output_type -> nekobot.daemon.v1.ListEventsSinceResponse
+	104, // [104:141] is the sub-list for method output_type
+	67,  // [67:104] is the sub-list for method input_type
+	67,  // [67:67] is the sub-list for extension type_name
+	67,  // [67:67] is the sub-list for extension extendee
+	0,   // [0:67] is the sub-list for field type_name
 }
 
 func init() { file_nekobot_daemon_v1_daemon_proto_init() }
@@ -6766,13 +7795,14 @@ func file_nekobot_daemon_v1_daemon_proto_init() {
 	if File_nekobot_daemon_v1_daemon_proto != nil {
 		return
 	}
+	file_nekobot_daemon_v1_daemon_proto_msgTypes[66].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nekobot_daemon_v1_daemon_proto_rawDesc), len(file_nekobot_daemon_v1_daemon_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   87,
+			NumMessages:   100,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

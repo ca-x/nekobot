@@ -79,15 +79,29 @@ func ApplyRunStatusUpdate(taskService *tasks.Service, req *daemonv1.UpdateRunSta
 
 func taskToProto(item tasks.Task) *daemonv1.Task {
 	return &daemonv1.Task{
-		TaskId:          item.ID,
-		Summary:         item.Summary,
-		State:           string(item.State),
-		RuntimeId:       item.RuntimeID,
-		ThreadId:        item.SessionID,
-		WorkspaceId:     metadataString(item.Metadata, "workspace_id"),
-		ComputerId:      metadataString(item.Metadata, "computer_id"),
-		CreatedByUserId: metadataString(item.Metadata, "created_by_user_id"),
-		BlockedReason:   item.PendingAction,
+		TaskId:               item.ID,
+		Summary:              item.Summary,
+		State:                string(item.State),
+		RuntimeId:            item.RuntimeID,
+		ThreadId:             item.SessionID,
+		WorkspaceId:          metadataString(item.Metadata, "workspace_id"),
+		ComputerId:           metadataString(item.Metadata, "computer_id"),
+		CreatedByUserId:      metadataString(item.Metadata, "created_by_user_id"),
+		BlockedReason:        item.PendingAction,
+		Target:               metadataString(item.Metadata, "target"),
+		AssigneeId:           metadataString(item.Metadata, "assignee_id"),
+		CurrentRunId:         metadataString(item.Metadata, "current_run_id"),
+		RootTaskId:           metadataString(item.Metadata, "root_task_id"),
+		ParentTaskId:         metadataString(item.Metadata, "parent_task_id"),
+		Source:               metadataString(item.Metadata, "source"),
+		CreatedByAgentId:     metadataString(item.Metadata, "created_by_agent_id"),
+		ServerRuleId:         metadataString(item.Metadata, "server_rule_id"),
+		SplitProposalId:      metadataString(item.Metadata, "split_proposal_id"),
+		GraphVersion:         metadataInt64(item.Metadata, "graph_version"),
+		SubtaskIds:           metadataStringSlice(item.Metadata, "subtask_ids"),
+		DependsOnTaskIds:     metadataStringSlice(item.Metadata, "depends_on_task_ids"),
+		BlockedByTaskIds:     metadataStringSlice(item.Metadata, "blocked_by_task_ids"),
+		RequiredCapabilities: metadataStringSlice(item.Metadata, "required_capabilities"),
 	}
 }
 
@@ -114,4 +128,40 @@ func metadataString(values map[string]any, key string) string {
 	}
 	value, _ := values[key].(string)
 	return strings.TrimSpace(value)
+}
+
+func metadataInt64(values map[string]any, key string) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	switch v := values[key].(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	default:
+		return 0
+	}
+}
+
+func metadataStringSlice(values map[string]any, key string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	switch v := values[key].(type) {
+	case []string:
+		return v
+	case []any:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
