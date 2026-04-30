@@ -208,7 +208,9 @@ Nekobot should adopt the same separation for Slock and future IM bridges: comman
 
 ## Proposed Nekobot Roadmap Slices
 
-### Slice Q: Runtime Launch Profiles
+These are VibeAround reference slices, namespaced as `VA-*`. They do not overwrite or renumber the Hermes memory/Curator slices Q-U from `docs/superpowers/specs/2026-04-30-hermes-memory-curator-redesign.md`.
+
+### Slice VA-Q: Runtime Launch Profiles
 
 Goal: let users define provider/API profiles and launch runtime agents with isolated env/settings.
 
@@ -225,7 +227,7 @@ Acceptance:
 - Profile secrets never appear in daemon inventory/profile APIs.
 - Rendered files cannot path-traverse outside the profile state dir.
 
-### Slice R: Channel Bridge Plugin Runtime
+### Slice VA-R: Channel Bridge Plugin Runtime
 
 Goal: add an isolated plugin process model for external IM/channel integrations.
 
@@ -242,7 +244,7 @@ Acceptance:
 - Missing heartbeat transitions to stale/offline/restarting state.
 - WebUI can list plugin runtime status from an authoritative snapshot.
 
-### Slice S: Session Handover/Pickup
+### Slice VA-S: Session Handover/Pickup
 
 Goal: move an active daemon agent session between WebUI, Slock chat, and future channel plugins.
 
@@ -259,7 +261,7 @@ Acceptance:
 - Expired or reused tokens are rejected.
 - Permission checks verify the user/agent can access both source and destination targets.
 
-### Slice T: Agent Tool Injection Pack
+### Slice VA-T: Agent Tool Injection Pack
 
 Goal: give supported agents a small Nekobot-native tool surface through skills/MCP.
 
@@ -276,7 +278,7 @@ Acceptance:
 - Generated files are deterministic and auditable.
 - Removing a runtime/profile removes isolated generated material.
 
-### Slice W: Channel Slash Command Plane
+### Slice VA-W: Channel Slash Command Plane
 
 Goal: expose Nekobot's high-value collaboration controls as explicit Slock/IM commands instead of ad hoc message text conventions.
 
@@ -295,7 +297,7 @@ Acceptance:
 - IM aliases map to the same gateway RPCs used by WebUI/Slock.
 - State-changing commands are replayable through event_log.
 
-### Slice U: Preview and Artifact Sharing
+### Slice VA-U: Preview and Artifact Sharing
 
 Goal: expose local dev previews and rendered artifacts through authenticated, short-lived links.
 
@@ -312,7 +314,7 @@ Acceptance:
 - Owner access remains stable while the session is active.
 - Agent can create a preview event that appears in chat/thread history.
 
-### Slice V: Approval Request Bridge
+### Slice VA-V: Approval Request Bridge
 
 Goal: route agent permission requests into Nekobot's human collaboration surface.
 
@@ -331,13 +333,13 @@ Acceptance:
 
 ## Suggested Priority
 
-1. Slice Q: Runtime Launch Profiles
-2. Slice T: Agent Tool Injection Pack
-3. Slice W: Channel Slash Command Plane
-4. Slice S: Session Handover/Pickup
-5. Slice U: Preview and Artifact Sharing
-6. Slice R: Channel Bridge Plugin Runtime
-7. Slice V: Approval Request Bridge
+1. Slice VA-Q: Runtime Launch Profiles
+2. Slice VA-T: Agent Tool Injection Pack
+3. Slice VA-W: Channel Slash Command Plane
+4. Slice VA-S: Session Handover/Pickup
+5. Slice VA-U: Preview and Artifact Sharing
+6. Slice VA-R: Channel Bridge Plugin Runtime
+7. Slice VA-V: Approval Request Bridge
 
 Reasoning: launch profiles and tool injection improve the daemon/runtime core immediately. Slash commands make the IM/Slock control surface usable without adding a new runtime subsystem. Handover and preview improve the daily collaboration loop. External IM plugin runtime is valuable, but it should wait until Nekobot's internal server/channel/thread permission model is fully stable.
 
