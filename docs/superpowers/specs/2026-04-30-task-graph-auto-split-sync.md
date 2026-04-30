@@ -83,7 +83,10 @@ message Task {
   int64 graph_version = 22;               // increments on any graph structure change
 
   // --- capability requirements ---
-  repeated string required_capabilities = 23; // capabilities an agent must have to claim
+  // Agent must have ALL listed capabilities to claim (subset match: required_capabilities ⊆ agent.capabilities).
+  // e.g., ["shell", "repo.write"] means agent must have both; having only "shell" is insufficient.
+  // Future: if any-of/expressions are needed, introduce a separate `capability_expression` field.
+  repeated string required_capabilities = 23;
 }
 ```
 
@@ -131,10 +134,11 @@ message ProposeTaskSplitRequest {
 }
 
 message ProposedSubtask {
-  string summary = 1;
-  string assignee_id = 2;
-  repeated string depends_on_proposed_ids = 3; // indices into proposed_tasks
-  repeated string required_capabilities = 4;
+  string client_proposed_id = 1;           // caller-assigned stable ID (e.g., "subtask-1"), used for dependency references
+  string summary = 2;
+  string assignee_id = 3;
+  repeated string depends_on_proposed_ids = 4; // references other ProposedSubtask.client_proposed_id values
+  repeated string required_capabilities = 5;
 }
 
 message ProposeTaskSplitResponse {
@@ -183,11 +187,13 @@ message CreateTaskGraphResponse {
 ```protobuf
 message ListTaskGraphRequest {
   string root_task_id = 1;
-  int64 since_graph_version = 2;          // incremental: only return changes since this version
+  int64 since_graph_version = 2;          // if set and matches current, server can return early (stale check);
+                                          // if stale, always returns the full authoritative snapshot.
 }
 
 message ListTaskGraphResponse {
-  TaskGraphSnapshot graph = 1;
+  TaskGraphSnapshot graph = 1;            // v1 always returns the full snapshot, not a delta.
+                                          // Agents compare graph_version locally to detect what changed.
 }
 ```
 
@@ -340,7 +346,7 @@ An agent receives events where ANY of these match:
 1. `target` is a channel/thread the agent follows
 2. `assignee_id` matches the agent's ID
 3. `mentioned_agent_ids` contains the agent's ID
-4. `capability_keys` intersects with the agent's registered capabilities (and the agent has permission on the target)
+4. `capability_keys` is a subset of the agent's registered capabilities (required_capabilities ⊆ agent.capabilities, and the agent has permission on the target)
 5. The agent owns a computer/run lease for the affected task's computer
 
 The gateway's `ListEventsSince` implementation applies these filters server-side using the precomputed indexed fields (from #12's `collaboration_event` table).
@@ -391,7 +397,7 @@ The gateway's `ListEventsSince` implementation applies these filters server-side
 
 3. **Split proposal lifecycle**: Proposals may be stale if the parent task changes between propose and apply. The `ApplyTaskSplit` must validate the parent's current state and reject stale proposals.
 
-4. **Capability matching complexity**: Simple intersection works for v1. Complex capability expressions (version ranges, optional capabilities) can be added later without changing the event model.
+4. **Capability matching complexity**: V1 uses strict subset matching (required_capabilities ⊆ agent.capabilities). Complex capability expressions (any-of, version ranges, optional capabilities) can be added later via a `capability_expression` field without changing the event model or breaking existing semantics.
 
 5. **Rule engine scope**: First implementation should be minimal (config-driven, no dynamic rules). Dynamic rule authoring (via UI or API) is a future concern.
 
