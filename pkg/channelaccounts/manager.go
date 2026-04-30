@@ -96,6 +96,11 @@ func (m *Manager) Get(ctx context.Context, id string) (*ChannelAccount, error) {
 	if err != nil {
 		return nil, err
 	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		if !ac.CanRead(item.OwnerUserID, item.TenantID, item.Visibility) {
+			return nil, ownership.ErrPermissionDenied
+		}
+	}
 	return &item, nil
 }
 

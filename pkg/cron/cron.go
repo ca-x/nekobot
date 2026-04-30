@@ -66,7 +66,7 @@ type Job struct {
 	Provider            string       `json:"provider,omitempty"`              // Optional provider/provider-group route override.
 	Model               string       `json:"model,omitempty"`                 // Optional model override.
 	Fallback            []string     `json:"fallback,omitempty"`              // Optional fallback route targets.
-	NotificationRouteID string       `json:"notification_route_id,omitempty"` // Optional notification route binding.
+	NotificationRouteID string       `json:"notification_route_id,omitempty"` // Transient notification binding ID filled by API list handlers.
 	Enabled             bool         `json:"enabled"`                         // Whether job is enabled.
 	DeleteAfterRun      bool         `json:"delete_after_run,omitempty"`      // Auto-delete after execution (for "at" jobs).
 	TenantID            string       `json:"tenant_id,omitempty"`             // Tenant ownership boundary.
@@ -924,7 +924,7 @@ func (m *Manager) emitJobEvent(event JobEvent) {
 	if handler == nil || event.EventType == "" || event.Job.ID == "" {
 		return
 	}
-	go handler(m.ctx, event)
+	go handler(context.Background(), event)
 }
 
 func (m *Manager) chatAgent(ctx context.Context, sess agent.SessionInterface, prompt, provider, model string, fallback []string) (response string, err error) {

@@ -15,6 +15,7 @@ const PermissionRulesPage = lazy(() => import('./pages/PermissionRulesPage'));
 const ChannelsPage = lazy(() => import('./pages/ChannelsPage'));
 const SkillsPage = lazy(() => import('./pages/SkillsPage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
+const NotificationRoutesPage = lazy(() => import('./pages/NotificationRoutesPage'));
 const DaemonPage = lazy(() => import('./pages/DaemonPage'));
 const ConfigPage = lazy(() => import('./pages/ConfigPage'));
 const HarnessAuditPage = lazy(() => import('./pages/HarnessAuditPage'));
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="/harness/audit" element={<HarnessAuditPage />} />
           <Route path="/runtime-topology" element={<RuntimeTopologyPage />} />
           <Route path="/cron" element={<CronPage />} />
+          <Route path="/notifications" element={<NotificationRoutesPage />} />
           <Route path="/webhooks" element={<WebhooksPage />} />
           <Route path="/policy" element={<PolicyPage />} />
           <Route path="/goal-runs" element={<GoalRunsPage />} />

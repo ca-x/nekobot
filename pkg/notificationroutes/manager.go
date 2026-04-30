@@ -103,6 +103,9 @@ func (m *Manager) CreateRoute(ctx context.Context, item NotificationRoute) (*Not
 			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
 		)
 	}
+	if err := m.validateChannelAccountReadable(ctx, normalized.ChannelAccountID); err != nil {
+		return nil, err
+	}
 	rec, err := m.client.NotificationRoute.Create().
 		SetName(normalized.Name).
 		SetDescription(normalized.Description).
@@ -150,6 +153,9 @@ func (m *Manager) UpdateRoute(ctx context.Context, id string, item NotificationR
 			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
 		)
 	}
+	if err := m.validateChannelAccountReadable(ctx, normalized.ChannelAccountID); err != nil {
+		return nil, err
+	}
 	rec, err := m.client.NotificationRoute.UpdateOneID(id).
 		SetName(normalized.Name).
 		SetDescription(normalized.Description).
@@ -191,6 +197,9 @@ func (m *Manager) DeleteRoute(ctx context.Context, id string) error {
 		if !ac.CanWrite(existing.OwnerUserID) {
 			return ownership.ErrPermissionDenied
 		}
+	}
+	if err := m.deleteBindingsForRoute(ctx, id); err != nil {
+		return err
 	}
 	affected, err := m.client.NotificationRoute.Delete().Where(notificationroute.IDEQ(id)).Exec(ctx)
 	if err != nil {
@@ -464,7 +473,7 @@ func (m *Manager) FindBindingForTarget(ctx context.Context, scope, target string
 			notificationbinding.VisibilityEQ(notificationbinding.Visibility(ownership.VisibilitySystem)),
 		))
 	}
-	rec, err := q.Only(ctx)
+	rec, err := q.First(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil, nil
@@ -473,6 +482,60 @@ func (m *Manager) FindBindingForTarget(ctx context.Context, scope, target string
 	}
 	item := bindingFromRecord(rec)
 	return &item, nil
+}
+
+func (m *Manager) validateChannelAccountReadable(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	ac, ok := ownership.AuthContextFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	rec, err := m.client.ChannelAccount.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return fmt.Errorf("channel account not found")
+		}
+		return fmt.Errorf("get channel account for notification route: %w", err)
+	}
+	if !ac.CanRead(rec.OwnerUserID, rec.TenantID, string(rec.Visibility)) {
+		return ownership.ErrPermissionDenied
+	}
+	return nil
+}
+
+func (m *Manager) deleteBindingsForRoute(ctx context.Context, routeID string) error {
+	routeID = strings.TrimSpace(routeID)
+	if routeID == "" {
+		return fmt.Errorf("route id is required")
+	}
+	q := m.client.NotificationBinding.Query().Where(notificationbinding.RouteIDEQ(routeID))
+	recs, err := q.All(ctx)
+	if err != nil {
+		return fmt.Errorf("list notification bindings for route: %w", err)
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		for _, rec := range recs {
+			if !ac.CanWrite(rec.OwnerUserID) {
+				return ownership.ErrPermissionDenied
+			}
+		}
+	}
+	if len(recs) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(recs))
+	for _, rec := range recs {
+		ids = append(ids, rec.ID)
+	}
+	if _, err := m.client.NotificationBinding.Delete().
+		Where(notificationbinding.IDIn(ids...)).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("delete notification bindings for route: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
