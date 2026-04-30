@@ -6,6 +6,7 @@ import { useConfig } from '@/hooks/useConfig';
 import { useMarketplaceSkills } from '@/hooks/useMarketplace';
 import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
 import { useProviders } from '@/hooks/useProviders';
+import { useNotificationRoutes } from '@/hooks/useNotificationRoutes';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { OwnershipBadge, type ResourceVisibility } from '@/components/common/OwnershipBadge';
@@ -61,6 +62,7 @@ interface CronFormState {
   provider: string;
   model: string;
   fallback: string[];
+  notification_route_id: string;
   skills: string[];
   delete_after_run: boolean;
   visibility: ResourceVisibility;
@@ -88,6 +90,7 @@ const DEFAULT_FORM: CronFormState = {
   provider: '',
   model: '',
   fallback: [],
+  notification_route_id: '',
   skills: [],
   delete_after_run: true,
   visibility: 'shared',
@@ -122,6 +125,7 @@ export default function CronPage() {
   const { data: modelCatalog = [] } = useModels();
   const modelRoutesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
   const { data: config } = useConfig();
+  const { data: notificationRoutes = [] } = useNotificationRoutes();
 
   const { data: jobs = [], isLoading, isFetching, refetch } = useCronJobs();
   const createJob = useCreateCronJob();
@@ -223,6 +227,7 @@ export default function CronPage() {
       provider: form.provider,
       model: form.model,
       fallback: form.fallback,
+      notification_route_id: form.notification_route_id,
       skills: form.skills,
       delete_after_run: form.delete_after_run,
       visibility: form.visibility,
@@ -360,6 +365,27 @@ export default function CronPage() {
                 </SelectContent>
               </Select>
               <div className="text-xs leading-5 text-muted-foreground">{t('resourceVisibilityHint')}</div>
+            </div>
+
+            <div className="space-y-1.5 xl:col-span-2">
+              <Label>{t('cronNotificationRoute')}</Label>
+              <Select
+                value={form.notification_route_id || '__none__'}
+                onValueChange={(value) => setField('notification_route_id', value === '__none__' ? '' : value)}
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t('cronNotificationRouteNone')}</SelectItem>
+                  {notificationRoutes.filter((route) => route.enabled).map((route) => (
+                    <SelectItem key={route.id} value={route.id}>
+                      {route.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="text-xs leading-5 text-muted-foreground">{t('cronNotificationRouteHint')}</div>
             </div>
 
             <div className="space-y-1.5 xl:col-span-2">
@@ -627,6 +653,14 @@ export default function CronPage() {
                       <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronFallback')}</div>
                       <div className="mt-1 break-all text-foreground">
                         {job.fallback && job.fallback.length > 0 ? job.fallback.join(' -> ') : t('cronFallbackEmpty')}
+                      </div>
+                    </div>
+                    <div className="rounded-md bg-muted/40 px-3 py-2 md:col-span-2">
+                      <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronNotificationRoute')}</div>
+                      <div className="mt-1 break-all text-foreground">
+                        {notificationRoutes.find((route) => route.id === job.notification_route_id)?.name ||
+                          job.notification_route_id ||
+                          t('cronNotificationRouteNone')}
                       </div>
                     </div>
                     <div className="rounded-md bg-muted/40 px-3 py-2">

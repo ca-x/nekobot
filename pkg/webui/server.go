@@ -1626,17 +1626,18 @@ func (s *Server) mergeDiscoveredModels(
 // --- Cron Handlers ---
 
 type createCronJobRequest struct {
-	Name           string   `json:"name"`
-	ScheduleKind   string   `json:"schedule_kind"`
-	Schedule       string   `json:"schedule"`
-	AtTime         string   `json:"at_time"`
-	EveryDuration  string   `json:"every_duration"`
-	Prompt         string   `json:"prompt"`
-	Skills         []string `json:"skills"`
-	Provider       string   `json:"provider"`
-	Model          string   `json:"model"`
-	Fallback       []string `json:"fallback"`
-	DeleteAfterRun bool     `json:"delete_after_run"`
+	Name                string   `json:"name"`
+	ScheduleKind        string   `json:"schedule_kind"`
+	Schedule            string   `json:"schedule"`
+	AtTime              string   `json:"at_time"`
+	EveryDuration       string   `json:"every_duration"`
+	Prompt              string   `json:"prompt"`
+	Skills              []string `json:"skills"`
+	Provider            string   `json:"provider"`
+	Model               string   `json:"model"`
+	Fallback            []string `json:"fallback"`
+	NotificationRouteID string   `json:"notification_route_id"`
+	DeleteAfterRun      bool     `json:"delete_after_run"`
 }
 
 func (s *Server) handleListCronJobs(c *echo.Context) error {
@@ -1644,7 +1645,9 @@ func (s *Server) handleListCronJobs(c *echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cron manager unavailable"})
 	}
 	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
-	return c.JSON(http.StatusOK, s.cronMgr.ListJobsFiltered(ctx))
+	jobs := s.cronMgr.ListJobsFiltered(ctx)
+	s.attachCronNotificationRoutes(ctx, jobs)
+	return c.JSON(http.StatusOK, jobs)
 }
 
 func (s *Server) handleCreateCronJob(c *echo.Context) error {
@@ -1661,6 +1664,7 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 	prompt := strings.TrimSpace(body.Prompt)
 	provider := strings.TrimSpace(body.Provider)
 	model := strings.TrimSpace(body.Model)
+	notificationRouteID := strings.TrimSpace(body.NotificationRouteID)
 	fallback := normalizeProviderNames(body.Fallback)
 	if name == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
@@ -1677,6 +1681,17 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 		}
 	}
 	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	if notificationRouteID != "" {
+		if s.notificationMgr == nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification routes not available"})
+		}
+		if _, err := s.notificationMgr.GetRoute(ctx, notificationRouteID); err != nil {
+			if errors.Is(err, ownership.ErrPermissionDenied) {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+			}
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	}
 	route := cron.RouteOptions{
 		Provider: provider,
 		Model:    model,
@@ -1724,6 +1739,16 @@ func (s *Server) handleCreateCronJob(c *echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
+	if notificationRouteID != "" {
+		if err := s.bindCronJobNotificationRoute(ctx, job, notificationRouteID); err != nil {
+			_ = s.cronMgr.RemoveJobAuth(ctx, job.ID)
+			if errors.Is(err, ownership.ErrPermissionDenied) {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+			}
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	}
+	job.NotificationRouteID = notificationRouteID
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"status": "created",
@@ -1740,6 +1765,24 @@ func (s *Server) handleDeleteCronJob(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
 	}
 	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	if _, err := s.cronMgr.GetJobAuth(ctx, jobID); err != nil {
+		if strings.Contains(err.Error(), "job not found") {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	if s.notificationMgr != nil {
+		if err := s.notificationMgr.DeleteBindingsForTarget(ctx, notificationroutes.ScopeCronJob, jobID); err != nil {
+			if errors.Is(err, ownership.ErrPermissionDenied) {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+			}
+			s.logger.Error("Failed to delete cron notification bindings", zap.String("job_id", jobID), zap.Error(err))
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	}
 	if err := s.cronMgr.RemoveJobAuth(ctx, jobID); err != nil {
 		if strings.Contains(err.Error(), "job not found") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
@@ -1751,6 +1794,53 @@ func (s *Server) handleDeleteCronJob(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) attachCronNotificationRoutes(ctx context.Context, jobs []*cron.Job) {
+	if s == nil || s.notificationMgr == nil {
+		return
+	}
+	for _, job := range jobs {
+		if job == nil || strings.TrimSpace(job.ID) == "" {
+			continue
+		}
+		binding, err := s.notificationMgr.FindBindingForTarget(ctx, notificationroutes.ScopeCronJob, job.ID)
+		if err != nil {
+			if s.logger != nil {
+				s.logger.Warn("Failed to load cron notification binding", zap.String("job_id", job.ID), zap.Error(err))
+			}
+			continue
+		}
+		if binding != nil && binding.Enabled {
+			job.NotificationRouteID = binding.RouteID
+		}
+	}
+}
+
+func (s *Server) bindCronJobNotificationRoute(ctx context.Context, job *cron.Job, routeID string) error {
+	if s == nil || s.notificationMgr == nil {
+		return fmt.Errorf("notification routes not available")
+	}
+	if job == nil || strings.TrimSpace(job.ID) == "" {
+		return fmt.Errorf("cron job id is required")
+	}
+	if err := s.notificationMgr.DeleteBindingsForTarget(ctx, notificationroutes.ScopeCronJob, job.ID); err != nil {
+		return err
+	}
+	if strings.TrimSpace(routeID) == "" {
+		return nil
+	}
+	_, err := s.notificationMgr.CreateBinding(ctx, notificationroutes.NotificationBinding{
+		Scope:          notificationroutes.ScopeCronJob,
+		Target:         job.ID,
+		RouteID:        routeID,
+		EventTypesJSON: `["` + notificationroutes.EventCronSucceeded + `","` + notificationroutes.EventCronFailed + `"]`,
+		Enabled:        true,
+		TenantID:       job.TenantID,
+		OwnerUserID:    job.OwnerUserID,
+		Visibility:     job.Visibility,
+	})
+	return err
 }
 
 func (s *Server) handleEnableCronJob(c *echo.Context) error {

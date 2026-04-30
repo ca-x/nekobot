@@ -11,6 +11,7 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
+	"nekobot/pkg/notificationroutes"
 )
 
 func TestCronHandlers_RequireCronManager(t *testing.T) {
@@ -301,6 +302,113 @@ func TestHandleCreateCronJob_AcceptsRouteOverrides(t *testing.T) {
 	}
 	if len(createdResp.Job.Skills) != 2 || createdResp.Job.Skills[0] != "ops-skill" {
 		t.Fatalf("expected skills to persist, got %v", createdResp.Job.Skills)
+	}
+}
+
+func TestHandleCreateCronJob_BindsNotificationRoute(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log := newTestLogger(t)
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+
+	manager := cron.New(log, nil, client)
+	notificationMgr, err := notificationroutes.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new notification manager: %v", err)
+	}
+	route, err := notificationMgr.CreateRoute(t.Context(), notificationroutes.NotificationRoute{
+		Name:             "ops-route",
+		ChannelAccountID: "account-1",
+		TargetConfigJSON: `{"target":"ops"}`,
+		Visibility:       "shared",
+	})
+	if err != nil {
+		t.Fatalf("create notification route: %v", err)
+	}
+
+	s := &Server{
+		config:          cfg,
+		logger:          log,
+		cronMgr:         manager,
+		notificationMgr: notificationMgr,
+	}
+	e := echo.New()
+
+	body := `{"name":"cron-notify","schedule_kind":"cron","schedule":"*/5 * * * *","prompt":"hello cron","notification_route_id":"` + route.ID + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/cron/jobs", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	ctx := e.NewContext(req, rec)
+	if err := s.handleCreateCronJob(ctx); err != nil {
+		t.Fatalf("handleCreateCronJob failed: %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
+	}
+
+	var createdResp struct {
+		Status string    `json:"status"`
+		Job    *cron.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &createdResp); err != nil {
+		t.Fatalf("unmarshal create response: %v", err)
+	}
+	if createdResp.Job == nil {
+		t.Fatalf("expected created job")
+	}
+	if createdResp.Job.NotificationRouteID != route.ID {
+		t.Fatalf("expected notification route id %q, got %q", route.ID, createdResp.Job.NotificationRouteID)
+	}
+
+	binding, err := notificationMgr.FindBindingForTarget(t.Context(), notificationroutes.ScopeCronJob, createdResp.Job.ID)
+	if err != nil {
+		t.Fatalf("find binding: %v", err)
+	}
+	if binding == nil || binding.RouteID != route.ID {
+		t.Fatalf("expected cron job binding to route %q, got %+v", route.ID, binding)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/cron/jobs", nil)
+	listRec := httptest.NewRecorder()
+	listCtx := e.NewContext(listReq, listRec)
+	if err := s.handleListCronJobs(listCtx); err != nil {
+		t.Fatalf("handleListCronJobs failed: %v", err)
+	}
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected list status %d, got %d", http.StatusOK, listRec.Code)
+	}
+	var jobs []*cron.Job
+	if err := json.Unmarshal(listRec.Body.Bytes(), &jobs); err != nil {
+		t.Fatalf("unmarshal list response: %v", err)
+	}
+	if len(jobs) != 1 || jobs[0].NotificationRouteID != route.ID {
+		t.Fatalf("expected listed job notification route %q, got %+v", route.ID, jobs)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/cron/jobs/"+createdResp.Job.ID, nil)
+	deleteRec := httptest.NewRecorder()
+	deleteCtx := e.NewContext(deleteReq, deleteRec)
+	deleteCtx.SetPath("/api/cron/jobs/:id")
+	deleteCtx.SetPathValues(echo.PathValues{{Name: "id", Value: createdResp.Job.ID}})
+	if err := s.handleDeleteCronJob(deleteCtx); err != nil {
+		t.Fatalf("handleDeleteCronJob failed: %v", err)
+	}
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("expected delete status %d, got %d: %s", http.StatusOK, deleteRec.Code, deleteRec.Body.String())
+	}
+	binding, err = notificationMgr.FindBindingForTarget(t.Context(), notificationroutes.ScopeCronJob, createdResp.Job.ID)
+	if err != nil {
+		t.Fatalf("find binding after delete: %v", err)
+	}
+	if binding != nil {
+		t.Fatalf("expected cron notification binding to be deleted, got %+v", binding)
 	}
 }
 

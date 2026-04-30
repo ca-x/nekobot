@@ -55,28 +55,29 @@ func (s *simpleSession) AddMessage(msg message.Message) {
 
 // Job represents a cron job.
 type Job struct {
-	ID             string       `json:"id"`                         // Unique job ID.
-	Name           string       `json:"name"`                       // Human-readable name.
-	ScheduleKind   ScheduleKind `json:"schedule_kind"`              // "cron", "at", or "every".
-	Schedule       string       `json:"schedule,omitempty"`         // Cron expression (for "cron" kind).
-	AtTime         *time.Time   `json:"at_time,omitempty"`          // Target time (for "at" kind).
-	EveryDuration  string       `json:"every_duration,omitempty"`   // Duration string (for "every" kind, e.g. "5m", "1h").
-	Prompt         string       `json:"prompt"`                     // Task prompt for agent.
-	Skills         []string     `json:"skills,omitempty"`           // Optional skills to prepend before execution.
-	Provider       string       `json:"provider,omitempty"`         // Optional provider/provider-group route override.
-	Model          string       `json:"model,omitempty"`            // Optional model override.
-	Fallback       []string     `json:"fallback,omitempty"`         // Optional fallback route targets.
-	Enabled        bool         `json:"enabled"`                    // Whether job is enabled.
-	DeleteAfterRun bool         `json:"delete_after_run,omitempty"` // Auto-delete after execution (for "at" jobs).
-	TenantID       string       `json:"tenant_id,omitempty"`        // Tenant ownership boundary.
-	OwnerUserID    string       `json:"owner_user_id,omitempty"`    // User that owns this job.
-	Visibility     string       `json:"visibility"`                 // private/shared/system visibility.
-	CreatedAt      time.Time    `json:"created_at"`                 // Creation timestamp.
-	LastRun        time.Time    `json:"last_run"`                   // Last execution time.
-	NextRun        time.Time    `json:"next_run"`                   // Next scheduled run.
-	RunCount       int          `json:"run_count"`                  // Total executions.
-	LastError      string       `json:"last_error"`                 // Last error message.
-	LastSuccess    bool         `json:"last_success"`               // Whether last run succeeded.
+	ID                  string       `json:"id"`                              // Unique job ID.
+	Name                string       `json:"name"`                            // Human-readable name.
+	ScheduleKind        ScheduleKind `json:"schedule_kind"`                   // "cron", "at", or "every".
+	Schedule            string       `json:"schedule,omitempty"`              // Cron expression (for "cron" kind).
+	AtTime              *time.Time   `json:"at_time,omitempty"`               // Target time (for "at" kind).
+	EveryDuration       string       `json:"every_duration,omitempty"`        // Duration string (for "every" kind, e.g. "5m", "1h").
+	Prompt              string       `json:"prompt"`                          // Task prompt for agent.
+	Skills              []string     `json:"skills,omitempty"`                // Optional skills to prepend before execution.
+	Provider            string       `json:"provider,omitempty"`              // Optional provider/provider-group route override.
+	Model               string       `json:"model,omitempty"`                 // Optional model override.
+	Fallback            []string     `json:"fallback,omitempty"`              // Optional fallback route targets.
+	NotificationRouteID string       `json:"notification_route_id,omitempty"` // Optional notification route binding.
+	Enabled             bool         `json:"enabled"`                         // Whether job is enabled.
+	DeleteAfterRun      bool         `json:"delete_after_run,omitempty"`      // Auto-delete after execution (for "at" jobs).
+	TenantID            string       `json:"tenant_id,omitempty"`             // Tenant ownership boundary.
+	OwnerUserID         string       `json:"owner_user_id,omitempty"`         // User that owns this job.
+	Visibility          string       `json:"visibility"`                      // private/shared/system visibility.
+	CreatedAt           time.Time    `json:"created_at"`                      // Creation timestamp.
+	LastRun             time.Time    `json:"last_run"`                        // Last execution time.
+	NextRun             time.Time    `json:"next_run"`                        // Next scheduled run.
+	RunCount            int          `json:"run_count"`                       // Total executions.
+	LastError           string       `json:"last_error"`                      // Last error message.
+	LastSuccess         bool         `json:"last_success"`                    // Whether last run succeeded.
 }
 
 // Manager manages cron jobs.

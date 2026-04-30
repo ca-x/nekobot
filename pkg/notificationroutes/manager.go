@@ -83,6 +83,11 @@ func (m *Manager) GetRoute(ctx context.Context, id string) (*NotificationRoute, 
 		return nil, fmt.Errorf("get notification route %s: %w", id, err)
 	}
 	item := routeFromRecord(rec)
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		if !ac.CanRead(item.OwnerUserID, item.TenantID, item.Visibility) {
+			return nil, ownership.ErrPermissionDenied
+		}
+	}
 	return &item, nil
 }
 
@@ -285,6 +290,9 @@ func (m *Manager) CreateBinding(ctx context.Context, item NotificationBinding) (
 			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
 		)
 	}
+	if _, err := m.GetRoute(ctx, normalized.RouteID); err != nil {
+		return nil, err
+	}
 	rec, err := m.client.NotificationBinding.Create().
 		SetScope(normalized.Scope).
 		SetTarget(normalized.Target).
@@ -331,6 +339,9 @@ func (m *Manager) UpdateBinding(ctx context.Context, id string, item Notificatio
 			existing.OwnerUserID, existing.TenantID, string(existing.Visibility),
 			normalized.OwnerUserID, normalized.TenantID, normalized.Visibility,
 		)
+	}
+	if _, err := m.GetRoute(ctx, normalized.RouteID); err != nil {
+		return nil, err
 	}
 	rec, err := m.client.NotificationBinding.UpdateOneID(id).
 		SetScope(normalized.Scope).
@@ -382,6 +393,86 @@ func (m *Manager) DeleteBinding(ctx context.Context, id string) error {
 		return fmt.Errorf("notification binding not found")
 	}
 	return nil
+}
+
+// DeleteBindingsForTarget removes all bindings for a scope/target pair.
+// When an AuthContext is present, every matched binding must be writable.
+func (m *Manager) DeleteBindingsForTarget(ctx context.Context, scope, target string) error {
+	scope = strings.TrimSpace(scope)
+	target = strings.TrimSpace(target)
+	if scope == "" {
+		return fmt.Errorf("binding scope is required")
+	}
+	if target == "" {
+		return fmt.Errorf("binding target is required")
+	}
+	q := m.client.NotificationBinding.Query().
+		Where(
+			notificationbinding.ScopeEQ(scope),
+			notificationbinding.TargetEQ(target),
+		)
+	recs, err := q.All(ctx)
+	if err != nil {
+		return fmt.Errorf("list notification bindings for target: %w", err)
+	}
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		for _, rec := range recs {
+			if !ac.CanWrite(rec.OwnerUserID) {
+				return ownership.ErrPermissionDenied
+			}
+		}
+	}
+	if len(recs) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(recs))
+	for _, rec := range recs {
+		ids = append(ids, rec.ID)
+	}
+	if _, err := m.client.NotificationBinding.Delete().
+		Where(notificationbinding.IDIn(ids...)).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("delete notification bindings for target: %w", err)
+	}
+	return nil
+}
+
+// FindBindingForTarget returns the first visible binding for a scope/target pair.
+func (m *Manager) FindBindingForTarget(ctx context.Context, scope, target string) (*NotificationBinding, error) {
+	scope = strings.TrimSpace(scope)
+	target = strings.TrimSpace(target)
+	if scope == "" {
+		return nil, fmt.Errorf("binding scope is required")
+	}
+	if target == "" {
+		return nil, fmt.Errorf("binding target is required")
+	}
+	q := m.client.NotificationBinding.Query().
+		Where(
+			notificationbinding.ScopeEQ(scope),
+			notificationbinding.TargetEQ(target),
+		).
+		Order(ent.Desc(notificationbinding.FieldUpdatedAt)).
+		Limit(1)
+	if ac, ok := ownership.AuthContextFromContext(ctx); ok {
+		q = q.Where(notificationbinding.Or(
+			notificationbinding.OwnerUserIDEQ(ac.UserID),
+			notificationbinding.And(
+				notificationbinding.VisibilityEQ(notificationbinding.Visibility(ownership.VisibilityShared)),
+				notificationbinding.TenantIDEQ(ac.TenantID),
+			),
+			notificationbinding.VisibilityEQ(notificationbinding.Visibility(ownership.VisibilitySystem)),
+		))
+	}
+	rec, err := q.Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find notification binding for target: %w", err)
+	}
+	item := bindingFromRecord(rec)
+	return &item, nil
 }
 
 // ---------------------------------------------------------------------------

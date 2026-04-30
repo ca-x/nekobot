@@ -18,6 +18,7 @@ export interface CronJob {
   provider?: string;
   model?: string;
   fallback?: string[];
+  notification_route_id?: string;
   enabled: boolean;
   delete_after_run?: boolean;
   created_at: string;
@@ -42,6 +43,7 @@ export interface CreateCronJobInput {
   provider?: string;
   model?: string;
   fallback?: string[];
+  notification_route_id?: string;
   delete_after_run?: boolean;
   visibility?: ResourceVisibility;
 }

@@ -2,6 +2,16 @@ package notificationroutes
 
 import "time"
 
+const (
+	// ScopeCronJob binds notifications for a specific cron job ID.
+	ScopeCronJob = "cron_job"
+
+	// EventCronSucceeded fires when a cron job run succeeds.
+	EventCronSucceeded = "cron.succeeded"
+	// EventCronFailed fires when a cron job run fails.
+	EventCronFailed = "cron.failed"
+)
+
 // NotificationRoute defines a named notification routing target (e.g. a channel account + config).
 type NotificationRoute struct {
 	ID               string    `json:"id"`
