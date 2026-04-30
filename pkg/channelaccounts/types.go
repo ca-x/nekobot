@@ -1,6 +1,9 @@
 package channelaccounts
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // ChannelAccount defines one channel-agnostic account endpoint.
 type ChannelAccount struct {
@@ -17,4 +20,9 @@ type ChannelAccount struct {
 	Visibility  string                 `json:"visibility"`
 	CreatedAt   time.Time              `json:"created_at"`
 	UpdatedAt   time.Time              `json:"updated_at"`
+}
+
+// RuntimeChannelID returns the channel manager instance ID for an account-scoped channel.
+func RuntimeChannelID(account ChannelAccount) string {
+	return strings.TrimSpace(account.ChannelType) + ":" + strings.TrimSpace(account.AccountKey)
 }

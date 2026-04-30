@@ -487,7 +487,7 @@ func decodeWechatAccountCredentials(account channelaccounts.ChannelAccount) (*we
 }
 
 func channelInstanceID(account channelaccounts.ChannelAccount) string {
-	return strings.TrimSpace(account.ChannelType) + ":" + strings.TrimSpace(account.AccountKey)
+	return channelaccounts.RuntimeChannelID(account)
 }
 
 func channelDisplayName(account channelaccounts.ChannelAccount, fallback string) string {

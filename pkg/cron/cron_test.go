@@ -348,6 +348,44 @@ func TestExecuteJobMarksManagedTaskFailedOnChatError(t *testing.T) {
 	}
 }
 
+func TestExecuteJobEmitsCompletionEvent(t *testing.T) {
+	t.Parallel()
+
+	manager, cleanup := newTestManager(t)
+	defer cleanup()
+
+	manager.agent = &agent.Agent{}
+	manager.agentChat = func(ctx context.Context, sess agent.SessionInterface, prompt, provider, model string, fallback []string) (string, error) {
+		return "event response", nil
+	}
+	events := make(chan JobEvent, 1)
+	manager.SetJobEventHandler(func(ctx context.Context, event JobEvent) {
+		events <- event
+	})
+
+	job, err := manager.AddCronJob("cron-event", "0 0 * * *", "ping")
+	if err != nil {
+		t.Fatalf("add cron job: %v", err)
+	}
+
+	manager.executeJob(job.ID)
+
+	select {
+	case event := <-events:
+		if event.EventType != "cron.succeeded" {
+			t.Fatalf("expected cron.succeeded event, got %q", event.EventType)
+		}
+		if event.Job.ID != job.ID || event.Job.Name != "cron-event" {
+			t.Fatalf("unexpected event job: %+v", event.Job)
+		}
+		if event.Response != "event response" {
+			t.Fatalf("expected response in event, got %q", event.Response)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for cron event")
+	}
+}
+
 func waitForCronTaskState(t *testing.T, store *tasks.Store, want tasks.State, timeout time.Duration) tasks.Task {
 	t.Helper()
 

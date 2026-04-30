@@ -80,6 +80,19 @@ type Job struct {
 	LastSuccess         bool         `json:"last_success"`                    // Whether last run succeeded.
 }
 
+// JobEvent describes a completed cron job run for external observers.
+type JobEvent struct {
+	EventType      string
+	Job            Job
+	Response       string
+	Error          string
+	FinishedAt     time.Time
+	DeleteAfterRun bool
+}
+
+// JobEventHandler handles a completed cron job run.
+type JobEventHandler func(ctx context.Context, event JobEvent)
+
 // Manager manages cron jobs.
 type Manager struct {
 	log       *logger.Logger
@@ -87,6 +100,8 @@ type Manager struct {
 	client    *ent.Client
 	taskSvc   taskLifecycle
 	agentChat func(ctx context.Context, sess agent.SessionInterface, prompt, provider, model string, fallback []string) (string, error)
+	eventMu   sync.RWMutex
+	onEvent   JobEventHandler
 
 	// Cron scheduler (for "cron" kind jobs).
 	scheduler *cron.Cron
@@ -140,6 +155,13 @@ func New(log *logger.Logger, ag *agent.Agent, client *ent.Client) *Manager {
 		ctx:       ctx,
 		cancel:    cancel,
 	}
+}
+
+// SetJobEventHandler registers a best-effort observer for completed job runs.
+func (m *Manager) SetJobEventHandler(handler JobEventHandler) {
+	m.eventMu.Lock()
+	defer m.eventMu.Unlock()
+	m.onEvent = handler
 }
 
 // Start starts the cron manager.
@@ -800,6 +822,9 @@ Scheduled task execution at %s:
 	var (
 		deleteAfterRun bool
 		jobSnapshot    *Job
+		eventJob       Job
+		eventType      string
+		eventError     string
 	)
 
 	m.mu.Lock()
@@ -814,12 +839,15 @@ Scheduled task execution at %s:
 	if chatErr != nil {
 		job.LastSuccess = false
 		job.LastError = chatErr.Error()
+		eventType = "cron.failed"
+		eventError = chatErr.Error()
 		m.log.Error("Job failed",
 			zap.String("job_id", jobID),
 			zap.Error(chatErr))
 	} else {
 		job.LastSuccess = true
 		job.LastError = ""
+		eventType = "cron.succeeded"
 		m.log.Info("Job completed",
 			zap.String("job_id", jobID),
 			zap.String("response_preview", truncate(response, 100)))
@@ -859,7 +887,17 @@ Scheduled task execution at %s:
 		copied := *job
 		jobSnapshot = &copied
 	}
+	eventJob = *job
 	m.mu.Unlock()
+
+	m.emitJobEvent(JobEvent{
+		EventType:      eventType,
+		Job:            eventJob,
+		Response:       response,
+		Error:          eventError,
+		FinishedAt:     finishedAt,
+		DeleteAfterRun: deleteAfterRun,
+	})
 
 	if deleteAfterRun {
 		if err := m.deleteJob(m.ctx, jobID); err != nil {
@@ -877,6 +915,16 @@ Scheduled task execution at %s:
 				zap.Error(err))
 		}
 	}
+}
+
+func (m *Manager) emitJobEvent(event JobEvent) {
+	m.eventMu.RLock()
+	handler := m.onEvent
+	m.eventMu.RUnlock()
+	if handler == nil || event.EventType == "" || event.Job.ID == "" {
+		return
+	}
+	go handler(m.ctx, event)
 }
 
 func (m *Manager) chatAgent(ctx context.Context, sess agent.SessionInterface, prompt, provider, model string, fallback []string) (response string, err error) {

@@ -326,6 +326,10 @@ func NewServer(
 			s.notificationMgr = notificationMgr
 		}
 	}
+	if s.cronMgr != nil && s.notificationMgr != nil && s.accountMgr != nil && s.bus != nil {
+		dispatcher := notificationroutes.NewDispatcher(log, s.notificationMgr, s.accountMgr, s.bus)
+		s.cronMgr.SetJobEventHandler(dispatcher.HandleCronJobEvent)
+	}
 
 	ilinkStore, err := ilinkauth.NewStore(cfg)
 	if err != nil {
