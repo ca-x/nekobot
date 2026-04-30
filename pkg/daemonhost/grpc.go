@@ -36,6 +36,7 @@ type CollaborationService interface {
 	UnfollowThread(context.Context, *daemonv1.UnfollowThreadRequest) (*daemonv1.UnfollowThreadResponse, error)
 	CreateCollaborationTask(context.Context, *daemonv1.CreateCollaborationTaskRequest) (*daemonv1.CreateCollaborationTaskResponse, error)
 	ListCollaborationTasks(context.Context, *daemonv1.ListCollaborationTasksRequest) (*daemonv1.ListCollaborationTasksResponse, error)
+	ListTaskBoard(context.Context, *daemonv1.ListTaskBoardRequest) (*daemonv1.ListTaskBoardResponse, error)
 	ClaimCollaborationTask(context.Context, *daemonv1.ClaimCollaborationTaskRequest) (*daemonv1.ClaimCollaborationTaskResponse, error)
 	ProposeTaskSplit(context.Context, *daemonv1.ProposeTaskSplitRequest) (*daemonv1.ProposeTaskSplitResponse, error)
 	ApplyTaskSplit(context.Context, *daemonv1.ApplyTaskSplitRequest) (*daemonv1.ApplyTaskSplitResponse, error)
@@ -203,6 +204,13 @@ func (s *GRPCService) ListCollaborationTasks(ctx context.Context, req *daemonv1.
 		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
 	}
 	return s.Collaboration.ListCollaborationTasks(ctx, req)
+}
+
+func (s *GRPCService) ListTaskBoard(ctx context.Context, req *daemonv1.ListTaskBoardRequest) (*daemonv1.ListTaskBoardResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.ListTaskBoard(ctx, req)
 }
 
 func (s *GRPCService) ClaimCollaborationTask(ctx context.Context, req *daemonv1.ClaimCollaborationTaskRequest) (*daemonv1.ClaimCollaborationTaskResponse, error) {

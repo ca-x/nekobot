@@ -342,6 +342,7 @@ func (s *Server) CreateCollaborationTask(ctx context.Context, req *daemonv1.Crea
 		}
 		return nil, err
 	}
+	_, _ = s.appendTaskEvent(ctx, "task.created", task, reqID, "")
 
 	resp := &daemonv1.CreateCollaborationTaskResponse{Task: daemonhost.CollaborationTaskToProto(task)}
 	if idemReserved {
@@ -378,6 +379,67 @@ func (s *Server) ListCollaborationTasks(ctx context.Context, req *daemonv1.ListC
 		}
 	}
 	return &daemonv1.ListCollaborationTasksResponse{Tasks: out}, nil
+}
+
+var taskBoardColumns = []string{"All", "TODO", "IN PROCESS", "IN REVIEW", "Done"}
+
+func (s *Server) ListTaskBoard(ctx context.Context, req *daemonv1.ListTaskBoardRequest) (*daemonv1.ListTaskBoardResponse, error) {
+	if s == nil || s.agent == nil || s.agent.TaskService() == nil {
+		return nil, fmt.Errorf("task service unavailable")
+	}
+	target := strings.TrimSpace(req.GetTarget())
+	assigneeID := strings.TrimSpace(req.GetAssigneeId())
+	createdByUserID := strings.TrimSpace(req.GetCreatedByUserId())
+	createdByAgentID := strings.TrimSpace(req.GetCreatedByAgentId())
+	selectedColumn := normalizeTaskBoardColumn(req.GetColumn())
+	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
+	counts := make(map[string]int64, len(taskBoardColumns))
+	grouped := make(map[string][]*daemonv1.Task, len(taskBoardColumns))
+	for _, column := range taskBoardColumns {
+		counts[column] = 0
+	}
+
+	for _, item := range s.agent.TaskService().List() {
+		proto := daemonhost.CollaborationTaskToProto(item)
+		if !taskMatchesBoardFilter(proto, target, assigneeID, createdByUserID, createdByAgentID) {
+			continue
+		}
+		column := normalizeTaskBoardColumn(proto.GetBoardColumn())
+		if column == "All" {
+			column = daemonhost.TaskBoardColumnForState(proto.GetState(), "")
+			proto.BoardColumn = column
+		}
+		counts["All"]++
+		counts[column]++
+		if selectedColumn == "" || selectedColumn == "All" || selectedColumn == column {
+			if len(grouped[column]) < limit {
+				grouped[column] = append(grouped[column], proto)
+			}
+		}
+	}
+
+	columns := make([]*daemonv1.TaskBoardColumn, 0, len(taskBoardColumns))
+	for _, column := range taskBoardColumns {
+		if selectedColumn != "" && selectedColumn != "All" && column != selectedColumn {
+			continue
+		}
+		tasks := grouped[column]
+		if column == "All" {
+			tasks = collectAllBoardTasks(grouped, limit)
+		}
+		columns = append(columns, &daemonv1.TaskBoardColumn{
+			Column:     column,
+			Tasks:      tasks,
+			TotalCount: counts[column],
+		})
+	}
+	return &daemonv1.ListTaskBoardResponse{
+		Board: &daemonv1.TaskBoardSnapshot{
+			Columns:    columns,
+			Counts:     counts,
+			NextCursor: req.GetCursor(),
+		},
+	}, nil
 }
 
 func (s *Server) ClaimCollaborationTask(ctx context.Context, req *daemonv1.ClaimCollaborationTaskRequest) (*daemonv1.ClaimCollaborationTaskResponse, error) {
@@ -421,6 +483,8 @@ func (s *Server) ClaimCollaborationTask(ctx context.Context, req *daemonv1.Claim
 		}
 		return nil, err
 	}
+	_, _ = s.appendTaskEvent(ctx, "task.claimed", task, reqID, "")
+	_, _ = s.appendTaskEvent(ctx, "task.status_changed", task, reqID, string(tasks.StatePending))
 
 	resp := &daemonv1.ClaimCollaborationTaskResponse{Task: daemonhost.CollaborationTaskToProto(task)}
 	if idemReserved {
@@ -2257,6 +2321,39 @@ func (s *Server) appendCollaborationEvent(ctx context.Context, item eventlog.Eve
 	return rec, nil
 }
 
+func (s *Server) appendTaskEvent(ctx context.Context, eventType string, task tasks.Task, reqID string, oldState string) (*eventlog.EventRecord, error) {
+	proto := daemonhost.CollaborationTaskToProto(task)
+	payload := map[string]any{
+		"task":         proto,
+		"board_column": proto.GetBoardColumn(),
+		"old_state":    strings.TrimSpace(oldState),
+		"new_state":    proto.GetState(),
+	}
+	return s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+		EventType:      eventType,
+		Target:         proto.GetTarget(),
+		ThreadID:       proto.GetThreadId(),
+		ActorKind:      firstNonEmpty(taskEventActorKind(proto), "agent"),
+		ActorID:        firstNonEmpty(proto.GetCreatedByAgentId(), proto.GetCreatedByUserId(), proto.GetAssigneeId(), proto.GetRuntimeId()),
+		SubjectKind:    "task",
+		SubjectID:      proto.GetTaskId(),
+		AssigneeID:     firstNonEmpty(proto.GetAssigneeId(), proto.GetRuntimeId()),
+		GraphVersion:   proto.GetGraphVersion(),
+		IdempotencyKey: reqID,
+		PayloadJSON:    mustMarshalJSON(payload),
+	})
+}
+
+func taskEventActorKind(task *daemonv1.Task) string {
+	if task == nil {
+		return ""
+	}
+	if task.GetCreatedByUserId() != "" {
+		return "user"
+	}
+	return "agent"
+}
+
 func eventRecordToProto(record *eventlog.EventRecord) *daemonv1.CollaborationEvent {
 	if record == nil {
 		return nil
@@ -2426,6 +2523,55 @@ func threadTarget(sessionID string) string {
 		return "dm:" + strings.TrimPrefix(sessionID, "dm_")
 	}
 	return "#websocket:" + sessionID
+}
+
+func normalizeTaskBoardColumn(column string) string {
+	switch strings.ToLower(strings.TrimSpace(column)) {
+	case "", "all":
+		return "All"
+	case "todo", "to do":
+		return "TODO"
+	case "in_process", "in process", "in-progress", "in progress", "process":
+		return "IN PROCESS"
+	case "in_review", "in review", "in-review", "review":
+		return "IN REVIEW"
+	case "done", "completed", "complete":
+		return "Done"
+	default:
+		return strings.TrimSpace(column)
+	}
+}
+
+func taskMatchesBoardFilter(task *daemonv1.Task, target, assigneeID, createdByUserID, createdByAgentID string) bool {
+	if task == nil {
+		return false
+	}
+	if target != "" && task.GetTarget() != target && threadTarget(task.GetThreadId()) != target {
+		return false
+	}
+	if assigneeID != "" && task.GetAssigneeId() != assigneeID && task.GetRuntimeId() != assigneeID {
+		return false
+	}
+	if createdByUserID != "" && task.GetCreatedByUserId() != createdByUserID {
+		return false
+	}
+	if createdByAgentID != "" && task.GetCreatedByAgentId() != createdByAgentID {
+		return false
+	}
+	return true
+}
+
+func collectAllBoardTasks(grouped map[string][]*daemonv1.Task, limit int) []*daemonv1.Task {
+	out := make([]*daemonv1.Task, 0, limit)
+	for _, column := range taskBoardColumns[1:] {
+		for _, task := range grouped[column] {
+			if len(out) >= limit {
+				return out
+			}
+			out = append(out, task)
+		}
+	}
+	return out
 }
 
 func targetChannelID(target string) string {

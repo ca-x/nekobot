@@ -166,6 +166,9 @@ message Task {
 
   // --- capability requirements ---
   repeated string required_capabilities = 23;
+
+  // --- board projection ---
+  string board_column = 24;
 }
 
 message Run {
@@ -418,6 +421,32 @@ message ListCollaborationTasksRequest {
 
 message ListCollaborationTasksResponse {
   repeated Task tasks = 1;
+}
+
+message TaskBoardColumn {
+  string column = 1;
+  repeated Task tasks = 2;
+  int64 total_count = 3;
+}
+
+message TaskBoardSnapshot {
+  repeated TaskBoardColumn columns = 1;
+  map<string, int64> counts = 2;
+  EventCursor next_cursor = 3;
+}
+
+message ListTaskBoardRequest {
+  string target = 1;
+  string assignee_id = 2;
+  string created_by_user_id = 3;
+  string created_by_agent_id = 4;
+  string column = 5;
+  uint32 limit = 6;
+  EventCursor cursor = 7;
+}
+
+message ListTaskBoardResponse {
+  TaskBoardSnapshot board = 1;
 }
 
 message ClaimCollaborationTaskRequest {
@@ -872,6 +901,7 @@ service DaemonControlService {
   rpc UnfollowThread(UnfollowThreadRequest) returns (UnfollowThreadResponse);
   rpc CreateCollaborationTask(CreateCollaborationTaskRequest) returns (CreateCollaborationTaskResponse);
   rpc ListCollaborationTasks(ListCollaborationTasksRequest) returns (ListCollaborationTasksResponse);
+  rpc ListTaskBoard(ListTaskBoardRequest) returns (ListTaskBoardResponse);
   rpc ClaimCollaborationTask(ClaimCollaborationTaskRequest) returns (ClaimCollaborationTaskResponse);
   rpc ProposeTaskSplit(ProposeTaskSplitRequest) returns (ProposeTaskSplitResponse);
   rpc ApplyTaskSplit(ApplyTaskSplitRequest) returns (ApplyTaskSplitResponse);

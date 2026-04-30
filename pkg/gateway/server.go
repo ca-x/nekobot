@@ -382,6 +382,15 @@ func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.T
 	if s == nil || s.sessionMgr == nil || req == nil {
 		return nil
 	}
+	if task.ID != "" {
+		_, _ = s.appendTaskEvent(ctx, "task.status_changed", task, req.GetRequestId(), "")
+		if task.State == tasks.StateCompleted {
+			_, _ = s.appendTaskEvent(ctx, "task.done", task, req.GetRequestId(), "")
+		}
+		if task.State == tasks.StateCanceled {
+			_, _ = s.appendTaskEvent(ctx, "task.cancelled", task, req.GetRequestId(), "")
+		}
+	}
 	sessionID := strings.TrimSpace(task.SessionID)
 	if sessionID == "" {
 		return nil

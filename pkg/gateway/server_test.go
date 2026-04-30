@@ -268,6 +268,19 @@ func TestDaemonCollaborationTasks(t *testing.T) {
 		t.Fatalf("new agent: %v", err)
 	}
 	s.agent = ag
+	entClient, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = entClient.Close() })
+	if err := config.EnsureRuntimeEntSchema(entClient); err != nil {
+		t.Fatalf("ensure ent schema: %v", err)
+	}
+	eventMgr, err := eventlog.NewManager(entClient)
+	if err != nil {
+		t.Fatalf("new event manager: %v", err)
+	}
+	s.eventMgr = eventMgr
 
 	createResp, err := s.CreateCollaborationTask(context.Background(), &daemonv1.CreateCollaborationTaskRequest{
 		Target:          "#websocket:thread-task",
@@ -300,6 +313,56 @@ func TestDaemonCollaborationTasks(t *testing.T) {
 	if len(listResp.Tasks) != 1 || listResp.Tasks[0].GetTaskId() != createResp.Task.GetTaskId() {
 		t.Fatalf("unexpected tasks: %+v", listResp.Tasks)
 	}
+
+	board, err := s.ListTaskBoard(context.Background(), &daemonv1.ListTaskBoardRequest{Target: "#websocket:thread-task", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListTaskBoard failed: %v", err)
+	}
+	if board.GetBoard().GetCounts()["All"] != 1 || board.GetBoard().GetCounts()["IN PROCESS"] != 1 {
+		t.Fatalf("unexpected board counts: %+v", board.GetBoard().GetCounts())
+	}
+	inProcess := findTaskBoardColumn(board.GetBoard(), "IN PROCESS")
+	if inProcess == nil || len(inProcess.GetTasks()) != 1 {
+		t.Fatalf("expected one in-process task, got %+v", board.GetBoard().GetColumns())
+	}
+	boardTask := inProcess.GetTasks()[0]
+	if boardTask.GetTaskId() != createResp.Task.GetTaskId() || boardTask.GetCreatedByUserId() != "tester" || boardTask.GetAssigneeId() != "runtime-a" {
+		t.Fatalf("unexpected board task: %+v", boardTask)
+	}
+	if boardTask.GetTarget() != "#websocket:thread-task" || boardTask.GetThreadId() != "thread-task" {
+		t.Fatalf("task-to-chat navigation fields missing: %+v", boardTask)
+	}
+
+	events, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince failed: %v", err)
+	}
+	if !hasTaskEvent(events.GetEvents(), "task.created", createResp.Task.GetTaskId()) ||
+		!hasTaskEvent(events.GetEvents(), "task.claimed", createResp.Task.GetTaskId()) ||
+		!hasTaskEvent(events.GetEvents(), "task.status_changed", createResp.Task.GetTaskId()) {
+		t.Fatalf("expected task board events, got %+v", events.GetEvents())
+	}
+}
+
+func findTaskBoardColumn(board *daemonv1.TaskBoardSnapshot, column string) *daemonv1.TaskBoardColumn {
+	if board == nil {
+		return nil
+	}
+	for _, item := range board.GetColumns() {
+		if item.GetColumn() == column {
+			return item
+		}
+	}
+	return nil
+}
+
+func hasTaskEvent(events []*daemonv1.CollaborationEvent, kind, taskID string) bool {
+	for _, event := range events {
+		if event.GetKind() == kind && event.GetTaskId() == taskID {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
@@ -3449,6 +3512,13 @@ func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 	}
 	if taskResp.Task.GetTaskId() == "" {
 		t.Fatalf("expected task id")
+	}
+	boardResp, err := client.ListTaskBoardRemote(&daemonv1.ListTaskBoardRequest{Target: "#websocket:grpc-thread", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListTaskBoardRemote failed: %v", err)
+	}
+	if boardResp.GetBoard().GetCounts()["All"] != 1 || boardResp.GetBoard().GetCounts()["TODO"] != 1 {
+		t.Fatalf("unexpected grpc task board: %+v", boardResp.GetBoard())
 	}
 }
 

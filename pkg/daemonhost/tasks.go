@@ -78,6 +78,10 @@ func ApplyRunStatusUpdate(taskService *tasks.Service, req *daemonv1.UpdateRunSta
 }
 
 func taskToProto(item tasks.Task) *daemonv1.Task {
+	assigneeID := metadataString(item.Metadata, "assignee_id")
+	if assigneeID == "" {
+		assigneeID = item.RuntimeID
+	}
 	return &daemonv1.Task{
 		TaskId:               item.ID,
 		Summary:              item.Summary,
@@ -89,7 +93,7 @@ func taskToProto(item tasks.Task) *daemonv1.Task {
 		CreatedByUserId:      metadataString(item.Metadata, "created_by_user_id"),
 		BlockedReason:        item.PendingAction,
 		Target:               metadataString(item.Metadata, "target"),
-		AssigneeId:           metadataString(item.Metadata, "assignee_id"),
+		AssigneeId:           assigneeID,
 		CurrentRunId:         metadataString(item.Metadata, "current_run_id"),
 		RootTaskId:           metadataString(item.Metadata, "root_task_id"),
 		ParentTaskId:         metadataString(item.Metadata, "parent_task_id"),
@@ -102,6 +106,25 @@ func taskToProto(item tasks.Task) *daemonv1.Task {
 		DependsOnTaskIds:     metadataStringSlice(item.Metadata, "depends_on_task_ids"),
 		BlockedByTaskIds:     metadataStringSlice(item.Metadata, "blocked_by_task_ids"),
 		RequiredCapabilities: metadataStringSlice(item.Metadata, "required_capabilities"),
+		BoardColumn:          TaskBoardColumnForState(string(item.State), metadataString(item.Metadata, "board_column")),
+	}
+}
+
+func TaskBoardColumnForState(state, explicit string) string {
+	if explicit = strings.TrimSpace(explicit); explicit != "" {
+		return explicit
+	}
+	switch strings.TrimSpace(state) {
+	case string(tasks.StatePending):
+		return "TODO"
+	case string(tasks.StateClaimed), string(tasks.StateRunning), string(tasks.StateRequiresAction):
+		return "IN PROCESS"
+	case "in_review":
+		return "IN REVIEW"
+	case string(tasks.StateCompleted), string(tasks.StateFailed), string(tasks.StateCanceled):
+		return "Done"
+	default:
+		return "TODO"
 	}
 }
 

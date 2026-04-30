@@ -221,6 +221,14 @@ func (c *Client) ListCollaborationTasksRemote(req *daemonv1.ListCollaborationTas
 	}
 	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
 }
+func (c *Client) ListTaskBoardRemote(req *daemonv1.ListTaskBoardRequest) (*daemonv1.ListTaskBoardResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.ListTaskBoard(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
 func (c *Client) ClaimCollaborationTaskRemote(req *daemonv1.ClaimCollaborationTaskRequest) (*daemonv1.ClaimCollaborationTaskResponse, error) {
 	if c.grpcClient != nil {
 		ctx, cancel := c.rpcContext()
