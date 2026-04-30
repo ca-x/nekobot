@@ -2,6 +2,7 @@ import { api } from '@/api/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/notify';
 import { t } from '@/lib/i18n';
+import type { ResourceVisibility } from '@/components/common/OwnershipBadge';
 
 export interface PromptRecord {
   id: string;
@@ -12,6 +13,9 @@ export interface PromptRecord {
   template: string;
   enabled: boolean;
   tags: string[];
+  tenant_id?: string;
+  owner_user_id?: string;
+  visibility?: ResourceVisibility;
   created_at: string;
   updated_at: string;
 }
@@ -41,6 +45,7 @@ export interface PromptInput {
   template: string;
   enabled: boolean;
   tags: string[];
+  visibility?: ResourceVisibility;
 }
 
 export interface PromptBindingInput {

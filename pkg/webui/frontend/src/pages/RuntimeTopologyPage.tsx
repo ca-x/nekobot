@@ -22,6 +22,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { OwnershipBadge, type ResourceVisibility, normalizeVisibility } from '@/components/common/OwnershipBadge';
 import {
   type AccountBinding,
   type AccountBindingInput,
@@ -61,6 +62,7 @@ type RuntimeDialogState = {
   skills_text: string;
   tools_text: string;
   policy_text: string;
+  visibility: ResourceVisibility;
 };
 
 type ChannelAccountDialogState = {
@@ -72,6 +74,7 @@ type ChannelAccountDialogState = {
   enabled: boolean;
   config_text: string;
   metadata_text: string;
+  visibility: ResourceVisibility;
 };
 
 type BindingDialogState = {
@@ -105,6 +108,7 @@ function defaultRuntimeState(): RuntimeDialogState {
     skills_text: '',
     tools_text: '',
     policy_text: '{}',
+    visibility: 'shared',
   };
 }
 
@@ -117,6 +121,7 @@ function defaultChannelAccountState(): ChannelAccountDialogState {
     enabled: true,
     config_text: '{}',
     metadata_text: '{}',
+    visibility: 'shared',
   };
 }
 
@@ -269,6 +274,7 @@ export default function RuntimeTopologyPage() {
       skills: parseLineList(runtimeState.skills_text),
       tools: parseLineList(runtimeState.tools_text),
       policy: parseJSONObject(runtimeState.policy_text),
+      visibility: runtimeState.visibility,
     };
     if (runtimeState.id) {
       await updateRuntime.mutateAsync({ id: runtimeState.id, input });
@@ -288,6 +294,7 @@ export default function RuntimeTopologyPage() {
       enabled: accountState.enabled,
       config: parseJSONObject(accountState.config_text),
       metadata: parseJSONObject(accountState.metadata_text),
+      visibility: accountState.visibility,
     };
     if (accountState.id) {
       await updateAccount.mutateAsync({ id: accountState.id, input });
@@ -374,6 +381,7 @@ export default function RuntimeTopologyPage() {
       skills_text: runtime.skills.join('\n'),
       tools_text: runtime.tools.join('\n'),
       policy_text: JSON.stringify(runtime.policy ?? {}, null, 2),
+      visibility: normalizeVisibility(runtime.visibility),
     });
     setRuntimeDialogOpen(true);
   }
@@ -393,6 +401,7 @@ export default function RuntimeTopologyPage() {
       enabled: account.enabled,
       config_text: JSON.stringify(account.config ?? {}, null, 2),
       metadata_text: JSON.stringify(account.metadata ?? {}, null, 2),
+      visibility: normalizeVisibility(account.visibility),
     });
     setAccountDialogOpen(true);
   }
@@ -599,6 +608,7 @@ export default function RuntimeTopologyPage() {
                               : t('runtimeTopologyPromptUnset'),
                           ]}
                           description={runtime.description}
+                          ownershipBadge={<OwnershipBadge resource={runtime} showOwner />}
                           onEdit={() => openEditRuntimeDialog(runtime)}
                           onDelete={() =>
                             askDelete({
@@ -638,6 +648,7 @@ export default function RuntimeTopologyPage() {
                             t('runtimeTopologyBoundRuntimes', String(node?.bound_runtime_count ?? 0)),
                           ]}
                           description={account.description}
+                          ownershipBadge={<OwnershipBadge resource={account} showOwner />}
                           onEdit={() => openEditAccountDialog(account)}
                           onDelete={() =>
                             askDelete({
@@ -817,6 +828,10 @@ export default function RuntimeTopologyPage() {
               />
               <p className="text-xs text-muted-foreground">{t('runtimeTopologyJsonFieldHint')}</p>
             </Field>
+            <VisibilityField
+              value={runtimeState.visibility}
+              onValueChange={(visibility) => setRuntimeState((prev) => ({ ...prev, visibility }))}
+            />
             <SwitchField
               label={t('enabled')}
               description={
@@ -922,6 +937,10 @@ export default function RuntimeTopologyPage() {
               />
               <p className="text-xs text-muted-foreground">{t('runtimeTopologyJsonFieldHint')}</p>
             </Field>
+            <VisibilityField
+              value={accountState.visibility}
+              onValueChange={(visibility) => setAccountState((prev) => ({ ...prev, visibility }))}
+            />
             <SwitchField
               label={t('enabled')}
               description={
@@ -1197,6 +1216,7 @@ function EntityCard({
   description,
   onEdit,
   onDelete,
+  ownershipBadge,
 }: {
   title: string;
   subtitle: string;
@@ -1205,6 +1225,7 @@ function EntityCard({
   description: string;
   onEdit: () => void;
   onDelete: () => void;
+  ownershipBadge?: ReactNode;
 }) {
   return (
     <div className="rounded-3xl border border-border/70 bg-muted/35 p-4">
@@ -1212,6 +1233,7 @@ function EntityCard({
         <div className="min-w-0">
           <div className="text-sm font-semibold text-foreground">{title}</div>
           <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+          {ownershipBadge ? <div className="mt-3">{ownershipBadge}</div> : null}
           {description ? <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p> : null}
         </div>
         <div className="flex items-center gap-2 self-start">
@@ -1232,6 +1254,30 @@ function EntityCard({
         ))}
       </div>
     </div>
+  );
+}
+
+function VisibilityField({
+  value,
+  onValueChange,
+}: {
+  value: ResourceVisibility;
+  onValueChange: (visibility: ResourceVisibility) => void;
+}) {
+  return (
+    <Field>
+      <Label>{t('resourceVisibility')}</Label>
+      <Select value={value} onValueChange={(next: ResourceVisibility) => onValueChange(next)}>
+        <SelectTrigger className="h-11 w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
+          <SelectItem value="shared">{t('visibilityShared')}</SelectItem>
+        </SelectContent>
+      </Select>
+      <p className="text-xs leading-5 text-muted-foreground">{t('resourceVisibilityHint')}</p>
+    </Field>
   );
 }
 

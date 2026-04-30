@@ -8,6 +8,7 @@ import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/u
 import { useProviders } from '@/hooks/useProviders';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { OwnershipBadge, type ResourceVisibility } from '@/components/common/OwnershipBadge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -62,6 +63,7 @@ interface CronFormState {
   fallback: string[];
   skills: string[];
   delete_after_run: boolean;
+  visibility: ResourceVisibility;
 }
 
 function toRFC3339FromLocal(localValue: string): string {
@@ -88,6 +90,7 @@ const DEFAULT_FORM: CronFormState = {
   fallback: [],
   skills: [],
   delete_after_run: true,
+  visibility: 'shared',
 };
 
 function renderSchedule(job: CronJob): string {
@@ -222,6 +225,7 @@ export default function CronPage() {
       fallback: form.fallback,
       skills: form.skills,
       delete_after_run: form.delete_after_run,
+      visibility: form.visibility,
     };
 
     if (form.schedule_kind === 'cron') {
@@ -340,6 +344,23 @@ export default function CronPage() {
                 />
               </div>
             )}
+
+            <div className="space-y-1.5 xl:col-span-2">
+              <Label>{t('resourceVisibility')}</Label>
+              <Select
+                value={form.visibility}
+                onValueChange={(value: ResourceVisibility) => setField('visibility', value)}
+              >
+                <SelectTrigger className="h-11 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
+                  <SelectItem value="shared">{t('visibilityShared')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="text-xs leading-5 text-muted-foreground">{t('resourceVisibilityHint')}</div>
+            </div>
 
             <div className="space-y-1.5 xl:col-span-2">
               <Label>{t('cronPrompt')}</Label>
@@ -572,6 +593,7 @@ export default function CronPage() {
                     <div className="min-w-0">
                       <div className="break-words text-sm font-medium">{job.name}</div>
                       <div className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{job.id}</div>
+                      <OwnershipBadge resource={job} className="mt-2" showOwner />
                     </div>
                     <div className="inline-flex w-fit rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
                       {job.enabled ? t('on') : t('off')}

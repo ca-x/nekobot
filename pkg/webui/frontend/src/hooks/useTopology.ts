@@ -2,6 +2,7 @@ import { api } from '@/api/client';
 import { t } from '@/lib/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/notify';
+import type { ResourceVisibility } from '@/components/common/OwnershipBadge';
 
 export interface RuntimeDerivedStatus {
   effective_available: boolean;
@@ -24,6 +25,9 @@ export interface RuntimeAgent {
   skills: string[];
   tools: string[];
   policy: Record<string, unknown>;
+  tenant_id?: string;
+  owner_user_id?: string;
+  visibility?: ResourceVisibility;
   created_at: string;
   updated_at: string;
   status?: RuntimeDerivedStatus;
@@ -38,6 +42,9 @@ export interface ChannelAccount {
   enabled: boolean;
   config: Record<string, unknown>;
   metadata: Record<string, unknown>;
+  tenant_id?: string;
+  owner_user_id?: string;
+  visibility?: ResourceVisibility;
   created_at: string;
   updated_at: string;
 }
@@ -102,6 +109,7 @@ export interface RuntimeAgentInput {
   skills: string[];
   tools: string[];
   policy: Record<string, unknown>;
+  visibility?: ResourceVisibility;
 }
 
 export interface ChannelAccountInput {
@@ -112,6 +120,7 @@ export interface ChannelAccountInput {
   enabled: boolean;
   config: Record<string, unknown>;
   metadata: Record<string, unknown>;
+  visibility?: ResourceVisibility;
 }
 
 export interface AccountBindingInput {

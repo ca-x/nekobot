@@ -2,6 +2,7 @@ import { api } from '@/api/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/notify';
 import { t } from '@/lib/i18n';
+import type { ResourceVisibility } from '@/components/common/OwnershipBadge';
 
 export type CronScheduleKind = 'cron' | 'at' | 'every';
 
@@ -25,6 +26,9 @@ export interface CronJob {
   run_count: number;
   last_error: string;
   last_success: boolean;
+  tenant_id?: string;
+  owner_user_id?: string;
+  visibility?: ResourceVisibility;
 }
 
 export interface CreateCronJobInput {
@@ -39,6 +43,7 @@ export interface CreateCronJobInput {
   model?: string;
   fallback?: string[];
   delete_after_run?: boolean;
+  visibility?: ResourceVisibility;
 }
 
 const CRON_KEY = ['cron', 'jobs'] as const;

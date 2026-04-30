@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import Header from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { OwnershipBadge, normalizeVisibility, type ResourceVisibility } from '@/components/common/OwnershipBadge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -69,6 +70,7 @@ function emptyPromptDraft(): PromptInput {
     template: '',
     enabled: true,
     tags: [],
+    visibility: 'shared',
   };
 }
 
@@ -133,6 +135,7 @@ export default function PromptsPage() {
       template: next.template,
       enabled: next.enabled,
       tags: next.tags,
+      visibility: normalizeVisibility(next.visibility),
     });
     setTagsInput(next.tags.join(', '));
     setSelectedPromptID(next.id);
@@ -294,6 +297,7 @@ export default function PromptsPage() {
                           {t(item.mode === 'system' ? 'promptModeSystem' : 'promptModeUser')}
                         </span>
                       </div>
+                      <OwnershipBadge resource={item} className="mt-3" />
                       <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">
                         {item.description || item.template}
                       </p>
@@ -563,6 +567,30 @@ export default function PromptsPage() {
                     />
                   </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label>{t('resourceVisibility')}</Label>
+                  <Select
+                    value={draft.visibility ?? 'shared'}
+                    onValueChange={(value: ResourceVisibility) =>
+                      setDraft((current) => ({ ...current, visibility: value }))
+                    }
+                  >
+                    <SelectTrigger className="h-11 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="private">{t('visibilityPrivate')}</SelectItem>
+                      <SelectItem value="shared">{t('visibilityShared')}</SelectItem>
+                      {selectedPrompt?.visibility === 'system' ? (
+                        <SelectItem value="system">{t('visibilitySystem')}</SelectItem>
+                      ) : null}
+                    </SelectContent>
+                  </Select>
+                  <div className="text-xs leading-5 text-muted-foreground">{t('resourceVisibilityHint')}</div>
+                </div>
+
+                {selectedPrompt ? <OwnershipBadge resource={selectedPrompt} showOwner /> : null}
 
                 <div className="space-y-2">
                   <Label htmlFor="prompt-tags">{t('promptTags')}</Label>
