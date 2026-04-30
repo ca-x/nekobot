@@ -33,6 +33,9 @@ const (
 	DaemonControlService_GetThread_FullMethodName               = "/nekobot.daemon.v1.DaemonControlService/GetThread"
 	DaemonControlService_ReadMessages_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/ReadMessages"
 	DaemonControlService_SendMessage_FullMethodName             = "/nekobot.daemon.v1.DaemonControlService/SendMessage"
+	DaemonControlService_SaveMessage_FullMethodName             = "/nekobot.daemon.v1.DaemonControlService/SaveMessage"
+	DaemonControlService_UnsaveMessage_FullMethodName           = "/nekobot.daemon.v1.DaemonControlService/UnsaveMessage"
+	DaemonControlService_ListSavedMessages_FullMethodName       = "/nekobot.daemon.v1.DaemonControlService/ListSavedMessages"
 	DaemonControlService_FollowThread_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/FollowThread"
 	DaemonControlService_UnfollowThread_FullMethodName          = "/nekobot.daemon.v1.DaemonControlService/UnfollowThread"
 	DaemonControlService_CreateCollaborationTask_FullMethodName = "/nekobot.daemon.v1.DaemonControlService/CreateCollaborationTask"
@@ -81,6 +84,9 @@ type DaemonControlServiceClient interface {
 	GetThread(ctx context.Context, in *GetThreadRequest, opts ...grpc.CallOption) (*GetThreadResponse, error)
 	ReadMessages(ctx context.Context, in *ReadMessagesRequest, opts ...grpc.CallOption) (*ReadMessagesResponse, error)
 	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
+	SaveMessage(ctx context.Context, in *SaveMessageRequest, opts ...grpc.CallOption) (*SaveMessageResponse, error)
+	UnsaveMessage(ctx context.Context, in *UnsaveMessageRequest, opts ...grpc.CallOption) (*UnsaveMessageResponse, error)
+	ListSavedMessages(ctx context.Context, in *ListSavedMessagesRequest, opts ...grpc.CallOption) (*ListSavedMessagesResponse, error)
 	FollowThread(ctx context.Context, in *FollowThreadRequest, opts ...grpc.CallOption) (*FollowThreadResponse, error)
 	UnfollowThread(ctx context.Context, in *UnfollowThreadRequest, opts ...grpc.CallOption) (*UnfollowThreadResponse, error)
 	CreateCollaborationTask(ctx context.Context, in *CreateCollaborationTaskRequest, opts ...grpc.CallOption) (*CreateCollaborationTaskResponse, error)
@@ -253,6 +259,36 @@ func (c *daemonControlServiceClient) SendMessage(ctx context.Context, in *SendMe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SendMessageResponse)
 	err := c.cc.Invoke(ctx, DaemonControlService_SendMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) SaveMessage(ctx context.Context, in *SaveMessageRequest, opts ...grpc.CallOption) (*SaveMessageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveMessageResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_SaveMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) UnsaveMessage(ctx context.Context, in *UnsaveMessageRequest, opts ...grpc.CallOption) (*UnsaveMessageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnsaveMessageResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_UnsaveMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ListSavedMessages(ctx context.Context, in *ListSavedMessagesRequest, opts ...grpc.CallOption) (*ListSavedMessagesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSavedMessagesResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListSavedMessages_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -557,6 +593,9 @@ type DaemonControlServiceServer interface {
 	GetThread(context.Context, *GetThreadRequest) (*GetThreadResponse, error)
 	ReadMessages(context.Context, *ReadMessagesRequest) (*ReadMessagesResponse, error)
 	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
+	SaveMessage(context.Context, *SaveMessageRequest) (*SaveMessageResponse, error)
+	UnsaveMessage(context.Context, *UnsaveMessageRequest) (*UnsaveMessageResponse, error)
+	ListSavedMessages(context.Context, *ListSavedMessagesRequest) (*ListSavedMessagesResponse, error)
 	FollowThread(context.Context, *FollowThreadRequest) (*FollowThreadResponse, error)
 	UnfollowThread(context.Context, *UnfollowThreadRequest) (*UnfollowThreadResponse, error)
 	CreateCollaborationTask(context.Context, *CreateCollaborationTaskRequest) (*CreateCollaborationTaskResponse, error)
@@ -636,6 +675,15 @@ func (UnimplementedDaemonControlServiceServer) ReadMessages(context.Context, *Re
 }
 func (UnimplementedDaemonControlServiceServer) SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendMessage not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) SaveMessage(context.Context, *SaveMessageRequest) (*SaveMessageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SaveMessage not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) UnsaveMessage(context.Context, *UnsaveMessageRequest) (*UnsaveMessageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnsaveMessage not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListSavedMessages(context.Context, *ListSavedMessagesRequest) (*ListSavedMessagesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSavedMessages not implemented")
 }
 func (UnimplementedDaemonControlServiceServer) FollowThread(context.Context, *FollowThreadRequest) (*FollowThreadResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FollowThread not implemented")
@@ -990,6 +1038,60 @@ func _DaemonControlService_SendMessage_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DaemonControlServiceServer).SendMessage(ctx, req.(*SendMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_SaveMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).SaveMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_SaveMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).SaveMessage(ctx, req.(*SaveMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_UnsaveMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnsaveMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).UnsaveMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_UnsaveMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).UnsaveMessage(ctx, req.(*UnsaveMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ListSavedMessages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSavedMessagesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListSavedMessages(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListSavedMessages_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListSavedMessages(ctx, req.(*ListSavedMessagesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1560,6 +1662,18 @@ var DaemonControlService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendMessage",
 			Handler:    _DaemonControlService_SendMessage_Handler,
+		},
+		{
+			MethodName: "SaveMessage",
+			Handler:    _DaemonControlService_SaveMessage_Handler,
+		},
+		{
+			MethodName: "UnsaveMessage",
+			Handler:    _DaemonControlService_UnsaveMessage_Handler,
+		},
+		{
+			MethodName: "ListSavedMessages",
+			Handler:    _DaemonControlService_ListSavedMessages_Handler,
 		},
 		{
 			MethodName: "FollowThread",

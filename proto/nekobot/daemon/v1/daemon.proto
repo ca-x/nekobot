@@ -381,6 +381,54 @@ message SendMessageResponse {
   CollaborationMessage message = 2;
 }
 
+message SavedMessageRecord {
+  string saved_message_id = 1;
+  string target = 2;
+  string thread_id = 3;
+  string message_id = 4;
+  string saved_by_agent_id = 5;
+  string saved_by_user_id = 6;
+  int64 saved_time_unix = 7;
+  CollaborationMessage message = 8;
+}
+
+message SaveMessageRequest {
+  string target = 1;
+  string message_id = 2;
+  string saved_by_agent_id = 3;
+  string saved_by_user_id = 4;
+  string request_id = 5;
+}
+
+message SaveMessageResponse {
+  bool saved = 1;
+  SavedMessageRecord saved_message = 2;
+}
+
+message UnsaveMessageRequest {
+  string target = 1;
+  string message_id = 2;
+  string saved_by_agent_id = 3;
+  string saved_by_user_id = 4;
+  string request_id = 5;
+}
+
+message UnsaveMessageResponse {
+  bool removed = 1;
+  SavedMessageRecord saved_message = 2;
+}
+
+message ListSavedMessagesRequest {
+  string target = 1;
+  string saved_by_agent_id = 2;
+  string saved_by_user_id = 3;
+  uint32 limit = 4;
+}
+
+message ListSavedMessagesResponse {
+  repeated SavedMessageRecord saved_messages = 1;
+}
+
 message FollowThreadRequest {
   string target = 1;
   string agent_id = 2;
@@ -898,6 +946,9 @@ service DaemonControlService {
   rpc GetThread(GetThreadRequest) returns (GetThreadResponse);
   rpc ReadMessages(ReadMessagesRequest) returns (ReadMessagesResponse);
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc SaveMessage(SaveMessageRequest) returns (SaveMessageResponse);
+  rpc UnsaveMessage(UnsaveMessageRequest) returns (UnsaveMessageResponse);
+  rpc ListSavedMessages(ListSavedMessagesRequest) returns (ListSavedMessagesResponse);
   rpc FollowThread(FollowThreadRequest) returns (FollowThreadResponse);
   rpc UnfollowThread(UnfollowThreadRequest) returns (UnfollowThreadResponse);
   rpc CreateCollaborationTask(CreateCollaborationTaskRequest) returns (CreateCollaborationTaskResponse);

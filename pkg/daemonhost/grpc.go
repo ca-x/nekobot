@@ -32,6 +32,9 @@ type CollaborationService interface {
 	GetThread(context.Context, *daemonv1.GetThreadRequest) (*daemonv1.GetThreadResponse, error)
 	ReadMessages(context.Context, *daemonv1.ReadMessagesRequest) (*daemonv1.ReadMessagesResponse, error)
 	SendMessage(context.Context, *daemonv1.SendMessageRequest) (*daemonv1.SendMessageResponse, error)
+	SaveMessage(context.Context, *daemonv1.SaveMessageRequest) (*daemonv1.SaveMessageResponse, error)
+	UnsaveMessage(context.Context, *daemonv1.UnsaveMessageRequest) (*daemonv1.UnsaveMessageResponse, error)
+	ListSavedMessages(context.Context, *daemonv1.ListSavedMessagesRequest) (*daemonv1.ListSavedMessagesResponse, error)
 	FollowThread(context.Context, *daemonv1.FollowThreadRequest) (*daemonv1.FollowThreadResponse, error)
 	UnfollowThread(context.Context, *daemonv1.UnfollowThreadRequest) (*daemonv1.UnfollowThreadResponse, error)
 	CreateCollaborationTask(context.Context, *daemonv1.CreateCollaborationTaskRequest) (*daemonv1.CreateCollaborationTaskResponse, error)
@@ -176,6 +179,27 @@ func (s *GRPCService) SendMessage(ctx context.Context, req *daemonv1.SendMessage
 		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
 	}
 	return s.Collaboration.SendMessage(ctx, req)
+}
+
+func (s *GRPCService) SaveMessage(ctx context.Context, req *daemonv1.SaveMessageRequest) (*daemonv1.SaveMessageResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.SaveMessage(ctx, req)
+}
+
+func (s *GRPCService) UnsaveMessage(ctx context.Context, req *daemonv1.UnsaveMessageRequest) (*daemonv1.UnsaveMessageResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.UnsaveMessage(ctx, req)
+}
+
+func (s *GRPCService) ListSavedMessages(ctx context.Context, req *daemonv1.ListSavedMessagesRequest) (*daemonv1.ListSavedMessagesResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.ListSavedMessages(ctx, req)
 }
 
 func (s *GRPCService) FollowThread(ctx context.Context, req *daemonv1.FollowThreadRequest) (*daemonv1.FollowThreadResponse, error) {

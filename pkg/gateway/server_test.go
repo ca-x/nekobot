@@ -811,6 +811,114 @@ func TestDaemonCollaborationAttachments(t *testing.T) {
 	}
 }
 
+func TestDaemonCollaborationSavedMessages(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Sessions.Sources.Gateway = true
+	log, err := logger.New(&logger.Config{Level: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	entClient, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = entClient.Close() })
+	if err := config.EnsureRuntimeEntSchema(entClient); err != nil {
+		t.Fatalf("ensure ent schema: %v", err)
+	}
+	eventMgr, err := eventlog.NewManager(entClient)
+	if err != nil {
+		t.Fatalf("new event manager: %v", err)
+	}
+	s := &Server{
+		config:           cfg,
+		logger:           log,
+		sessionMgr:       session.NewManager(t.TempDir(), cfg.Sessions),
+		kvStore:          store,
+		eventMgr:         eventMgr,
+		idempotencyStore: idempotency.NewStore(entClient),
+	}
+
+	send, err := s.SendMessage(context.Background(), &daemonv1.SendMessageRequest{
+		Target:        "#websocket:saved-messages",
+		Content:       "remember this",
+		SenderAgentId: "runtime-a",
+		RequestId:     "saved-send-1",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+	save, err := s.SaveMessage(context.Background(), &daemonv1.SaveMessageRequest{
+		Target:         "#websocket:saved-messages",
+		MessageId:      send.Message.GetMessageId(),
+		SavedByAgentId: "runtime-a",
+		RequestId:      "save-message-1",
+	})
+	if err != nil {
+		t.Fatalf("SaveMessage failed: %v", err)
+	}
+	if !save.GetSaved() || save.GetSavedMessage().GetMessage().GetContent() != "remember this" {
+		t.Fatalf("unexpected saved message: %+v", save)
+	}
+	saveReplay, err := s.SaveMessage(context.Background(), &daemonv1.SaveMessageRequest{
+		Target:         "#websocket:saved-messages",
+		MessageId:      send.Message.GetMessageId(),
+		SavedByAgentId: "runtime-a",
+		RequestId:      "save-message-1",
+	})
+	if err != nil {
+		t.Fatalf("SaveMessage replay failed: %v", err)
+	}
+	if saveReplay.GetSavedMessage().GetSavedMessageId() != save.GetSavedMessage().GetSavedMessageId() {
+		t.Fatalf("expected saved replay %q, got %q", save.GetSavedMessage().GetSavedMessageId(), saveReplay.GetSavedMessage().GetSavedMessageId())
+	}
+	list, err := s.ListSavedMessages(context.Background(), &daemonv1.ListSavedMessagesRequest{SavedByAgentId: "runtime-a", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListSavedMessages failed: %v", err)
+	}
+	if len(list.GetSavedMessages()) != 1 || list.GetSavedMessages()[0].GetMessageId() != send.Message.GetMessageId() {
+		t.Fatalf("unexpected saved messages: %+v", list.GetSavedMessages())
+	}
+	unsave, err := s.UnsaveMessage(context.Background(), &daemonv1.UnsaveMessageRequest{
+		Target:         "#websocket:saved-messages",
+		MessageId:      send.Message.GetMessageId(),
+		SavedByAgentId: "runtime-a",
+		RequestId:      "unsave-message-1",
+	})
+	if err != nil {
+		t.Fatalf("UnsaveMessage failed: %v", err)
+	}
+	if !unsave.GetRemoved() || unsave.GetSavedMessage().GetSavedMessageId() != save.GetSavedMessage().GetSavedMessageId() {
+		t.Fatalf("unexpected unsave response: %+v", unsave)
+	}
+	list, err = s.ListSavedMessages(context.Background(), &daemonv1.ListSavedMessagesRequest{SavedByAgentId: "runtime-a", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListSavedMessages after unsave failed: %v", err)
+	}
+	if len(list.GetSavedMessages()) != 0 {
+		t.Fatalf("expected no active saved messages, got %+v", list.GetSavedMessages())
+	}
+	events, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince saved messages failed: %v", err)
+	}
+	if len(events.Events) != 3 {
+		t.Fatalf("expected message.created + saved + unsaved events, got %+v", events.Events)
+	}
+	if events.Events[1].GetKind() != "message.saved" || events.Events[1].GetMessageId() != send.Message.GetMessageId() {
+		t.Fatalf("unexpected saved event: %+v", events.Events[1])
+	}
+	if events.Events[2].GetKind() != "message.unsaved" || events.Events[2].GetMessageId() != send.Message.GetMessageId() {
+		t.Fatalf("unexpected unsaved event: %+v", events.Events[2])
+	}
+}
+
 func assertSecretEnvRedacted(t *testing.T, items []*daemonv1.EnvVar, name, rawValue string) {
 	t.Helper()
 	for _, item := range items {
@@ -3513,6 +3621,37 @@ func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 	}
 	if len(readResp.Messages) != 1 || readResp.Messages[0].Content != "hello from daemon" {
 		t.Fatalf("unexpected messages: %+v", readResp.Messages)
+	}
+	saveResp, err := client.SaveMessageRemote(&daemonv1.SaveMessageRequest{
+		Target:         "#websocket:grpc-thread",
+		MessageId:      sendResp.Message.GetMessageId(),
+		SavedByAgentId: "runtime-a",
+		RequestId:      "grpc-save-message",
+	})
+	if err != nil {
+		t.Fatalf("SaveMessageRemote failed: %v", err)
+	}
+	if !saveResp.GetSaved() || saveResp.GetSavedMessage().GetMessageId() != sendResp.Message.GetMessageId() {
+		t.Fatalf("unexpected grpc saved message: %+v", saveResp)
+	}
+	savedResp, err := client.ListSavedMessagesRemote(&daemonv1.ListSavedMessagesRequest{Target: "#websocket:grpc-thread", SavedByAgentId: "runtime-a", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListSavedMessagesRemote failed: %v", err)
+	}
+	if len(savedResp.GetSavedMessages()) != 1 {
+		t.Fatalf("unexpected grpc saved messages: %+v", savedResp.GetSavedMessages())
+	}
+	unsaveResp, err := client.UnsaveMessageRemote(&daemonv1.UnsaveMessageRequest{
+		Target:         "#websocket:grpc-thread",
+		MessageId:      sendResp.Message.GetMessageId(),
+		SavedByAgentId: "runtime-a",
+		RequestId:      "grpc-unsave-message",
+	})
+	if err != nil {
+		t.Fatalf("UnsaveMessageRemote failed: %v", err)
+	}
+	if !unsaveResp.GetRemoved() {
+		t.Fatalf("unexpected grpc unsave response: %+v", unsaveResp)
 	}
 	if _, err := client.FollowThreadRemote(&daemonv1.FollowThreadRequest{Target: "#websocket:grpc-thread", AgentId: "runtime-a"}); err != nil {
 		t.Fatalf("FollowThreadRemote failed: %v", err)

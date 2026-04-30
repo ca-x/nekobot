@@ -215,6 +215,17 @@ func NewServer(
 	return s
 }
 
+// NewCollaborationFacade exposes collaboration RPC handlers for callers that
+// share the gateway persistence primitives but do not run a full gateway server.
+func NewCollaborationFacade(sessionMgr *session.Manager, kvStore state.KV, eventMgr *eventlog.Manager, idemStore *idempotency.Store) *Server {
+	return &Server{
+		sessionMgr:       sessionMgr,
+		kvStore:          kvStore,
+		eventMgr:         eventMgr,
+		idempotencyStore: idemStore,
+	}
+}
+
 func (s *Server) setupGRPC() {
 	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(s.grpcAuthUnaryInterceptor))
 	service := daemonhost.NewGRPCService(

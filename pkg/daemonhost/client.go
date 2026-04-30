@@ -189,6 +189,30 @@ func (c *Client) SendMessageRemote(req *daemonv1.SendMessageRequest) (*daemonv1.
 	}
 	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
 }
+func (c *Client) SaveMessageRemote(req *daemonv1.SaveMessageRequest) (*daemonv1.SaveMessageResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.SaveMessage(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) UnsaveMessageRemote(req *daemonv1.UnsaveMessageRequest) (*daemonv1.UnsaveMessageResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.UnsaveMessage(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ListSavedMessagesRemote(req *daemonv1.ListSavedMessagesRequest) (*daemonv1.ListSavedMessagesResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.ListSavedMessages(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
 func (c *Client) FollowThreadRemote(req *daemonv1.FollowThreadRequest) (*daemonv1.FollowThreadResponse, error) {
 	if c.grpcClient != nil {
 		ctx, cancel := c.rpcContext()

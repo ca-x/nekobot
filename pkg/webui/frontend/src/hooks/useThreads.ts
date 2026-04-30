@@ -1,10 +1,11 @@
-import { api } from '@/api/client';
+import { api, apiFetch } from '@/api/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/notify';
 import { t } from '@/lib/i18n';
 
 export interface ThreadSummary {
   id: string;
+  target?: string;
   created_at: string;
   updated_at: string;
   summary: string;
@@ -30,10 +31,28 @@ export interface ThreadDetail extends ThreadSummary {
   }>;
 }
 
+export interface SavedMessageRecord {
+  saved_message_id: string;
+  target: string;
+  thread_id: string;
+  message_id: string;
+  saved_by_user_id?: string;
+  saved_by_agent_id?: string;
+  saved_time_unix: number;
+  message?: {
+    message_id: string;
+    target: string;
+    thread_id: string;
+    role: string;
+    content: string;
+  };
+}
+
 export const threadKeys = {
   all: ['threads'] as const,
   list: () => [...threadKeys.all, 'list'] as const,
   detail: (id: string) => [...threadKeys.all, 'detail', id] as const,
+  saved: (target?: string) => [...threadKeys.all, 'saved', target ?? ''] as const,
 };
 
 export function useThreads() {
@@ -68,5 +87,42 @@ export function useUpdateThread() {
       toast.success(t('threadSaved'));
     },
     onError: (err) => toast.error(err.message || t('threadSaveFailed')),
+  });
+}
+
+export function useSavedMessages(target?: string | null) {
+  return useQuery<{ saved_messages?: SavedMessageRecord[] }>({
+    queryKey: threadKeys.saved(target ?? ''),
+    queryFn: () => api.get(`/api/daemon/saved-messages${target ? `?target=${encodeURIComponent(target)}` : ''}`),
+    staleTime: 5_000,
+  });
+}
+
+export function useSaveMessage() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, { target: string; message_id: string; request_id: string }>({
+    mutationFn: ({ target, message_id, request_id }) =>
+      api.post(`/api/daemon/messages/${encodeURIComponent(message_id)}/save`, { target, request_id }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: threadKeys.saved(vars.target) });
+      toast.success(t('messageSaved'));
+    },
+    onError: (err) => toast.error(err.message || t('messageSaveFailed')),
+  });
+}
+
+export function useUnsaveMessage() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, { target: string; message_id: string; request_id: string }>({
+    mutationFn: ({ target, message_id, request_id }) =>
+      apiFetch(`/api/daemon/messages/${encodeURIComponent(message_id)}/save`, {
+        method: 'DELETE',
+        body: JSON.stringify({ target, request_id }),
+      }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: threadKeys.saved(vars.target) });
+      toast.success(t('messageUnsaved'));
+    },
+    onError: (err) => toast.error(err.message || t('messageUnsaveFailed')),
   });
 }

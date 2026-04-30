@@ -41,6 +41,7 @@ const (
 	daemonActivityStoreKey = "daemon.collaboration.activity.v1"
 	daemonAttachmentKey    = "daemon.collaboration.attachments.v1"
 	daemonAgentStatusKey   = "daemon.collaboration.agent_status.v1"
+	daemonSavedMessageKey  = "daemon.collaboration.saved_messages.v1"
 
 	maxDaemonAttachmentBytes = 32 << 20
 )
@@ -48,6 +49,11 @@ const (
 type storedAttachment struct {
 	Record        *daemonv1.AttachmentRecord `json:"record"`
 	ContentBase64 string                     `json:"content_base64"`
+}
+
+type storedSavedMessage struct {
+	Record *daemonv1.SavedMessageRecord `json:"record"`
+	Active bool                         `json:"active"`
 }
 
 // LoadCollaborationAttachment returns a stored collaboration attachment record and content.
@@ -323,6 +329,253 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 		}
 	}
 	return resp, nil
+}
+
+func (s *Server) SaveMessage(ctx context.Context, req *daemonv1.SaveMessageRequest) (*daemonv1.SaveMessageResponse, error) {
+	if s == nil || s.sessionMgr == nil || s.kvStore == nil {
+		return nil, fmt.Errorf("saved message store unavailable")
+	}
+	target, err := daemonhost.ValidateCollaborationTarget(req.GetTarget())
+	if err != nil {
+		return nil, err
+	}
+	messageID := strings.TrimSpace(req.GetMessageId())
+	if messageID == "" {
+		return nil, fmt.Errorf("message_id is required")
+	}
+	actorID, actorKind, err := savedMessageActor(req.GetSavedByAgentId(), req.GetSavedByUserId())
+	if err != nil {
+		return nil, err
+	}
+	reqID := strings.TrimSpace(req.GetRequestId())
+	idemKey := idempotency.Key{CallerKind: actorKind, CallerID: actorID, Method: "SaveMessage", RequestID: reqID}
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"target", target,
+			"message_id", messageID,
+			"saved_by_agent_id", strings.TrimSpace(req.GetSavedByAgentId()),
+			"saved_by_user_id", strings.TrimSpace(req.GetSavedByUserId()),
+		)
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 7*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replaySaveMessage(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+	}
+	idemReserved := reqID != "" && s.idempotencyStore != nil
+	messageRecord, err := s.findCollaborationMessage(ctx, target, messageID)
+	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	items, err := s.savedMessageStore(ctx)
+	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	key := savedMessageKey(target, messageID, req.GetSavedByAgentId(), req.GetSavedByUserId())
+	now := time.Now().Unix()
+	record := &daemonv1.SavedMessageRecord{
+		SavedMessageId: firstNonEmpty(items[key].Record.GetSavedMessageId(), "saved-"+uuid.NewString()),
+		Target:         target,
+		ThreadId:       messageRecord.GetThreadId(),
+		MessageId:      messageID,
+		SavedByAgentId: strings.TrimSpace(req.GetSavedByAgentId()),
+		SavedByUserId:  strings.TrimSpace(req.GetSavedByUserId()),
+		SavedTimeUnix:  now,
+		Message:        messageRecord,
+	}
+	if existing := items[key].Record; existing != nil && items[key].Active {
+		record = existing
+	}
+	items[key] = storedSavedMessage{Record: record, Active: true}
+	if err := s.setSavedMessageStore(ctx, items); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	eventID := ""
+	if event, err := s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+		EventType:      "message.saved",
+		Target:         target,
+		ThreadID:       record.GetThreadId(),
+		ActorKind:      actorKind,
+		ActorID:        actorID,
+		SubjectKind:    "message",
+		SubjectID:      messageID,
+		IdempotencyKey: reqID,
+		PayloadJSON:    mustMarshalJSON(record),
+		CapabilityKeys: []string{"message.save"},
+	}); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	} else if event != nil {
+		eventID = event.EventID
+	}
+	resp := &daemonv1.SaveMessageResponse{Saved: true, SavedMessage: record}
+	if idemReserved {
+		_ = completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:SaveMessageResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "saved_message",
+			ResourceID:   record.GetSavedMessageId(),
+			EventID:      eventID,
+		})
+	}
+	return resp, nil
+}
+
+func (s *Server) UnsaveMessage(ctx context.Context, req *daemonv1.UnsaveMessageRequest) (*daemonv1.UnsaveMessageResponse, error) {
+	if s == nil || s.kvStore == nil {
+		return nil, fmt.Errorf("saved message store unavailable")
+	}
+	target, err := daemonhost.ValidateCollaborationTarget(req.GetTarget())
+	if err != nil {
+		return nil, err
+	}
+	messageID := strings.TrimSpace(req.GetMessageId())
+	if messageID == "" {
+		return nil, fmt.Errorf("message_id is required")
+	}
+	actorID, actorKind, err := savedMessageActor(req.GetSavedByAgentId(), req.GetSavedByUserId())
+	if err != nil {
+		return nil, err
+	}
+	reqID := strings.TrimSpace(req.GetRequestId())
+	idemKey := idempotency.Key{CallerKind: actorKind, CallerID: actorID, Method: "UnsaveMessage", RequestID: reqID}
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"target", target,
+			"message_id", messageID,
+			"saved_by_agent_id", strings.TrimSpace(req.GetSavedByAgentId()),
+			"saved_by_user_id", strings.TrimSpace(req.GetSavedByUserId()),
+		)
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 7*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replayUnsaveMessage(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+	}
+	idemReserved := reqID != "" && s.idempotencyStore != nil
+	items, err := s.savedMessageStore(ctx)
+	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	key := savedMessageKey(target, messageID, req.GetSavedByAgentId(), req.GetSavedByUserId())
+	item := items[key]
+	if item.Record != nil {
+		item.Active = false
+		items[key] = item
+	}
+	if err := s.setSavedMessageStore(ctx, items); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	eventID := ""
+	if item.Record != nil {
+		if event, err := s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+			EventType:      "message.unsaved",
+			Target:         target,
+			ThreadID:       item.Record.GetThreadId(),
+			ActorKind:      actorKind,
+			ActorID:        actorID,
+			SubjectKind:    "message",
+			SubjectID:      messageID,
+			IdempotencyKey: reqID,
+			PayloadJSON:    mustMarshalJSON(item.Record),
+			CapabilityKeys: []string{"message.unsave"},
+		}); err != nil {
+			if idemReserved {
+				failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+			}
+			return nil, err
+		} else if event != nil {
+			eventID = event.EventID
+		}
+	}
+	resp := &daemonv1.UnsaveMessageResponse{Removed: item.Record != nil, SavedMessage: item.Record}
+	if idemReserved {
+		_ = completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:UnsaveMessageResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "saved_message",
+			ResourceID:   firstNonEmpty(item.Record.GetSavedMessageId(), key),
+			EventID:      eventID,
+		})
+	}
+	return resp, nil
+}
+
+func (s *Server) ListSavedMessages(ctx context.Context, req *daemonv1.ListSavedMessagesRequest) (*daemonv1.ListSavedMessagesResponse, error) {
+	if s == nil || s.kvStore == nil {
+		return nil, fmt.Errorf("saved message store unavailable")
+	}
+	target := strings.TrimSpace(req.GetTarget())
+	if target != "" {
+		var err error
+		target, err = daemonhost.ValidateCollaborationTarget(target)
+		if err != nil {
+			return nil, err
+		}
+	}
+	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
+	items, err := s.savedMessageStore(ctx)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]*daemonv1.SavedMessageRecord, 0, len(items))
+	for _, item := range items {
+		record := item.Record
+		if !item.Active || record == nil {
+			continue
+		}
+		if target != "" && record.GetTarget() != target {
+			continue
+		}
+		if agentID := strings.TrimSpace(req.GetSavedByAgentId()); agentID != "" && record.GetSavedByAgentId() != agentID {
+			continue
+		}
+		if userID := strings.TrimSpace(req.GetSavedByUserId()); userID != "" && record.GetSavedByUserId() != userID {
+			continue
+		}
+		records = append(records, record)
+	}
+	sort.SliceStable(records, func(i, j int) bool {
+		if records[i].GetSavedTimeUnix() == records[j].GetSavedTimeUnix() {
+			return records[i].GetSavedMessageId() < records[j].GetSavedMessageId()
+		}
+		return records[i].GetSavedTimeUnix() > records[j].GetSavedTimeUnix()
+	})
+	if len(records) > limit {
+		records = records[:limit]
+	}
+	return &daemonv1.ListSavedMessagesResponse{SavedMessages: records}, nil
 }
 
 func (s *Server) FollowThread(ctx context.Context, req *daemonv1.FollowThreadRequest) (*daemonv1.FollowThreadResponse, error) {
@@ -2651,6 +2904,80 @@ func (s *Server) threadRecord(ctx context.Context, sessionID string, followed ma
 	}, nil
 }
 
+func (s *Server) findCollaborationMessage(ctx context.Context, target, messageID string) (*daemonv1.CollaborationMessage, error) {
+	sessionID, err := collaborationSessionID(target)
+	if err != nil {
+		return nil, err
+	}
+	sess, err := s.sessionMgr.GetExisting(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("load thread %s: %w", sessionID, err)
+	}
+	messages := sess.GetMessages()
+	for i, msg := range messages {
+		protoMsg := sessionMessageToProto(target, sessionID, i, msg, sess.GetUpdatedAt())
+		if protoMsg.GetMessageId() == messageID {
+			return protoMsg, nil
+		}
+	}
+	return nil, fmt.Errorf("message not found: %s", messageID)
+}
+
+func (s *Server) savedMessageStore(ctx context.Context) (map[string]storedSavedMessage, error) {
+	if s == nil || s.kvStore == nil {
+		return nil, fmt.Errorf("saved message store unavailable")
+	}
+	value, ok, err := s.kvStore.Get(ctx, daemonSavedMessageKey)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return map[string]storedSavedMessage{}, nil
+	}
+	items := map[string]storedSavedMessage{}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(payload, &items); err != nil {
+		return nil, err
+	}
+	if items == nil {
+		items = map[string]storedSavedMessage{}
+	}
+	return items, nil
+}
+
+func (s *Server) setSavedMessageStore(ctx context.Context, items map[string]storedSavedMessage) error {
+	if s == nil || s.kvStore == nil {
+		return fmt.Errorf("saved message store unavailable")
+	}
+	if items == nil {
+		items = map[string]storedSavedMessage{}
+	}
+	return s.kvStore.Set(ctx, daemonSavedMessageKey, items)
+}
+
+func savedMessageActor(agentID, userID string) (string, string, error) {
+	agentID = strings.TrimSpace(agentID)
+	userID = strings.TrimSpace(userID)
+	switch {
+	case agentID != "" && userID != "":
+		return "", "", fmt.Errorf("only one of saved_by_agent_id or saved_by_user_id may be set")
+	case agentID != "":
+		return agentID, "agent", nil
+	case userID != "":
+		return userID, "user", nil
+	default:
+		return "", "", fmt.Errorf("saved_by_agent_id or saved_by_user_id is required")
+	}
+}
+
+func savedMessageKey(target, messageID, agentID, userID string) string {
+	actorID, actorKind, _ := savedMessageActor(agentID, userID)
+	return strings.Join([]string{actorKind, actorID, strings.TrimSpace(target), strings.TrimSpace(messageID)}, "\x00")
+}
+
 func (s *Server) followedThreadSet(ctx context.Context) map[string]struct{} {
 	result := map[string]struct{}{}
 	if s == nil || s.kvStore == nil {
@@ -2930,6 +3257,32 @@ func replayUploadAttachment(rec *idempotency.Record) (*daemonv1.UploadAttachment
 	}
 	if rec != nil && rec.ResponseJSON != "" {
 		var resp daemonv1.UploadAttachmentResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return nil, fmt.Errorf("idempotency record missing response data")
+}
+
+func replaySaveMessage(rec *idempotency.Record) (*daemonv1.SaveMessageResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.SaveMessageResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return nil, fmt.Errorf("idempotency record missing response data")
+}
+
+func replayUnsaveMessage(rec *idempotency.Record) (*daemonv1.UnsaveMessageResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.UnsaveMessageResponse
 		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
 			return &resp, nil
 		}

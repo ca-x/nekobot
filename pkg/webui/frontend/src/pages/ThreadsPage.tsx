@@ -9,8 +9,8 @@ import { t } from '@/lib/i18n';
 import { toast } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { useRuntimeAgents } from '@/hooks/useTopology';
-import { useThreadDetail, useThreads, useUpdateThread } from '@/hooks/useThreads';
-import { Save, MessageSquare, Paperclip } from 'lucide-react';
+import { useSaveMessage, useSavedMessages, useThreadDetail, useThreads, useUnsaveMessage, useUpdateThread } from '@/hooks/useThreads';
+import { Bookmark, Save, MessageSquare, Paperclip } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 function formatDateTime(value: string): string {
@@ -49,6 +49,11 @@ export default function ThreadsPage() {
   }, [selectedId, sortedThreads]);
 
   const { data: detail } = useThreadDetail(selectedId || null);
+  const detailTarget = detail?.target || (detail?.id ? `#websocket:${detail.id}` : '');
+  const { data: savedMessages } = useSavedMessages(detailTarget || null);
+  const saveMessage = useSaveMessage();
+  const unsaveMessage = useUnsaveMessage();
+  const savedMessageIds = useMemo(() => new Set((savedMessages?.saved_messages ?? []).map((item) => item.message_id)), [savedMessages]);
 
   useEffect(() => {
     if (!detail) return;
@@ -89,6 +94,16 @@ export default function ThreadsPage() {
     link.download = filename || attachmentId;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
+  const handleToggleSavedMessage = (messageId: string, saved: boolean) => {
+    if (!detailTarget || !messageId) return;
+    const request_id = `webui-save-${messageId}-${Date.now()}`;
+    if (saved) {
+      unsaveMessage.mutate({ target: detailTarget, message_id: messageId, request_id });
+    } else {
+      saveMessage.mutate({ target: detailTarget, message_id: messageId, request_id });
+    }
   };
 
   return (
@@ -216,6 +231,19 @@ export default function ThreadsPage() {
                         <div key={`${msg.tool_call_id || 'msg'}-${idx}`} className="rounded-md border p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                             <span className="text-xs uppercase tracking-wide text-muted-foreground">{msg.role || '-'}</span>
+                            {msg.id ? (
+                              <Button
+                                type="button"
+                                variant={savedMessageIds.has(msg.id) ? 'default' : 'outline'}
+                                size="sm"
+                                className="h-8 gap-1.5"
+                                disabled={saveMessage.isPending || unsaveMessage.isPending}
+                                onClick={() => handleToggleSavedMessage(msg.id!, savedMessageIds.has(msg.id!))}
+                              >
+                                <Bookmark className="h-3.5 w-3.5" />
+                                {savedMessageIds.has(msg.id) ? t('messageSaved') : t('saveMessage')}
+                              </Button>
+                            ) : null}
                           </div>
                           <pre className="text-sm whitespace-pre-wrap break-words font-sans">{msg.content || ''}</pre>
                           {msg.attachments && msg.attachments.length > 0 ? (

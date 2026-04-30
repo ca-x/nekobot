@@ -48,11 +48,13 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/daemonhost"
+	eventlog "nekobot/pkg/events"
 	"nekobot/pkg/execenv"
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/gateway"
 	"nekobot/pkg/goaldriven"
 	goalcriteria "nekobot/pkg/goaldriven/criteria"
+	"nekobot/pkg/idempotency"
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
@@ -539,6 +541,9 @@ func (s *Server) setup() {
 	api.POST("/daemon/explorer/file", s.handleDaemonExplorerFile)
 	api.POST("/daemon/agents/:agent_id/message", s.handleSendAgentDirectMessage)
 	api.GET("/daemon/attachments/:attachment_id", s.handleGetDaemonAttachment)
+	api.GET("/daemon/saved-messages", s.handleListDaemonSavedMessages)
+	api.POST("/daemon/messages/:message_id/save", s.handleSaveDaemonMessage)
+	api.DELETE("/daemon/messages/:message_id/save", s.handleUnsaveDaemonMessage)
 	api.GET("/goal-runs", s.handleListGoalRuns)
 	api.POST("/goal-runs", s.handleCreateGoalRun)
 	api.GET("/goal-runs/:id", s.handleGetGoalRun)
@@ -2811,6 +2816,90 @@ func (s *Server) handleGetDaemonAttachment(c *echo.Context) error {
 		c.Response().Header().Set(echo.HeaderContentDisposition, fmt.Sprintf("inline; filename=%q", filename))
 	}
 	return c.Blob(http.StatusOK, mimeType, content)
+}
+
+func (s *Server) collaborationFacade() *gateway.Server {
+	var eventMgr *eventlog.Manager
+	var idemStore *idempotency.Store
+	if s.entClient != nil {
+		if mgr, err := eventlog.NewManager(s.entClient); err == nil {
+			eventMgr = mgr
+		}
+		idemStore = idempotency.NewStore(s.entClient)
+	}
+	return gateway.NewCollaborationFacade(s.sessionMgr, s.kvStore, eventMgr, idemStore)
+}
+
+func (s *Server) handleSaveDaemonMessage(c *echo.Context) error {
+	messageID := strings.TrimSpace(c.Param("message_id"))
+	if messageID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "message_id is required"})
+	}
+	var body struct {
+		Target    string `json:"target"`
+		RequestID string `json:"request_id"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	userID := firstNonEmptyString(s.currentUserID(c), s.currentUsername(c))
+	if strings.TrimSpace(userID) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "user identity is required"})
+	}
+	resp, err := s.collaborationFacade().SaveMessage(c.Request().Context(), &daemonv1.SaveMessageRequest{
+		Target:        strings.TrimSpace(body.Target),
+		MessageId:     messageID,
+		SavedByUserId: userID,
+		RequestId:     strings.TrimSpace(body.RequestID),
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleUnsaveDaemonMessage(c *echo.Context) error {
+	messageID := strings.TrimSpace(c.Param("message_id"))
+	if messageID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "message_id is required"})
+	}
+	var body struct {
+		Target    string `json:"target"`
+		RequestID string `json:"request_id"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	userID := firstNonEmptyString(s.currentUserID(c), s.currentUsername(c))
+	if strings.TrimSpace(userID) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "user identity is required"})
+	}
+	resp, err := s.collaborationFacade().UnsaveMessage(c.Request().Context(), &daemonv1.UnsaveMessageRequest{
+		Target:        strings.TrimSpace(body.Target),
+		MessageId:     messageID,
+		SavedByUserId: userID,
+		RequestId:     strings.TrimSpace(body.RequestID),
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleListDaemonSavedMessages(c *echo.Context) error {
+	userID := firstNonEmptyString(s.currentUserID(c), s.currentUsername(c))
+	if strings.TrimSpace(userID) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "user identity is required"})
+	}
+	resp, err := s.collaborationFacade().ListSavedMessages(c.Request().Context(), &daemonv1.ListSavedMessagesRequest{
+		Target:        strings.TrimSpace(c.QueryParam("target")),
+		SavedByUserId: userID,
+		Limit:         200,
+	})
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (s *Server) handleListGoalRuns(c *echo.Context) error {
@@ -6609,6 +6698,7 @@ type sessionDetailResponse struct {
 
 type threadSummaryResponse struct {
 	ID           string    `json:"id"`
+	Target       string    `json:"target"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 	Summary      string    `json:"summary"`
@@ -6619,6 +6709,7 @@ type threadSummaryResponse struct {
 
 type threadDetailResponse struct {
 	ID           string                   `json:"id"`
+	Target       string                   `json:"target"`
 	CreatedAt    time.Time                `json:"created_at"`
 	UpdatedAt    time.Time                `json:"updated_at"`
 	Summary      string                   `json:"summary"`
@@ -6663,6 +6754,26 @@ func buildSessionAttachmentResponses(items []message.Attachment) []sessionAttach
 		})
 	}
 	return out
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func sessionTarget(sessionID string) string {
+	sessionID = strings.TrimSpace(sessionID)
+	if strings.HasPrefix(sessionID, "dm_@") {
+		return "dm:" + strings.TrimPrefix(sessionID, "dm_")
+	}
+	if sessionID == "" {
+		return ""
+	}
+	return "#websocket:" + sessionID
 }
 
 func (s *Server) handleListSessions(c *echo.Context) error {
@@ -6904,6 +7015,7 @@ func (s *Server) handleListThreads(c *echo.Context) error {
 		messages := sess.GetMessages()
 		items = append(items, threadSummaryResponse{
 			ID:           sess.GetID(),
+			Target:       sessionTarget(sess.GetID()),
 			CreatedAt:    sess.GetCreatedAt(),
 			UpdatedAt:    sess.GetUpdatedAt(),
 			Summary:      sess.GetSummary(),
@@ -6941,6 +7053,7 @@ func (s *Server) handleGetThread(c *echo.Context) error {
 	messages := sess.GetMessages()
 	return c.JSON(http.StatusOK, threadDetailResponse{
 		ID:           sess.GetID(),
+		Target:       sessionTarget(sess.GetID()),
 		CreatedAt:    sess.GetCreatedAt(),
 		UpdatedAt:    sess.GetUpdatedAt(),
 		Summary:      sess.GetSummary(),
