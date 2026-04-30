@@ -360,6 +360,7 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if envResp.Profile.GetAgentId() != runtimeItem.ID || len(envResp.Profile.Env) != 2 {
 		t.Fatalf("unexpected env profile: %+v", envResp.Profile)
 	}
+	assertSecretEnvRedacted(t, envResp.Profile.Env, "TOKEN", "secret")
 	foundSkill := false
 	for _, skill := range envResp.Profile.Skills {
 		if skill.GetId() == "review" {
@@ -377,6 +378,15 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if len(info.Agents) != 1 || info.Agents[0].GetAgentId() != runtimeItem.ID {
 		t.Fatalf("unexpected server info agents: %+v", info.Agents)
 	}
+	assertSecretEnvRedacted(t, info.Agents[0].Env, "TOKEN", "secret")
+	profiles, err := s.ListAgentProfiles(context.Background(), &daemonv1.ListAgentProfilesRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAgentProfiles failed: %v", err)
+	}
+	if len(profiles.Profiles) != 1 || profiles.Profiles[0].GetAgentId() != runtimeItem.ID {
+		t.Fatalf("unexpected profiles: %+v", profiles.Profiles)
+	}
+	assertSecretEnvRedacted(t, profiles.Profiles[0].Env, "TOKEN", "secret")
 
 	activity, err := s.LogActivity(context.Background(), &daemonv1.LogActivityRequest{
 		Target:  "#websocket:thread-a",
@@ -397,6 +407,23 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if len(list.Activities) != 1 || list.Activities[0].GetSummary() != "reviewed proto" {
 		t.Fatalf("unexpected activities: %+v", list.Activities)
 	}
+}
+
+func assertSecretEnvRedacted(t *testing.T, items []*daemonv1.EnvVar, name, rawValue string) {
+	t.Helper()
+	for _, item := range items {
+		if item == nil || item.GetName() != name {
+			continue
+		}
+		if !item.GetSecret() {
+			t.Fatalf("expected %s to remain marked secret", name)
+		}
+		if item.GetValue() == rawValue {
+			t.Fatalf("expected %s secret value to be redacted, got raw value", name)
+		}
+		return
+	}
+	t.Fatalf("expected secret env %s in %+v", name, items)
 }
 
 func TestDaemonCollaborationReminders(t *testing.T) {

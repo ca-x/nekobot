@@ -547,7 +547,7 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 			Enabled:     item.Enabled,
 			Provider:    item.Provider,
 			Model:       item.Model,
-			Env:         cloneEnvVars(envByRuntime[item.ID]),
+			Env:         profileEnvVars(envByRuntime[item.ID]),
 			Skills:      s.skillRecords(skillFilter),
 			DmTargets:   []string{agentDMTarget(item.ID)},
 		})
@@ -561,7 +561,7 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 			Name:        "default",
 			DisplayName: "Default Agent",
 			Enabled:     true,
-			Env:         cloneEnvVars(envByRuntime["default"]),
+			Env:         profileEnvVars(envByRuntime["default"]),
 			Skills:      allSkills,
 			DmTargets:   []string{agentDMTarget("default")},
 		})
@@ -672,6 +672,21 @@ func cloneEnvVars(items []*daemonv1.EnvVar) []*daemonv1.EnvVar {
 			continue
 		}
 		out = append(out, &daemonv1.EnvVar{Name: item.Name, Value: item.Value, Secret: item.Secret})
+	}
+	return out
+}
+
+func profileEnvVars(items []*daemonv1.EnvVar) []*daemonv1.EnvVar {
+	out := make([]*daemonv1.EnvVar, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		value := item.Value
+		if item.Secret {
+			value = "********"
+		}
+		out = append(out, &daemonv1.EnvVar{Name: item.Name, Value: value, Secret: item.Secret})
 	}
 	return out
 }
