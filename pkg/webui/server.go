@@ -4164,7 +4164,7 @@ func (s *Server) resolveSkill(id string) (*skills.Skill, bool) {
 	return nil, false
 }
 
-// --- Marketplace Handlers ---
+// --- Skills Handlers ---
 
 func (s *Server) handleListSkills(c *echo.Context) error {
 	if s.skillsMgr == nil {
