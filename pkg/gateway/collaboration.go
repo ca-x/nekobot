@@ -1566,33 +1566,42 @@ func mustMarshalJSON(v any) string {
 }
 
 func replaySendMessage(rec *idempotency.Record) (*daemonv1.SendMessageResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
 	if rec != nil && rec.ResponseJSON != "" {
 		var resp daemonv1.SendMessageResponse
 		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
 			return &resp, nil
 		}
 	}
-	return &daemonv1.SendMessageResponse{Accepted: true}, nil
+	return nil, fmt.Errorf("idempotency record missing response data")
 }
 
 func replayCreateTask(rec *idempotency.Record) (*daemonv1.CreateCollaborationTaskResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
 	if rec != nil && rec.ResponseJSON != "" {
 		var resp daemonv1.CreateCollaborationTaskResponse
 		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
 			return &resp, nil
 		}
 	}
-	return &daemonv1.CreateCollaborationTaskResponse{}, nil
+	return nil, fmt.Errorf("idempotency record missing response data")
 }
 
 func replayClaimTask(rec *idempotency.Record) (*daemonv1.ClaimCollaborationTaskResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
 	if rec != nil && rec.ResponseJSON != "" {
 		var resp daemonv1.ClaimCollaborationTaskResponse
 		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
 			return &resp, nil
 		}
 	}
-	return &daemonv1.ClaimCollaborationTaskResponse{}, nil
+	return nil, fmt.Errorf("idempotency record missing response data")
 }
 
 func replayCreateTaskGraph(rec *idempotency.Record) (*daemonv1.CreateTaskGraphResponse, error) {

@@ -372,7 +372,7 @@ func (s *GRPCService) AppendRunStep(ctx context.Context, req *daemonv1.AppendRun
 		}
 		switch result.Outcome {
 		case idempotency.OutcomeReplay:
-			return replayAppendRunStep(result.Record), nil
+			return replayAppendRunStep(result.Record)
 		case idempotency.OutcomeConflict:
 			return nil, status.Errorf(codes.AlreadyExists, "idempotency conflict: request_id %s already used with different body", reqID)
 		case idempotency.OutcomeInProgress:
@@ -537,12 +537,15 @@ func marshalAppendRunStepResponse(resp *daemonv1.AppendRunStepResponse) string {
 	return string(b)
 }
 
-func replayAppendRunStep(rec *idempotency.Record) *daemonv1.AppendRunStepResponse {
+func replayAppendRunStep(rec *idempotency.Record) (*daemonv1.AppendRunStepResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, status.Errorf(codes.Internal, "previous request failed: %s", rec.ErrorMessage)
+	}
 	if rec != nil && rec.ResponseJSON != "" {
 		var resp daemonv1.AppendRunStepResponse
 		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
-			return &resp
+			return &resp, nil
 		}
 	}
-	return &daemonv1.AppendRunStepResponse{Accepted: true}
+	return nil, status.Errorf(codes.Internal, "idempotency record missing response data")
 }

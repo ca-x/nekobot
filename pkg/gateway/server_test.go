@@ -29,6 +29,7 @@ import (
 	"nekobot/pkg/cron"
 	"nekobot/pkg/daemonhost"
 	"nekobot/pkg/externalagent"
+	"nekobot/pkg/idempotency"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/process"
@@ -3235,5 +3236,90 @@ func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 	}
 	if taskResp.Task.GetTaskId() == "" {
 		t.Fatalf("expected task id")
+	}
+}
+
+// Regression: a failed idempotency record must cause the handler to return
+// an error on retry, NOT a success response.
+func TestIdempotencyFailedRecordReplayReturnsError(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Port = 0
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entClient, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = entClient.Close() })
+	if err := config.EnsureRuntimeEntSchema(entClient); err != nil {
+		t.Fatalf("ensure schema: %v", err)
+	}
+
+	localBus := bus.NewLocalBus(log, 10)
+	s := &Server{
+		config:           cfg,
+		logger:           log,
+		bus:              localBus,
+		sessionMgr:       session.NewManager(t.TempDir(), cfg.Sessions),
+		entClient:        entClient,
+		idempotencyStore: idempotency.NewStore(entClient),
+		clients:          make(map[string]*Client),
+	}
+	s.setupRoutes()
+
+	ctx := context.Background()
+	reqID := "test-req-fail-replay-1"
+
+	// Step 1: Pre-create a failed idempotency record for SendMessage.
+	key := idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   "runtime-fail",
+		Method:     "SendMessage",
+		RequestID:  reqID,
+	}
+	hash := idempotentRequestHash(
+		"target", "#websocket:fail-thread",
+		"content", "hello",
+		"role", "", // handler hashes raw req.GetRole(), not normalized
+		"sender_agent_id", "runtime-fail",
+		"sender_display_name", "",
+		"reply_to_message_id", "",
+	)
+	r, err := s.idempotencyStore.Reserve(ctx, key, hash, time.Hour)
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if r.Outcome != idempotency.OutcomeReserved {
+		t.Fatalf("expected reserved, got %v", r.Outcome)
+	}
+	_, err = s.idempotencyStore.Fail(ctx, key, idempotency.FailRequest{
+		ErrorCode:    "MUTATION_FAILED",
+		ErrorMessage: "save thread: disk full",
+	})
+	if err != nil {
+		t.Fatalf("fail: %v", err)
+	}
+
+	// Step 2: Call SendMessage with the same request_id — should get error.
+	_, err = s.SendMessage(ctx, &daemonv1.SendMessageRequest{
+		Target:        "#websocket:fail-thread",
+		Content:       "hello",
+		SenderAgentId: "runtime-fail",
+		RequestId:     reqID,
+	})
+	if err == nil {
+		t.Fatal("expected error from failed idempotency replay, got nil")
+	}
+	if !strings.Contains(err.Error(), "previous request failed") {
+		t.Errorf("error = %q, want contains 'previous request failed'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "disk full") {
+		t.Errorf("error = %q, want contains 'disk full'", err.Error())
 	}
 }
