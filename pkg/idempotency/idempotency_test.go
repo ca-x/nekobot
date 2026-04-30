@@ -316,3 +316,85 @@ func TestMultipleMethodsIndependent(t *testing.T) {
 		t.Errorf("both should be reserved: r1=%v r2=%v", r1.Outcome, r2.Outcome)
 	}
 }
+
+// Regression: Reserve→Fail must not leave the record permanently in_progress.
+// After Fail, a retry with the same request_id should get OutcomeReplay (failed record).
+func TestReserveThenFailAllowsReplay(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	key := testKey()
+
+	r1, err := store.Reserve(ctx, key, "hash-1", time.Hour)
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if r1.Outcome != OutcomeReserved {
+		t.Fatalf("expected reserved, got %v", r1.Outcome)
+	}
+
+	// Simulate mutation failure.
+	_, err = store.Fail(ctx, key, FailRequest{
+		ErrorCode:    "MUTATION_FAILED",
+		ErrorMessage: "save thread: disk full",
+	})
+	if err != nil {
+		t.Fatalf("fail: %v", err)
+	}
+
+	// Retry with same request_id — should get replay of the failed record, not in_progress.
+	r2, err := store.Reserve(ctx, key, "hash-1", time.Hour)
+	if err != nil {
+		t.Fatalf("reserve 2: %v", err)
+	}
+	if r2.Outcome != OutcomeReplay {
+		t.Errorf("outcome = %q, want replay (not in_progress)", r2.Outcome)
+	}
+	if r2.Record.ErrorCode != "MUTATION_FAILED" {
+		t.Errorf("error_code = %q, want MUTATION_FAILED", r2.Record.ErrorCode)
+	}
+	if r2.Record.ErrorMessage != "save thread: disk full" {
+		t.Errorf("error_message = %q", r2.Record.ErrorMessage)
+	}
+}
+
+// Regression: Complete must cache the full response so replay returns it.
+func TestCompleteCachesResponseForReplay(t *testing.T) {
+	store, _ := newTestStore(t)
+	ctx := context.Background()
+	key := testKey()
+
+	r1, err := store.Reserve(ctx, key, "hash-1", time.Hour)
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if r1.Outcome != OutcomeReserved {
+		t.Fatalf("expected reserved, got %v", r1.Outcome)
+	}
+
+	// Complete with full response payload (simulating AppendRunStep response).
+	completeResp := `{"accepted":true,"step":{"step_id":"step-abc","run_id":"run-1","sequence":3,"kind":"tool_call","status":"completed"}}`
+	_, err = store.Complete(ctx, key, CompleteRequest{
+		ResponseType: "json:AppendRunStepResponse",
+		ResponseJSON: completeResp,
+		ResourceKind: "run_step",
+		ResourceID:   "step-abc",
+	})
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+
+	// Replay — should return the cached response with full Step.
+	r2, err := store.Reserve(ctx, key, "hash-1", time.Hour)
+	if err != nil {
+		t.Fatalf("reserve 2: %v", err)
+	}
+	if r2.Outcome != OutcomeReplay {
+		t.Errorf("outcome = %q, want replay", r2.Outcome)
+	}
+	if r2.Record.ResponseJSON != completeResp {
+		t.Errorf("response_json = %q, want full cached response", r2.Record.ResponseJSON)
+	}
+	if r2.Record.ResourceID != "step-abc" {
+		t.Errorf("resource_id = %q, want step-abc", r2.Record.ResourceID)
+	}
+}

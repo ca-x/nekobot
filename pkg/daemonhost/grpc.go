@@ -2,6 +2,7 @@ package daemonhost
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -331,7 +332,7 @@ func (s *GRPCService) AppendRunStep(ctx context.Context, req *daemonv1.AppendRun
 		}
 		switch result.Outcome {
 		case idempotency.OutcomeReplay:
-			return &daemonv1.AppendRunStepResponse{Accepted: true}, nil
+			return replayAppendRunStep(result.Record), nil
 		case idempotency.OutcomeConflict:
 			return nil, status.Errorf(codes.AlreadyExists, "idempotency conflict: request_id %s already used with different body", reqID)
 		case idempotency.OutcomeInProgress:
@@ -351,6 +352,12 @@ func (s *GRPCService) AppendRunStep(ctx context.Context, req *daemonv1.AppendRun
 		RequestID:   reqID,
 	})
 	if err != nil {
+		if reqID != "" && s.IdempotencyStore != nil {
+			_, _ = s.IdempotencyStore.Fail(ctx, idemKey, idempotency.FailRequest{
+				ErrorCode:    "MUTATION_FAILED",
+				ErrorMessage: err.Error(),
+			})
+		}
 		return nil, status.Errorf(codes.Internal, "append run step: %v", err)
 	}
 	resp := &daemonv1.AppendRunStepResponse{
@@ -360,6 +367,7 @@ func (s *GRPCService) AppendRunStep(ctx context.Context, req *daemonv1.AppendRun
 	if reqID != "" && s.IdempotencyStore != nil {
 		_, _ = s.IdempotencyStore.Complete(ctx, idemKey, idempotency.CompleteRequest{
 			ResponseType: "json:AppendRunStepResponse",
+			ResponseJSON: marshalAppendRunStepResponse(resp),
 			ResourceKind: "run_step",
 			ResourceID:   record.ID,
 		})
@@ -475,4 +483,26 @@ func (s *GRPCService) loadInventory() (*daemonv1.ComputerInventory, error) {
 		return nil, status.Error(codes.Unimplemented, "workspace RPCs are not implemented on this daemon control surface")
 	}
 	return s.InventoryLoader()
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency helpers
+// ---------------------------------------------------------------------------
+
+func marshalAppendRunStepResponse(resp *daemonv1.AppendRunStepResponse) string {
+	b, err := json.Marshal(resp)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+func replayAppendRunStep(rec *idempotency.Record) *daemonv1.AppendRunStepResponse {
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.AppendRunStepResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp
+		}
+	}
+	return &daemonv1.AppendRunStepResponse{Accepted: true}
 }

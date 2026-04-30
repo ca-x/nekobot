@@ -183,18 +183,29 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 		// OutcomeReserved — continue with mutation.
 	}
 
+	idemReserved := reqID != "" && s.idempotencyStore != nil
+
 	sessionID, err := collaborationSessionID(target)
 	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, err
 	}
 	role := normalizeMessageRole(req.GetRole())
 	sess, err := s.sessionMgr.GetWithSource(sessionID, session.SourceGateway)
 	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, fmt.Errorf("load thread %s: %w", sessionID, err)
 	}
 	msg := agent.Message{Role: role, Content: content}
 	sess.AddMessage(msg)
 	if err := s.sessionMgr.Save(sess); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, fmt.Errorf("save thread %s: %w", sessionID, err)
 	}
 	protoMsg := &daemonv1.CollaborationMessage{
@@ -223,13 +234,17 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 	}
 
 	resp := &daemonv1.SendMessageResponse{Accepted: true, Message: protoMsg}
-	if reqID != "" && s.idempotencyStore != nil {
-		completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+	if idemReserved {
+		if err := completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
 			ResponseType: "json:SendMessageResponse",
 			ResponseJSON: mustMarshalJSON(resp),
 			ResourceKind: "message",
 			ResourceID:   protoMsg.MessageId,
-		})
+		}); err != nil {
+			// Mutation succeeded but idempotency completion failed.
+			// Return the successful response; the record stays pending
+			// which means future retries get "in_progress" (retriable).
+		}
 	}
 	return resp, nil
 }
@@ -295,8 +310,13 @@ func (s *Server) CreateCollaborationTask(ctx context.Context, req *daemonv1.Crea
 		}
 	}
 
+	idemReserved := reqID != "" && s.idempotencyStore != nil
+
 	sessionID, err := collaborationSessionID(target)
 	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, err
 	}
 	task, err := s.agent.TaskService().Enqueue(tasks.Task{
@@ -312,17 +332,22 @@ func (s *Server) CreateCollaborationTask(ctx context.Context, req *daemonv1.Crea
 		},
 	})
 	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, err
 	}
 
 	resp := &daemonv1.CreateCollaborationTaskResponse{Task: daemonhost.CollaborationTaskToProto(task)}
-	if reqID != "" && s.idempotencyStore != nil {
-		completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+	if idemReserved {
+		if err := completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
 			ResponseType: "json:CreateCollaborationTaskResponse",
 			ResponseJSON: mustMarshalJSON(resp),
 			ResourceKind: "task",
 			ResourceID:   task.ID,
-		})
+		}); err != nil {
+			// Mutation succeeded but idempotency completion failed.
+		}
 	}
 	return resp, nil
 }
@@ -382,19 +407,26 @@ func (s *Server) ClaimCollaborationTask(ctx context.Context, req *daemonv1.Claim
 		}
 	}
 
+	idemReserved := reqID != "" && s.idempotencyStore != nil
+
 	task, err := s.agent.TaskService().Claim(req.GetTaskId(), req.GetAgentId())
 	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, err
 	}
 
 	resp := &daemonv1.ClaimCollaborationTaskResponse{Task: daemonhost.CollaborationTaskToProto(task)}
-	if reqID != "" && s.idempotencyStore != nil {
-		completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+	if idemReserved {
+		if err := completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
 			ResponseType: "json:ClaimCollaborationTaskResponse",
 			ResponseJSON: mustMarshalJSON(resp),
 			ResourceKind: "task",
 			ResourceID:   req.GetTaskId(),
-		})
+		}); err != nil {
+			// Mutation succeeded but idempotency completion failed.
+		}
 	}
 	return resp, nil
 }
@@ -1317,8 +1349,27 @@ func idempotentRequestHash(pairs ...string) string {
 	return idempotency.Hash(b)
 }
 
-func completeIdempotency(ctx context.Context, store *idempotency.Store, key idempotency.Key, req idempotency.CompleteRequest) {
-	_, _ = store.Complete(ctx, key, req)
+// failIdempotency marks a pending record as failed after a mutation error.
+// Errors from Fail itself are swallowed because the original mutation error is more important.
+func failIdempotency(ctx context.Context, store *idempotency.Store, key idempotency.Key, mutationErr error) {
+	if store == nil {
+		return
+	}
+	_, _ = store.Fail(ctx, key, idempotency.FailRequest{
+		ErrorCode:    "MUTATION_FAILED",
+		ErrorMessage: mutationErr.Error(),
+	})
+}
+
+// completeIdempotency marks a pending record as succeeded.
+// Returns an error so callers can log it, but callers should still return
+// the successful mutation result to the client (the mutation already happened).
+func completeIdempotency(ctx context.Context, store *idempotency.Store, key idempotency.Key, req idempotency.CompleteRequest) error {
+	if store == nil {
+		return nil
+	}
+	_, err := store.Complete(ctx, key, req)
+	return err
 }
 
 func mustMarshalJSON(v any) string {
