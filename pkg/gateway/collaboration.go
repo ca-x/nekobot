@@ -20,6 +20,7 @@ import (
 	"nekobot/pkg/channels"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/daemonhost"
+	"nekobot/pkg/idempotency"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
@@ -149,6 +150,39 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 	if content == "" {
 		return nil, fmt.Errorf("content is required")
 	}
+
+	// Idempotency guard.
+	reqID := strings.TrimSpace(req.GetRequestId())
+	idemKey := idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   strings.TrimSpace(req.GetSenderAgentId()),
+		Method:     "SendMessage",
+		RequestID:  reqID,
+	}
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"target", req.GetTarget(),
+			"content", content,
+			"role", req.GetRole(),
+			"sender_agent_id", req.GetSenderAgentId(),
+			"sender_display_name", req.GetSenderDisplayName(),
+			"reply_to_message_id", req.GetReplyToMessageId(),
+		)
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 7*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replaySendMessage(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+		// OutcomeReserved — continue with mutation.
+	}
+
 	sessionID, err := collaborationSessionID(target)
 	if err != nil {
 		return nil, err
@@ -187,7 +221,17 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 			ReplyTo:   protoMsg.ReplyToMessageId,
 		})
 	}
-	return &daemonv1.SendMessageResponse{Accepted: true, Message: protoMsg}, nil
+
+	resp := &daemonv1.SendMessageResponse{Accepted: true, Message: protoMsg}
+	if reqID != "" && s.idempotencyStore != nil {
+		completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:SendMessageResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "message",
+			ResourceID:   protoMsg.MessageId,
+		})
+	}
+	return resp, nil
 }
 
 func (s *Server) FollowThread(ctx context.Context, req *daemonv1.FollowThreadRequest) (*daemonv1.FollowThreadResponse, error) {
@@ -217,13 +261,43 @@ func (s *Server) CreateCollaborationTask(ctx context.Context, req *daemonv1.Crea
 	if err != nil {
 		return nil, err
 	}
-	sessionID, err := collaborationSessionID(target)
-	if err != nil {
-		return nil, err
-	}
 	summary := strings.TrimSpace(req.GetSummary())
 	if summary == "" {
 		return nil, fmt.Errorf("summary is required")
+	}
+
+	// Idempotency guard.
+	reqID := strings.TrimSpace(req.GetRequestId())
+	idemKey := idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   strings.TrimSpace(req.GetAgentId()),
+		Method:     "CreateCollaborationTask",
+		RequestID:  reqID,
+	}
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"target", req.GetTarget(),
+			"summary", summary,
+			"agent_id", req.GetAgentId(),
+			"created_by_user_id", req.GetCreatedByUserId(),
+		)
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 7*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replayCreateTask(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+	}
+
+	sessionID, err := collaborationSessionID(target)
+	if err != nil {
+		return nil, err
 	}
 	task, err := s.agent.TaskService().Enqueue(tasks.Task{
 		ID:        "collab-task-" + uuid.NewString(),
@@ -240,7 +314,17 @@ func (s *Server) CreateCollaborationTask(ctx context.Context, req *daemonv1.Crea
 	if err != nil {
 		return nil, err
 	}
-	return &daemonv1.CreateCollaborationTaskResponse{Task: daemonhost.CollaborationTaskToProto(task)}, nil
+
+	resp := &daemonv1.CreateCollaborationTaskResponse{Task: daemonhost.CollaborationTaskToProto(task)}
+	if reqID != "" && s.idempotencyStore != nil {
+		completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:CreateCollaborationTaskResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "task",
+			ResourceID:   task.ID,
+		})
+	}
+	return resp, nil
 }
 
 func (s *Server) ListCollaborationTasks(ctx context.Context, req *daemonv1.ListCollaborationTasksRequest) (*daemonv1.ListCollaborationTasksResponse, error) {
@@ -270,11 +354,49 @@ func (s *Server) ClaimCollaborationTask(ctx context.Context, req *daemonv1.Claim
 	if s == nil || s.agent == nil || s.agent.TaskService() == nil {
 		return nil, fmt.Errorf("task service unavailable")
 	}
+
+	// Idempotency guard.
+	reqID := strings.TrimSpace(req.GetRequestId())
+	idemKey := idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   strings.TrimSpace(req.GetAgentId()),
+		Method:     "ClaimCollaborationTask",
+		RequestID:  reqID,
+	}
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"task_id", req.GetTaskId(),
+			"agent_id", req.GetAgentId(),
+		)
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 7*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replayClaimTask(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+	}
+
 	task, err := s.agent.TaskService().Claim(req.GetTaskId(), req.GetAgentId())
 	if err != nil {
 		return nil, err
 	}
-	return &daemonv1.ClaimCollaborationTaskResponse{Task: daemonhost.CollaborationTaskToProto(task)}, nil
+
+	resp := &daemonv1.ClaimCollaborationTaskResponse{Task: daemonhost.CollaborationTaskToProto(task)}
+	if reqID != "" && s.idempotencyStore != nil {
+		completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:ClaimCollaborationTaskResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "task",
+			ResourceID:   req.GetTaskId(),
+		})
+	}
+	return resp, nil
 }
 
 func (s *Server) GetServerInfo(ctx context.Context, req *daemonv1.GetServerInfoRequest) (*daemonv1.GetServerInfoResponse, error) {
@@ -1178,4 +1300,61 @@ func metadataString(values map[string]any, key string) string {
 	}
 	value, _ := values[key].(string)
 	return strings.TrimSpace(value)
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency helpers
+// ---------------------------------------------------------------------------
+
+// idempotentRequestHash computes a deterministic hash from alternating key-value pairs.
+func idempotentRequestHash(pairs ...string) string {
+	// Build a canonical JSON object from key-value pairs.
+	m := make(map[string]string, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m[pairs[i]] = pairs[i+1]
+	}
+	b, _ := json.Marshal(m)
+	return idempotency.Hash(b)
+}
+
+func completeIdempotency(ctx context.Context, store *idempotency.Store, key idempotency.Key, req idempotency.CompleteRequest) {
+	_, _ = store.Complete(ctx, key, req)
+}
+
+func mustMarshalJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+func replaySendMessage(rec *idempotency.Record) (*daemonv1.SendMessageResponse, error) {
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.SendMessageResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return &daemonv1.SendMessageResponse{Accepted: true}, nil
+}
+
+func replayCreateTask(rec *idempotency.Record) (*daemonv1.CreateCollaborationTaskResponse, error) {
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.CreateCollaborationTaskResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return &daemonv1.CreateCollaborationTaskResponse{}, nil
+}
+
+func replayClaimTask(rec *idempotency.Record) (*daemonv1.ClaimCollaborationTaskResponse, error) {
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.ClaimCollaborationTaskResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return &daemonv1.ClaimCollaborationTaskResponse{}, nil
 }

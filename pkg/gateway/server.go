@@ -34,6 +34,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/externalagent"
+	"nekobot/pkg/idempotency"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
@@ -109,6 +110,7 @@ type Server struct {
 	skillsMgr                 *skills.Manager
 	runtimeMgr                *runtimeagents.Manager
 	auditLogger               *audit.Logger
+	idempotencyStore          *idempotency.Store
 	grpcServer                *grpc.Server
 	mux                       *http.ServeMux
 	server                    *http.Server
@@ -194,6 +196,8 @@ func NewServer(
 		rateLimiters:              make(map[string]*rate.Limiter),
 	}
 
+	s.idempotencyStore = idempotency.NewStore(entClient)
+
 	s.setupGRPC()
 	s.setupRoutes()
 	return s
@@ -222,6 +226,9 @@ func (s *Server) setupGRPC() {
 		} else {
 			service.WithRunManager(runMgr)
 		}
+	}
+	if s.idempotencyStore != nil {
+		service.WithIdempotencyStore(s.idempotencyStore)
 	}
 	daemonv1.RegisterDaemonControlServiceServer(grpcServer, service)
 	s.grpcServer = grpcServer

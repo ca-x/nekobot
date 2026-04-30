@@ -356,6 +356,55 @@ var (
 			},
 		},
 	}
+	// IdempotencyRecordsColumns holds the columns for the "idempotency_records" table.
+	IdempotencyRecordsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "tenant_id", Type: field.TypeString, Default: ""},
+		{Name: "caller_kind", Type: field.TypeString, Default: "user"},
+		{Name: "caller_id", Type: field.TypeString, Default: ""},
+		{Name: "method", Type: field.TypeString, Default: ""},
+		{Name: "request_id", Type: field.TypeString, Default: ""},
+		{Name: "request_hash", Type: field.TypeString, Default: ""},
+		{Name: "status", Type: field.TypeString, Default: "pending"},
+		{Name: "response_type", Type: field.TypeString, Default: ""},
+		{Name: "response_json", Type: field.TypeString, Default: ""},
+		{Name: "error_code", Type: field.TypeString, Default: ""},
+		{Name: "error_message", Type: field.TypeString, Default: ""},
+		{Name: "resource_kind", Type: field.TypeString, Default: ""},
+		{Name: "resource_id", Type: field.TypeString, Default: ""},
+		{Name: "event_id", Type: field.TypeString, Default: ""},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "expires_at", Type: field.TypeTime},
+	}
+	// IdempotencyRecordsTable holds the schema information for the "idempotency_records" table.
+	IdempotencyRecordsTable = &schema.Table{
+		Name:       "idempotency_records",
+		Columns:    IdempotencyRecordsColumns,
+		PrimaryKey: []*schema.Column{IdempotencyRecordsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "idempotencyrecord_tenant_id_caller_kind_caller_id_method_request_id",
+				Unique:  true,
+				Columns: []*schema.Column{IdempotencyRecordsColumns[1], IdempotencyRecordsColumns[2], IdempotencyRecordsColumns[3], IdempotencyRecordsColumns[4], IdempotencyRecordsColumns[5]},
+			},
+			{
+				Name:    "idempotencyrecord_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{IdempotencyRecordsColumns[17]},
+			},
+			{
+				Name:    "idempotencyrecord_resource_kind_resource_id",
+				Unique:  false,
+				Columns: []*schema.Column{IdempotencyRecordsColumns[12], IdempotencyRecordsColumns[13]},
+			},
+			{
+				Name:    "idempotencyrecord_status",
+				Unique:  false,
+				Columns: []*schema.Column{IdempotencyRecordsColumns[7]},
+			},
+		},
+	}
 	// MembershipsColumns holds the columns for the "memberships" table.
 	MembershipsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -1026,6 +1075,7 @@ var (
 		CollaborationEventsTable,
 		ConfigSectionsTable,
 		CronJobsTable,
+		IdempotencyRecordsTable,
 		MembershipsTable,
 		ModelCatalogsTable,
 		ModelRoutesTable,

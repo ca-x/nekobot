@@ -13,6 +13,7 @@ import (
 	"nekobot/pkg/storage/ent/collaborationevent"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
+	"nekobot/pkg/storage/ent/idempotencyrecord"
 	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/modelcatalog"
 	"nekobot/pkg/storage/ent/modelroute"
@@ -101,6 +102,7 @@ func checkColumn(t, c string) error {
 			collaborationevent.Table:  collaborationevent.ValidColumn,
 			configsection.Table:       configsection.ValidColumn,
 			cronjob.Table:             cronjob.ValidColumn,
+			idempotencyrecord.Table:   idempotencyrecord.ValidColumn,
 			membership.Table:          membership.ValidColumn,
 			modelcatalog.Table:        modelcatalog.ValidColumn,
 			modelroute.Table:          modelroute.ValidColumn,

@@ -26,6 +26,8 @@ type Tx struct {
 	ConfigSection *ConfigSectionClient
 	// CronJob is the client for interacting with the CronJob builders.
 	CronJob *CronJobClient
+	// IdempotencyRecord is the client for interacting with the IdempotencyRecord builders.
+	IdempotencyRecord *IdempotencyRecordClient
 	// Membership is the client for interacting with the Membership builders.
 	Membership *MembershipClient
 	// ModelCatalog is the client for interacting with the ModelCatalog builders.
@@ -194,6 +196,7 @@ func (tx *Tx) init() {
 	tx.CollaborationEvent = NewCollaborationEventClient(tx.config)
 	tx.ConfigSection = NewConfigSectionClient(tx.config)
 	tx.CronJob = NewCronJobClient(tx.config)
+	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)
 	tx.Membership = NewMembershipClient(tx.config)
 	tx.ModelCatalog = NewModelCatalogClient(tx.config)
 	tx.ModelRoute = NewModelRouteClient(tx.config)

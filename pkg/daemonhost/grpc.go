@@ -4,22 +4,25 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
+	"nekobot/pkg/idempotency"
 	"nekobot/pkg/runs"
 	"nekobot/pkg/tasks"
 )
 
 type GRPCService struct {
 	daemonv1.UnimplementedDaemonControlServiceServer
-	Registry        *Registry
-	TaskService     *tasks.Service
-	RunManager      *runs.Manager
-	InventoryLoader func() (*daemonv1.ComputerInventory, error)
-	AppendSession   func(context.Context, tasks.Task, *daemonv1.UpdateRunStatusRequest) error
-	Collaboration   CollaborationService
+	Registry          *Registry
+	TaskService       *tasks.Service
+	RunManager        *runs.Manager
+	IdempotencyStore  *idempotency.Store
+	InventoryLoader   func() (*daemonv1.ComputerInventory, error)
+	AppendSession     func(context.Context, tasks.Task, *daemonv1.UpdateRunStatusRequest) error
+	Collaboration     CollaborationService
 }
 
 type CollaborationService interface {
@@ -59,6 +62,12 @@ func NewGRPCService(registry *Registry, taskService *tasks.Service, inventoryLoa
 // WithRunManager injects a run/step manager for AppendRunStep/ListRuns/GetRun.
 func (s *GRPCService) WithRunManager(mgr *runs.Manager) *GRPCService {
 	s.RunManager = mgr
+	return s
+}
+
+// WithIdempotencyStore injects an idempotency store for mutating RPCs.
+func (s *GRPCService) WithIdempotencyStore(store *idempotency.Store) *GRPCService {
+	s.IdempotencyStore = store
 	return s
 }
 
@@ -296,6 +305,40 @@ func (s *GRPCService) AppendRunStep(ctx context.Context, req *daemonv1.AppendRun
 	if step == nil {
 		return nil, status.Error(codes.InvalidArgument, "step is required")
 	}
+
+	// Idempotency guard.
+	reqID := strings.TrimSpace(req.GetRequestId())
+	idemKey := idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   step.GetRunId(), // run_id serves as the caller scope
+		Method:     "AppendRunStep",
+		RequestID:  reqID,
+	}
+	if reqID != "" && s.IdempotencyStore != nil {
+		hash, _ := idempotency.HashJSON(map[string]any{
+			"run_id":       step.GetRunId(),
+			"step_id":      step.GetStepId(),
+			"sequence":     step.GetSequence(),
+			"kind":         step.GetKind(),
+			"status":       step.GetStatus(),
+			"summary":      step.GetSummary(),
+			"detail":       step.GetDetail(),
+			"artifact_ids": step.GetArtifactIds(),
+		})
+		result, err := s.IdempotencyStore.Reserve(ctx, idemKey, hash, 30*24*time.Hour)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "idempotency reserve: %v", err)
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return &daemonv1.AppendRunStepResponse{Accepted: true}, nil
+		case idempotency.OutcomeConflict:
+			return nil, status.Errorf(codes.AlreadyExists, "idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, status.Errorf(codes.Unavailable, "request %s is already being processed", reqID)
+		}
+	}
+
 	record, err := s.RunManager.AppendRunStep(ctx, runs.StepRecord{
 		ID:          step.GetStepId(),
 		RunID:       step.GetRunId(),
@@ -305,15 +348,23 @@ func (s *GRPCService) AppendRunStep(ctx context.Context, req *daemonv1.AppendRun
 		Summary:     step.GetSummary(),
 		Detail:      step.GetDetail(),
 		ArtifactIDs: step.GetArtifactIds(),
-		RequestID:   req.GetRequestId(),
+		RequestID:   reqID,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "append run step: %v", err)
 	}
-	return &daemonv1.AppendRunStepResponse{
+	resp := &daemonv1.AppendRunStepResponse{
 		Accepted: true,
 		Step:     stepRecordToProto(record),
-	}, nil
+	}
+	if reqID != "" && s.IdempotencyStore != nil {
+		_, _ = s.IdempotencyStore.Complete(ctx, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:AppendRunStepResponse",
+			ResourceKind: "run_step",
+			ResourceID:   record.ID,
+		})
+	}
+	return resp, nil
 }
 
 func (s *GRPCService) ListRuns(ctx context.Context, req *daemonv1.ListRunsRequest) (*daemonv1.ListRunsResponse, error) {

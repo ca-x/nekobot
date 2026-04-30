@@ -10,6 +10,7 @@ import (
 	"nekobot/pkg/storage/ent/collaborationevent"
 	"nekobot/pkg/storage/ent/configsection"
 	"nekobot/pkg/storage/ent/cronjob"
+	"nekobot/pkg/storage/ent/idempotencyrecord"
 	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/modelcatalog"
 	"nekobot/pkg/storage/ent/modelroute"
@@ -391,6 +392,82 @@ func init() {
 	cronjobDescID := cronjobFields[0].Descriptor()
 	// cronjob.DefaultID holds the default value on creation for the id field.
 	cronjob.DefaultID = cronjobDescID.Default.(func() string)
+	idempotencyrecordFields := schema.IdempotencyRecord{}.Fields()
+	_ = idempotencyrecordFields
+	// idempotencyrecordDescTenantID is the schema descriptor for tenant_id field.
+	idempotencyrecordDescTenantID := idempotencyrecordFields[1].Descriptor()
+	// idempotencyrecord.DefaultTenantID holds the default value on creation for the tenant_id field.
+	idempotencyrecord.DefaultTenantID = idempotencyrecordDescTenantID.Default.(string)
+	// idempotencyrecordDescCallerKind is the schema descriptor for caller_kind field.
+	idempotencyrecordDescCallerKind := idempotencyrecordFields[2].Descriptor()
+	// idempotencyrecord.DefaultCallerKind holds the default value on creation for the caller_kind field.
+	idempotencyrecord.DefaultCallerKind = idempotencyrecordDescCallerKind.Default.(string)
+	// idempotencyrecordDescCallerID is the schema descriptor for caller_id field.
+	idempotencyrecordDescCallerID := idempotencyrecordFields[3].Descriptor()
+	// idempotencyrecord.DefaultCallerID holds the default value on creation for the caller_id field.
+	idempotencyrecord.DefaultCallerID = idempotencyrecordDescCallerID.Default.(string)
+	// idempotencyrecordDescMethod is the schema descriptor for method field.
+	idempotencyrecordDescMethod := idempotencyrecordFields[4].Descriptor()
+	// idempotencyrecord.DefaultMethod holds the default value on creation for the method field.
+	idempotencyrecord.DefaultMethod = idempotencyrecordDescMethod.Default.(string)
+	// idempotencyrecordDescRequestID is the schema descriptor for request_id field.
+	idempotencyrecordDescRequestID := idempotencyrecordFields[5].Descriptor()
+	// idempotencyrecord.DefaultRequestID holds the default value on creation for the request_id field.
+	idempotencyrecord.DefaultRequestID = idempotencyrecordDescRequestID.Default.(string)
+	// idempotencyrecordDescRequestHash is the schema descriptor for request_hash field.
+	idempotencyrecordDescRequestHash := idempotencyrecordFields[6].Descriptor()
+	// idempotencyrecord.DefaultRequestHash holds the default value on creation for the request_hash field.
+	idempotencyrecord.DefaultRequestHash = idempotencyrecordDescRequestHash.Default.(string)
+	// idempotencyrecordDescStatus is the schema descriptor for status field.
+	idempotencyrecordDescStatus := idempotencyrecordFields[7].Descriptor()
+	// idempotencyrecord.DefaultStatus holds the default value on creation for the status field.
+	idempotencyrecord.DefaultStatus = idempotencyrecordDescStatus.Default.(string)
+	// idempotencyrecordDescResponseType is the schema descriptor for response_type field.
+	idempotencyrecordDescResponseType := idempotencyrecordFields[8].Descriptor()
+	// idempotencyrecord.DefaultResponseType holds the default value on creation for the response_type field.
+	idempotencyrecord.DefaultResponseType = idempotencyrecordDescResponseType.Default.(string)
+	// idempotencyrecordDescResponseJSON is the schema descriptor for response_json field.
+	idempotencyrecordDescResponseJSON := idempotencyrecordFields[9].Descriptor()
+	// idempotencyrecord.DefaultResponseJSON holds the default value on creation for the response_json field.
+	idempotencyrecord.DefaultResponseJSON = idempotencyrecordDescResponseJSON.Default.(string)
+	// idempotencyrecordDescErrorCode is the schema descriptor for error_code field.
+	idempotencyrecordDescErrorCode := idempotencyrecordFields[10].Descriptor()
+	// idempotencyrecord.DefaultErrorCode holds the default value on creation for the error_code field.
+	idempotencyrecord.DefaultErrorCode = idempotencyrecordDescErrorCode.Default.(string)
+	// idempotencyrecordDescErrorMessage is the schema descriptor for error_message field.
+	idempotencyrecordDescErrorMessage := idempotencyrecordFields[11].Descriptor()
+	// idempotencyrecord.DefaultErrorMessage holds the default value on creation for the error_message field.
+	idempotencyrecord.DefaultErrorMessage = idempotencyrecordDescErrorMessage.Default.(string)
+	// idempotencyrecordDescResourceKind is the schema descriptor for resource_kind field.
+	idempotencyrecordDescResourceKind := idempotencyrecordFields[12].Descriptor()
+	// idempotencyrecord.DefaultResourceKind holds the default value on creation for the resource_kind field.
+	idempotencyrecord.DefaultResourceKind = idempotencyrecordDescResourceKind.Default.(string)
+	// idempotencyrecordDescResourceID is the schema descriptor for resource_id field.
+	idempotencyrecordDescResourceID := idempotencyrecordFields[13].Descriptor()
+	// idempotencyrecord.DefaultResourceID holds the default value on creation for the resource_id field.
+	idempotencyrecord.DefaultResourceID = idempotencyrecordDescResourceID.Default.(string)
+	// idempotencyrecordDescEventID is the schema descriptor for event_id field.
+	idempotencyrecordDescEventID := idempotencyrecordFields[14].Descriptor()
+	// idempotencyrecord.DefaultEventID holds the default value on creation for the event_id field.
+	idempotencyrecord.DefaultEventID = idempotencyrecordDescEventID.Default.(string)
+	// idempotencyrecordDescCreatedAt is the schema descriptor for created_at field.
+	idempotencyrecordDescCreatedAt := idempotencyrecordFields[15].Descriptor()
+	// idempotencyrecord.DefaultCreatedAt holds the default value on creation for the created_at field.
+	idempotencyrecord.DefaultCreatedAt = idempotencyrecordDescCreatedAt.Default.(func() time.Time)
+	// idempotencyrecordDescUpdatedAt is the schema descriptor for updated_at field.
+	idempotencyrecordDescUpdatedAt := idempotencyrecordFields[16].Descriptor()
+	// idempotencyrecord.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	idempotencyrecord.DefaultUpdatedAt = idempotencyrecordDescUpdatedAt.Default.(func() time.Time)
+	// idempotencyrecord.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	idempotencyrecord.UpdateDefaultUpdatedAt = idempotencyrecordDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// idempotencyrecordDescExpiresAt is the schema descriptor for expires_at field.
+	idempotencyrecordDescExpiresAt := idempotencyrecordFields[17].Descriptor()
+	// idempotencyrecord.DefaultExpiresAt holds the default value on creation for the expires_at field.
+	idempotencyrecord.DefaultExpiresAt = idempotencyrecordDescExpiresAt.Default.(func() time.Time)
+	// idempotencyrecordDescID is the schema descriptor for id field.
+	idempotencyrecordDescID := idempotencyrecordFields[0].Descriptor()
+	// idempotencyrecord.DefaultID holds the default value on creation for the id field.
+	idempotencyrecord.DefaultID = idempotencyrecordDescID.Default.(func() string)
 	membershipFields := schema.Membership{}.Fields()
 	_ = membershipFields
 	// membershipDescUserID is the schema descriptor for user_id field.
