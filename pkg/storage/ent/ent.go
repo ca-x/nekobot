@@ -15,6 +15,8 @@ import (
 	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/modelcatalog"
 	"nekobot/pkg/storage/ent/modelroute"
+	"nekobot/pkg/storage/ent/notificationbinding"
+	"nekobot/pkg/storage/ent/notificationroute"
 	"nekobot/pkg/storage/ent/permissionrule"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
@@ -89,23 +91,25 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			accountbinding.Table: accountbinding.ValidColumn,
-			agentruntime.Table:   agentruntime.ValidColumn,
-			attachtoken.Table:    attachtoken.ValidColumn,
-			channelaccount.Table: channelaccount.ValidColumn,
-			configsection.Table:  configsection.ValidColumn,
-			cronjob.Table:        cronjob.ValidColumn,
-			membership.Table:     membership.ValidColumn,
-			modelcatalog.Table:   modelcatalog.ValidColumn,
-			modelroute.Table:     modelroute.ValidColumn,
-			permissionrule.Table: permissionrule.ValidColumn,
-			prompt.Table:         prompt.ValidColumn,
-			promptbinding.Table:  promptbinding.ValidColumn,
-			provider.Table:       provider.ValidColumn,
-			tenant.Table:         tenant.ValidColumn,
-			toolevent.Table:      toolevent.ValidColumn,
-			toolsession.Table:    toolsession.ValidColumn,
-			user.Table:           user.ValidColumn,
+			accountbinding.Table:      accountbinding.ValidColumn,
+			agentruntime.Table:        agentruntime.ValidColumn,
+			attachtoken.Table:         attachtoken.ValidColumn,
+			channelaccount.Table:      channelaccount.ValidColumn,
+			configsection.Table:       configsection.ValidColumn,
+			cronjob.Table:             cronjob.ValidColumn,
+			membership.Table:          membership.ValidColumn,
+			modelcatalog.Table:        modelcatalog.ValidColumn,
+			modelroute.Table:          modelroute.ValidColumn,
+			notificationbinding.Table: notificationbinding.ValidColumn,
+			notificationroute.Table:   notificationroute.ValidColumn,
+			permissionrule.Table:      permissionrule.ValidColumn,
+			prompt.Table:              prompt.ValidColumn,
+			promptbinding.Table:       promptbinding.ValidColumn,
+			provider.Table:            provider.ValidColumn,
+			tenant.Table:              tenant.ValidColumn,
+			toolevent.Table:           toolevent.ValidColumn,
+			toolsession.Table:         toolsession.ValidColumn,
+			user.Table:                user.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

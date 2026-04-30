@@ -404,6 +404,110 @@ var (
 			},
 		},
 	}
+	// NotificationBindingsColumns holds the columns for the "notification_bindings" table.
+	NotificationBindingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "scope", Type: field.TypeString},
+		{Name: "target", Type: field.TypeString, Default: ""},
+		{Name: "route_id", Type: field.TypeString},
+		{Name: "event_types_json", Type: field.TypeString, Default: "[]"},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "tenant_id", Type: field.TypeString, Default: ""},
+		{Name: "owner_user_id", Type: field.TypeString, Default: ""},
+		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"private", "shared", "system"}, Default: "shared"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// NotificationBindingsTable holds the schema information for the "notification_bindings" table.
+	NotificationBindingsTable = &schema.Table{
+		Name:       "notification_bindings",
+		Columns:    NotificationBindingsColumns,
+		PrimaryKey: []*schema.Column{NotificationBindingsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "notificationbinding_route_id",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationBindingsColumns[3]},
+			},
+			{
+				Name:    "notificationbinding_scope_target",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationBindingsColumns[1], NotificationBindingsColumns[2]},
+			},
+			{
+				Name:    "notificationbinding_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationBindingsColumns[5]},
+			},
+			{
+				Name:    "notificationbinding_tenant_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationBindingsColumns[6], NotificationBindingsColumns[8]},
+			},
+			{
+				Name:    "notificationbinding_owner_user_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationBindingsColumns[7], NotificationBindingsColumns[8]},
+			},
+			{
+				Name:    "notificationbinding_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationBindingsColumns[10]},
+			},
+		},
+	}
+	// NotificationRoutesColumns holds the columns for the "notification_routes" table.
+	NotificationRoutesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "name", Type: field.TypeString},
+		{Name: "description", Type: field.TypeString, Default: ""},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "channel_account_id", Type: field.TypeString, Default: ""},
+		{Name: "target_config_json", Type: field.TypeString, Default: "{}"},
+		{Name: "tenant_id", Type: field.TypeString, Default: ""},
+		{Name: "owner_user_id", Type: field.TypeString, Default: ""},
+		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"private", "shared", "system"}, Default: "shared"},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+	}
+	// NotificationRoutesTable holds the schema information for the "notification_routes" table.
+	NotificationRoutesTable = &schema.Table{
+		Name:       "notification_routes",
+		Columns:    NotificationRoutesColumns,
+		PrimaryKey: []*schema.Column{NotificationRoutesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "notificationroute_name",
+				Unique:  true,
+				Columns: []*schema.Column{NotificationRoutesColumns[1]},
+			},
+			{
+				Name:    "notificationroute_channel_account_id",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationRoutesColumns[4]},
+			},
+			{
+				Name:    "notificationroute_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationRoutesColumns[3]},
+			},
+			{
+				Name:    "notificationroute_tenant_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationRoutesColumns[6], NotificationRoutesColumns[8]},
+			},
+			{
+				Name:    "notificationroute_owner_user_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationRoutesColumns[7], NotificationRoutesColumns[8]},
+			},
+			{
+				Name:    "notificationroute_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{NotificationRoutesColumns[10]},
+			},
+		},
+	}
 	// PermissionRulesColumns holds the columns for the "permission_rules" table.
 	PermissionRulesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -728,6 +832,8 @@ var (
 		MembershipsTable,
 		ModelCatalogsTable,
 		ModelRoutesTable,
+		NotificationBindingsTable,
+		NotificationRoutesTable,
 		PermissionRulesTable,
 		PromptsTable,
 		PromptBindingsTable,

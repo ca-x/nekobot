@@ -15,6 +15,8 @@ import (
 	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/modelcatalog"
 	"nekobot/pkg/storage/ent/modelroute"
+	"nekobot/pkg/storage/ent/notificationbinding"
+	"nekobot/pkg/storage/ent/notificationroute"
 	"nekobot/pkg/storage/ent/permissionrule"
 	"nekobot/pkg/storage/ent/predicate"
 	"nekobot/pkg/storage/ent/prompt"
@@ -40,23 +42,25 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeAccountBinding = "AccountBinding"
-	TypeAgentRuntime   = "AgentRuntime"
-	TypeAttachToken    = "AttachToken"
-	TypeChannelAccount = "ChannelAccount"
-	TypeConfigSection  = "ConfigSection"
-	TypeCronJob        = "CronJob"
-	TypeMembership     = "Membership"
-	TypeModelCatalog   = "ModelCatalog"
-	TypeModelRoute     = "ModelRoute"
-	TypePermissionRule = "PermissionRule"
-	TypePrompt         = "Prompt"
-	TypePromptBinding  = "PromptBinding"
-	TypeProvider       = "Provider"
-	TypeTenant         = "Tenant"
-	TypeToolEvent      = "ToolEvent"
-	TypeToolSession    = "ToolSession"
-	TypeUser           = "User"
+	TypeAccountBinding      = "AccountBinding"
+	TypeAgentRuntime        = "AgentRuntime"
+	TypeAttachToken         = "AttachToken"
+	TypeChannelAccount      = "ChannelAccount"
+	TypeConfigSection       = "ConfigSection"
+	TypeCronJob             = "CronJob"
+	TypeMembership          = "Membership"
+	TypeModelCatalog        = "ModelCatalog"
+	TypeModelRoute          = "ModelRoute"
+	TypeNotificationBinding = "NotificationBinding"
+	TypeNotificationRoute   = "NotificationRoute"
+	TypePermissionRule      = "PermissionRule"
+	TypePrompt              = "Prompt"
+	TypePromptBinding       = "PromptBinding"
+	TypeProvider            = "Provider"
+	TypeTenant              = "Tenant"
+	TypeToolEvent           = "ToolEvent"
+	TypeToolSession         = "ToolSession"
+	TypeUser                = "User"
 )
 
 // AccountBindingMutation represents an operation that mutates the AccountBinding nodes in the graph.
@@ -7919,6 +7923,1642 @@ func (m *ModelRouteMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ModelRouteMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown ModelRoute edge %s", name)
+}
+
+// NotificationBindingMutation represents an operation that mutates the NotificationBinding nodes in the graph.
+type NotificationBindingMutation struct {
+	config
+	op               Op
+	typ              string
+	id               *string
+	scope            *string
+	target           *string
+	route_id         *string
+	event_types_json *string
+	enabled          *bool
+	tenant_id        *string
+	owner_user_id    *string
+	visibility       *notificationbinding.Visibility
+	created_at       *time.Time
+	updated_at       *time.Time
+	clearedFields    map[string]struct{}
+	done             bool
+	oldValue         func(context.Context) (*NotificationBinding, error)
+	predicates       []predicate.NotificationBinding
+}
+
+var _ ent.Mutation = (*NotificationBindingMutation)(nil)
+
+// notificationbindingOption allows management of the mutation configuration using functional options.
+type notificationbindingOption func(*NotificationBindingMutation)
+
+// newNotificationBindingMutation creates new mutation for the NotificationBinding entity.
+func newNotificationBindingMutation(c config, op Op, opts ...notificationbindingOption) *NotificationBindingMutation {
+	m := &NotificationBindingMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeNotificationBinding,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withNotificationBindingID sets the ID field of the mutation.
+func withNotificationBindingID(id string) notificationbindingOption {
+	return func(m *NotificationBindingMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *NotificationBinding
+		)
+		m.oldValue = func(ctx context.Context) (*NotificationBinding, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().NotificationBinding.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withNotificationBinding sets the old NotificationBinding of the mutation.
+func withNotificationBinding(node *NotificationBinding) notificationbindingOption {
+	return func(m *NotificationBindingMutation) {
+		m.oldValue = func(context.Context) (*NotificationBinding, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m NotificationBindingMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m NotificationBindingMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of NotificationBinding entities.
+func (m *NotificationBindingMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *NotificationBindingMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *NotificationBindingMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().NotificationBinding.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetScope sets the "scope" field.
+func (m *NotificationBindingMutation) SetScope(s string) {
+	m.scope = &s
+}
+
+// Scope returns the value of the "scope" field in the mutation.
+func (m *NotificationBindingMutation) Scope() (r string, exists bool) {
+	v := m.scope
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldScope returns the old "scope" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldScope(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldScope is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldScope requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldScope: %w", err)
+	}
+	return oldValue.Scope, nil
+}
+
+// ResetScope resets all changes to the "scope" field.
+func (m *NotificationBindingMutation) ResetScope() {
+	m.scope = nil
+}
+
+// SetTarget sets the "target" field.
+func (m *NotificationBindingMutation) SetTarget(s string) {
+	m.target = &s
+}
+
+// Target returns the value of the "target" field in the mutation.
+func (m *NotificationBindingMutation) Target() (r string, exists bool) {
+	v := m.target
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTarget returns the old "target" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldTarget(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTarget is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTarget requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTarget: %w", err)
+	}
+	return oldValue.Target, nil
+}
+
+// ResetTarget resets all changes to the "target" field.
+func (m *NotificationBindingMutation) ResetTarget() {
+	m.target = nil
+}
+
+// SetRouteID sets the "route_id" field.
+func (m *NotificationBindingMutation) SetRouteID(s string) {
+	m.route_id = &s
+}
+
+// RouteID returns the value of the "route_id" field in the mutation.
+func (m *NotificationBindingMutation) RouteID() (r string, exists bool) {
+	v := m.route_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRouteID returns the old "route_id" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldRouteID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRouteID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRouteID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRouteID: %w", err)
+	}
+	return oldValue.RouteID, nil
+}
+
+// ResetRouteID resets all changes to the "route_id" field.
+func (m *NotificationBindingMutation) ResetRouteID() {
+	m.route_id = nil
+}
+
+// SetEventTypesJSON sets the "event_types_json" field.
+func (m *NotificationBindingMutation) SetEventTypesJSON(s string) {
+	m.event_types_json = &s
+}
+
+// EventTypesJSON returns the value of the "event_types_json" field in the mutation.
+func (m *NotificationBindingMutation) EventTypesJSON() (r string, exists bool) {
+	v := m.event_types_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEventTypesJSON returns the old "event_types_json" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldEventTypesJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEventTypesJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEventTypesJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEventTypesJSON: %w", err)
+	}
+	return oldValue.EventTypesJSON, nil
+}
+
+// ResetEventTypesJSON resets all changes to the "event_types_json" field.
+func (m *NotificationBindingMutation) ResetEventTypesJSON() {
+	m.event_types_json = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *NotificationBindingMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *NotificationBindingMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *NotificationBindingMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetTenantID sets the "tenant_id" field.
+func (m *NotificationBindingMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *NotificationBindingMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *NotificationBindingMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (m *NotificationBindingMutation) SetOwnerUserID(s string) {
+	m.owner_user_id = &s
+}
+
+// OwnerUserID returns the value of the "owner_user_id" field in the mutation.
+func (m *NotificationBindingMutation) OwnerUserID() (r string, exists bool) {
+	v := m.owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnerUserID returns the old "owner_user_id" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldOwnerUserID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnerUserID: %w", err)
+	}
+	return oldValue.OwnerUserID, nil
+}
+
+// ResetOwnerUserID resets all changes to the "owner_user_id" field.
+func (m *NotificationBindingMutation) ResetOwnerUserID() {
+	m.owner_user_id = nil
+}
+
+// SetVisibility sets the "visibility" field.
+func (m *NotificationBindingMutation) SetVisibility(n notificationbinding.Visibility) {
+	m.visibility = &n
+}
+
+// Visibility returns the value of the "visibility" field in the mutation.
+func (m *NotificationBindingMutation) Visibility() (r notificationbinding.Visibility, exists bool) {
+	v := m.visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVisibility returns the old "visibility" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldVisibility(ctx context.Context) (v notificationbinding.Visibility, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVisibility: %w", err)
+	}
+	return oldValue.Visibility, nil
+}
+
+// ResetVisibility resets all changes to the "visibility" field.
+func (m *NotificationBindingMutation) ResetVisibility() {
+	m.visibility = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *NotificationBindingMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *NotificationBindingMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *NotificationBindingMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *NotificationBindingMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *NotificationBindingMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the NotificationBinding entity.
+// If the NotificationBinding object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationBindingMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *NotificationBindingMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the NotificationBindingMutation builder.
+func (m *NotificationBindingMutation) Where(ps ...predicate.NotificationBinding) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the NotificationBindingMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *NotificationBindingMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.NotificationBinding, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *NotificationBindingMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *NotificationBindingMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (NotificationBinding).
+func (m *NotificationBindingMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *NotificationBindingMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.scope != nil {
+		fields = append(fields, notificationbinding.FieldScope)
+	}
+	if m.target != nil {
+		fields = append(fields, notificationbinding.FieldTarget)
+	}
+	if m.route_id != nil {
+		fields = append(fields, notificationbinding.FieldRouteID)
+	}
+	if m.event_types_json != nil {
+		fields = append(fields, notificationbinding.FieldEventTypesJSON)
+	}
+	if m.enabled != nil {
+		fields = append(fields, notificationbinding.FieldEnabled)
+	}
+	if m.tenant_id != nil {
+		fields = append(fields, notificationbinding.FieldTenantID)
+	}
+	if m.owner_user_id != nil {
+		fields = append(fields, notificationbinding.FieldOwnerUserID)
+	}
+	if m.visibility != nil {
+		fields = append(fields, notificationbinding.FieldVisibility)
+	}
+	if m.created_at != nil {
+		fields = append(fields, notificationbinding.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, notificationbinding.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *NotificationBindingMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case notificationbinding.FieldScope:
+		return m.Scope()
+	case notificationbinding.FieldTarget:
+		return m.Target()
+	case notificationbinding.FieldRouteID:
+		return m.RouteID()
+	case notificationbinding.FieldEventTypesJSON:
+		return m.EventTypesJSON()
+	case notificationbinding.FieldEnabled:
+		return m.Enabled()
+	case notificationbinding.FieldTenantID:
+		return m.TenantID()
+	case notificationbinding.FieldOwnerUserID:
+		return m.OwnerUserID()
+	case notificationbinding.FieldVisibility:
+		return m.Visibility()
+	case notificationbinding.FieldCreatedAt:
+		return m.CreatedAt()
+	case notificationbinding.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *NotificationBindingMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case notificationbinding.FieldScope:
+		return m.OldScope(ctx)
+	case notificationbinding.FieldTarget:
+		return m.OldTarget(ctx)
+	case notificationbinding.FieldRouteID:
+		return m.OldRouteID(ctx)
+	case notificationbinding.FieldEventTypesJSON:
+		return m.OldEventTypesJSON(ctx)
+	case notificationbinding.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case notificationbinding.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case notificationbinding.FieldOwnerUserID:
+		return m.OldOwnerUserID(ctx)
+	case notificationbinding.FieldVisibility:
+		return m.OldVisibility(ctx)
+	case notificationbinding.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case notificationbinding.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown NotificationBinding field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *NotificationBindingMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case notificationbinding.FieldScope:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetScope(v)
+		return nil
+	case notificationbinding.FieldTarget:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTarget(v)
+		return nil
+	case notificationbinding.FieldRouteID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRouteID(v)
+		return nil
+	case notificationbinding.FieldEventTypesJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEventTypesJSON(v)
+		return nil
+	case notificationbinding.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case notificationbinding.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case notificationbinding.FieldOwnerUserID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnerUserID(v)
+		return nil
+	case notificationbinding.FieldVisibility:
+		v, ok := value.(notificationbinding.Visibility)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVisibility(v)
+		return nil
+	case notificationbinding.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case notificationbinding.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown NotificationBinding field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *NotificationBindingMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *NotificationBindingMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *NotificationBindingMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown NotificationBinding numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *NotificationBindingMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *NotificationBindingMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *NotificationBindingMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown NotificationBinding nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *NotificationBindingMutation) ResetField(name string) error {
+	switch name {
+	case notificationbinding.FieldScope:
+		m.ResetScope()
+		return nil
+	case notificationbinding.FieldTarget:
+		m.ResetTarget()
+		return nil
+	case notificationbinding.FieldRouteID:
+		m.ResetRouteID()
+		return nil
+	case notificationbinding.FieldEventTypesJSON:
+		m.ResetEventTypesJSON()
+		return nil
+	case notificationbinding.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case notificationbinding.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case notificationbinding.FieldOwnerUserID:
+		m.ResetOwnerUserID()
+		return nil
+	case notificationbinding.FieldVisibility:
+		m.ResetVisibility()
+		return nil
+	case notificationbinding.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case notificationbinding.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown NotificationBinding field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *NotificationBindingMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *NotificationBindingMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *NotificationBindingMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *NotificationBindingMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *NotificationBindingMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *NotificationBindingMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *NotificationBindingMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown NotificationBinding unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *NotificationBindingMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown NotificationBinding edge %s", name)
+}
+
+// NotificationRouteMutation represents an operation that mutates the NotificationRoute nodes in the graph.
+type NotificationRouteMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *string
+	name               *string
+	description        *string
+	enabled            *bool
+	channel_account_id *string
+	target_config_json *string
+	tenant_id          *string
+	owner_user_id      *string
+	visibility         *notificationroute.Visibility
+	created_at         *time.Time
+	updated_at         *time.Time
+	clearedFields      map[string]struct{}
+	done               bool
+	oldValue           func(context.Context) (*NotificationRoute, error)
+	predicates         []predicate.NotificationRoute
+}
+
+var _ ent.Mutation = (*NotificationRouteMutation)(nil)
+
+// notificationrouteOption allows management of the mutation configuration using functional options.
+type notificationrouteOption func(*NotificationRouteMutation)
+
+// newNotificationRouteMutation creates new mutation for the NotificationRoute entity.
+func newNotificationRouteMutation(c config, op Op, opts ...notificationrouteOption) *NotificationRouteMutation {
+	m := &NotificationRouteMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeNotificationRoute,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withNotificationRouteID sets the ID field of the mutation.
+func withNotificationRouteID(id string) notificationrouteOption {
+	return func(m *NotificationRouteMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *NotificationRoute
+		)
+		m.oldValue = func(ctx context.Context) (*NotificationRoute, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().NotificationRoute.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withNotificationRoute sets the old NotificationRoute of the mutation.
+func withNotificationRoute(node *NotificationRoute) notificationrouteOption {
+	return func(m *NotificationRouteMutation) {
+		m.oldValue = func(context.Context) (*NotificationRoute, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m NotificationRouteMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m NotificationRouteMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of NotificationRoute entities.
+func (m *NotificationRouteMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *NotificationRouteMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *NotificationRouteMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().NotificationRoute.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetName sets the "name" field.
+func (m *NotificationRouteMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *NotificationRouteMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *NotificationRouteMutation) ResetName() {
+	m.name = nil
+}
+
+// SetDescription sets the "description" field.
+func (m *NotificationRouteMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *NotificationRouteMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldDescription(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *NotificationRouteMutation) ResetDescription() {
+	m.description = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *NotificationRouteMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *NotificationRouteMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *NotificationRouteMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetChannelAccountID sets the "channel_account_id" field.
+func (m *NotificationRouteMutation) SetChannelAccountID(s string) {
+	m.channel_account_id = &s
+}
+
+// ChannelAccountID returns the value of the "channel_account_id" field in the mutation.
+func (m *NotificationRouteMutation) ChannelAccountID() (r string, exists bool) {
+	v := m.channel_account_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChannelAccountID returns the old "channel_account_id" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldChannelAccountID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChannelAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChannelAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChannelAccountID: %w", err)
+	}
+	return oldValue.ChannelAccountID, nil
+}
+
+// ResetChannelAccountID resets all changes to the "channel_account_id" field.
+func (m *NotificationRouteMutation) ResetChannelAccountID() {
+	m.channel_account_id = nil
+}
+
+// SetTargetConfigJSON sets the "target_config_json" field.
+func (m *NotificationRouteMutation) SetTargetConfigJSON(s string) {
+	m.target_config_json = &s
+}
+
+// TargetConfigJSON returns the value of the "target_config_json" field in the mutation.
+func (m *NotificationRouteMutation) TargetConfigJSON() (r string, exists bool) {
+	v := m.target_config_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTargetConfigJSON returns the old "target_config_json" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldTargetConfigJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTargetConfigJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTargetConfigJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTargetConfigJSON: %w", err)
+	}
+	return oldValue.TargetConfigJSON, nil
+}
+
+// ResetTargetConfigJSON resets all changes to the "target_config_json" field.
+func (m *NotificationRouteMutation) ResetTargetConfigJSON() {
+	m.target_config_json = nil
+}
+
+// SetTenantID sets the "tenant_id" field.
+func (m *NotificationRouteMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *NotificationRouteMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *NotificationRouteMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (m *NotificationRouteMutation) SetOwnerUserID(s string) {
+	m.owner_user_id = &s
+}
+
+// OwnerUserID returns the value of the "owner_user_id" field in the mutation.
+func (m *NotificationRouteMutation) OwnerUserID() (r string, exists bool) {
+	v := m.owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnerUserID returns the old "owner_user_id" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldOwnerUserID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnerUserID: %w", err)
+	}
+	return oldValue.OwnerUserID, nil
+}
+
+// ResetOwnerUserID resets all changes to the "owner_user_id" field.
+func (m *NotificationRouteMutation) ResetOwnerUserID() {
+	m.owner_user_id = nil
+}
+
+// SetVisibility sets the "visibility" field.
+func (m *NotificationRouteMutation) SetVisibility(n notificationroute.Visibility) {
+	m.visibility = &n
+}
+
+// Visibility returns the value of the "visibility" field in the mutation.
+func (m *NotificationRouteMutation) Visibility() (r notificationroute.Visibility, exists bool) {
+	v := m.visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVisibility returns the old "visibility" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldVisibility(ctx context.Context) (v notificationroute.Visibility, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVisibility: %w", err)
+	}
+	return oldValue.Visibility, nil
+}
+
+// ResetVisibility resets all changes to the "visibility" field.
+func (m *NotificationRouteMutation) ResetVisibility() {
+	m.visibility = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *NotificationRouteMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *NotificationRouteMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *NotificationRouteMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *NotificationRouteMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *NotificationRouteMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the NotificationRoute entity.
+// If the NotificationRoute object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationRouteMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *NotificationRouteMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// Where appends a list predicates to the NotificationRouteMutation builder.
+func (m *NotificationRouteMutation) Where(ps ...predicate.NotificationRoute) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the NotificationRouteMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *NotificationRouteMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.NotificationRoute, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *NotificationRouteMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *NotificationRouteMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (NotificationRoute).
+func (m *NotificationRouteMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *NotificationRouteMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.name != nil {
+		fields = append(fields, notificationroute.FieldName)
+	}
+	if m.description != nil {
+		fields = append(fields, notificationroute.FieldDescription)
+	}
+	if m.enabled != nil {
+		fields = append(fields, notificationroute.FieldEnabled)
+	}
+	if m.channel_account_id != nil {
+		fields = append(fields, notificationroute.FieldChannelAccountID)
+	}
+	if m.target_config_json != nil {
+		fields = append(fields, notificationroute.FieldTargetConfigJSON)
+	}
+	if m.tenant_id != nil {
+		fields = append(fields, notificationroute.FieldTenantID)
+	}
+	if m.owner_user_id != nil {
+		fields = append(fields, notificationroute.FieldOwnerUserID)
+	}
+	if m.visibility != nil {
+		fields = append(fields, notificationroute.FieldVisibility)
+	}
+	if m.created_at != nil {
+		fields = append(fields, notificationroute.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, notificationroute.FieldUpdatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *NotificationRouteMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case notificationroute.FieldName:
+		return m.Name()
+	case notificationroute.FieldDescription:
+		return m.Description()
+	case notificationroute.FieldEnabled:
+		return m.Enabled()
+	case notificationroute.FieldChannelAccountID:
+		return m.ChannelAccountID()
+	case notificationroute.FieldTargetConfigJSON:
+		return m.TargetConfigJSON()
+	case notificationroute.FieldTenantID:
+		return m.TenantID()
+	case notificationroute.FieldOwnerUserID:
+		return m.OwnerUserID()
+	case notificationroute.FieldVisibility:
+		return m.Visibility()
+	case notificationroute.FieldCreatedAt:
+		return m.CreatedAt()
+	case notificationroute.FieldUpdatedAt:
+		return m.UpdatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *NotificationRouteMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case notificationroute.FieldName:
+		return m.OldName(ctx)
+	case notificationroute.FieldDescription:
+		return m.OldDescription(ctx)
+	case notificationroute.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case notificationroute.FieldChannelAccountID:
+		return m.OldChannelAccountID(ctx)
+	case notificationroute.FieldTargetConfigJSON:
+		return m.OldTargetConfigJSON(ctx)
+	case notificationroute.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case notificationroute.FieldOwnerUserID:
+		return m.OldOwnerUserID(ctx)
+	case notificationroute.FieldVisibility:
+		return m.OldVisibility(ctx)
+	case notificationroute.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case notificationroute.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown NotificationRoute field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *NotificationRouteMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case notificationroute.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case notificationroute.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	case notificationroute.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case notificationroute.FieldChannelAccountID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChannelAccountID(v)
+		return nil
+	case notificationroute.FieldTargetConfigJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTargetConfigJSON(v)
+		return nil
+	case notificationroute.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case notificationroute.FieldOwnerUserID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnerUserID(v)
+		return nil
+	case notificationroute.FieldVisibility:
+		v, ok := value.(notificationroute.Visibility)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVisibility(v)
+		return nil
+	case notificationroute.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case notificationroute.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown NotificationRoute field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *NotificationRouteMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *NotificationRouteMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *NotificationRouteMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown NotificationRoute numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *NotificationRouteMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *NotificationRouteMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *NotificationRouteMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown NotificationRoute nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *NotificationRouteMutation) ResetField(name string) error {
+	switch name {
+	case notificationroute.FieldName:
+		m.ResetName()
+		return nil
+	case notificationroute.FieldDescription:
+		m.ResetDescription()
+		return nil
+	case notificationroute.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case notificationroute.FieldChannelAccountID:
+		m.ResetChannelAccountID()
+		return nil
+	case notificationroute.FieldTargetConfigJSON:
+		m.ResetTargetConfigJSON()
+		return nil
+	case notificationroute.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case notificationroute.FieldOwnerUserID:
+		m.ResetOwnerUserID()
+		return nil
+	case notificationroute.FieldVisibility:
+		m.ResetVisibility()
+		return nil
+	case notificationroute.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case notificationroute.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown NotificationRoute field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *NotificationRouteMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *NotificationRouteMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *NotificationRouteMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *NotificationRouteMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *NotificationRouteMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *NotificationRouteMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *NotificationRouteMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown NotificationRoute unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *NotificationRouteMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown NotificationRoute edge %s", name)
 }
 
 // PermissionRuleMutation represents an operation that mutates the PermissionRule nodes in the graph.

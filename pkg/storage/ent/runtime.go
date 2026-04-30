@@ -12,6 +12,8 @@ import (
 	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/modelcatalog"
 	"nekobot/pkg/storage/ent/modelroute"
+	"nekobot/pkg/storage/ent/notificationbinding"
+	"nekobot/pkg/storage/ent/notificationroute"
 	"nekobot/pkg/storage/ent/permissionrule"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
@@ -424,6 +426,94 @@ func init() {
 	modelrouteDescID := modelrouteFields[0].Descriptor()
 	// modelroute.DefaultID holds the default value on creation for the id field.
 	modelroute.DefaultID = modelrouteDescID.Default.(func() string)
+	notificationbindingFields := schema.NotificationBinding{}.Fields()
+	_ = notificationbindingFields
+	// notificationbindingDescScope is the schema descriptor for scope field.
+	notificationbindingDescScope := notificationbindingFields[1].Descriptor()
+	// notificationbinding.ScopeValidator is a validator for the "scope" field. It is called by the builders before save.
+	notificationbinding.ScopeValidator = notificationbindingDescScope.Validators[0].(func(string) error)
+	// notificationbindingDescTarget is the schema descriptor for target field.
+	notificationbindingDescTarget := notificationbindingFields[2].Descriptor()
+	// notificationbinding.DefaultTarget holds the default value on creation for the target field.
+	notificationbinding.DefaultTarget = notificationbindingDescTarget.Default.(string)
+	// notificationbindingDescRouteID is the schema descriptor for route_id field.
+	notificationbindingDescRouteID := notificationbindingFields[3].Descriptor()
+	// notificationbinding.RouteIDValidator is a validator for the "route_id" field. It is called by the builders before save.
+	notificationbinding.RouteIDValidator = notificationbindingDescRouteID.Validators[0].(func(string) error)
+	// notificationbindingDescEventTypesJSON is the schema descriptor for event_types_json field.
+	notificationbindingDescEventTypesJSON := notificationbindingFields[4].Descriptor()
+	// notificationbinding.DefaultEventTypesJSON holds the default value on creation for the event_types_json field.
+	notificationbinding.DefaultEventTypesJSON = notificationbindingDescEventTypesJSON.Default.(string)
+	// notificationbindingDescEnabled is the schema descriptor for enabled field.
+	notificationbindingDescEnabled := notificationbindingFields[5].Descriptor()
+	// notificationbinding.DefaultEnabled holds the default value on creation for the enabled field.
+	notificationbinding.DefaultEnabled = notificationbindingDescEnabled.Default.(bool)
+	// notificationbindingDescTenantID is the schema descriptor for tenant_id field.
+	notificationbindingDescTenantID := notificationbindingFields[6].Descriptor()
+	// notificationbinding.DefaultTenantID holds the default value on creation for the tenant_id field.
+	notificationbinding.DefaultTenantID = notificationbindingDescTenantID.Default.(string)
+	// notificationbindingDescOwnerUserID is the schema descriptor for owner_user_id field.
+	notificationbindingDescOwnerUserID := notificationbindingFields[7].Descriptor()
+	// notificationbinding.DefaultOwnerUserID holds the default value on creation for the owner_user_id field.
+	notificationbinding.DefaultOwnerUserID = notificationbindingDescOwnerUserID.Default.(string)
+	// notificationbindingDescCreatedAt is the schema descriptor for created_at field.
+	notificationbindingDescCreatedAt := notificationbindingFields[9].Descriptor()
+	// notificationbinding.DefaultCreatedAt holds the default value on creation for the created_at field.
+	notificationbinding.DefaultCreatedAt = notificationbindingDescCreatedAt.Default.(func() time.Time)
+	// notificationbindingDescUpdatedAt is the schema descriptor for updated_at field.
+	notificationbindingDescUpdatedAt := notificationbindingFields[10].Descriptor()
+	// notificationbinding.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	notificationbinding.DefaultUpdatedAt = notificationbindingDescUpdatedAt.Default.(func() time.Time)
+	// notificationbinding.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	notificationbinding.UpdateDefaultUpdatedAt = notificationbindingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// notificationbindingDescID is the schema descriptor for id field.
+	notificationbindingDescID := notificationbindingFields[0].Descriptor()
+	// notificationbinding.DefaultID holds the default value on creation for the id field.
+	notificationbinding.DefaultID = notificationbindingDescID.Default.(func() string)
+	notificationrouteFields := schema.NotificationRoute{}.Fields()
+	_ = notificationrouteFields
+	// notificationrouteDescName is the schema descriptor for name field.
+	notificationrouteDescName := notificationrouteFields[1].Descriptor()
+	// notificationroute.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	notificationroute.NameValidator = notificationrouteDescName.Validators[0].(func(string) error)
+	// notificationrouteDescDescription is the schema descriptor for description field.
+	notificationrouteDescDescription := notificationrouteFields[2].Descriptor()
+	// notificationroute.DefaultDescription holds the default value on creation for the description field.
+	notificationroute.DefaultDescription = notificationrouteDescDescription.Default.(string)
+	// notificationrouteDescEnabled is the schema descriptor for enabled field.
+	notificationrouteDescEnabled := notificationrouteFields[3].Descriptor()
+	// notificationroute.DefaultEnabled holds the default value on creation for the enabled field.
+	notificationroute.DefaultEnabled = notificationrouteDescEnabled.Default.(bool)
+	// notificationrouteDescChannelAccountID is the schema descriptor for channel_account_id field.
+	notificationrouteDescChannelAccountID := notificationrouteFields[4].Descriptor()
+	// notificationroute.DefaultChannelAccountID holds the default value on creation for the channel_account_id field.
+	notificationroute.DefaultChannelAccountID = notificationrouteDescChannelAccountID.Default.(string)
+	// notificationrouteDescTargetConfigJSON is the schema descriptor for target_config_json field.
+	notificationrouteDescTargetConfigJSON := notificationrouteFields[5].Descriptor()
+	// notificationroute.DefaultTargetConfigJSON holds the default value on creation for the target_config_json field.
+	notificationroute.DefaultTargetConfigJSON = notificationrouteDescTargetConfigJSON.Default.(string)
+	// notificationrouteDescTenantID is the schema descriptor for tenant_id field.
+	notificationrouteDescTenantID := notificationrouteFields[6].Descriptor()
+	// notificationroute.DefaultTenantID holds the default value on creation for the tenant_id field.
+	notificationroute.DefaultTenantID = notificationrouteDescTenantID.Default.(string)
+	// notificationrouteDescOwnerUserID is the schema descriptor for owner_user_id field.
+	notificationrouteDescOwnerUserID := notificationrouteFields[7].Descriptor()
+	// notificationroute.DefaultOwnerUserID holds the default value on creation for the owner_user_id field.
+	notificationroute.DefaultOwnerUserID = notificationrouteDescOwnerUserID.Default.(string)
+	// notificationrouteDescCreatedAt is the schema descriptor for created_at field.
+	notificationrouteDescCreatedAt := notificationrouteFields[9].Descriptor()
+	// notificationroute.DefaultCreatedAt holds the default value on creation for the created_at field.
+	notificationroute.DefaultCreatedAt = notificationrouteDescCreatedAt.Default.(func() time.Time)
+	// notificationrouteDescUpdatedAt is the schema descriptor for updated_at field.
+	notificationrouteDescUpdatedAt := notificationrouteFields[10].Descriptor()
+	// notificationroute.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	notificationroute.DefaultUpdatedAt = notificationrouteDescUpdatedAt.Default.(func() time.Time)
+	// notificationroute.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	notificationroute.UpdateDefaultUpdatedAt = notificationrouteDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// notificationrouteDescID is the schema descriptor for id field.
+	notificationrouteDescID := notificationrouteFields[0].Descriptor()
+	// notificationroute.DefaultID holds the default value on creation for the id field.
+	notificationroute.DefaultID = notificationrouteDescID.Default.(func() string)
 	permissionruleFields := schema.PermissionRule{}.Fields()
 	_ = permissionruleFields
 	// permissionruleDescEnabled is the schema descriptor for enabled field.

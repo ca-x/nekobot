@@ -116,6 +116,30 @@ func (f ModelRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ModelRouteMutation", m)
 }
 
+// The NotificationBindingFunc type is an adapter to allow the use of ordinary
+// function as NotificationBinding mutator.
+type NotificationBindingFunc func(context.Context, *ent.NotificationBindingMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f NotificationBindingFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.NotificationBindingMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.NotificationBindingMutation", m)
+}
+
+// The NotificationRouteFunc type is an adapter to allow the use of ordinary
+// function as NotificationRoute mutator.
+type NotificationRouteFunc func(context.Context, *ent.NotificationRouteMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f NotificationRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.NotificationRouteMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.NotificationRouteMutation", m)
+}
+
 // The PermissionRuleFunc type is an adapter to allow the use of ordinary
 // function as PermissionRule mutator.
 type PermissionRuleFunc func(context.Context, *ent.PermissionRuleMutation) (ent.Value, error)

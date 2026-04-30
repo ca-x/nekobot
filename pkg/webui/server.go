@@ -55,11 +55,12 @@ import (
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
-	"nekobot/pkg/ownership"
 	"nekobot/pkg/memory"
 	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/modelroute"
 	"nekobot/pkg/modelstore"
+	"nekobot/pkg/notificationroutes"
+	"nekobot/pkg/ownership"
 	"nekobot/pkg/permissionrules"
 	"nekobot/pkg/policy"
 	"nekobot/pkg/process"
@@ -109,6 +110,7 @@ type Server struct {
 	runtimeMgr          *runtimeagents.Manager
 	accountMgr          *channelaccounts.Manager
 	bindingMgr          *accountbindings.Manager
+	notificationMgr     *notificationroutes.Manager
 	topologySvc         *runtimetopology.Service
 	cronMgr             *cron.Manager
 	skillsMgr           *skills.Manager
@@ -316,6 +318,13 @@ func NewServer(
 				s.topologySvc = topologySvc
 			}
 		}
+
+		notificationMgr, err := notificationroutes.NewManager(cfg, log, entClient)
+		if err != nil {
+			log.Warn("Failed to initialize notification routes manager", zap.Error(err))
+		} else {
+			s.notificationMgr = notificationMgr
+		}
 	}
 
 	ilinkStore, err := ilinkauth.NewStore(cfg)
@@ -442,6 +451,17 @@ func (s *Server) setup() {
 	api.PUT("/account-bindings/:id", s.handleUpdateAccountBinding)
 	api.DELETE("/account-bindings/:id", s.handleDeleteAccountBinding)
 	api.GET("/runtime-topology", s.handleGetRuntimeTopology)
+
+	// Notification routes
+	api.GET("/notification-routes", s.handleListNotificationRoutes)
+	api.POST("/notification-routes", s.handleCreateNotificationRoute)
+	api.PUT("/notification-routes/:id", s.handleUpdateNotificationRoute)
+	api.DELETE("/notification-routes/:id", s.handleDeleteNotificationRoute)
+	api.GET("/notification-bindings", s.handleListNotificationBindings)
+	api.POST("/notification-bindings", s.handleCreateNotificationBinding)
+	api.PUT("/notification-bindings/:id", s.handleUpdateNotificationBinding)
+	api.DELETE("/notification-bindings/:id", s.handleDeleteNotificationBinding)
+	api.GET("/notification-bindings/by-route/:routeId", s.handleListNotificationBindingsByRoute)
 
 	// Status
 	api.GET("/status", s.handleStatus)
@@ -1623,7 +1643,8 @@ func (s *Server) handleListCronJobs(c *echo.Context) error {
 	if s.cronMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cron manager unavailable"})
 	}
-	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c)); return c.JSON(http.StatusOK, s.cronMgr.ListJobsFiltered(ctx))
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	return c.JSON(http.StatusOK, s.cronMgr.ListJobsFiltered(ctx))
 }
 
 func (s *Server) handleCreateCronJob(c *echo.Context) error {
@@ -1719,7 +1740,7 @@ func (s *Server) handleDeleteCronJob(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
 	}
 	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
-		if err := s.cronMgr.RemoveJobAuth(ctx, jobID); err != nil {
+	if err := s.cronMgr.RemoveJobAuth(ctx, jobID); err != nil {
 		if strings.Contains(err.Error(), "job not found") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 		}
@@ -1741,7 +1762,7 @@ func (s *Server) handleEnableCronJob(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
 	}
 	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
-		if err := s.cronMgr.EnableJobAuth(ctx, jobID); err != nil {
+	if err := s.cronMgr.EnableJobAuth(ctx, jobID); err != nil {
 		if strings.Contains(err.Error(), "job not found") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 		}
@@ -1763,7 +1784,7 @@ func (s *Server) handleDisableCronJob(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
 	}
 	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
-		if err := s.cronMgr.DisableJobAuth(ctx, jobID); err != nil {
+	if err := s.cronMgr.DisableJobAuth(ctx, jobID); err != nil {
 		if strings.Contains(err.Error(), "job not found") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 		}
@@ -1785,7 +1806,7 @@ func (s *Server) handleRunCronJob(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "job id is required"})
 	}
 	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
-		if err := s.cronMgr.RunJobAuth(ctx, jobID); err != nil {
+	if err := s.cronMgr.RunJobAuth(ctx, jobID); err != nil {
 		if strings.Contains(err.Error(), "job not found") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 		}
@@ -6437,6 +6458,168 @@ func (s *Server) handleTestWebhook(c *echo.Context) error {
 	})
 }
 
+// ---------------------------------------------------------------------------
+// Notification route handlers
+// ---------------------------------------------------------------------------
+
+func (s *Server) handleListNotificationRoutes(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification routes not available"})
+	}
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	routes, err := s.notificationMgr.ListRoutes(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if routes == nil {
+		routes = []notificationroutes.NotificationRoute{}
+	}
+	return c.JSON(http.StatusOK, routes)
+}
+
+func (s *Server) handleCreateNotificationRoute(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification routes not available"})
+	}
+	var item notificationroutes.NotificationRoute
+	if err := c.Bind(&item); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	route, err := s.notificationMgr.CreateRoute(ctx, item)
+	if err != nil {
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, route)
+}
+
+func (s *Server) handleUpdateNotificationRoute(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification routes not available"})
+	}
+	id := c.Param("id")
+	var item notificationroutes.NotificationRoute
+	if err := c.Bind(&item); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	route, err := s.notificationMgr.UpdateRoute(ctx, id, item)
+	if err != nil {
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, route)
+}
+
+func (s *Server) handleDeleteNotificationRoute(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification routes not available"})
+	}
+	id := c.Param("id")
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	if err := s.notificationMgr.DeleteRoute(ctx, id); err != nil {
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// ---------------------------------------------------------------------------
+// Notification binding handlers
+// ---------------------------------------------------------------------------
+
+func (s *Server) handleListNotificationBindings(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification bindings not available"})
+	}
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	bindings, err := s.notificationMgr.ListBindings(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if bindings == nil {
+		bindings = []notificationroutes.NotificationBinding{}
+	}
+	return c.JSON(http.StatusOK, bindings)
+}
+
+func (s *Server) handleCreateNotificationBinding(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification bindings not available"})
+	}
+	var item notificationroutes.NotificationBinding
+	if err := c.Bind(&item); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	binding, err := s.notificationMgr.CreateBinding(ctx, item)
+	if err != nil {
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, binding)
+}
+
+func (s *Server) handleUpdateNotificationBinding(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification bindings not available"})
+	}
+	id := c.Param("id")
+	var item notificationroutes.NotificationBinding
+	if err := c.Bind(&item); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	binding, err := s.notificationMgr.UpdateBinding(ctx, id, item)
+	if err != nil {
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, binding)
+}
+
+func (s *Server) handleDeleteNotificationBinding(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification bindings not available"})
+	}
+	id := c.Param("id")
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	if err := s.notificationMgr.DeleteBinding(ctx, id); err != nil {
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleListNotificationBindingsByRoute(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification bindings not available"})
+	}
+	routeID := c.Param("routeId")
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	bindings, err := s.notificationMgr.ListBindingsByRoute(ctx, routeID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if bindings == nil {
+		bindings = []notificationroutes.NotificationBinding{}
+	}
+	return c.JSON(http.StatusOK, bindings)
+}
+
 func (s *Server) saveBootstrapConfig() error {
 	if s == nil || s.config == nil {
 		return fmt.Errorf("config is unavailable")
@@ -8537,7 +8720,8 @@ func (s *Server) handleListRuntimeAgents(c *echo.Context) error {
 	if s.runtimeMgr == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "runtime agent manager not available"})
 	}
-	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c)); items, err := s.deriveRuntimeStatuses(ctx)
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	items, err := s.deriveRuntimeStatuses(ctx)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -8552,7 +8736,8 @@ func (s *Server) handleCreateRuntimeAgent(c *echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c)); item, err := s.runtimeMgr.Create(ctx, body)
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	item, err := s.runtimeMgr.Create(ctx, body)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
@@ -8567,7 +8752,8 @@ func (s *Server) handleUpdateRuntimeAgent(c *echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c)); item, err := s.runtimeMgr.Update(ctx, c.Param("id"), body)
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	item, err := s.runtimeMgr.Update(ctx, c.Param("id"), body)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, runtimeagents.ErrRuntimeNotFound) {

@@ -20,6 +20,8 @@ import (
 	"nekobot/pkg/storage/ent/membership"
 	"nekobot/pkg/storage/ent/modelcatalog"
 	"nekobot/pkg/storage/ent/modelroute"
+	"nekobot/pkg/storage/ent/notificationbinding"
+	"nekobot/pkg/storage/ent/notificationroute"
 	"nekobot/pkg/storage/ent/permissionrule"
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
@@ -58,6 +60,10 @@ type Client struct {
 	ModelCatalog *ModelCatalogClient
 	// ModelRoute is the client for interacting with the ModelRoute builders.
 	ModelRoute *ModelRouteClient
+	// NotificationBinding is the client for interacting with the NotificationBinding builders.
+	NotificationBinding *NotificationBindingClient
+	// NotificationRoute is the client for interacting with the NotificationRoute builders.
+	NotificationRoute *NotificationRouteClient
 	// PermissionRule is the client for interacting with the PermissionRule builders.
 	PermissionRule *PermissionRuleClient
 	// Prompt is the client for interacting with the Prompt builders.
@@ -94,6 +100,8 @@ func (c *Client) init() {
 	c.Membership = NewMembershipClient(c.config)
 	c.ModelCatalog = NewModelCatalogClient(c.config)
 	c.ModelRoute = NewModelRouteClient(c.config)
+	c.NotificationBinding = NewNotificationBindingClient(c.config)
+	c.NotificationRoute = NewNotificationRouteClient(c.config)
 	c.PermissionRule = NewPermissionRuleClient(c.config)
 	c.Prompt = NewPromptClient(c.config)
 	c.PromptBinding = NewPromptBindingClient(c.config)
@@ -192,25 +200,27 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:            ctx,
-		config:         cfg,
-		AccountBinding: NewAccountBindingClient(cfg),
-		AgentRuntime:   NewAgentRuntimeClient(cfg),
-		AttachToken:    NewAttachTokenClient(cfg),
-		ChannelAccount: NewChannelAccountClient(cfg),
-		ConfigSection:  NewConfigSectionClient(cfg),
-		CronJob:        NewCronJobClient(cfg),
-		Membership:     NewMembershipClient(cfg),
-		ModelCatalog:   NewModelCatalogClient(cfg),
-		ModelRoute:     NewModelRouteClient(cfg),
-		PermissionRule: NewPermissionRuleClient(cfg),
-		Prompt:         NewPromptClient(cfg),
-		PromptBinding:  NewPromptBindingClient(cfg),
-		Provider:       NewProviderClient(cfg),
-		Tenant:         NewTenantClient(cfg),
-		ToolEvent:      NewToolEventClient(cfg),
-		ToolSession:    NewToolSessionClient(cfg),
-		User:           NewUserClient(cfg),
+		ctx:                 ctx,
+		config:              cfg,
+		AccountBinding:      NewAccountBindingClient(cfg),
+		AgentRuntime:        NewAgentRuntimeClient(cfg),
+		AttachToken:         NewAttachTokenClient(cfg),
+		ChannelAccount:      NewChannelAccountClient(cfg),
+		ConfigSection:       NewConfigSectionClient(cfg),
+		CronJob:             NewCronJobClient(cfg),
+		Membership:          NewMembershipClient(cfg),
+		ModelCatalog:        NewModelCatalogClient(cfg),
+		ModelRoute:          NewModelRouteClient(cfg),
+		NotificationBinding: NewNotificationBindingClient(cfg),
+		NotificationRoute:   NewNotificationRouteClient(cfg),
+		PermissionRule:      NewPermissionRuleClient(cfg),
+		Prompt:              NewPromptClient(cfg),
+		PromptBinding:       NewPromptBindingClient(cfg),
+		Provider:            NewProviderClient(cfg),
+		Tenant:              NewTenantClient(cfg),
+		ToolEvent:           NewToolEventClient(cfg),
+		ToolSession:         NewToolSessionClient(cfg),
+		User:                NewUserClient(cfg),
 	}, nil
 }
 
@@ -228,25 +238,27 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:            ctx,
-		config:         cfg,
-		AccountBinding: NewAccountBindingClient(cfg),
-		AgentRuntime:   NewAgentRuntimeClient(cfg),
-		AttachToken:    NewAttachTokenClient(cfg),
-		ChannelAccount: NewChannelAccountClient(cfg),
-		ConfigSection:  NewConfigSectionClient(cfg),
-		CronJob:        NewCronJobClient(cfg),
-		Membership:     NewMembershipClient(cfg),
-		ModelCatalog:   NewModelCatalogClient(cfg),
-		ModelRoute:     NewModelRouteClient(cfg),
-		PermissionRule: NewPermissionRuleClient(cfg),
-		Prompt:         NewPromptClient(cfg),
-		PromptBinding:  NewPromptBindingClient(cfg),
-		Provider:       NewProviderClient(cfg),
-		Tenant:         NewTenantClient(cfg),
-		ToolEvent:      NewToolEventClient(cfg),
-		ToolSession:    NewToolSessionClient(cfg),
-		User:           NewUserClient(cfg),
+		ctx:                 ctx,
+		config:              cfg,
+		AccountBinding:      NewAccountBindingClient(cfg),
+		AgentRuntime:        NewAgentRuntimeClient(cfg),
+		AttachToken:         NewAttachTokenClient(cfg),
+		ChannelAccount:      NewChannelAccountClient(cfg),
+		ConfigSection:       NewConfigSectionClient(cfg),
+		CronJob:             NewCronJobClient(cfg),
+		Membership:          NewMembershipClient(cfg),
+		ModelCatalog:        NewModelCatalogClient(cfg),
+		ModelRoute:          NewModelRouteClient(cfg),
+		NotificationBinding: NewNotificationBindingClient(cfg),
+		NotificationRoute:   NewNotificationRouteClient(cfg),
+		PermissionRule:      NewPermissionRuleClient(cfg),
+		Prompt:              NewPromptClient(cfg),
+		PromptBinding:       NewPromptBindingClient(cfg),
+		Provider:            NewProviderClient(cfg),
+		Tenant:              NewTenantClient(cfg),
+		ToolEvent:           NewToolEventClient(cfg),
+		ToolSession:         NewToolSessionClient(cfg),
+		User:                NewUserClient(cfg),
 	}, nil
 }
 
@@ -278,8 +290,8 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
 		c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog, c.ModelRoute,
-		c.PermissionRule, c.Prompt, c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent,
-		c.ToolSession, c.User,
+		c.NotificationBinding, c.NotificationRoute, c.PermissionRule, c.Prompt,
+		c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
 	} {
 		n.Use(hooks...)
 	}
@@ -291,8 +303,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.AccountBinding, c.AgentRuntime, c.AttachToken, c.ChannelAccount,
 		c.ConfigSection, c.CronJob, c.Membership, c.ModelCatalog, c.ModelRoute,
-		c.PermissionRule, c.Prompt, c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent,
-		c.ToolSession, c.User,
+		c.NotificationBinding, c.NotificationRoute, c.PermissionRule, c.Prompt,
+		c.PromptBinding, c.Provider, c.Tenant, c.ToolEvent, c.ToolSession, c.User,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -319,6 +331,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ModelCatalog.mutate(ctx, m)
 	case *ModelRouteMutation:
 		return c.ModelRoute.mutate(ctx, m)
+	case *NotificationBindingMutation:
+		return c.NotificationBinding.mutate(ctx, m)
+	case *NotificationRouteMutation:
+		return c.NotificationRoute.mutate(ctx, m)
 	case *PermissionRuleMutation:
 		return c.PermissionRule.mutate(ctx, m)
 	case *PromptMutation:
@@ -1569,6 +1585,272 @@ func (c *ModelRouteClient) mutate(ctx context.Context, m *ModelRouteMutation) (V
 	}
 }
 
+// NotificationBindingClient is a client for the NotificationBinding schema.
+type NotificationBindingClient struct {
+	config
+}
+
+// NewNotificationBindingClient returns a client for the NotificationBinding from the given config.
+func NewNotificationBindingClient(c config) *NotificationBindingClient {
+	return &NotificationBindingClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `notificationbinding.Hooks(f(g(h())))`.
+func (c *NotificationBindingClient) Use(hooks ...Hook) {
+	c.hooks.NotificationBinding = append(c.hooks.NotificationBinding, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `notificationbinding.Intercept(f(g(h())))`.
+func (c *NotificationBindingClient) Intercept(interceptors ...Interceptor) {
+	c.inters.NotificationBinding = append(c.inters.NotificationBinding, interceptors...)
+}
+
+// Create returns a builder for creating a NotificationBinding entity.
+func (c *NotificationBindingClient) Create() *NotificationBindingCreate {
+	mutation := newNotificationBindingMutation(c.config, OpCreate)
+	return &NotificationBindingCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of NotificationBinding entities.
+func (c *NotificationBindingClient) CreateBulk(builders ...*NotificationBindingCreate) *NotificationBindingCreateBulk {
+	return &NotificationBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *NotificationBindingClient) MapCreateBulk(slice any, setFunc func(*NotificationBindingCreate, int)) *NotificationBindingCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &NotificationBindingCreateBulk{err: fmt.Errorf("calling to NotificationBindingClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*NotificationBindingCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &NotificationBindingCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for NotificationBinding.
+func (c *NotificationBindingClient) Update() *NotificationBindingUpdate {
+	mutation := newNotificationBindingMutation(c.config, OpUpdate)
+	return &NotificationBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *NotificationBindingClient) UpdateOne(_m *NotificationBinding) *NotificationBindingUpdateOne {
+	mutation := newNotificationBindingMutation(c.config, OpUpdateOne, withNotificationBinding(_m))
+	return &NotificationBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *NotificationBindingClient) UpdateOneID(id string) *NotificationBindingUpdateOne {
+	mutation := newNotificationBindingMutation(c.config, OpUpdateOne, withNotificationBindingID(id))
+	return &NotificationBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for NotificationBinding.
+func (c *NotificationBindingClient) Delete() *NotificationBindingDelete {
+	mutation := newNotificationBindingMutation(c.config, OpDelete)
+	return &NotificationBindingDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *NotificationBindingClient) DeleteOne(_m *NotificationBinding) *NotificationBindingDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *NotificationBindingClient) DeleteOneID(id string) *NotificationBindingDeleteOne {
+	builder := c.Delete().Where(notificationbinding.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &NotificationBindingDeleteOne{builder}
+}
+
+// Query returns a query builder for NotificationBinding.
+func (c *NotificationBindingClient) Query() *NotificationBindingQuery {
+	return &NotificationBindingQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeNotificationBinding},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a NotificationBinding entity by its id.
+func (c *NotificationBindingClient) Get(ctx context.Context, id string) (*NotificationBinding, error) {
+	return c.Query().Where(notificationbinding.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *NotificationBindingClient) GetX(ctx context.Context, id string) *NotificationBinding {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *NotificationBindingClient) Hooks() []Hook {
+	return c.hooks.NotificationBinding
+}
+
+// Interceptors returns the client interceptors.
+func (c *NotificationBindingClient) Interceptors() []Interceptor {
+	return c.inters.NotificationBinding
+}
+
+func (c *NotificationBindingClient) mutate(ctx context.Context, m *NotificationBindingMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&NotificationBindingCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&NotificationBindingUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&NotificationBindingUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&NotificationBindingDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown NotificationBinding mutation op: %q", m.Op())
+	}
+}
+
+// NotificationRouteClient is a client for the NotificationRoute schema.
+type NotificationRouteClient struct {
+	config
+}
+
+// NewNotificationRouteClient returns a client for the NotificationRoute from the given config.
+func NewNotificationRouteClient(c config) *NotificationRouteClient {
+	return &NotificationRouteClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `notificationroute.Hooks(f(g(h())))`.
+func (c *NotificationRouteClient) Use(hooks ...Hook) {
+	c.hooks.NotificationRoute = append(c.hooks.NotificationRoute, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `notificationroute.Intercept(f(g(h())))`.
+func (c *NotificationRouteClient) Intercept(interceptors ...Interceptor) {
+	c.inters.NotificationRoute = append(c.inters.NotificationRoute, interceptors...)
+}
+
+// Create returns a builder for creating a NotificationRoute entity.
+func (c *NotificationRouteClient) Create() *NotificationRouteCreate {
+	mutation := newNotificationRouteMutation(c.config, OpCreate)
+	return &NotificationRouteCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of NotificationRoute entities.
+func (c *NotificationRouteClient) CreateBulk(builders ...*NotificationRouteCreate) *NotificationRouteCreateBulk {
+	return &NotificationRouteCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *NotificationRouteClient) MapCreateBulk(slice any, setFunc func(*NotificationRouteCreate, int)) *NotificationRouteCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &NotificationRouteCreateBulk{err: fmt.Errorf("calling to NotificationRouteClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*NotificationRouteCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &NotificationRouteCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for NotificationRoute.
+func (c *NotificationRouteClient) Update() *NotificationRouteUpdate {
+	mutation := newNotificationRouteMutation(c.config, OpUpdate)
+	return &NotificationRouteUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *NotificationRouteClient) UpdateOne(_m *NotificationRoute) *NotificationRouteUpdateOne {
+	mutation := newNotificationRouteMutation(c.config, OpUpdateOne, withNotificationRoute(_m))
+	return &NotificationRouteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *NotificationRouteClient) UpdateOneID(id string) *NotificationRouteUpdateOne {
+	mutation := newNotificationRouteMutation(c.config, OpUpdateOne, withNotificationRouteID(id))
+	return &NotificationRouteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for NotificationRoute.
+func (c *NotificationRouteClient) Delete() *NotificationRouteDelete {
+	mutation := newNotificationRouteMutation(c.config, OpDelete)
+	return &NotificationRouteDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *NotificationRouteClient) DeleteOne(_m *NotificationRoute) *NotificationRouteDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *NotificationRouteClient) DeleteOneID(id string) *NotificationRouteDeleteOne {
+	builder := c.Delete().Where(notificationroute.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &NotificationRouteDeleteOne{builder}
+}
+
+// Query returns a query builder for NotificationRoute.
+func (c *NotificationRouteClient) Query() *NotificationRouteQuery {
+	return &NotificationRouteQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeNotificationRoute},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a NotificationRoute entity by its id.
+func (c *NotificationRouteClient) Get(ctx context.Context, id string) (*NotificationRoute, error) {
+	return c.Query().Where(notificationroute.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *NotificationRouteClient) GetX(ctx context.Context, id string) *NotificationRoute {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *NotificationRouteClient) Hooks() []Hook {
+	return c.hooks.NotificationRoute
+}
+
+// Interceptors returns the client interceptors.
+func (c *NotificationRouteClient) Interceptors() []Interceptor {
+	return c.inters.NotificationRoute
+}
+
+func (c *NotificationRouteClient) mutate(ctx context.Context, m *NotificationRouteMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&NotificationRouteCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&NotificationRouteUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&NotificationRouteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&NotificationRouteDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown NotificationRoute mutation op: %q", m.Op())
+	}
+}
+
 // PermissionRuleClient is a client for the PermissionRule schema.
 type PermissionRuleClient struct {
 	config
@@ -2669,12 +2951,14 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 type (
 	hooks struct {
 		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
-		CronJob, Membership, ModelCatalog, ModelRoute, PermissionRule, Prompt,
-		PromptBinding, Provider, Tenant, ToolEvent, ToolSession, User []ent.Hook
+		CronJob, Membership, ModelCatalog, ModelRoute, NotificationBinding,
+		NotificationRoute, PermissionRule, Prompt, PromptBinding, Provider, Tenant,
+		ToolEvent, ToolSession, User []ent.Hook
 	}
 	inters struct {
 		AccountBinding, AgentRuntime, AttachToken, ChannelAccount, ConfigSection,
-		CronJob, Membership, ModelCatalog, ModelRoute, PermissionRule, Prompt,
-		PromptBinding, Provider, Tenant, ToolEvent, ToolSession, User []ent.Interceptor
+		CronJob, Membership, ModelCatalog, ModelRoute, NotificationBinding,
+		NotificationRoute, PermissionRule, Prompt, PromptBinding, Provider, Tenant,
+		ToolEvent, ToolSession, User []ent.Interceptor
 	}
 )

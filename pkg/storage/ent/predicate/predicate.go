@@ -33,6 +33,12 @@ type ModelCatalog func(*sql.Selector)
 // ModelRoute is the predicate function for modelroute builders.
 type ModelRoute func(*sql.Selector)
 
+// NotificationBinding is the predicate function for notificationbinding builders.
+type NotificationBinding func(*sql.Selector)
+
+// NotificationRoute is the predicate function for notificationroute builders.
+type NotificationRoute func(*sql.Selector)
+
 // PermissionRule is the predicate function for permissionrule builders.
 type PermissionRule func(*sql.Selector)
 
