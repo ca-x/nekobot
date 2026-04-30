@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -21,11 +22,13 @@ import (
 	"nekobot/pkg/audit"
 	"nekobot/pkg/bus"
 	"nekobot/pkg/channels"
+	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/daemonhost"
 	eventlog "nekobot/pkg/events"
 	"nekobot/pkg/idempotency"
 	"nekobot/pkg/message"
+	"nekobot/pkg/process"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
@@ -46,6 +49,27 @@ const (
 
 	maxDaemonAttachmentBytes = 32 << 20
 )
+
+const (
+	lifecyclePolicySessionResetCommand = "session_reset_cmd"
+	lifecyclePolicyFullResetCommand    = "full_reset_cmd"
+)
+
+type agentLifecycleExecutor interface {
+	ExecuteAgentControl(ctx context.Context, runtime *runtimeagents.AgentRuntime, operation *daemonv1.AgentControlOperation) lifecycleExecutionResult
+}
+
+type lifecycleExecutionResult struct {
+	Accepted   bool
+	State      string
+	Reason     string
+	EventTypes []string
+}
+
+type runtimePolicyLifecycleExecutor struct {
+	config     *config.Config
+	processMgr *process.Manager
+}
 
 type storedAttachment struct {
 	Record        *daemonv1.AttachmentRecord `json:"record"`
@@ -1579,6 +1603,19 @@ func (s *Server) ListAgentDMs(ctx context.Context, req *daemonv1.ListAgentDMsReq
 	return &daemonv1.ListAgentDMsResponse{Dms: dms}, nil
 }
 
+func (s *Server) agentLifecycleExecutor() agentLifecycleExecutor {
+	if s != nil && s.lifecycleExecutor != nil {
+		return s.lifecycleExecutor
+	}
+	var cfg *config.Config
+	var processMgr *process.Manager
+	if s != nil {
+		cfg = s.config
+		processMgr = s.processMgr
+	}
+	return runtimePolicyLifecycleExecutor{config: cfg, processMgr: processMgr}
+}
+
 func (s *Server) ControlAgent(ctx context.Context, req *daemonv1.ControlAgentRequest) (*daemonv1.ControlAgentResponse, error) {
 	agentID := strings.TrimSpace(req.GetAgentId())
 	if agentID == "" {
@@ -1632,7 +1669,7 @@ func (s *Server) ControlAgent(ctx context.Context, req *daemonv1.ControlAgentReq
 		ComputerId:         firstNonEmpty(strings.TrimSpace(req.GetComputerId()), profile.GetComputerId()),
 		RuntimeProfileId:   firstNonEmpty(strings.TrimSpace(req.GetRuntimeProfileId()), profile.GetRuntimeProfileId()),
 		Action:             req.GetAction(),
-		State:              "unsupported",
+		State:              "requested",
 		Reason:             strings.TrimSpace(req.GetReason()),
 		RequestedByAgentId: strings.TrimSpace(req.GetRequestedByAgentId()),
 		CreatedTimeUnix:    now,
@@ -1657,8 +1694,45 @@ func (s *Server) ControlAgent(ctx context.Context, req *daemonv1.ControlAgentReq
 	if event != nil {
 		eventID = event.EventID
 	}
+	runtimeItem, err := s.findAgentRuntime(ctx, operation.GetAgentId(), operation.GetRuntimeProfileId())
+	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	result := s.agentLifecycleExecutor().ExecuteAgentControl(ctx, runtimeItem, operation)
+	operation.State = firstNonEmpty(result.State, "unsupported")
+	if result.Reason != "" {
+		operation.Reason = result.Reason
+	}
+	operation.UpdatedTimeUnix = time.Now().Unix()
+	for _, eventType := range result.EventTypes {
+		eventType = strings.TrimSpace(eventType)
+		if eventType == "" {
+			continue
+		}
+		terminalEvent, err := s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+			EventType:      eventType,
+			ActorKind:      "agent",
+			ActorID:        firstNonEmpty(operation.RequestedByAgentId, callerID),
+			SubjectKind:    "agent",
+			SubjectID:      operation.AgentId,
+			IdempotencyKey: reqID,
+			PayloadJSON:    mustMarshalJSON(operation),
+		})
+		if err != nil {
+			if idemReserved {
+				failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+			}
+			return nil, err
+		}
+		if terminalEvent != nil {
+			eventID = terminalEvent.EventID
+		}
+	}
 	resp := &daemonv1.ControlAgentResponse{
-		Accepted:  false,
+		Accepted:  result.Accepted,
 		Operation: operation,
 		Profile:   profile,
 	}
@@ -2346,6 +2420,35 @@ func (s *Server) findAgentProfile(ctx context.Context, agentID string) (*daemonv
 	return nil, fmt.Errorf("agent profile not found: %s", agentID)
 }
 
+func (s *Server) findAgentRuntime(ctx context.Context, agentID, runtimeProfileID string) (*runtimeagents.AgentRuntime, error) {
+	if s == nil || s.runtimeMgr == nil {
+		return nil, nil
+	}
+	for _, id := range []string{strings.TrimSpace(runtimeProfileID), strings.TrimSpace(agentID)} {
+		if id == "" {
+			continue
+		}
+		item, err := s.runtimeMgr.Get(ctx, id)
+		if err == nil {
+			return item, nil
+		}
+		if !errors.Is(err, runtimeagents.ErrRuntimeNotFound) {
+			return nil, err
+		}
+	}
+	items, err := s.runtimeDefinitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	agentID = strings.TrimSpace(agentID)
+	for i := range items {
+		if items[i].ID == agentID || items[i].Name == agentID {
+			return &items[i], nil
+		}
+	}
+	return nil, nil
+}
+
 func (s *Server) runtimeDefinitions(ctx context.Context) ([]runtimeagents.AgentRuntime, error) {
 	if s == nil || s.runtimeMgr == nil {
 		return nil, nil
@@ -2424,6 +2527,165 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (e runtimePolicyLifecycleExecutor) ExecuteAgentControl(ctx context.Context, runtime *runtimeagents.AgentRuntime, operation *daemonv1.AgentControlOperation) lifecycleExecutionResult {
+	if operation == nil {
+		return lifecycleExecutionResult{State: "unsupported", Reason: "operation is required"}
+	}
+	if runtime == nil {
+		return lifecycleExecutionResult{State: "unsupported", Reason: "runtime profile metadata unavailable"}
+	}
+	policy := runtime.Policy
+	sessionID := lifecyclePolicySessionID(policy)
+	launchCommand := runtimeagents.MetadataString(policy, runtimeagents.MetadataLaunchCommand)
+	workdir := firstNonEmpty(runtimeagents.MetadataString(policy, "workdir"), runtimeagents.MetadataString(policy, "workspace"))
+	if workdir == "" && e.config != nil {
+		workdir = e.config.WorkspacePath()
+	}
+	events := make([]string, 0, 3)
+	stopped := false
+	stopCurrent := func() {
+		if sessionID == "" {
+			return
+		}
+		if e.processMgr != nil {
+			_ = e.processMgr.Reset(sessionID)
+			stopped = true
+		}
+		transport := lifecyclePolicyTransport(policy)
+		if transport != nil && transport.Available() {
+			transport.KillSession(sessionID)
+			stopped = true
+		}
+	}
+	fail := func(reason string) lifecycleExecutionResult {
+		return lifecycleExecutionResult{Accepted: true, State: "failed", Reason: reason, EventTypes: []string{"agent.control_failed"}}
+	}
+	unsupported := func(reason string) lifecycleExecutionResult {
+		return lifecycleExecutionResult{State: "unsupported", Reason: reason}
+	}
+
+	switch operation.GetAction() {
+	case daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_TERMINATE:
+		if sessionID == "" {
+			return unsupported("runtime policy does not declare a controllable session")
+		}
+		stopCurrent()
+		if !stopped {
+			return unsupported("no available process manager or runtime transport for session")
+		}
+		return lifecycleExecutionResult{Accepted: true, State: "completed", EventTypes: []string{"agent.terminated"}}
+	case daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART:
+		if launchCommand == "" {
+			return unsupported("runtime policy does not declare launch_cmd")
+		}
+		stopCurrent()
+		if stopped {
+			events = append(events, "agent.terminated")
+		}
+		if err := e.startRuntime(ctx, sessionID, launchCommand, workdir); err != nil {
+			return fail(err.Error())
+		}
+		events = append(events, "agent.restarted")
+		return lifecycleExecutionResult{Accepted: true, State: "completed", EventTypes: events}
+	case daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART_RESET_SESSION:
+		resetCommand := runtimeagents.MetadataString(policy, lifecyclePolicySessionResetCommand)
+		if resetCommand == "" {
+			return unsupported("runtime policy does not declare session_reset_cmd")
+		}
+		if launchCommand == "" {
+			return unsupported("runtime policy does not declare launch_cmd")
+		}
+		stopCurrent()
+		if stopped {
+			events = append(events, "agent.terminated")
+		}
+		if err := runLifecycleCommand(ctx, resetCommand, workdir); err != nil {
+			return fail("session reset failed: " + err.Error())
+		}
+		events = append(events, "agent.session_reset")
+		if err := e.startRuntime(ctx, sessionID, launchCommand, workdir); err != nil {
+			return fail(err.Error())
+		}
+		events = append(events, "agent.restarted")
+		return lifecycleExecutionResult{Accepted: true, State: "completed", EventTypes: events}
+	case daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART_FULL_RESET:
+		resetCommand := runtimeagents.MetadataString(policy, lifecyclePolicyFullResetCommand)
+		if resetCommand == "" {
+			return unsupported("runtime policy does not declare full_reset_cmd")
+		}
+		if launchCommand == "" {
+			return unsupported("runtime policy does not declare launch_cmd")
+		}
+		stopCurrent()
+		if stopped {
+			events = append(events, "agent.terminated")
+		}
+		if err := runLifecycleCommand(ctx, resetCommand, workdir); err != nil {
+			return fail("full reset failed: " + err.Error())
+		}
+		events = append(events, "agent.full_reset")
+		if err := e.startRuntime(ctx, sessionID, launchCommand, workdir); err != nil {
+			return fail(err.Error())
+		}
+		events = append(events, "agent.restarted")
+		return lifecycleExecutionResult{Accepted: true, State: "completed", EventTypes: events}
+	default:
+		return unsupported("unsupported lifecycle action")
+	}
+}
+
+func (e runtimePolicyLifecycleExecutor) startRuntime(ctx context.Context, sessionID, command, workdir string) error {
+	if e.processMgr == nil {
+		return fmt.Errorf("process manager unavailable")
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		sessionID = "agent-control-" + uuid.NewString()
+	}
+	if err := e.processMgr.Reset(sessionID); err != nil {
+		return fmt.Errorf("reset existing runtime process: %w", err)
+	}
+	if err := e.processMgr.Start(ctx, sessionID, command, workdir); err != nil {
+		return fmt.Errorf("start runtime process: %w", err)
+	}
+	return nil
+}
+
+func lifecyclePolicySessionID(policy map[string]interface{}) string {
+	return firstNonEmpty(
+		runtimeagents.MetadataString(policy, runtimeagents.MetadataRuntimeSession),
+		runtimeagents.MetadataString(policy, runtimeagents.MetadataTmuxSession),
+		runtimeagents.MetadataString(policy, "session_id"),
+	)
+}
+
+func lifecyclePolicyTransport(policy map[string]interface{}) runtimeagents.RuntimeTransport {
+	name := runtimeagents.MetadataString(policy, runtimeagents.MetadataRuntimeTransport)
+	if name == "" && runtimeagents.MetadataString(policy, runtimeagents.MetadataTmuxSession) != "" {
+		name = runtimeagents.TransportTmux
+	}
+	if name == "" && runtimeagents.MetadataString(policy, runtimeagents.MetadataRuntimeSession) == "" {
+		return nil
+	}
+	return runtimeagents.TransportByName(name)
+}
+
+func runLifecycleCommand(ctx context.Context, command, workdir string) error {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-lc", command)
+	if strings.TrimSpace(workdir) != "" {
+		cmd.Dir = strings.TrimSpace(workdir)
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail != "" {
+			return fmt.Errorf("%w: %s", err, detail)
+		}
+		return err
+	}
+	return nil
 }
 
 func normalizeEnvVars(items []*daemonv1.EnvVar) []*daemonv1.EnvVar {

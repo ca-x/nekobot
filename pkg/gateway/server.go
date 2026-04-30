@@ -121,6 +121,7 @@ type Server struct {
 	rateLimiters              map[string]*rate.Limiter
 	splitProposals            map[string]*splitProposal
 	splitProposalsMu          sync.RWMutex
+	lifecycleExecutor         agentLifecycleExecutor
 	beforeWSUpgrade           func(sessionID string)
 	beforeWelcomeSend         func(client *Client)
 	mu                        sync.RWMutex

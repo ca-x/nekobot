@@ -45,6 +45,16 @@ import (
 	"nekobot/pkg/version"
 )
 
+type fakeAgentLifecycleExecutor struct {
+	result  lifecycleExecutionResult
+	runtime *runtimeagents.AgentRuntime
+}
+
+func (f *fakeAgentLifecycleExecutor) ExecuteAgentControl(_ context.Context, runtime *runtimeagents.AgentRuntime, _ *daemonv1.AgentControlOperation) lifecycleExecutionResult {
+	f.runtime = runtime
+	return f.result
+}
+
 type stubGatewayRouter struct {
 	lastRuntimeID string
 	reply         string
@@ -718,6 +728,99 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	}
 	if expiredProfile.Profile.GetStatus() != "" || expiredProfile.Profile.GetStatusSnapshot() != nil {
 		t.Fatalf("expected expired status to be hidden from profile, got %+v", expiredProfile.Profile)
+	}
+}
+
+func TestControlAgentLifecycleExecutorTerminalEventsAndReplay(t *testing.T) {
+	s := newTestServer(t)
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	client, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := config.EnsureRuntimeEntSchema(client); err != nil {
+		t.Fatalf("ensure ent schema: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, s.logger, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	runtimeItem, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "codex",
+		DisplayName: "Codex Agent",
+	})
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	s.runtimeMgr = runtimeMgr
+	eventMgr, err := eventlog.NewManager(client)
+	if err != nil {
+		t.Fatalf("new event manager: %v", err)
+	}
+	s.eventMgr = eventMgr
+	s.idempotencyStore = idempotency.NewStore(client)
+	fake := &fakeAgentLifecycleExecutor{result: lifecycleExecutionResult{
+		Accepted:   true,
+		State:      "completed",
+		EventTypes: []string{"agent.terminated"},
+	}}
+	s.lifecycleExecutor = fake
+
+	control, err := s.ControlAgent(context.Background(), &daemonv1.ControlAgentRequest{
+		AgentId:            runtimeItem.ID,
+		Action:             daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_TERMINATE,
+		RequestedByAgentId: "reviewer",
+		RequestId:          "control-exec-req-1",
+	})
+	if err != nil {
+		t.Fatalf("ControlAgent failed: %v", err)
+	}
+	if !control.GetAccepted() || control.GetOperation().GetState() != "completed" {
+		t.Fatalf("unexpected control response: %+v", control)
+	}
+	if fake.runtime == nil || fake.runtime.ID != runtimeItem.ID {
+		t.Fatalf("expected executor to receive runtime %q, got %+v", runtimeItem.ID, fake.runtime)
+	}
+	events, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince failed: %v", err)
+	}
+	if len(events.Events) != 2 || events.Events[0].GetKind() != "agent.control_requested" || events.Events[1].GetKind() != "agent.terminated" {
+		t.Fatalf("unexpected control events: %+v", events.Events)
+	}
+	idem, err := s.idempotencyStore.Check(context.Background(), idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   "reviewer",
+		Method:     "ControlAgent",
+		RequestID:  "control-exec-req-1",
+	})
+	if err != nil {
+		t.Fatalf("check control idempotency: %v", err)
+	}
+	if idem.Record == nil || idem.Record.EventID != events.Events[1].GetEventId() {
+		t.Fatalf("expected terminal event_id %q, got %+v", events.Events[1].GetEventId(), idem.Record)
+	}
+	replay, err := s.ControlAgent(context.Background(), &daemonv1.ControlAgentRequest{
+		AgentId:            runtimeItem.ID,
+		Action:             daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_TERMINATE,
+		RequestedByAgentId: "reviewer",
+		RequestId:          "control-exec-req-1",
+	})
+	if err != nil {
+		t.Fatalf("ControlAgent replay failed: %v", err)
+	}
+	if replay.GetOperation().GetOperationId() != control.GetOperation().GetOperationId() {
+		t.Fatalf("expected replay operation %q, got %q", control.GetOperation().GetOperationId(), replay.GetOperation().GetOperationId())
+	}
+	afterReplay, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince after replay failed: %v", err)
+	}
+	if len(afterReplay.Events) != len(events.Events) {
+		t.Fatalf("expected replay to avoid duplicate events, before=%d after=%d", len(events.Events), len(afterReplay.Events))
 	}
 }
 
@@ -3827,6 +3930,7 @@ func TestIdempotencyFailedRecordReplayReturnsError(t *testing.T) {
 		"sender_agent_id", "runtime-fail",
 		"sender_display_name", "",
 		"reply_to_message_id", "",
+		"attachment_ids", normalizedAttachmentIDHash(nil),
 	)
 	r, err := s.idempotencyStore.Reserve(ctx, key, hash, time.Hour)
 	if err != nil {
