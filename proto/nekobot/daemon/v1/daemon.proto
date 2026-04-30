@@ -875,6 +875,7 @@ message CollaborationEvent {
   string task_id = 6;
   string run_id = 7;
   int64 created_time_unix = 8;
+  string attachment_id = 9;
 }
 
 message ListEventsSinceResponse {

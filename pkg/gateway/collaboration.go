@@ -25,9 +25,11 @@ import (
 	"nekobot/pkg/daemonhost"
 	eventlog "nekobot/pkg/events"
 	"nekobot/pkg/idempotency"
+	"nekobot/pkg/message"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
+	"nekobot/pkg/state"
 	"nekobot/pkg/tasks"
 	"nekobot/pkg/version"
 )
@@ -46,6 +48,41 @@ const (
 type storedAttachment struct {
 	Record        *daemonv1.AttachmentRecord `json:"record"`
 	ContentBase64 string                     `json:"content_base64"`
+}
+
+// LoadCollaborationAttachment returns a stored collaboration attachment record and content.
+func LoadCollaborationAttachment(ctx context.Context, kv state.KV, attachmentID string) (*daemonv1.AttachmentRecord, []byte, error) {
+	attachmentID = strings.TrimSpace(attachmentID)
+	if kv == nil {
+		return nil, nil, fmt.Errorf("attachment store unavailable")
+	}
+	if attachmentID == "" {
+		return nil, nil, fmt.Errorf("attachment_id is required")
+	}
+	value, ok, err := kv.Get(ctx, daemonAttachmentKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ok {
+		return nil, nil, fmt.Errorf("attachment not found: %s", attachmentID)
+	}
+	attachments := map[string]storedAttachment{}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := json.Unmarshal(payload, &attachments); err != nil {
+		return nil, nil, err
+	}
+	item, ok := attachments[attachmentID]
+	if !ok || item.Record == nil {
+		return nil, nil, fmt.Errorf("attachment not found: %s", attachmentID)
+	}
+	content, err := base64.StdEncoding.DecodeString(item.ContentBase64)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decode attachment %s: %w", attachmentID, err)
+	}
+	return item.Record, content, nil
 }
 
 func (s *Server) ListChannels(ctx context.Context, req *daemonv1.ListChannelsRequest) (*daemonv1.ListChannelsResponse, error) {
@@ -152,7 +189,8 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 		return nil, err
 	}
 	content := strings.TrimSpace(req.GetContent())
-	if content == "" {
+	attachmentIDs := normalizedAttachmentIDs(req.GetAttachmentIds())
+	if content == "" && len(attachmentIDs) == 0 {
 		return nil, fmt.Errorf("content is required")
 	}
 
@@ -172,6 +210,7 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 			"sender_agent_id", req.GetSenderAgentId(),
 			"sender_display_name", req.GetSenderDisplayName(),
 			"reply_to_message_id", req.GetReplyToMessageId(),
+			"attachment_ids", normalizedAttachmentIDHash(attachmentIDs),
 		)
 		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 7*24*time.Hour)
 		if err != nil {
@@ -205,7 +244,16 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 		}
 		return nil, fmt.Errorf("load thread %s: %w", sessionID, err)
 	}
+	attachmentRecords, err := s.attachmentRecordsForMessage(ctx, target, attachmentIDs)
+	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
 	msg := agent.Message{Role: role, Content: content}
+	msg.ID = "message-" + uuid.NewString()
+	msg.Attachments = messageAttachmentsFromRecords(attachmentRecords)
 	sess.AddMessage(msg)
 	if err := s.sessionMgr.Save(sess); err != nil {
 		if idemReserved {
@@ -214,7 +262,7 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 		return nil, fmt.Errorf("save thread %s: %w", sessionID, err)
 	}
 	protoMsg := &daemonv1.CollaborationMessage{
-		MessageId:         uuid.NewString(),
+		MessageId:         msg.ID,
 		Target:            target,
 		ThreadId:          sessionID,
 		Role:              role,
@@ -223,6 +271,27 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 		SenderDisplayName: strings.TrimSpace(req.GetSenderDisplayName()),
 		ReplyToMessageId:  strings.TrimSpace(req.GetReplyToMessageId()),
 		CreatedTimeUnix:   time.Now().Unix(),
+		Attachments:       attachmentRecords,
+	}
+	eventID := ""
+	if event, err := s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+		EventType:      "message.created",
+		Target:         target,
+		ThreadID:       sessionID,
+		ActorKind:      "agent",
+		ActorID:        protoMsg.SenderAgentId,
+		SubjectKind:    "message",
+		SubjectID:      protoMsg.MessageId,
+		IdempotencyKey: reqID,
+		PayloadJSON:    mustMarshalJSON(protoMsg),
+		CapabilityKeys: []string{"message.send"},
+	}); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	} else if event != nil {
+		eventID = event.EventID
 	}
 	if req.GetEmitOutbound() && s.bus != nil {
 		_ = s.bus.SendOutbound(&bus.Message{
@@ -233,6 +302,7 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 			Username:  protoMsg.SenderDisplayName,
 			Type:      bus.MessageTypeText,
 			Content:   content,
+			Data:      map[string]interface{}{"attachment_ids": attachmentIDs},
 			Timestamp: time.Now(),
 			ReplyTo:   protoMsg.ReplyToMessageId,
 		})
@@ -245,6 +315,7 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 			ResponseJSON: mustMarshalJSON(resp),
 			ResourceKind: "message",
 			ResourceID:   protoMsg.MessageId,
+			EventID:      eventID,
 		}); err != nil {
 			// Mutation succeeded but idempotency completion failed.
 			// Return the successful response; the record stays pending
@@ -1632,10 +1703,40 @@ func (s *Server) UploadAttachment(ctx context.Context, req *daemonv1.UploadAttac
 	if len(content) > maxDaemonAttachmentBytes {
 		return nil, fmt.Errorf("attachment exceeds %d bytes", maxDaemonAttachmentBytes)
 	}
+	reqID := strings.TrimSpace(req.GetRequestId())
+	ownerID := strings.TrimSpace(req.GetOwnerId())
+	idemKey := idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   ownerID,
+		Method:     "UploadAttachment",
+		RequestID:  reqID,
+	}
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"target", target,
+			"filename", filename,
+			"mime_type", strings.TrimSpace(req.GetMimeType()),
+			"owner_id", ownerID,
+			"content_hash", idempotency.Hash(content),
+		)
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 7*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replayUploadAttachment(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+	}
+	idemReserved := reqID != "" && s.idempotencyStore != nil
 	record := &daemonv1.AttachmentRecord{
 		AttachmentId:    "attachment-" + uuid.NewString(),
 		Target:          target,
-		OwnerId:         strings.TrimSpace(req.GetOwnerId()),
+		OwnerId:         ownerID,
 		Filename:        filename,
 		MimeType:        strings.TrimSpace(req.GetMimeType()),
 		SizeBytes:       int64(len(content)),
@@ -1643,9 +1744,41 @@ func (s *Server) UploadAttachment(ctx context.Context, req *daemonv1.UploadAttac
 		CreatedTimeUnix: time.Now().Unix(),
 	}
 	if err := s.storeAttachment(ctx, record, content); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, err
 	}
-	return &daemonv1.UploadAttachmentResponse{Attachment: record}, nil
+	eventID := ""
+	if event, err := s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+		EventType:      "attachment.uploaded",
+		Target:         target,
+		ActorKind:      "agent",
+		ActorID:        record.OwnerId,
+		SubjectKind:    "attachment",
+		SubjectID:      record.AttachmentId,
+		IdempotencyKey: reqID,
+		PayloadJSON:    mustMarshalJSON(record),
+		CapabilityKeys: []string{"attachment.upload"},
+	}); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	} else if event != nil {
+		eventID = event.EventID
+	}
+	resp := &daemonv1.UploadAttachmentResponse{Attachment: record}
+	if idemReserved {
+		_ = completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:UploadAttachmentResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "attachment",
+			ResourceID:   record.AttachmentId,
+			EventID:      eventID,
+		})
+	}
+	return resp, nil
 }
 
 func (s *Server) GetAttachment(ctx context.Context, req *daemonv1.GetAttachmentRequest) (*daemonv1.GetAttachmentResponse, error) {
@@ -2371,6 +2504,8 @@ func eventRecordToProto(record *eventlog.EventRecord) *daemonv1.CollaborationEve
 		out.ActivityId = record.SubjectID
 	case "task":
 		out.TaskId = record.SubjectID
+	case "attachment":
+		out.AttachmentId = record.SubjectID
 	case "run":
 		out.RunId = record.SubjectID
 	case "run_step":
@@ -2403,34 +2538,97 @@ func (s *Server) storeAttachment(ctx context.Context, record *daemonv1.Attachmen
 	})
 }
 
+func (s *Server) attachmentRecordsForMessage(ctx context.Context, target string, attachmentIDs []string) ([]*daemonv1.AttachmentRecord, error) {
+	ids := normalizedAttachmentIDs(attachmentIDs)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	out := make([]*daemonv1.AttachmentRecord, 0, len(ids))
+	for _, attachmentID := range ids {
+		record, _, err := s.loadAttachment(ctx, attachmentID)
+		if err != nil {
+			return nil, err
+		}
+		if record.GetTarget() != target {
+			return nil, fmt.Errorf("attachment %s belongs to %s, not %s", attachmentID, record.GetTarget(), target)
+		}
+		out = append(out, record)
+	}
+	return out, nil
+}
+
 func (s *Server) loadAttachment(ctx context.Context, attachmentID string) (*daemonv1.AttachmentRecord, []byte, error) {
-	if s == nil || s.kvStore == nil {
+	if s == nil {
 		return nil, nil, fmt.Errorf("attachment store unavailable")
 	}
-	value, ok, err := s.kvStore.Get(ctx, daemonAttachmentKey)
-	if err != nil {
-		return nil, nil, err
+	return LoadCollaborationAttachment(ctx, s.kvStore, attachmentID)
+}
+
+func normalizedAttachmentIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	seen := map[string]struct{}{}
+	for _, id := range ids {
+		trimmed := strings.TrimSpace(id)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
 	}
-	if !ok {
-		return nil, nil, fmt.Errorf("attachment not found: %s", attachmentID)
+	return out
+}
+
+func normalizedAttachmentIDHash(ids []string) string {
+	return strings.Join(normalizedAttachmentIDs(ids), "\x00")
+}
+
+func messageAttachmentsFromRecords(records []*daemonv1.AttachmentRecord) []message.Attachment {
+	if len(records) == 0 {
+		return nil
 	}
-	attachments := map[string]storedAttachment{}
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return nil, nil, err
+	out := make([]message.Attachment, 0, len(records))
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+		out = append(out, message.Attachment{
+			AttachmentID:    record.GetAttachmentId(),
+			Target:          record.GetTarget(),
+			OwnerID:         record.GetOwnerId(),
+			Filename:        record.GetFilename(),
+			MimeType:        record.GetMimeType(),
+			SizeBytes:       record.GetSizeBytes(),
+			StorageRef:      record.GetStorageRef(),
+			CreatedTimeUnix: record.GetCreatedTimeUnix(),
+		})
 	}
-	if err := json.Unmarshal(payload, &attachments); err != nil {
-		return nil, nil, err
+	return out
+}
+
+func messageAttachmentsToRecords(attachments []message.Attachment) []*daemonv1.AttachmentRecord {
+	if len(attachments) == 0 {
+		return nil
 	}
-	item, ok := attachments[attachmentID]
-	if !ok || item.Record == nil {
-		return nil, nil, fmt.Errorf("attachment not found: %s", attachmentID)
+	out := make([]*daemonv1.AttachmentRecord, 0, len(attachments))
+	for _, item := range attachments {
+		if strings.TrimSpace(item.AttachmentID) == "" {
+			continue
+		}
+		out = append(out, &daemonv1.AttachmentRecord{
+			AttachmentId:    item.AttachmentID,
+			Target:          item.Target,
+			OwnerId:         item.OwnerID,
+			Filename:        item.Filename,
+			MimeType:        item.MimeType,
+			SizeBytes:       item.SizeBytes,
+			StorageRef:      item.StorageRef,
+			CreatedTimeUnix: item.CreatedTimeUnix,
+		})
 	}
-	content, err := base64.StdEncoding.DecodeString(item.ContentBase64)
-	if err != nil {
-		return nil, nil, fmt.Errorf("decode attachment %s: %w", attachmentID, err)
-	}
-	return item.Record, content, nil
+	return out
 }
 
 func (s *Server) threadRecord(ctx context.Context, sessionID string, followed map[string]struct{}) (*daemonv1.ThreadRecord, error) {
@@ -2605,13 +2803,18 @@ func normalizeMessageRole(role string) string {
 }
 
 func sessionMessageToProto(target, sessionID string, index int, msg session.Message, updatedAt time.Time) *daemonv1.CollaborationMessage {
+	messageID := strings.TrimSpace(msg.ID)
+	if messageID == "" {
+		messageID = fmt.Sprintf("%s:%d", sessionID, index)
+	}
 	return &daemonv1.CollaborationMessage{
-		MessageId:       fmt.Sprintf("%s:%d", sessionID, index),
+		MessageId:       messageID,
 		Target:          target,
 		ThreadId:        sessionID,
 		Role:            msg.Role,
 		Content:         msg.Content,
 		CreatedTimeUnix: updatedAt.Unix(),
+		Attachments:     messageAttachmentsToRecords(msg.Attachments),
 	}
 }
 
@@ -2714,6 +2917,19 @@ func replaySendMessage(rec *idempotency.Record) (*daemonv1.SendMessageResponse, 
 	}
 	if rec != nil && rec.ResponseJSON != "" {
 		var resp daemonv1.SendMessageResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return nil, fmt.Errorf("idempotency record missing response data")
+}
+
+func replayUploadAttachment(rec *idempotency.Record) (*daemonv1.UploadAttachmentResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.UploadAttachmentResponse
 		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
 			return &resp, nil
 		}

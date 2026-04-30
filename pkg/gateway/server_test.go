@@ -701,13 +701,30 @@ func TestDaemonCollaborationAttachments(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	s.kvStore = store
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	entClient, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = entClient.Close() })
+	if err := config.EnsureRuntimeEntSchema(entClient); err != nil {
+		t.Fatalf("ensure ent schema: %v", err)
+	}
+	eventMgr, err := eventlog.NewManager(entClient)
+	if err != nil {
+		t.Fatalf("new event manager: %v", err)
+	}
+	s.eventMgr = eventMgr
+	s.idempotencyStore = idempotency.NewStore(entClient)
 
 	upload, err := s.UploadAttachment(context.Background(), &daemonv1.UploadAttachmentRequest{
-		Target:   "#websocket:thread-attachments",
-		Filename: "note.txt",
-		MimeType: "text/plain",
-		Content:  []byte("attachment body"),
-		OwnerId:  "runtime-a",
+		Target:    "#websocket:thread-attachments",
+		Filename:  "note.txt",
+		MimeType:  "text/plain",
+		Content:   []byte("attachment body"),
+		OwnerId:   "runtime-a",
+		RequestId: "upload-req-1",
 	})
 	if err != nil {
 		t.Fatalf("UploadAttachment failed: %v", err)
@@ -721,6 +738,76 @@ func TestDaemonCollaborationAttachments(t *testing.T) {
 	}
 	if got.Attachment.GetFilename() != "note.txt" || string(got.GetContent()) != "attachment body" {
 		t.Fatalf("unexpected attachment payload: %+v content=%q", got.Attachment, string(got.GetContent()))
+	}
+	uploadReplay, err := s.UploadAttachment(context.Background(), &daemonv1.UploadAttachmentRequest{
+		Target:    "#websocket:thread-attachments",
+		Filename:  "note.txt",
+		MimeType:  "text/plain",
+		Content:   []byte("attachment body"),
+		OwnerId:   "runtime-a",
+		RequestId: "upload-req-1",
+	})
+	if err != nil {
+		t.Fatalf("UploadAttachment replay failed: %v", err)
+	}
+	if uploadReplay.Attachment.GetAttachmentId() != upload.Attachment.GetAttachmentId() {
+		t.Fatalf("expected replay attachment %q, got %q", upload.Attachment.GetAttachmentId(), uploadReplay.Attachment.GetAttachmentId())
+	}
+	send, err := s.SendMessage(context.Background(), &daemonv1.SendMessageRequest{
+		Target:        "#websocket:thread-attachments",
+		SenderAgentId: "runtime-a",
+		RequestId:     "send-attachment-req-1",
+		AttachmentIds: []string{upload.Attachment.GetAttachmentId()},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage with attachment failed: %v", err)
+	}
+	if len(send.Message.GetAttachments()) != 1 || send.Message.GetAttachments()[0].GetAttachmentId() != upload.Attachment.GetAttachmentId() {
+		t.Fatalf("expected send response attachment binding, got %+v", send.Message.GetAttachments())
+	}
+	read, err := s.ReadMessages(context.Background(), &daemonv1.ReadMessagesRequest{Target: "#websocket:thread-attachments", Limit: 10})
+	if err != nil {
+		t.Fatalf("ReadMessages with attachment failed: %v", err)
+	}
+	if len(read.Messages) != 1 || len(read.Messages[0].GetAttachments()) != 1 || read.Messages[0].GetAttachments()[0].GetFilename() != "note.txt" {
+		t.Fatalf("expected read attachment preview, got %+v", read.Messages)
+	}
+	sendReplay, err := s.SendMessage(context.Background(), &daemonv1.SendMessageRequest{
+		Target:        "#websocket:thread-attachments",
+		SenderAgentId: "runtime-a",
+		RequestId:     "send-attachment-req-1",
+		AttachmentIds: []string{upload.Attachment.GetAttachmentId()},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage attachment replay failed: %v", err)
+	}
+	if sendReplay.Message.GetMessageId() != send.Message.GetMessageId() {
+		t.Fatalf("expected replay message %q, got %q", send.Message.GetMessageId(), sendReplay.Message.GetMessageId())
+	}
+	events, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince attachment events failed: %v", err)
+	}
+	if len(events.Events) != 2 {
+		t.Fatalf("expected upload + message events, got %+v", events.Events)
+	}
+	if events.Events[0].GetKind() != "attachment.uploaded" || events.Events[0].GetAttachmentId() != upload.Attachment.GetAttachmentId() {
+		t.Fatalf("unexpected attachment upload event: %+v", events.Events[0])
+	}
+	if events.Events[1].GetKind() != "message.created" || events.Events[1].GetMessageId() != send.Message.GetMessageId() {
+		t.Fatalf("unexpected message event: %+v", events.Events[1])
+	}
+	idem, err := s.idempotencyStore.Check(context.Background(), idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   "runtime-a",
+		Method:     "UploadAttachment",
+		RequestID:  "upload-req-1",
+	})
+	if err != nil {
+		t.Fatalf("check upload idempotency: %v", err)
+	}
+	if idem.Record == nil || idem.Record.EventID != events.Events[0].GetEventId() {
+		t.Fatalf("expected upload idempotency event_id %q, got %+v", events.Events[0].GetEventId(), idem.Record)
 	}
 }
 

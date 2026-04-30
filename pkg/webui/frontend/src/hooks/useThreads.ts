@@ -15,9 +15,18 @@ export interface ThreadSummary {
 
 export interface ThreadDetail extends ThreadSummary {
   messages: Array<{
+    id?: string;
     role: string;
     content: string;
     tool_call_id?: string;
+    attachments?: Array<{
+      attachment_id: string;
+      filename: string;
+      mime_type?: string;
+      size_bytes: number;
+      target?: string;
+      owner_id?: string;
+    }>;
   }>;
 }
 

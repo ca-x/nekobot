@@ -57,6 +57,7 @@ import (
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 	memoryqmd "nekobot/pkg/memory/qmd"
+	"nekobot/pkg/message"
 	"nekobot/pkg/modelroute"
 	"nekobot/pkg/modelstore"
 	"nekobot/pkg/notificationroutes"
@@ -537,6 +538,7 @@ func (s *Server) setup() {
 	api.POST("/daemon/explorer/tree", s.handleDaemonExplorerTree)
 	api.POST("/daemon/explorer/file", s.handleDaemonExplorerFile)
 	api.POST("/daemon/agents/:agent_id/message", s.handleSendAgentDirectMessage)
+	api.GET("/daemon/attachments/:attachment_id", s.handleGetDaemonAttachment)
 	api.GET("/goal-runs", s.handleListGoalRuns)
 	api.POST("/goal-runs", s.handleCreateGoalRun)
 	api.GET("/goal-runs/:id", s.handleGetGoalRun)
@@ -2700,10 +2702,10 @@ func (s *Server) handleSendAgentDirectMessage(c *echo.Context) error {
 	}
 
 	var body struct {
-		Content            string   `json:"content"`
-		AttachmentIds      []string `json:"attachment_ids"`
-		ReplyToMessageId   string   `json:"reply_to_message_id"`
-		RequestId          string   `json:"request_id"`
+		Content          string   `json:"content"`
+		AttachmentIds    []string `json:"attachment_ids"`
+		ReplyToMessageId string   `json:"reply_to_message_id"`
+		RequestId        string   `json:"request_id"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -2771,11 +2773,11 @@ func (s *Server) handleSendAgentDirectMessage(c *echo.Context) error {
 
 	// Call SendMessage RPC with dm:@agent_id target
 	resp, err := client.SendMessageRemote(&daemonv1.SendMessageRequest{
-		Target:             fmt.Sprintf("dm:@%s", agentID),
-		Content:            strings.TrimSpace(body.Content),
-		AttachmentIds:      body.AttachmentIds,
-		ReplyToMessageId:   strings.TrimSpace(body.ReplyToMessageId),
-		RequestId:          strings.TrimSpace(body.RequestId),
+		Target:           fmt.Sprintf("dm:@%s", agentID),
+		Content:          strings.TrimSpace(body.Content),
+		AttachmentIds:    body.AttachmentIds,
+		ReplyToMessageId: strings.TrimSpace(body.ReplyToMessageId),
+		RequestId:        strings.TrimSpace(body.RequestId),
 	})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -2789,6 +2791,26 @@ func (s *Server) handleSendAgentDirectMessage(c *echo.Context) error {
 		"created_at": time.Now().Format(time.RFC3339),
 		"target":     fmt.Sprintf("dm:@%s", agentID),
 	})
+}
+
+func (s *Server) handleGetDaemonAttachment(c *echo.Context) error {
+	attachmentID := strings.TrimSpace(c.Param("attachment_id"))
+	if attachmentID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "attachment_id is required"})
+	}
+	record, content, err := gateway.LoadCollaborationAttachment(c.Request().Context(), s.kvStore, attachmentID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	}
+	mimeType := strings.TrimSpace(record.GetMimeType())
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	filename := strings.TrimSpace(record.GetFilename())
+	if filename != "" {
+		c.Response().Header().Set(echo.HeaderContentDisposition, fmt.Sprintf("inline; filename=%q", filename))
+	}
+	return c.Blob(http.StatusOK, mimeType, content)
 }
 
 func (s *Server) handleListGoalRuns(c *echo.Context) error {
@@ -6556,9 +6578,22 @@ type sessionSummaryResponse struct {
 }
 
 type sessionMessageResponse struct {
-	Role       string `json:"role"`
-	Content    string `json:"content"`
-	ToolCallID string `json:"tool_call_id"`
+	ID          string                      `json:"id,omitempty"`
+	Role        string                      `json:"role"`
+	Content     string                      `json:"content"`
+	ToolCallID  string                      `json:"tool_call_id"`
+	Attachments []sessionAttachmentResponse `json:"attachments,omitempty"`
+}
+
+type sessionAttachmentResponse struct {
+	AttachmentID    string `json:"attachment_id"`
+	Target          string `json:"target"`
+	OwnerID         string `json:"owner_id,omitempty"`
+	Filename        string `json:"filename"`
+	MimeType        string `json:"mime_type,omitempty"`
+	SizeBytes       int64  `json:"size_bytes"`
+	StorageRef      string `json:"storage_ref,omitempty"`
+	CreatedTimeUnix int64  `json:"created_time_unix,omitempty"`
 }
 
 type sessionDetailResponse struct {
@@ -6597,12 +6632,37 @@ func buildSessionMessageResponses(messages []session.Message) []sessionMessageRe
 	respMessages := make([]sessionMessageResponse, len(messages))
 	for i, msg := range messages {
 		respMessages[i] = sessionMessageResponse{
-			Role:       msg.Role,
-			Content:    msg.Content,
-			ToolCallID: msg.ToolCallID,
+			ID:          msg.ID,
+			Role:        msg.Role,
+			Content:     msg.Content,
+			ToolCallID:  msg.ToolCallID,
+			Attachments: buildSessionAttachmentResponses(msg.Attachments),
 		}
 	}
 	return respMessages
+}
+
+func buildSessionAttachmentResponses(items []message.Attachment) []sessionAttachmentResponse {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]sessionAttachmentResponse, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.AttachmentID) == "" {
+			continue
+		}
+		out = append(out, sessionAttachmentResponse{
+			AttachmentID:    item.AttachmentID,
+			Target:          item.Target,
+			OwnerID:         item.OwnerID,
+			Filename:        item.Filename,
+			MimeType:        item.MimeType,
+			SizeBytes:       item.SizeBytes,
+			StorageRef:      item.StorageRef,
+			CreatedTimeUnix: item.CreatedTimeUnix,
+		})
+	}
+	return out
 }
 
 func (s *Server) handleListSessions(c *echo.Context) error {

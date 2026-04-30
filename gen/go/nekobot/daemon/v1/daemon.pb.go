@@ -8074,6 +8074,7 @@ type CollaborationEvent struct {
 	TaskId          string                 `protobuf:"bytes,6,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	RunId           string                 `protobuf:"bytes,7,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
 	CreatedTimeUnix int64                  `protobuf:"varint,8,opt,name=created_time_unix,json=createdTimeUnix,proto3" json:"created_time_unix,omitempty"`
+	AttachmentId    string                 `protobuf:"bytes,9,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -8162,6 +8163,13 @@ func (x *CollaborationEvent) GetCreatedTimeUnix() int64 {
 		return x.CreatedTimeUnix
 	}
 	return 0
+}
+
+func (x *CollaborationEvent) GetAttachmentId() string {
+	if x != nil {
+		return x.AttachmentId
+	}
+	return ""
 }
 
 type ListEventsSinceResponse struct {
@@ -8897,7 +8905,7 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\acontent\x18\x02 \x01(\fR\acontent\"f\n" +
 	"\x16ListEventsSinceRequest\x126\n" +
 	"\x06cursor\x18\x01 \x01(\v2\x1e.nekobot.daemon.v1.EventCursorR\x06cursor\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\rR\x05limit\"\xf7\x01\n" +
+	"\x05limit\x18\x02 \x01(\rR\x05limit\"\x9c\x02\n" +
 	"\x12CollaborationEvent\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x12\n" +
@@ -8908,7 +8916,8 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"activityId\x12\x17\n" +
 	"\atask_id\x18\x06 \x01(\tR\x06taskId\x12\x15\n" +
 	"\x06run_id\x18\a \x01(\tR\x05runId\x12*\n" +
-	"\x11created_time_unix\x18\b \x01(\x03R\x0fcreatedTimeUnix\"\x99\x01\n" +
+	"\x11created_time_unix\x18\b \x01(\x03R\x0fcreatedTimeUnix\x12#\n" +
+	"\rattachment_id\x18\t \x01(\tR\fattachmentId\"\x99\x01\n" +
 	"\x17ListEventsSinceResponse\x12=\n" +
 	"\x06events\x18\x01 \x03(\v2%.nekobot.daemon.v1.CollaborationEventR\x06events\x12?\n" +
 	"\vnext_cursor\x18\x02 \x01(\v2\x1e.nekobot.daemon.v1.EventCursorR\n" +

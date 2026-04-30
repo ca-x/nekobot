@@ -4,11 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { getToken } from '@/api/client';
 import { t } from '@/lib/i18n';
+import { toast } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { useRuntimeAgents } from '@/hooks/useTopology';
 import { useThreadDetail, useThreads, useUpdateThread } from '@/hooks/useThreads';
-import { Save, MessageSquare } from 'lucide-react';
+import { Save, MessageSquare, Paperclip } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 function formatDateTime(value: string): string {
@@ -16,6 +18,13 @@ function formatDateTime(value: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export default function ThreadsPage() {
@@ -61,6 +70,25 @@ export default function ThreadsPage() {
   const handleOpenInChat = () => {
     if (!detail) return;
     navigate(`/chat?thread=${encodeURIComponent(detail.id)}`);
+  };
+
+  const handleOpenAttachment = async (attachmentId: string, filename: string) => {
+    const token = getToken();
+    const resp = await fetch(`/api/daemon/attachments/${encodeURIComponent(attachmentId)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!resp.ok) {
+      throw new Error(await resp.text() || resp.statusText);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.download = filename || attachmentId;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
   return (
@@ -190,6 +218,28 @@ export default function ThreadsPage() {
                             <span className="text-xs uppercase tracking-wide text-muted-foreground">{msg.role || '-'}</span>
                           </div>
                           <pre className="text-sm whitespace-pre-wrap break-words font-sans">{msg.content || ''}</pre>
+                          {msg.attachments && msg.attachments.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {msg.attachments.map((attachment) => (
+                                <Button
+                                  key={attachment.attachment_id}
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-auto min-h-8 gap-2 whitespace-normal px-2 py-1 text-xs"
+                                  onClick={() => {
+                                    void handleOpenAttachment(attachment.attachment_id, attachment.filename).catch((error) => {
+                                      toast.error(error instanceof Error ? error.message : 'Failed to open attachment');
+                                    });
+                                  }}
+                                >
+                                  <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                                  <span className="max-w-[14rem] truncate">{attachment.filename || attachment.attachment_id}</span>
+                                  <span className="shrink-0 text-muted-foreground">{formatBytes(attachment.size_bytes)}</span>
+                                </Button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       ))}
                     </div>
