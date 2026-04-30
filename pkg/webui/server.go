@@ -2724,6 +2724,7 @@ func (s *Server) handleSendAgentDirectMessage(c *echo.Context) error {
 	}
 
 	// Find the machine that has this agent
+	// First try to find in agents list (for future compatibility)
 	var targetMachineID string
 	for machineID, inventory := range snapshot.Inventories {
 		if inventory == nil || inventory.Agents == nil {
@@ -2737,6 +2738,24 @@ func (s *Server) handleSendAgentDirectMessage(c *echo.Context) error {
 		}
 		if targetMachineID != "" {
 			break
+		}
+	}
+
+	// Fallback: check if agent_id matches a runtime ID (current system uses runtime IDs as agent IDs)
+	if targetMachineID == "" {
+		for machineID, inventory := range snapshot.Inventories {
+			if inventory == nil || inventory.Runtimes == nil {
+				continue
+			}
+			for _, runtime := range inventory.Runtimes {
+				if runtime != nil && runtime.RuntimeId == agentID {
+					targetMachineID = machineID
+					break
+				}
+			}
+			if targetMachineID != "" {
+				break
+			}
 		}
 	}
 
