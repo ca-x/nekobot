@@ -22,6 +22,8 @@ import (
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
+	"nekobot/pkg/storage/ent/run"
+	"nekobot/pkg/storage/ent/runstep"
 	"nekobot/pkg/storage/ent/tenant"
 	"nekobot/pkg/storage/ent/toolevent"
 	"nekobot/pkg/storage/ent/toolsession"
@@ -57,6 +59,8 @@ const (
 	TypePrompt              = "Prompt"
 	TypePromptBinding       = "PromptBinding"
 	TypeProvider            = "Provider"
+	TypeRun                 = "Run"
+	TypeRunStep             = "RunStep"
 	TypeTenant              = "Tenant"
 	TypeToolEvent           = "ToolEvent"
 	TypeToolSession         = "ToolSession"
@@ -12972,6 +12976,2208 @@ func (m *ProviderMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *ProviderMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown Provider edge %s", name)
+}
+
+// RunMutation represents an operation that mutates the Run nodes in the graph.
+type RunMutation struct {
+	config
+	op                 Op
+	typ                string
+	id                 *string
+	task_id            *string
+	target             *string
+	agent_id           *string
+	computer_id        *string
+	runtime_profile_id *string
+	status             *string
+	lease_id           *string
+	request_id         *string
+	input_message_id   *string
+	last_seen_event_id *string
+	started_at         *time.Time
+	updated_at         *time.Time
+	completed_at       *time.Time
+	error              *string
+	summary            *string
+	state              *string
+	tenant_id          *string
+	owner_user_id      *string
+	visibility         *run.Visibility
+	clearedFields      map[string]struct{}
+	done               bool
+	oldValue           func(context.Context) (*Run, error)
+	predicates         []predicate.Run
+}
+
+var _ ent.Mutation = (*RunMutation)(nil)
+
+// runOption allows management of the mutation configuration using functional options.
+type runOption func(*RunMutation)
+
+// newRunMutation creates new mutation for the Run entity.
+func newRunMutation(c config, op Op, opts ...runOption) *RunMutation {
+	m := &RunMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRun,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRunID sets the ID field of the mutation.
+func withRunID(id string) runOption {
+	return func(m *RunMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *Run
+		)
+		m.oldValue = func(ctx context.Context) (*Run, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().Run.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRun sets the old Run of the mutation.
+func withRun(node *Run) runOption {
+	return func(m *RunMutation) {
+		m.oldValue = func(context.Context) (*Run, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RunMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RunMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of Run entities.
+func (m *RunMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RunMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RunMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().Run.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetTaskID sets the "task_id" field.
+func (m *RunMutation) SetTaskID(s string) {
+	m.task_id = &s
+}
+
+// TaskID returns the value of the "task_id" field in the mutation.
+func (m *RunMutation) TaskID() (r string, exists bool) {
+	v := m.task_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTaskID returns the old "task_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldTaskID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTaskID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTaskID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTaskID: %w", err)
+	}
+	return oldValue.TaskID, nil
+}
+
+// ResetTaskID resets all changes to the "task_id" field.
+func (m *RunMutation) ResetTaskID() {
+	m.task_id = nil
+}
+
+// SetTarget sets the "target" field.
+func (m *RunMutation) SetTarget(s string) {
+	m.target = &s
+}
+
+// Target returns the value of the "target" field in the mutation.
+func (m *RunMutation) Target() (r string, exists bool) {
+	v := m.target
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTarget returns the old "target" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldTarget(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTarget is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTarget requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTarget: %w", err)
+	}
+	return oldValue.Target, nil
+}
+
+// ResetTarget resets all changes to the "target" field.
+func (m *RunMutation) ResetTarget() {
+	m.target = nil
+}
+
+// SetAgentID sets the "agent_id" field.
+func (m *RunMutation) SetAgentID(s string) {
+	m.agent_id = &s
+}
+
+// AgentID returns the value of the "agent_id" field in the mutation.
+func (m *RunMutation) AgentID() (r string, exists bool) {
+	v := m.agent_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAgentID returns the old "agent_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldAgentID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAgentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAgentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAgentID: %w", err)
+	}
+	return oldValue.AgentID, nil
+}
+
+// ResetAgentID resets all changes to the "agent_id" field.
+func (m *RunMutation) ResetAgentID() {
+	m.agent_id = nil
+}
+
+// SetComputerID sets the "computer_id" field.
+func (m *RunMutation) SetComputerID(s string) {
+	m.computer_id = &s
+}
+
+// ComputerID returns the value of the "computer_id" field in the mutation.
+func (m *RunMutation) ComputerID() (r string, exists bool) {
+	v := m.computer_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldComputerID returns the old "computer_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldComputerID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldComputerID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldComputerID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldComputerID: %w", err)
+	}
+	return oldValue.ComputerID, nil
+}
+
+// ResetComputerID resets all changes to the "computer_id" field.
+func (m *RunMutation) ResetComputerID() {
+	m.computer_id = nil
+}
+
+// SetRuntimeProfileID sets the "runtime_profile_id" field.
+func (m *RunMutation) SetRuntimeProfileID(s string) {
+	m.runtime_profile_id = &s
+}
+
+// RuntimeProfileID returns the value of the "runtime_profile_id" field in the mutation.
+func (m *RunMutation) RuntimeProfileID() (r string, exists bool) {
+	v := m.runtime_profile_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRuntimeProfileID returns the old "runtime_profile_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldRuntimeProfileID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRuntimeProfileID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRuntimeProfileID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRuntimeProfileID: %w", err)
+	}
+	return oldValue.RuntimeProfileID, nil
+}
+
+// ResetRuntimeProfileID resets all changes to the "runtime_profile_id" field.
+func (m *RunMutation) ResetRuntimeProfileID() {
+	m.runtime_profile_id = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *RunMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *RunMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *RunMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetLeaseID sets the "lease_id" field.
+func (m *RunMutation) SetLeaseID(s string) {
+	m.lease_id = &s
+}
+
+// LeaseID returns the value of the "lease_id" field in the mutation.
+func (m *RunMutation) LeaseID() (r string, exists bool) {
+	v := m.lease_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLeaseID returns the old "lease_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldLeaseID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLeaseID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLeaseID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLeaseID: %w", err)
+	}
+	return oldValue.LeaseID, nil
+}
+
+// ResetLeaseID resets all changes to the "lease_id" field.
+func (m *RunMutation) ResetLeaseID() {
+	m.lease_id = nil
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *RunMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *RunMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldRequestID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *RunMutation) ResetRequestID() {
+	m.request_id = nil
+}
+
+// SetInputMessageID sets the "input_message_id" field.
+func (m *RunMutation) SetInputMessageID(s string) {
+	m.input_message_id = &s
+}
+
+// InputMessageID returns the value of the "input_message_id" field in the mutation.
+func (m *RunMutation) InputMessageID() (r string, exists bool) {
+	v := m.input_message_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInputMessageID returns the old "input_message_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldInputMessageID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInputMessageID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInputMessageID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInputMessageID: %w", err)
+	}
+	return oldValue.InputMessageID, nil
+}
+
+// ResetInputMessageID resets all changes to the "input_message_id" field.
+func (m *RunMutation) ResetInputMessageID() {
+	m.input_message_id = nil
+}
+
+// SetLastSeenEventID sets the "last_seen_event_id" field.
+func (m *RunMutation) SetLastSeenEventID(s string) {
+	m.last_seen_event_id = &s
+}
+
+// LastSeenEventID returns the value of the "last_seen_event_id" field in the mutation.
+func (m *RunMutation) LastSeenEventID() (r string, exists bool) {
+	v := m.last_seen_event_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastSeenEventID returns the old "last_seen_event_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldLastSeenEventID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastSeenEventID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastSeenEventID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastSeenEventID: %w", err)
+	}
+	return oldValue.LastSeenEventID, nil
+}
+
+// ResetLastSeenEventID resets all changes to the "last_seen_event_id" field.
+func (m *RunMutation) ResetLastSeenEventID() {
+	m.last_seen_event_id = nil
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *RunMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *RunMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldStartedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *RunMutation) ResetStartedAt() {
+	m.started_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *RunMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *RunMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *RunMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetCompletedAt sets the "completed_at" field.
+func (m *RunMutation) SetCompletedAt(t time.Time) {
+	m.completed_at = &t
+}
+
+// CompletedAt returns the value of the "completed_at" field in the mutation.
+func (m *RunMutation) CompletedAt() (r time.Time, exists bool) {
+	v := m.completed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompletedAt returns the old "completed_at" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldCompletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompletedAt: %w", err)
+	}
+	return oldValue.CompletedAt, nil
+}
+
+// ClearCompletedAt clears the value of the "completed_at" field.
+func (m *RunMutation) ClearCompletedAt() {
+	m.completed_at = nil
+	m.clearedFields[run.FieldCompletedAt] = struct{}{}
+}
+
+// CompletedAtCleared returns if the "completed_at" field was cleared in this mutation.
+func (m *RunMutation) CompletedAtCleared() bool {
+	_, ok := m.clearedFields[run.FieldCompletedAt]
+	return ok
+}
+
+// ResetCompletedAt resets all changes to the "completed_at" field.
+func (m *RunMutation) ResetCompletedAt() {
+	m.completed_at = nil
+	delete(m.clearedFields, run.FieldCompletedAt)
+}
+
+// SetError sets the "error" field.
+func (m *RunMutation) SetError(s string) {
+	m.error = &s
+}
+
+// Error returns the value of the "error" field in the mutation.
+func (m *RunMutation) Error() (r string, exists bool) {
+	v := m.error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldError returns the old "error" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldError(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldError: %w", err)
+	}
+	return oldValue.Error, nil
+}
+
+// ResetError resets all changes to the "error" field.
+func (m *RunMutation) ResetError() {
+	m.error = nil
+}
+
+// SetSummary sets the "summary" field.
+func (m *RunMutation) SetSummary(s string) {
+	m.summary = &s
+}
+
+// Summary returns the value of the "summary" field in the mutation.
+func (m *RunMutation) Summary() (r string, exists bool) {
+	v := m.summary
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSummary returns the old "summary" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldSummary(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSummary is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSummary requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSummary: %w", err)
+	}
+	return oldValue.Summary, nil
+}
+
+// ResetSummary resets all changes to the "summary" field.
+func (m *RunMutation) ResetSummary() {
+	m.summary = nil
+}
+
+// SetState sets the "state" field.
+func (m *RunMutation) SetState(s string) {
+	m.state = &s
+}
+
+// State returns the value of the "state" field in the mutation.
+func (m *RunMutation) State() (r string, exists bool) {
+	v := m.state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldState returns the old "state" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldState(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldState: %w", err)
+	}
+	return oldValue.State, nil
+}
+
+// ResetState resets all changes to the "state" field.
+func (m *RunMutation) ResetState() {
+	m.state = nil
+}
+
+// SetTenantID sets the "tenant_id" field.
+func (m *RunMutation) SetTenantID(s string) {
+	m.tenant_id = &s
+}
+
+// TenantID returns the value of the "tenant_id" field in the mutation.
+func (m *RunMutation) TenantID() (r string, exists bool) {
+	v := m.tenant_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTenantID returns the old "tenant_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldTenantID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTenantID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTenantID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTenantID: %w", err)
+	}
+	return oldValue.TenantID, nil
+}
+
+// ResetTenantID resets all changes to the "tenant_id" field.
+func (m *RunMutation) ResetTenantID() {
+	m.tenant_id = nil
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (m *RunMutation) SetOwnerUserID(s string) {
+	m.owner_user_id = &s
+}
+
+// OwnerUserID returns the value of the "owner_user_id" field in the mutation.
+func (m *RunMutation) OwnerUserID() (r string, exists bool) {
+	v := m.owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnerUserID returns the old "owner_user_id" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldOwnerUserID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnerUserID: %w", err)
+	}
+	return oldValue.OwnerUserID, nil
+}
+
+// ResetOwnerUserID resets all changes to the "owner_user_id" field.
+func (m *RunMutation) ResetOwnerUserID() {
+	m.owner_user_id = nil
+}
+
+// SetVisibility sets the "visibility" field.
+func (m *RunMutation) SetVisibility(r run.Visibility) {
+	m.visibility = &r
+}
+
+// Visibility returns the value of the "visibility" field in the mutation.
+func (m *RunMutation) Visibility() (r run.Visibility, exists bool) {
+	v := m.visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVisibility returns the old "visibility" field's value of the Run entity.
+// If the Run object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunMutation) OldVisibility(ctx context.Context) (v run.Visibility, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVisibility: %w", err)
+	}
+	return oldValue.Visibility, nil
+}
+
+// ResetVisibility resets all changes to the "visibility" field.
+func (m *RunMutation) ResetVisibility() {
+	m.visibility = nil
+}
+
+// Where appends a list predicates to the RunMutation builder.
+func (m *RunMutation) Where(ps ...predicate.Run) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RunMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RunMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.Run, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RunMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RunMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (Run).
+func (m *RunMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RunMutation) Fields() []string {
+	fields := make([]string, 0, 19)
+	if m.task_id != nil {
+		fields = append(fields, run.FieldTaskID)
+	}
+	if m.target != nil {
+		fields = append(fields, run.FieldTarget)
+	}
+	if m.agent_id != nil {
+		fields = append(fields, run.FieldAgentID)
+	}
+	if m.computer_id != nil {
+		fields = append(fields, run.FieldComputerID)
+	}
+	if m.runtime_profile_id != nil {
+		fields = append(fields, run.FieldRuntimeProfileID)
+	}
+	if m.status != nil {
+		fields = append(fields, run.FieldStatus)
+	}
+	if m.lease_id != nil {
+		fields = append(fields, run.FieldLeaseID)
+	}
+	if m.request_id != nil {
+		fields = append(fields, run.FieldRequestID)
+	}
+	if m.input_message_id != nil {
+		fields = append(fields, run.FieldInputMessageID)
+	}
+	if m.last_seen_event_id != nil {
+		fields = append(fields, run.FieldLastSeenEventID)
+	}
+	if m.started_at != nil {
+		fields = append(fields, run.FieldStartedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, run.FieldUpdatedAt)
+	}
+	if m.completed_at != nil {
+		fields = append(fields, run.FieldCompletedAt)
+	}
+	if m.error != nil {
+		fields = append(fields, run.FieldError)
+	}
+	if m.summary != nil {
+		fields = append(fields, run.FieldSummary)
+	}
+	if m.state != nil {
+		fields = append(fields, run.FieldState)
+	}
+	if m.tenant_id != nil {
+		fields = append(fields, run.FieldTenantID)
+	}
+	if m.owner_user_id != nil {
+		fields = append(fields, run.FieldOwnerUserID)
+	}
+	if m.visibility != nil {
+		fields = append(fields, run.FieldVisibility)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RunMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case run.FieldTaskID:
+		return m.TaskID()
+	case run.FieldTarget:
+		return m.Target()
+	case run.FieldAgentID:
+		return m.AgentID()
+	case run.FieldComputerID:
+		return m.ComputerID()
+	case run.FieldRuntimeProfileID:
+		return m.RuntimeProfileID()
+	case run.FieldStatus:
+		return m.Status()
+	case run.FieldLeaseID:
+		return m.LeaseID()
+	case run.FieldRequestID:
+		return m.RequestID()
+	case run.FieldInputMessageID:
+		return m.InputMessageID()
+	case run.FieldLastSeenEventID:
+		return m.LastSeenEventID()
+	case run.FieldStartedAt:
+		return m.StartedAt()
+	case run.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case run.FieldCompletedAt:
+		return m.CompletedAt()
+	case run.FieldError:
+		return m.Error()
+	case run.FieldSummary:
+		return m.Summary()
+	case run.FieldState:
+		return m.State()
+	case run.FieldTenantID:
+		return m.TenantID()
+	case run.FieldOwnerUserID:
+		return m.OwnerUserID()
+	case run.FieldVisibility:
+		return m.Visibility()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RunMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case run.FieldTaskID:
+		return m.OldTaskID(ctx)
+	case run.FieldTarget:
+		return m.OldTarget(ctx)
+	case run.FieldAgentID:
+		return m.OldAgentID(ctx)
+	case run.FieldComputerID:
+		return m.OldComputerID(ctx)
+	case run.FieldRuntimeProfileID:
+		return m.OldRuntimeProfileID(ctx)
+	case run.FieldStatus:
+		return m.OldStatus(ctx)
+	case run.FieldLeaseID:
+		return m.OldLeaseID(ctx)
+	case run.FieldRequestID:
+		return m.OldRequestID(ctx)
+	case run.FieldInputMessageID:
+		return m.OldInputMessageID(ctx)
+	case run.FieldLastSeenEventID:
+		return m.OldLastSeenEventID(ctx)
+	case run.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case run.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case run.FieldCompletedAt:
+		return m.OldCompletedAt(ctx)
+	case run.FieldError:
+		return m.OldError(ctx)
+	case run.FieldSummary:
+		return m.OldSummary(ctx)
+	case run.FieldState:
+		return m.OldState(ctx)
+	case run.FieldTenantID:
+		return m.OldTenantID(ctx)
+	case run.FieldOwnerUserID:
+		return m.OldOwnerUserID(ctx)
+	case run.FieldVisibility:
+		return m.OldVisibility(ctx)
+	}
+	return nil, fmt.Errorf("unknown Run field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RunMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case run.FieldTaskID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTaskID(v)
+		return nil
+	case run.FieldTarget:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTarget(v)
+		return nil
+	case run.FieldAgentID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAgentID(v)
+		return nil
+	case run.FieldComputerID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetComputerID(v)
+		return nil
+	case run.FieldRuntimeProfileID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRuntimeProfileID(v)
+		return nil
+	case run.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case run.FieldLeaseID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLeaseID(v)
+		return nil
+	case run.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	case run.FieldInputMessageID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInputMessageID(v)
+		return nil
+	case run.FieldLastSeenEventID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastSeenEventID(v)
+		return nil
+	case run.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case run.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case run.FieldCompletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompletedAt(v)
+		return nil
+	case run.FieldError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetError(v)
+		return nil
+	case run.FieldSummary:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSummary(v)
+		return nil
+	case run.FieldState:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetState(v)
+		return nil
+	case run.FieldTenantID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTenantID(v)
+		return nil
+	case run.FieldOwnerUserID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnerUserID(v)
+		return nil
+	case run.FieldVisibility:
+		v, ok := value.(run.Visibility)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVisibility(v)
+		return nil
+	}
+	return fmt.Errorf("unknown Run field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RunMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RunMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RunMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown Run numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RunMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(run.FieldCompletedAt) {
+		fields = append(fields, run.FieldCompletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RunMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RunMutation) ClearField(name string) error {
+	switch name {
+	case run.FieldCompletedAt:
+		m.ClearCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown Run nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RunMutation) ResetField(name string) error {
+	switch name {
+	case run.FieldTaskID:
+		m.ResetTaskID()
+		return nil
+	case run.FieldTarget:
+		m.ResetTarget()
+		return nil
+	case run.FieldAgentID:
+		m.ResetAgentID()
+		return nil
+	case run.FieldComputerID:
+		m.ResetComputerID()
+		return nil
+	case run.FieldRuntimeProfileID:
+		m.ResetRuntimeProfileID()
+		return nil
+	case run.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case run.FieldLeaseID:
+		m.ResetLeaseID()
+		return nil
+	case run.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	case run.FieldInputMessageID:
+		m.ResetInputMessageID()
+		return nil
+	case run.FieldLastSeenEventID:
+		m.ResetLastSeenEventID()
+		return nil
+	case run.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case run.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case run.FieldCompletedAt:
+		m.ResetCompletedAt()
+		return nil
+	case run.FieldError:
+		m.ResetError()
+		return nil
+	case run.FieldSummary:
+		m.ResetSummary()
+		return nil
+	case run.FieldState:
+		m.ResetState()
+		return nil
+	case run.FieldTenantID:
+		m.ResetTenantID()
+		return nil
+	case run.FieldOwnerUserID:
+		m.ResetOwnerUserID()
+		return nil
+	case run.FieldVisibility:
+		m.ResetVisibility()
+		return nil
+	}
+	return fmt.Errorf("unknown Run field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RunMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RunMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RunMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RunMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RunMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RunMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RunMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown Run unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RunMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown Run edge %s", name)
+}
+
+// RunStepMutation represents an operation that mutates the RunStep nodes in the graph.
+type RunStepMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *string
+	run_id            *string
+	sequence          *uint32
+	addsequence       *int32
+	kind              *string
+	status            *string
+	summary           *string
+	detail            *string
+	artifact_ids_json *string
+	started_at        *time.Time
+	completed_at      *time.Time
+	request_id        *string
+	clearedFields     map[string]struct{}
+	done              bool
+	oldValue          func(context.Context) (*RunStep, error)
+	predicates        []predicate.RunStep
+}
+
+var _ ent.Mutation = (*RunStepMutation)(nil)
+
+// runstepOption allows management of the mutation configuration using functional options.
+type runstepOption func(*RunStepMutation)
+
+// newRunStepMutation creates new mutation for the RunStep entity.
+func newRunStepMutation(c config, op Op, opts ...runstepOption) *RunStepMutation {
+	m := &RunStepMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRunStep,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRunStepID sets the ID field of the mutation.
+func withRunStepID(id string) runstepOption {
+	return func(m *RunStepMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RunStep
+		)
+		m.oldValue = func(ctx context.Context) (*RunStep, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RunStep.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRunStep sets the old RunStep of the mutation.
+func withRunStep(node *RunStep) runstepOption {
+	return func(m *RunStepMutation) {
+		m.oldValue = func(context.Context) (*RunStep, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RunStepMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RunStepMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of RunStep entities.
+func (m *RunStepMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RunStepMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RunStepMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RunStep.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetRunID sets the "run_id" field.
+func (m *RunStepMutation) SetRunID(s string) {
+	m.run_id = &s
+}
+
+// RunID returns the value of the "run_id" field in the mutation.
+func (m *RunStepMutation) RunID() (r string, exists bool) {
+	v := m.run_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRunID returns the old "run_id" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldRunID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRunID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRunID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRunID: %w", err)
+	}
+	return oldValue.RunID, nil
+}
+
+// ResetRunID resets all changes to the "run_id" field.
+func (m *RunStepMutation) ResetRunID() {
+	m.run_id = nil
+}
+
+// SetSequence sets the "sequence" field.
+func (m *RunStepMutation) SetSequence(u uint32) {
+	m.sequence = &u
+	m.addsequence = nil
+}
+
+// Sequence returns the value of the "sequence" field in the mutation.
+func (m *RunStepMutation) Sequence() (r uint32, exists bool) {
+	v := m.sequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSequence returns the old "sequence" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldSequence(ctx context.Context) (v uint32, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSequence is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSequence requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSequence: %w", err)
+	}
+	return oldValue.Sequence, nil
+}
+
+// AddSequence adds u to the "sequence" field.
+func (m *RunStepMutation) AddSequence(u int32) {
+	if m.addsequence != nil {
+		*m.addsequence += u
+	} else {
+		m.addsequence = &u
+	}
+}
+
+// AddedSequence returns the value that was added to the "sequence" field in this mutation.
+func (m *RunStepMutation) AddedSequence() (r int32, exists bool) {
+	v := m.addsequence
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSequence resets all changes to the "sequence" field.
+func (m *RunStepMutation) ResetSequence() {
+	m.sequence = nil
+	m.addsequence = nil
+}
+
+// SetKind sets the "kind" field.
+func (m *RunStepMutation) SetKind(s string) {
+	m.kind = &s
+}
+
+// Kind returns the value of the "kind" field in the mutation.
+func (m *RunStepMutation) Kind() (r string, exists bool) {
+	v := m.kind
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKind returns the old "kind" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldKind(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKind is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKind requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKind: %w", err)
+	}
+	return oldValue.Kind, nil
+}
+
+// ResetKind resets all changes to the "kind" field.
+func (m *RunStepMutation) ResetKind() {
+	m.kind = nil
+}
+
+// SetStatus sets the "status" field.
+func (m *RunStepMutation) SetStatus(s string) {
+	m.status = &s
+}
+
+// Status returns the value of the "status" field in the mutation.
+func (m *RunStepMutation) Status() (r string, exists bool) {
+	v := m.status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatus returns the old "status" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatus: %w", err)
+	}
+	return oldValue.Status, nil
+}
+
+// ResetStatus resets all changes to the "status" field.
+func (m *RunStepMutation) ResetStatus() {
+	m.status = nil
+}
+
+// SetSummary sets the "summary" field.
+func (m *RunStepMutation) SetSummary(s string) {
+	m.summary = &s
+}
+
+// Summary returns the value of the "summary" field in the mutation.
+func (m *RunStepMutation) Summary() (r string, exists bool) {
+	v := m.summary
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSummary returns the old "summary" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldSummary(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSummary is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSummary requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSummary: %w", err)
+	}
+	return oldValue.Summary, nil
+}
+
+// ResetSummary resets all changes to the "summary" field.
+func (m *RunStepMutation) ResetSummary() {
+	m.summary = nil
+}
+
+// SetDetail sets the "detail" field.
+func (m *RunStepMutation) SetDetail(s string) {
+	m.detail = &s
+}
+
+// Detail returns the value of the "detail" field in the mutation.
+func (m *RunStepMutation) Detail() (r string, exists bool) {
+	v := m.detail
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDetail returns the old "detail" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldDetail(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDetail is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDetail requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDetail: %w", err)
+	}
+	return oldValue.Detail, nil
+}
+
+// ResetDetail resets all changes to the "detail" field.
+func (m *RunStepMutation) ResetDetail() {
+	m.detail = nil
+}
+
+// SetArtifactIdsJSON sets the "artifact_ids_json" field.
+func (m *RunStepMutation) SetArtifactIdsJSON(s string) {
+	m.artifact_ids_json = &s
+}
+
+// ArtifactIdsJSON returns the value of the "artifact_ids_json" field in the mutation.
+func (m *RunStepMutation) ArtifactIdsJSON() (r string, exists bool) {
+	v := m.artifact_ids_json
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArtifactIdsJSON returns the old "artifact_ids_json" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldArtifactIdsJSON(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArtifactIdsJSON is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArtifactIdsJSON requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArtifactIdsJSON: %w", err)
+	}
+	return oldValue.ArtifactIdsJSON, nil
+}
+
+// ResetArtifactIdsJSON resets all changes to the "artifact_ids_json" field.
+func (m *RunStepMutation) ResetArtifactIdsJSON() {
+	m.artifact_ids_json = nil
+}
+
+// SetStartedAt sets the "started_at" field.
+func (m *RunStepMutation) SetStartedAt(t time.Time) {
+	m.started_at = &t
+}
+
+// StartedAt returns the value of the "started_at" field in the mutation.
+func (m *RunStepMutation) StartedAt() (r time.Time, exists bool) {
+	v := m.started_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartedAt returns the old "started_at" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldStartedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartedAt: %w", err)
+	}
+	return oldValue.StartedAt, nil
+}
+
+// ResetStartedAt resets all changes to the "started_at" field.
+func (m *RunStepMutation) ResetStartedAt() {
+	m.started_at = nil
+}
+
+// SetCompletedAt sets the "completed_at" field.
+func (m *RunStepMutation) SetCompletedAt(t time.Time) {
+	m.completed_at = &t
+}
+
+// CompletedAt returns the value of the "completed_at" field in the mutation.
+func (m *RunStepMutation) CompletedAt() (r time.Time, exists bool) {
+	v := m.completed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCompletedAt returns the old "completed_at" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldCompletedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCompletedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCompletedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCompletedAt: %w", err)
+	}
+	return oldValue.CompletedAt, nil
+}
+
+// ClearCompletedAt clears the value of the "completed_at" field.
+func (m *RunStepMutation) ClearCompletedAt() {
+	m.completed_at = nil
+	m.clearedFields[runstep.FieldCompletedAt] = struct{}{}
+}
+
+// CompletedAtCleared returns if the "completed_at" field was cleared in this mutation.
+func (m *RunStepMutation) CompletedAtCleared() bool {
+	_, ok := m.clearedFields[runstep.FieldCompletedAt]
+	return ok
+}
+
+// ResetCompletedAt resets all changes to the "completed_at" field.
+func (m *RunStepMutation) ResetCompletedAt() {
+	m.completed_at = nil
+	delete(m.clearedFields, runstep.FieldCompletedAt)
+}
+
+// SetRequestID sets the "request_id" field.
+func (m *RunStepMutation) SetRequestID(s string) {
+	m.request_id = &s
+}
+
+// RequestID returns the value of the "request_id" field in the mutation.
+func (m *RunStepMutation) RequestID() (r string, exists bool) {
+	v := m.request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestID returns the old "request_id" field's value of the RunStep entity.
+// If the RunStep object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RunStepMutation) OldRequestID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestID: %w", err)
+	}
+	return oldValue.RequestID, nil
+}
+
+// ResetRequestID resets all changes to the "request_id" field.
+func (m *RunStepMutation) ResetRequestID() {
+	m.request_id = nil
+}
+
+// Where appends a list predicates to the RunStepMutation builder.
+func (m *RunStepMutation) Where(ps ...predicate.RunStep) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RunStepMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RunStepMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RunStep, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RunStepMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RunStepMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RunStep).
+func (m *RunStepMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RunStepMutation) Fields() []string {
+	fields := make([]string, 0, 10)
+	if m.run_id != nil {
+		fields = append(fields, runstep.FieldRunID)
+	}
+	if m.sequence != nil {
+		fields = append(fields, runstep.FieldSequence)
+	}
+	if m.kind != nil {
+		fields = append(fields, runstep.FieldKind)
+	}
+	if m.status != nil {
+		fields = append(fields, runstep.FieldStatus)
+	}
+	if m.summary != nil {
+		fields = append(fields, runstep.FieldSummary)
+	}
+	if m.detail != nil {
+		fields = append(fields, runstep.FieldDetail)
+	}
+	if m.artifact_ids_json != nil {
+		fields = append(fields, runstep.FieldArtifactIdsJSON)
+	}
+	if m.started_at != nil {
+		fields = append(fields, runstep.FieldStartedAt)
+	}
+	if m.completed_at != nil {
+		fields = append(fields, runstep.FieldCompletedAt)
+	}
+	if m.request_id != nil {
+		fields = append(fields, runstep.FieldRequestID)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RunStepMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case runstep.FieldRunID:
+		return m.RunID()
+	case runstep.FieldSequence:
+		return m.Sequence()
+	case runstep.FieldKind:
+		return m.Kind()
+	case runstep.FieldStatus:
+		return m.Status()
+	case runstep.FieldSummary:
+		return m.Summary()
+	case runstep.FieldDetail:
+		return m.Detail()
+	case runstep.FieldArtifactIdsJSON:
+		return m.ArtifactIdsJSON()
+	case runstep.FieldStartedAt:
+		return m.StartedAt()
+	case runstep.FieldCompletedAt:
+		return m.CompletedAt()
+	case runstep.FieldRequestID:
+		return m.RequestID()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RunStepMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case runstep.FieldRunID:
+		return m.OldRunID(ctx)
+	case runstep.FieldSequence:
+		return m.OldSequence(ctx)
+	case runstep.FieldKind:
+		return m.OldKind(ctx)
+	case runstep.FieldStatus:
+		return m.OldStatus(ctx)
+	case runstep.FieldSummary:
+		return m.OldSummary(ctx)
+	case runstep.FieldDetail:
+		return m.OldDetail(ctx)
+	case runstep.FieldArtifactIdsJSON:
+		return m.OldArtifactIdsJSON(ctx)
+	case runstep.FieldStartedAt:
+		return m.OldStartedAt(ctx)
+	case runstep.FieldCompletedAt:
+		return m.OldCompletedAt(ctx)
+	case runstep.FieldRequestID:
+		return m.OldRequestID(ctx)
+	}
+	return nil, fmt.Errorf("unknown RunStep field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RunStepMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case runstep.FieldRunID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRunID(v)
+		return nil
+	case runstep.FieldSequence:
+		v, ok := value.(uint32)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSequence(v)
+		return nil
+	case runstep.FieldKind:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKind(v)
+		return nil
+	case runstep.FieldStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatus(v)
+		return nil
+	case runstep.FieldSummary:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSummary(v)
+		return nil
+	case runstep.FieldDetail:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDetail(v)
+		return nil
+	case runstep.FieldArtifactIdsJSON:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArtifactIdsJSON(v)
+		return nil
+	case runstep.FieldStartedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartedAt(v)
+		return nil
+	case runstep.FieldCompletedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCompletedAt(v)
+		return nil
+	case runstep.FieldRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RunStep field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RunStepMutation) AddedFields() []string {
+	var fields []string
+	if m.addsequence != nil {
+		fields = append(fields, runstep.FieldSequence)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RunStepMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case runstep.FieldSequence:
+		return m.AddedSequence()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RunStepMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case runstep.FieldSequence:
+		v, ok := value.(int32)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSequence(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RunStep numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RunStepMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(runstep.FieldCompletedAt) {
+		fields = append(fields, runstep.FieldCompletedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RunStepMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RunStepMutation) ClearField(name string) error {
+	switch name {
+	case runstep.FieldCompletedAt:
+		m.ClearCompletedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown RunStep nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RunStepMutation) ResetField(name string) error {
+	switch name {
+	case runstep.FieldRunID:
+		m.ResetRunID()
+		return nil
+	case runstep.FieldSequence:
+		m.ResetSequence()
+		return nil
+	case runstep.FieldKind:
+		m.ResetKind()
+		return nil
+	case runstep.FieldStatus:
+		m.ResetStatus()
+		return nil
+	case runstep.FieldSummary:
+		m.ResetSummary()
+		return nil
+	case runstep.FieldDetail:
+		m.ResetDetail()
+		return nil
+	case runstep.FieldArtifactIdsJSON:
+		m.ResetArtifactIdsJSON()
+		return nil
+	case runstep.FieldStartedAt:
+		m.ResetStartedAt()
+		return nil
+	case runstep.FieldCompletedAt:
+		m.ResetCompletedAt()
+		return nil
+	case runstep.FieldRequestID:
+		m.ResetRequestID()
+		return nil
+	}
+	return fmt.Errorf("unknown RunStep field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RunStepMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RunStepMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RunStepMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RunStepMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RunStepMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RunStepMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RunStepMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown RunStep unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RunStepMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown RunStep edge %s", name)
 }
 
 // TenantMutation represents an operation that mutates the Tenant nodes in the graph.

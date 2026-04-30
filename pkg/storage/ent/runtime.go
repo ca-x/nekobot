@@ -18,6 +18,8 @@ import (
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
+	"nekobot/pkg/storage/ent/run"
+	"nekobot/pkg/storage/ent/runstep"
 	"nekobot/pkg/storage/ent/schema"
 	"nekobot/pkg/storage/ent/tenant"
 	"nekobot/pkg/storage/ent/toolevent"
@@ -694,6 +696,124 @@ func init() {
 	providerDescID := providerFields[0].Descriptor()
 	// provider.DefaultID holds the default value on creation for the id field.
 	provider.DefaultID = providerDescID.Default.(func() string)
+	runFields := schema.Run{}.Fields()
+	_ = runFields
+	// runDescTaskID is the schema descriptor for task_id field.
+	runDescTaskID := runFields[1].Descriptor()
+	// run.DefaultTaskID holds the default value on creation for the task_id field.
+	run.DefaultTaskID = runDescTaskID.Default.(string)
+	// runDescTarget is the schema descriptor for target field.
+	runDescTarget := runFields[2].Descriptor()
+	// run.DefaultTarget holds the default value on creation for the target field.
+	run.DefaultTarget = runDescTarget.Default.(string)
+	// runDescAgentID is the schema descriptor for agent_id field.
+	runDescAgentID := runFields[3].Descriptor()
+	// run.DefaultAgentID holds the default value on creation for the agent_id field.
+	run.DefaultAgentID = runDescAgentID.Default.(string)
+	// runDescComputerID is the schema descriptor for computer_id field.
+	runDescComputerID := runFields[4].Descriptor()
+	// run.DefaultComputerID holds the default value on creation for the computer_id field.
+	run.DefaultComputerID = runDescComputerID.Default.(string)
+	// runDescRuntimeProfileID is the schema descriptor for runtime_profile_id field.
+	runDescRuntimeProfileID := runFields[5].Descriptor()
+	// run.DefaultRuntimeProfileID holds the default value on creation for the runtime_profile_id field.
+	run.DefaultRuntimeProfileID = runDescRuntimeProfileID.Default.(string)
+	// runDescStatus is the schema descriptor for status field.
+	runDescStatus := runFields[6].Descriptor()
+	// run.DefaultStatus holds the default value on creation for the status field.
+	run.DefaultStatus = runDescStatus.Default.(string)
+	// runDescLeaseID is the schema descriptor for lease_id field.
+	runDescLeaseID := runFields[7].Descriptor()
+	// run.DefaultLeaseID holds the default value on creation for the lease_id field.
+	run.DefaultLeaseID = runDescLeaseID.Default.(string)
+	// runDescRequestID is the schema descriptor for request_id field.
+	runDescRequestID := runFields[8].Descriptor()
+	// run.DefaultRequestID holds the default value on creation for the request_id field.
+	run.DefaultRequestID = runDescRequestID.Default.(string)
+	// runDescInputMessageID is the schema descriptor for input_message_id field.
+	runDescInputMessageID := runFields[9].Descriptor()
+	// run.DefaultInputMessageID holds the default value on creation for the input_message_id field.
+	run.DefaultInputMessageID = runDescInputMessageID.Default.(string)
+	// runDescLastSeenEventID is the schema descriptor for last_seen_event_id field.
+	runDescLastSeenEventID := runFields[10].Descriptor()
+	// run.DefaultLastSeenEventID holds the default value on creation for the last_seen_event_id field.
+	run.DefaultLastSeenEventID = runDescLastSeenEventID.Default.(string)
+	// runDescStartedAt is the schema descriptor for started_at field.
+	runDescStartedAt := runFields[11].Descriptor()
+	// run.DefaultStartedAt holds the default value on creation for the started_at field.
+	run.DefaultStartedAt = runDescStartedAt.Default.(func() time.Time)
+	// runDescUpdatedAt is the schema descriptor for updated_at field.
+	runDescUpdatedAt := runFields[12].Descriptor()
+	// run.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	run.DefaultUpdatedAt = runDescUpdatedAt.Default.(func() time.Time)
+	// run.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	run.UpdateDefaultUpdatedAt = runDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// runDescError is the schema descriptor for error field.
+	runDescError := runFields[14].Descriptor()
+	// run.DefaultError holds the default value on creation for the error field.
+	run.DefaultError = runDescError.Default.(string)
+	// runDescSummary is the schema descriptor for summary field.
+	runDescSummary := runFields[15].Descriptor()
+	// run.DefaultSummary holds the default value on creation for the summary field.
+	run.DefaultSummary = runDescSummary.Default.(string)
+	// runDescState is the schema descriptor for state field.
+	runDescState := runFields[16].Descriptor()
+	// run.DefaultState holds the default value on creation for the state field.
+	run.DefaultState = runDescState.Default.(string)
+	// runDescTenantID is the schema descriptor for tenant_id field.
+	runDescTenantID := runFields[17].Descriptor()
+	// run.DefaultTenantID holds the default value on creation for the tenant_id field.
+	run.DefaultTenantID = runDescTenantID.Default.(string)
+	// runDescOwnerUserID is the schema descriptor for owner_user_id field.
+	runDescOwnerUserID := runFields[18].Descriptor()
+	// run.DefaultOwnerUserID holds the default value on creation for the owner_user_id field.
+	run.DefaultOwnerUserID = runDescOwnerUserID.Default.(string)
+	// runDescID is the schema descriptor for id field.
+	runDescID := runFields[0].Descriptor()
+	// run.DefaultID holds the default value on creation for the id field.
+	run.DefaultID = runDescID.Default.(func() string)
+	runstepFields := schema.RunStep{}.Fields()
+	_ = runstepFields
+	// runstepDescRunID is the schema descriptor for run_id field.
+	runstepDescRunID := runstepFields[1].Descriptor()
+	// runstep.RunIDValidator is a validator for the "run_id" field. It is called by the builders before save.
+	runstep.RunIDValidator = runstepDescRunID.Validators[0].(func(string) error)
+	// runstepDescSequence is the schema descriptor for sequence field.
+	runstepDescSequence := runstepFields[2].Descriptor()
+	// runstep.DefaultSequence holds the default value on creation for the sequence field.
+	runstep.DefaultSequence = runstepDescSequence.Default.(uint32)
+	// runstepDescKind is the schema descriptor for kind field.
+	runstepDescKind := runstepFields[3].Descriptor()
+	// runstep.DefaultKind holds the default value on creation for the kind field.
+	runstep.DefaultKind = runstepDescKind.Default.(string)
+	// runstepDescStatus is the schema descriptor for status field.
+	runstepDescStatus := runstepFields[4].Descriptor()
+	// runstep.DefaultStatus holds the default value on creation for the status field.
+	runstep.DefaultStatus = runstepDescStatus.Default.(string)
+	// runstepDescSummary is the schema descriptor for summary field.
+	runstepDescSummary := runstepFields[5].Descriptor()
+	// runstep.DefaultSummary holds the default value on creation for the summary field.
+	runstep.DefaultSummary = runstepDescSummary.Default.(string)
+	// runstepDescDetail is the schema descriptor for detail field.
+	runstepDescDetail := runstepFields[6].Descriptor()
+	// runstep.DefaultDetail holds the default value on creation for the detail field.
+	runstep.DefaultDetail = runstepDescDetail.Default.(string)
+	// runstepDescArtifactIdsJSON is the schema descriptor for artifact_ids_json field.
+	runstepDescArtifactIdsJSON := runstepFields[7].Descriptor()
+	// runstep.DefaultArtifactIdsJSON holds the default value on creation for the artifact_ids_json field.
+	runstep.DefaultArtifactIdsJSON = runstepDescArtifactIdsJSON.Default.(string)
+	// runstepDescStartedAt is the schema descriptor for started_at field.
+	runstepDescStartedAt := runstepFields[8].Descriptor()
+	// runstep.DefaultStartedAt holds the default value on creation for the started_at field.
+	runstep.DefaultStartedAt = runstepDescStartedAt.Default.(func() time.Time)
+	// runstepDescRequestID is the schema descriptor for request_id field.
+	runstepDescRequestID := runstepFields[10].Descriptor()
+	// runstep.DefaultRequestID holds the default value on creation for the request_id field.
+	runstep.DefaultRequestID = runstepDescRequestID.Default.(string)
+	// runstepDescID is the schema descriptor for id field.
+	runstepDescID := runstepFields[0].Descriptor()
+	// runstep.DefaultID holds the default value on creation for the id field.
+	runstep.DefaultID = runstepDescID.Default.(func() string)
 	tenantFields := schema.Tenant{}.Fields()
 	_ = tenantFields
 	// tenantDescSlug is the schema descriptor for slug field.

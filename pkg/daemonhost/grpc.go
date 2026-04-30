@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
+	"nekobot/pkg/runs"
 	"nekobot/pkg/tasks"
 )
 
@@ -15,6 +16,7 @@ type GRPCService struct {
 	daemonv1.UnimplementedDaemonControlServiceServer
 	Registry        *Registry
 	TaskService     *tasks.Service
+	RunManager      *runs.Manager
 	InventoryLoader func() (*daemonv1.ComputerInventory, error)
 	AppendSession   func(context.Context, tasks.Task, *daemonv1.UpdateRunStatusRequest) error
 	Collaboration   CollaborationService
@@ -49,6 +51,12 @@ func NewGRPCService(registry *Registry, taskService *tasks.Service, inventoryLoa
 		svc.Collaboration = collaboration[0]
 	}
 	return svc
+}
+
+// WithRunManager injects a run/step manager for AppendRunStep/ListRuns/GetRun.
+func (s *GRPCService) WithRunManager(mgr *runs.Manager) *GRPCService {
+	s.RunManager = mgr
+	return s
 }
 
 func (s *GRPCService) RegisterComputer(ctx context.Context, req *daemonv1.RegisterComputerRequest) (*daemonv1.RegisterComputerResponse, error) {
@@ -238,6 +246,141 @@ func (s *GRPCService) ListActivity(ctx context.Context, req *daemonv1.ListActivi
 		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
 	}
 	return s.Collaboration.ListActivity(ctx, req)
+}
+
+// ---------------------------------------------------------------------------
+// Run/RunStep RPCs
+// ---------------------------------------------------------------------------
+
+func (s *GRPCService) AppendRunStep(ctx context.Context, req *daemonv1.AppendRunStepRequest) (*daemonv1.AppendRunStepResponse, error) {
+	if s == nil || s.RunManager == nil {
+		return nil, status.Error(codes.FailedPrecondition, "run manager not available")
+	}
+	step := req.GetStep()
+	if step == nil {
+		return nil, status.Error(codes.InvalidArgument, "step is required")
+	}
+	record, err := s.RunManager.AppendRunStep(ctx, runs.StepRecord{
+		ID:          step.GetStepId(),
+		RunID:       step.GetRunId(),
+		Sequence:    step.GetSequence(),
+		Kind:        step.GetKind(),
+		Status:      step.GetStatus(),
+		Summary:     step.GetSummary(),
+		Detail:      step.GetDetail(),
+		ArtifactIDs: step.GetArtifactIds(),
+		RequestID:   req.GetRequestId(),
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "append run step: %v", err)
+	}
+	return &daemonv1.AppendRunStepResponse{
+		Accepted: true,
+		Step:     stepRecordToProto(record),
+	}, nil
+}
+
+func (s *GRPCService) ListRuns(ctx context.Context, req *daemonv1.ListRunsRequest) (*daemonv1.ListRunsResponse, error) {
+	if s == nil || s.RunManager == nil {
+		return nil, status.Error(codes.FailedPrecondition, "run manager not available")
+	}
+	records, err := s.RunManager.ListRuns(ctx,
+		req.GetTarget(),
+		req.GetTaskId(),
+		req.GetAgentId(),
+		int(req.GetLimit()),
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list runs: %v", err)
+	}
+	out := make([]*daemonv1.Run, 0, len(records))
+	for i := range records {
+		out = append(out, runRecordToProto(&records[i]))
+	}
+	return &daemonv1.ListRunsResponse{Runs: out}, nil
+}
+
+func (s *GRPCService) GetRun(ctx context.Context, req *daemonv1.GetRunRequest) (*daemonv1.GetRunResponse, error) {
+	if s == nil || s.RunManager == nil {
+		return nil, status.Error(codes.FailedPrecondition, "run manager not available")
+	}
+	runID := strings.TrimSpace(req.GetRunId())
+	if runID == "" {
+		return nil, status.Error(codes.InvalidArgument, "run_id is required")
+	}
+	rec, err := s.RunManager.GetRun(ctx, runID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "get run: %v", err)
+	}
+	if rec == nil {
+		return nil, status.Error(codes.NotFound, "run not found")
+	}
+	steps, err := s.RunManager.ListRunSteps(ctx, runID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "list run steps: %v", err)
+	}
+	protoSteps := make([]*daemonv1.RunStep, 0, len(steps))
+	for i := range steps {
+		protoSteps = append(protoSteps, stepRecordToProto(&steps[i]))
+	}
+	return &daemonv1.GetRunResponse{
+		Run:   runRecordToProto(rec),
+		Steps: protoSteps,
+	}, nil
+}
+
+// ---------------------------------------------------------------------------
+// Proto ↔ domain conversions
+// ---------------------------------------------------------------------------
+
+func runRecordToProto(rec *runs.RunRecord) *daemonv1.Run {
+	if rec == nil {
+		return nil
+	}
+	r := &daemonv1.Run{
+		RunId:            rec.ID,
+		TaskId:           rec.TaskID,
+		Target:           rec.Target,
+		AgentId:          rec.AgentID,
+		ComputerId:       rec.ComputerID,
+		RuntimeProfileId: rec.RuntimeProfileID,
+		Status:           rec.Status,
+		LeaseId:          rec.LeaseID,
+		RequestId:        rec.RequestID,
+		InputMessageId:   rec.InputMessageID,
+		LastSeenEventId:  rec.LastSeenEventID,
+		StartedTimeUnix:  rec.StartedAt.Unix(),
+		UpdatedTimeUnix:  rec.UpdatedAt.Unix(),
+		Error:            rec.Error,
+		Summary:          rec.Summary,
+		State:            rec.State,
+	}
+	if rec.CompletedAt != nil {
+		r.CompletedTimeUnix = rec.CompletedAt.Unix()
+	}
+	return r
+}
+
+func stepRecordToProto(rec *runs.StepRecord) *daemonv1.RunStep {
+	if rec == nil {
+		return nil
+	}
+	s := &daemonv1.RunStep{
+		StepId:          rec.ID,
+		RunId:           rec.RunID,
+		Sequence:        rec.Sequence,
+		Kind:            rec.Kind,
+		Status:          rec.Status,
+		Summary:         rec.Summary,
+		Detail:          rec.Detail,
+		ArtifactIds:     rec.ArtifactIDs,
+		StartedTimeUnix: rec.StartedAt.Unix(),
+		RequestId:       rec.RequestID,
+	}
+	if rec.CompletedAt != nil {
+		s.CompletedTimeUnix = rec.CompletedAt.Unix()
+	}
+	return s
 }
 
 func (s *GRPCService) loadInventory() (*daemonv1.ComputerInventory, error) {

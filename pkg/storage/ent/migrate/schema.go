@@ -676,6 +676,124 @@ var (
 			},
 		},
 	}
+	// RunsColumns holds the columns for the "runs" table.
+	RunsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "task_id", Type: field.TypeString, Default: ""},
+		{Name: "target", Type: field.TypeString, Default: ""},
+		{Name: "agent_id", Type: field.TypeString, Default: ""},
+		{Name: "computer_id", Type: field.TypeString, Default: ""},
+		{Name: "runtime_profile_id", Type: field.TypeString, Default: ""},
+		{Name: "status", Type: field.TypeString, Default: "queued"},
+		{Name: "lease_id", Type: field.TypeString, Default: ""},
+		{Name: "request_id", Type: field.TypeString, Default: ""},
+		{Name: "input_message_id", Type: field.TypeString, Default: ""},
+		{Name: "last_seen_event_id", Type: field.TypeString, Default: ""},
+		{Name: "started_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "error", Type: field.TypeString, Default: ""},
+		{Name: "summary", Type: field.TypeString, Default: ""},
+		{Name: "state", Type: field.TypeString, Default: ""},
+		{Name: "tenant_id", Type: field.TypeString, Default: ""},
+		{Name: "owner_user_id", Type: field.TypeString, Default: ""},
+		{Name: "visibility", Type: field.TypeEnum, Enums: []string{"private", "shared", "system"}, Default: "shared"},
+	}
+	// RunsTable holds the schema information for the "runs" table.
+	RunsTable = &schema.Table{
+		Name:       "runs",
+		Columns:    RunsColumns,
+		PrimaryKey: []*schema.Column{RunsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "run_task_id",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[1]},
+			},
+			{
+				Name:    "run_target",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[2]},
+			},
+			{
+				Name:    "run_agent_id",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[3]},
+			},
+			{
+				Name:    "run_computer_id",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[4]},
+			},
+			{
+				Name:    "run_status",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[6]},
+			},
+			{
+				Name:    "run_tenant_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[17], RunsColumns[19]},
+			},
+			{
+				Name:    "run_owner_user_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[18], RunsColumns[19]},
+			},
+			{
+				Name:    "run_started_at",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[11]},
+			},
+			{
+				Name:    "run_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{RunsColumns[12]},
+			},
+		},
+	}
+	// RunStepsColumns holds the columns for the "run_steps" table.
+	RunStepsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString},
+		{Name: "run_id", Type: field.TypeString},
+		{Name: "sequence", Type: field.TypeUint32, Default: 0},
+		{Name: "kind", Type: field.TypeString, Default: "message"},
+		{Name: "status", Type: field.TypeString, Default: "ok"},
+		{Name: "summary", Type: field.TypeString, Default: ""},
+		{Name: "detail", Type: field.TypeString, Default: ""},
+		{Name: "artifact_ids_json", Type: field.TypeString, Default: "[]"},
+		{Name: "started_at", Type: field.TypeTime},
+		{Name: "completed_at", Type: field.TypeTime, Nullable: true},
+		{Name: "request_id", Type: field.TypeString, Default: ""},
+	}
+	// RunStepsTable holds the schema information for the "run_steps" table.
+	RunStepsTable = &schema.Table{
+		Name:       "run_steps",
+		Columns:    RunStepsColumns,
+		PrimaryKey: []*schema.Column{RunStepsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "runstep_run_id",
+				Unique:  false,
+				Columns: []*schema.Column{RunStepsColumns[1]},
+			},
+			{
+				Name:    "runstep_run_id_sequence",
+				Unique:  false,
+				Columns: []*schema.Column{RunStepsColumns[1], RunStepsColumns[2]},
+			},
+			{
+				Name:    "runstep_kind",
+				Unique:  false,
+				Columns: []*schema.Column{RunStepsColumns[3]},
+			},
+			{
+				Name:    "runstep_started_at",
+				Unique:  false,
+				Columns: []*schema.Column{RunStepsColumns[8]},
+			},
+		},
+	}
 	// TenantsColumns holds the columns for the "tenants" table.
 	TenantsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString},
@@ -838,6 +956,8 @@ var (
 		PromptsTable,
 		PromptBindingsTable,
 		ProvidersTable,
+		RunsTable,
+		RunStepsTable,
 		TenantsTable,
 		ToolEventsTable,
 		ToolSessionsTable,

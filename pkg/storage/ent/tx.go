@@ -42,6 +42,10 @@ type Tx struct {
 	PromptBinding *PromptBindingClient
 	// Provider is the client for interacting with the Provider builders.
 	Provider *ProviderClient
+	// Run is the client for interacting with the Run builders.
+	Run *RunClient
+	// RunStep is the client for interacting with the RunStep builders.
+	RunStep *RunStepClient
 	// Tenant is the client for interacting with the Tenant builders.
 	Tenant *TenantClient
 	// ToolEvent is the client for interacting with the ToolEvent builders.
@@ -196,6 +200,8 @@ func (tx *Tx) init() {
 	tx.Prompt = NewPromptClient(tx.config)
 	tx.PromptBinding = NewPromptBindingClient(tx.config)
 	tx.Provider = NewProviderClient(tx.config)
+	tx.Run = NewRunClient(tx.config)
+	tx.RunStep = NewRunStepClient(tx.config)
 	tx.Tenant = NewTenantClient(tx.config)
 	tx.ToolEvent = NewToolEventClient(tx.config)
 	tx.ToolSession = NewToolSessionClient(tx.config)

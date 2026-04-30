@@ -16,12 +16,24 @@ import (
 	"nekobot/pkg/logger"
 )
 
+// ActivityEntry describes an activity record the dispatcher can emit.
+type ActivityEntry struct {
+	Target  string
+	AgentID string
+	Kind    string
+	Summary string
+	Detail  string
+	RunID   string
+	StepID  string
+}
+
 // Dispatcher delivers notification events to configured channel accounts.
 type Dispatcher struct {
-	log      *logger.Logger
-	routes   *Manager
-	accounts *channelaccounts.Manager
-	bus      bus.Bus
+	log            *logger.Logger
+	routes         *Manager
+	accounts       *channelaccounts.Manager
+	bus            bus.Bus
+	logActivity    func(ctx context.Context, entry ActivityEntry)
 }
 
 // NewDispatcher creates a notification dispatcher.
@@ -32,6 +44,13 @@ func NewDispatcher(log *logger.Logger, routes *Manager, accounts *channelaccount
 		accounts: accounts,
 		bus:      messageBus,
 	}
+}
+
+// WithActivityLogger sets an optional callback for logging activity records
+// when notification events are successfully dispatched.
+func (d *Dispatcher) WithActivityLogger(fn func(ctx context.Context, entry ActivityEntry)) *Dispatcher {
+	d.logActivity = fn
+	return d
 }
 
 // HandleCronJobEvent delivers cron completion events through the binding model.
@@ -90,6 +109,22 @@ func (d *Dispatcher) HandleCronJobEvent(ctx context.Context, event cron.JobEvent
 			zap.String("channel_id", msg.ChannelID),
 			zap.Error(err))
 		return
+	}
+
+	// Log activity for the cron event delivery.
+	if d.logActivity != nil {
+		activityKind := "cron.succeeded"
+		activitySummary := fmt.Sprintf("Cron job %q completed", event.Job.Name)
+		if event.EventType == EventCronFailed || strings.TrimSpace(event.Error) != "" {
+			activityKind = "cron.failed"
+			activitySummary = fmt.Sprintf("Cron job %q failed", event.Job.Name)
+		}
+		d.logActivity(dispatchCtx, ActivityEntry{
+			Target:  target.Target,
+			Kind:    activityKind,
+			Summary: activitySummary,
+			Detail:  cronNotificationContent(event),
+		})
 	}
 
 	if event.DeleteAfterRun {

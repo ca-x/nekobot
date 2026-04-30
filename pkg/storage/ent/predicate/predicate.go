@@ -51,6 +51,12 @@ type PromptBinding func(*sql.Selector)
 // Provider is the predicate function for provider builders.
 type Provider func(*sql.Selector)
 
+// Run is the predicate function for run builders.
+type Run func(*sql.Selector)
+
+// RunStep is the predicate function for runstep builders.
+type RunStep func(*sql.Selector)
+
 // Tenant is the predicate function for tenant builders.
 type Tenant func(*sql.Selector)
 

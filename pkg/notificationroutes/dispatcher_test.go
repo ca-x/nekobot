@@ -916,3 +916,143 @@ func TestNotificationTitle(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Dispatcher activity logging tests
+// ---------------------------------------------------------------------------
+
+func TestDispatcherLogsActivityOnSuccess(t *testing.T) {
+	ctx := context.Background()
+	cfg, log, client := newDispatcherTestRuntime(t)
+	routeMgr, err := NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new route manager: %v", err)
+	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new channel account manager: %v", err)
+	}
+	account, err := accountMgr.Create(ctx, channelaccounts.ChannelAccount{
+		ChannelType: "telegram",
+		AccountKey:  "activity-bot",
+		DisplayName: "Activity Bot",
+		Enabled:     true,
+		Config:      map[string]interface{}{},
+	})
+	if err != nil {
+		t.Fatalf("create channel account: %v", err)
+	}
+	route, err := routeMgr.CreateRoute(ctx, NotificationRoute{
+		Name:             "activity-route",
+		Enabled:          true,
+		ChannelAccountID: account.ID,
+		TargetConfigJSON: `{"target":"#ops"}`,
+	})
+	if err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	if _, err := routeMgr.CreateBinding(ctx, NotificationBinding{
+		Scope:          ScopeCronJob,
+		Target:         "job-activity",
+		RouteID:        route.ID,
+		EventTypesJSON: `["*"]`,
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	messageBus := &recordingBus{}
+	var activities []ActivityEntry
+	dispatcher := NewDispatcher(log, routeMgr, accountMgr, messageBus).
+		WithActivityLogger(func(_ context.Context, entry ActivityEntry) {
+			activities = append(activities, entry)
+		})
+
+	// Success event
+	dispatcher.HandleCronJobEvent(ctx, cron.JobEvent{
+		EventType: EventCronSucceeded,
+		Job:       cron.Job{ID: "job-activity", Name: "daily report"},
+		Response:  "all good",
+		FinishedAt: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
+	})
+	if len(activities) != 1 {
+		t.Fatalf("expected 1 activity entry, got %d", len(activities))
+	}
+	if activities[0].Kind != "cron.succeeded" {
+		t.Errorf("activity kind = %q, want cron.succeeded", activities[0].Kind)
+	}
+	if !strings.Contains(activities[0].Summary, "daily report") {
+		t.Errorf("activity summary should contain job name, got %q", activities[0].Summary)
+	}
+	if !strings.Contains(activities[0].Detail, "all good") {
+		t.Errorf("activity detail should contain response, got %q", activities[0].Detail)
+	}
+
+	// Failed event
+	activities = nil
+	dispatcher.HandleCronJobEvent(ctx, cron.JobEvent{
+		EventType: EventCronFailed,
+		Job:       cron.Job{ID: "job-activity", Name: "daily report"},
+		Error:     "disk full",
+	})
+	if len(activities) != 1 {
+		t.Fatalf("expected 1 activity entry for failure, got %d", len(activities))
+	}
+	if activities[0].Kind != "cron.failed" {
+		t.Errorf("activity kind = %q, want cron.failed", activities[0].Kind)
+	}
+	if !strings.Contains(activities[0].Detail, "disk full") {
+		t.Errorf("activity detail should contain error, got %q", activities[0].Detail)
+	}
+}
+
+func TestDispatcherNoActivityWithoutLogger(t *testing.T) {
+	ctx := context.Background()
+	cfg, log, client := newDispatcherTestRuntime(t)
+	routeMgr, err := NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new route manager: %v", err)
+	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new channel account manager: %v", err)
+	}
+	account, err := accountMgr.Create(ctx, channelaccounts.ChannelAccount{
+		ChannelType: "telegram",
+		AccountKey:  "no-activity-bot",
+		Enabled:     true,
+		Config:      map[string]interface{}{},
+	})
+	if err != nil {
+		t.Fatalf("create channel account: %v", err)
+	}
+	route, err := routeMgr.CreateRoute(ctx, NotificationRoute{
+		Name:             "no-activity",
+		Enabled:          true,
+		ChannelAccountID: account.ID,
+		TargetConfigJSON: `{"target":"#ops"}`,
+	})
+	if err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	if _, err := routeMgr.CreateBinding(ctx, NotificationBinding{
+		Scope:          ScopeCronJob,
+		Target:         "job-no-activity",
+		RouteID:        route.ID,
+		EventTypesJSON: `["*"]`,
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	messageBus := &recordingBus{}
+	// No activity logger set — should not panic
+	dispatcher := NewDispatcher(log, routeMgr, accountMgr, messageBus)
+	dispatcher.HandleCronJobEvent(ctx, cron.JobEvent{
+		EventType: EventCronSucceeded,
+		Job:       cron.Job{ID: "job-no-activity", Name: "test"},
+	})
+	if len(messageBus.outbound) != 1 {
+		t.Fatalf("expected 1 outbound, got %d", len(messageBus.outbound))
+	}
+}

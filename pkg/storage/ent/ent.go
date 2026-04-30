@@ -21,6 +21,8 @@ import (
 	"nekobot/pkg/storage/ent/prompt"
 	"nekobot/pkg/storage/ent/promptbinding"
 	"nekobot/pkg/storage/ent/provider"
+	"nekobot/pkg/storage/ent/run"
+	"nekobot/pkg/storage/ent/runstep"
 	"nekobot/pkg/storage/ent/tenant"
 	"nekobot/pkg/storage/ent/toolevent"
 	"nekobot/pkg/storage/ent/toolsession"
@@ -106,6 +108,8 @@ func checkColumn(t, c string) error {
 			prompt.Table:              prompt.ValidColumn,
 			promptbinding.Table:       promptbinding.ValidColumn,
 			provider.Table:            provider.ValidColumn,
+			run.Table:                 run.ValidColumn,
+			runstep.Table:             runstep.ValidColumn,
 			tenant.Table:              tenant.ValidColumn,
 			toolevent.Table:           toolevent.ValidColumn,
 			toolsession.Table:         toolsession.ValidColumn,
