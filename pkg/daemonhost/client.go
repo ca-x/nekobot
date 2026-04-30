@@ -309,6 +309,30 @@ func (c *Client) ListActivityRemote(req *daemonv1.ListActivityRequest) (*daemonv
 	}
 	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
 }
+func (c *Client) UploadAttachmentRemote(req *daemonv1.UploadAttachmentRequest) (*daemonv1.UploadAttachmentResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.UploadAttachment(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) GetAttachmentRemote(req *daemonv1.GetAttachmentRequest) (*daemonv1.GetAttachmentResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.GetAttachment(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ListEventsSinceRemote(req *daemonv1.ListEventsSinceRequest) (*daemonv1.ListEventsSinceResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.ListEventsSince(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
 func (c *Client) rpcContext() (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if token := strings.TrimSpace(c.token); token != "" {

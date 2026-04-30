@@ -8,6 +8,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
+	"nekobot/pkg/config"
+	"nekobot/pkg/logger"
+	"nekobot/pkg/runs"
 	"nekobot/pkg/tasks"
 )
 
@@ -44,6 +47,67 @@ func TestGRPCServiceUpdateRunStatusAppendsSession(t *testing.T) {
 	}
 	if !appended {
 		t.Fatalf("expected append callback to run")
+	}
+}
+
+func TestGRPCServiceRunRPCsUseRunManager(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+	logCfg := logger.DefaultConfig()
+	logCfg.OutputPath = ""
+	log, err := logger.New(logCfg)
+	if err != nil {
+		t.Fatalf("new logger: %v", err)
+	}
+	client, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	if err := config.EnsureRuntimeEntSchema(client); err != nil {
+		t.Fatalf("ensure schema: %v", err)
+	}
+	runMgr, err := runs.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new run manager: %v", err)
+	}
+	created, err := runMgr.CreateRun(context.Background(), runs.RunRecord{
+		TaskID:  "task-1",
+		Target:  "#websocket:run-thread",
+		AgentID: "runtime-a",
+		Status:  "queued",
+	})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	grpcSvc := NewGRPCService(nil, nil, nil, nil).WithRunManager(runMgr)
+	if _, err := grpcSvc.UpdateRunStatus(context.Background(), &daemonv1.UpdateRunStatusRequest{
+		RunId:   created.ID,
+		AgentId: "runtime-a",
+		State:   "running",
+		Summary: "started",
+	}); err != nil {
+		t.Fatalf("UpdateRunStatus failed: %v", err)
+	}
+	if _, err := grpcSvc.AppendRunStep(context.Background(), &daemonv1.AppendRunStepRequest{
+		Step: &daemonv1.RunStep{RunId: created.ID, Kind: "test", Status: "ok", Summary: "passed"},
+	}); err != nil {
+		t.Fatalf("AppendRunStep failed: %v", err)
+	}
+	got, err := grpcSvc.GetRun(context.Background(), &daemonv1.GetRunRequest{RunId: created.ID})
+	if err != nil {
+		t.Fatalf("GetRun failed: %v", err)
+	}
+	if got.Run.GetStatus() != "running" || len(got.Steps) != 1 {
+		t.Fatalf("unexpected run response: run=%+v steps=%+v", got.Run, got.Steps)
+	}
+	list, err := grpcSvc.ListRuns(context.Background(), &daemonv1.ListRunsRequest{AgentId: "runtime-a", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListRuns failed: %v", err)
+	}
+	if len(list.Runs) != 1 || list.Runs[0].GetRunId() != created.ID {
+		t.Fatalf("unexpected runs: %+v", list.Runs)
 	}
 }
 

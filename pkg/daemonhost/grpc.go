@@ -43,6 +43,9 @@ type CollaborationService interface {
 	CancelReminder(context.Context, *daemonv1.CancelReminderRequest) (*daemonv1.CancelReminderResponse, error)
 	LogActivity(context.Context, *daemonv1.LogActivityRequest) (*daemonv1.LogActivityResponse, error)
 	ListActivity(context.Context, *daemonv1.ListActivityRequest) (*daemonv1.ListActivityResponse, error)
+	UploadAttachment(context.Context, *daemonv1.UploadAttachmentRequest) (*daemonv1.UploadAttachmentResponse, error)
+	GetAttachment(context.Context, *daemonv1.GetAttachmentRequest) (*daemonv1.GetAttachmentResponse, error)
+	ListEventsSince(context.Context, *daemonv1.ListEventsSinceRequest) (*daemonv1.ListEventsSinceResponse, error)
 }
 
 func NewGRPCService(registry *Registry, taskService *tasks.Service, inventoryLoader func() (*daemonv1.ComputerInventory, error), appendSession func(context.Context, tasks.Task, *daemonv1.UpdateRunStatusRequest) error, collaboration ...CollaborationService) *GRPCService {
@@ -78,7 +81,19 @@ func (s *GRPCService) FetchAssignedRuns(ctx context.Context, req *daemonv1.Fetch
 	return BuildAssignedRuns(s.TaskService, strings.TrimSpace(req.GetComputerId()), req.GetAgentIds(), int(req.GetLimit())), nil
 }
 func (s *GRPCService) UpdateRunStatus(ctx context.Context, req *daemonv1.UpdateRunStatusRequest) (*daemonv1.UpdateRunStatusResponse, error) {
-	if s == nil || s.TaskService == nil {
+	if s == nil {
+		return nil, fmt.Errorf("task service unavailable")
+	}
+	if s.RunManager != nil && strings.TrimSpace(req.GetRunId()) != "" {
+		record, err := s.RunManager.UpdateRunStatus(ctx, req.GetRunId(), req.GetState(), req.GetError(), req.GetSummary(), req.GetState())
+		if err != nil {
+			return nil, err
+		}
+		if record != nil {
+			return &daemonv1.UpdateRunStatusResponse{Accepted: true}, nil
+		}
+	}
+	if s.TaskService == nil {
 		return nil, fmt.Errorf("task service unavailable")
 	}
 	resp, task, err := ApplyRunStatusUpdate(s.TaskService, req)
@@ -246,6 +261,27 @@ func (s *GRPCService) ListActivity(ctx context.Context, req *daemonv1.ListActivi
 		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
 	}
 	return s.Collaboration.ListActivity(ctx, req)
+}
+
+func (s *GRPCService) UploadAttachment(ctx context.Context, req *daemonv1.UploadAttachmentRequest) (*daemonv1.UploadAttachmentResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.UploadAttachment(ctx, req)
+}
+
+func (s *GRPCService) GetAttachment(ctx context.Context, req *daemonv1.GetAttachmentRequest) (*daemonv1.GetAttachmentResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.GetAttachment(ctx, req)
+}
+
+func (s *GRPCService) ListEventsSince(ctx context.Context, req *daemonv1.ListEventsSinceRequest) (*daemonv1.ListEventsSinceResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.ListEventsSince(ctx, req)
 }
 
 // ---------------------------------------------------------------------------

@@ -37,6 +37,7 @@ import (
 	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 	"nekobot/pkg/process"
+	"nekobot/pkg/runs"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
 	"nekobot/pkg/skills"
@@ -214,6 +215,14 @@ func (s *Server) setupGRPC() {
 		},
 		s,
 	)
+	if s.entClient != nil {
+		runMgr, err := runs.NewManager(s.config, s.logger, s.entClient)
+		if err != nil {
+			s.logger.Warn("Failed to initialize run manager for daemon gRPC", zap.Error(err))
+		} else {
+			service.WithRunManager(runMgr)
+		}
+	}
 	daemonv1.RegisterDaemonControlServiceServer(grpcServer, service)
 	s.grpcServer = grpcServer
 }

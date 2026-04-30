@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,7 +32,15 @@ const (
 	daemonAgentEnvStoreKey = "daemon.collaboration.agent_env.v1"
 	daemonReminderMetaKey  = "daemon.collaboration.reminder_meta.v1"
 	daemonActivityStoreKey = "daemon.collaboration.activity.v1"
+	daemonAttachmentKey    = "daemon.collaboration.attachments.v1"
+
+	maxDaemonAttachmentBytes = 32 << 20
 )
+
+type storedAttachment struct {
+	Record        *daemonv1.AttachmentRecord `json:"record"`
+	ContentBase64 string                     `json:"content_base64"`
+}
 
 func (s *Server) ListChannels(ctx context.Context, req *daemonv1.ListChannelsRequest) (*daemonv1.ListChannelsResponse, error) {
 	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
@@ -453,6 +462,8 @@ func (s *Server) LogActivity(ctx context.Context, req *daemonv1.LogActivityReque
 		Summary:         strings.TrimSpace(req.GetSummary()),
 		Detail:          strings.TrimSpace(req.GetDetail()),
 		CreatedTimeUnix: time.Now().Unix(),
+		RunId:           strings.TrimSpace(req.GetRunId()),
+		StepId:          strings.TrimSpace(req.GetStepId()),
 	}
 	if activity.Kind == "" {
 		activity.Kind = "event"
@@ -496,6 +507,98 @@ func (s *Server) ListActivity(ctx context.Context, req *daemonv1.ListActivityReq
 		out = append(out, item)
 	}
 	return &daemonv1.ListActivityResponse{Activities: out}, nil
+}
+
+func (s *Server) UploadAttachment(ctx context.Context, req *daemonv1.UploadAttachmentRequest) (*daemonv1.UploadAttachmentResponse, error) {
+	if s == nil || s.kvStore == nil {
+		return nil, fmt.Errorf("attachment store unavailable")
+	}
+	target, err := daemonhost.ValidateCollaborationTarget(req.GetTarget())
+	if err != nil {
+		return nil, err
+	}
+	filename := strings.TrimSpace(req.GetFilename())
+	if filename == "" {
+		return nil, fmt.Errorf("filename is required")
+	}
+	content := req.GetContent()
+	if len(content) == 0 {
+		return nil, fmt.Errorf("content is required")
+	}
+	if len(content) > maxDaemonAttachmentBytes {
+		return nil, fmt.Errorf("attachment exceeds %d bytes", maxDaemonAttachmentBytes)
+	}
+	record := &daemonv1.AttachmentRecord{
+		AttachmentId:    "attachment-" + uuid.NewString(),
+		Target:          target,
+		OwnerId:         strings.TrimSpace(req.GetOwnerId()),
+		Filename:        filename,
+		MimeType:        strings.TrimSpace(req.GetMimeType()),
+		SizeBytes:       int64(len(content)),
+		StorageRef:      "kv:" + daemonAttachmentKey,
+		CreatedTimeUnix: time.Now().Unix(),
+	}
+	if err := s.storeAttachment(ctx, record, content); err != nil {
+		return nil, err
+	}
+	return &daemonv1.UploadAttachmentResponse{Attachment: record}, nil
+}
+
+func (s *Server) GetAttachment(ctx context.Context, req *daemonv1.GetAttachmentRequest) (*daemonv1.GetAttachmentResponse, error) {
+	attachmentID := strings.TrimSpace(req.GetAttachmentId())
+	if attachmentID == "" {
+		return nil, fmt.Errorf("attachment_id is required")
+	}
+	record, content, err := s.loadAttachment(ctx, attachmentID)
+	if err != nil {
+		return nil, err
+	}
+	return &daemonv1.GetAttachmentResponse{Attachment: record, Content: content}, nil
+}
+
+func (s *Server) ListEventsSince(ctx context.Context, req *daemonv1.ListEventsSinceRequest) (*daemonv1.ListEventsSinceResponse, error) {
+	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
+	cursor := req.GetCursor()
+	afterActivityID := ""
+	if cursor != nil {
+		afterActivityID = strings.TrimSpace(cursor.GetLastActivityId())
+	}
+	activities := s.activityLog(ctx)
+	events := make([]*daemonv1.CollaborationEvent, 0, len(activities))
+	seenCursor := afterActivityID == ""
+	for _, activity := range activities {
+		if activity == nil {
+			continue
+		}
+		if !seenCursor {
+			if activity.GetActivityId() == afterActivityID {
+				seenCursor = true
+			}
+			continue
+		}
+		if len(events) >= limit {
+			break
+		}
+		events = append(events, activityToEvent(activity))
+	}
+	if afterActivityID != "" && !seenCursor {
+		return nil, fmt.Errorf("event cursor expired or unknown: %s", afterActivityID)
+	}
+	next := &daemonv1.EventCursor{}
+	if cursor != nil {
+		next.Target = cursor.GetTarget()
+	}
+	if len(events) > 0 {
+		last := events[len(events)-1]
+		next.LastEventId = last.GetEventId()
+		next.LastActivityId = last.GetActivityId()
+		next.Cursor = last.GetEventId()
+	} else if cursor != nil {
+		next.Cursor = cursor.GetCursor()
+		next.LastEventId = cursor.GetLastEventId()
+		next.LastActivityId = cursor.GetLastActivityId()
+	}
+	return &daemonv1.ListEventsSinceResponse{Events: events, NextCursor: next}, nil
 }
 
 func (s *Server) listChannelAccountRecords(ctx context.Context) []*daemonv1.ChannelRecord {
@@ -863,6 +966,72 @@ func (s *Server) activityLog(ctx context.Context) []*daemonv1.ActivityRecord {
 		return nil
 	}
 	return activities
+}
+
+func activityToEvent(activity *daemonv1.ActivityRecord) *daemonv1.CollaborationEvent {
+	if activity == nil {
+		return nil
+	}
+	eventID := "event-" + activity.GetActivityId()
+	return &daemonv1.CollaborationEvent{
+		EventId:         eventID,
+		Target:          activity.GetTarget(),
+		Kind:            "activity." + activity.GetKind(),
+		ActivityId:      activity.GetActivityId(),
+		RunId:           activity.GetRunId(),
+		CreatedTimeUnix: activity.GetCreatedTimeUnix(),
+	}
+}
+
+func (s *Server) storeAttachment(ctx context.Context, record *daemonv1.AttachmentRecord, content []byte) error {
+	if s == nil || s.kvStore == nil || record == nil {
+		return fmt.Errorf("attachment store unavailable")
+	}
+	return s.kvStore.UpdateFunc(ctx, daemonAttachmentKey, func(current interface{}) interface{} {
+		attachments := map[string]storedAttachment{}
+		payload, err := json.Marshal(current)
+		if err == nil {
+			_ = json.Unmarshal(payload, &attachments)
+		}
+		if attachments == nil {
+			attachments = map[string]storedAttachment{}
+		}
+		attachments[record.GetAttachmentId()] = storedAttachment{
+			Record:        record,
+			ContentBase64: base64.StdEncoding.EncodeToString(content),
+		}
+		return attachments
+	})
+}
+
+func (s *Server) loadAttachment(ctx context.Context, attachmentID string) (*daemonv1.AttachmentRecord, []byte, error) {
+	if s == nil || s.kvStore == nil {
+		return nil, nil, fmt.Errorf("attachment store unavailable")
+	}
+	value, ok, err := s.kvStore.Get(ctx, daemonAttachmentKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !ok {
+		return nil, nil, fmt.Errorf("attachment not found: %s", attachmentID)
+	}
+	attachments := map[string]storedAttachment{}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := json.Unmarshal(payload, &attachments); err != nil {
+		return nil, nil, err
+	}
+	item, ok := attachments[attachmentID]
+	if !ok || item.Record == nil {
+		return nil, nil, fmt.Errorf("attachment not found: %s", attachmentID)
+	}
+	content, err := base64.StdEncoding.DecodeString(item.ContentBase64)
+	if err != nil {
+		return nil, nil, fmt.Errorf("decode attachment %s: %w", attachmentID, err)
+	}
+	return item.Record, content, nil
 }
 
 func (s *Server) threadRecord(ctx context.Context, sessionID string, followed map[string]struct{}) (*daemonv1.ThreadRecord, error) {

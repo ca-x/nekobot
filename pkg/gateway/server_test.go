@@ -407,6 +407,51 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if len(list.Activities) != 1 || list.Activities[0].GetSummary() != "reviewed proto" {
 		t.Fatalf("unexpected activities: %+v", list.Activities)
 	}
+	events, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince failed: %v", err)
+	}
+	if len(events.Events) != 1 || events.Events[0].GetActivityId() != activity.Activity.GetActivityId() {
+		t.Fatalf("unexpected replay events: %+v", events.Events)
+	}
+	nextEvents, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Cursor: events.NextCursor, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince from cursor failed: %v", err)
+	}
+	if len(nextEvents.Events) != 0 {
+		t.Fatalf("expected no events after cursor, got %+v", nextEvents.Events)
+	}
+}
+
+func TestDaemonCollaborationAttachments(t *testing.T) {
+	s := newTestServer(t)
+	store, err := state.NewFileStore(s.logger, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-collab-state.json")})
+	if err != nil {
+		t.Fatalf("new state store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	s.kvStore = store
+
+	upload, err := s.UploadAttachment(context.Background(), &daemonv1.UploadAttachmentRequest{
+		Target:   "#websocket:thread-attachments",
+		Filename: "note.txt",
+		MimeType: "text/plain",
+		Content:  []byte("attachment body"),
+		OwnerId:  "runtime-a",
+	})
+	if err != nil {
+		t.Fatalf("UploadAttachment failed: %v", err)
+	}
+	if upload.Attachment.GetAttachmentId() == "" || upload.Attachment.GetSizeBytes() != int64(len("attachment body")) {
+		t.Fatalf("unexpected upload response: %+v", upload.Attachment)
+	}
+	got, err := s.GetAttachment(context.Background(), &daemonv1.GetAttachmentRequest{AttachmentId: upload.Attachment.GetAttachmentId()})
+	if err != nil {
+		t.Fatalf("GetAttachment failed: %v", err)
+	}
+	if got.Attachment.GetFilename() != "note.txt" || string(got.GetContent()) != "attachment body" {
+		t.Fatalf("unexpected attachment payload: %+v content=%q", got.Attachment, string(got.GetContent()))
+	}
 }
 
 func assertSecretEnvRedacted(t *testing.T, items []*daemonv1.EnvVar, name, rawValue string) {
@@ -3141,6 +3186,30 @@ func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 	}
 	if activity.Activity.GetActivityId() == "" {
 		t.Fatalf("expected activity id")
+	}
+	events, err := client.ListEventsSinceRemote(&daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSinceRemote failed: %v", err)
+	}
+	if len(events.Events) != 1 || events.Events[0].GetActivityId() != activity.Activity.GetActivityId() {
+		t.Fatalf("unexpected grpc events: %+v", events.Events)
+	}
+	upload, err := client.UploadAttachmentRemote(&daemonv1.UploadAttachmentRequest{
+		Target:   "#websocket:grpc-thread",
+		Filename: "grpc.txt",
+		MimeType: "text/plain",
+		Content:  []byte("grpc attachment"),
+		OwnerId:  "default",
+	})
+	if err != nil {
+		t.Fatalf("UploadAttachmentRemote failed: %v", err)
+	}
+	download, err := client.GetAttachmentRemote(&daemonv1.GetAttachmentRequest{AttachmentId: upload.Attachment.GetAttachmentId()})
+	if err != nil {
+		t.Fatalf("GetAttachmentRemote failed: %v", err)
+	}
+	if string(download.GetContent()) != "grpc attachment" {
+		t.Fatalf("unexpected grpc attachment content: %q", string(download.GetContent()))
 	}
 	taskResp, err := client.CreateCollaborationTaskRemote(&daemonv1.CreateCollaborationTaskRequest{Target: "#websocket:grpc-thread", Summary: "do grpc work", AgentId: "runtime-a"})
 	if err != nil {
