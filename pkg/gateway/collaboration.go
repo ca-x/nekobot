@@ -42,6 +42,7 @@ const (
 	daemonAttachmentKey    = "daemon.collaboration.attachments.v1"
 	daemonAgentStatusKey   = "daemon.collaboration.agent_status.v1"
 	daemonSavedMessageKey  = "daemon.collaboration.saved_messages.v1"
+	daemonSplitProposalKey = "daemon.collaboration.task_split_proposals.v1"
 
 	maxDaemonAttachmentBytes = 32 << 20
 )
@@ -827,9 +828,11 @@ func (s *Server) ClaimCollaborationTask(ctx context.Context, req *daemonv1.Claim
 // --- Task Graph RPCs ---
 
 type splitProposal struct {
-	ProposalID    string
-	ParentTaskID  string
-	ProposedTasks []*daemonv1.Task
+	ProposalID      string           `json:"proposal_id"`
+	ParentTaskID    string           `json:"parent_task_id"`
+	ProposedTasks   []*daemonv1.Task `json:"proposed_tasks,omitempty"`
+	CreatedTimeUnix int64            `json:"created_time_unix,omitempty"`
+	UpdatedTimeUnix int64            `json:"updated_time_unix,omitempty"`
 }
 
 func (s *Server) ProposeTaskSplit(ctx context.Context, req *daemonv1.ProposeTaskSplitRequest) (*daemonv1.ProposeTaskSplitResponse, error) {
@@ -927,18 +930,21 @@ func (s *Server) ProposeTaskSplit(ctx context.Context, req *daemonv1.ProposeTask
 		})
 	}
 
+	nowUnix := time.Now().Unix()
 	proposalID := "split-" + uuid.NewString()
 	proposal := &splitProposal{
-		ProposalID:    proposalID,
-		ParentTaskID:  parentID,
-		ProposedTasks: proposedTasks,
+		ProposalID:      proposalID,
+		ParentTaskID:    parentID,
+		ProposedTasks:   proposedTasks,
+		CreatedTimeUnix: nowUnix,
+		UpdatedTimeUnix: nowUnix,
 	}
-	s.splitProposalsMu.Lock()
-	if s.splitProposals == nil {
-		s.splitProposals = map[string]*splitProposal{}
+	if err := s.storeSplitProposal(ctx, proposal); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
 	}
-	s.splitProposals[proposalID] = proposal
-	s.splitProposalsMu.Unlock()
 
 	resp := &daemonv1.ProposeTaskSplitResponse{
 		ProposalId:    proposalID,
@@ -972,6 +978,7 @@ func (s *Server) ApplyTaskSplit(ctx context.Context, req *daemonv1.ApplyTaskSpli
 		hash := idempotentRequestHash(
 			"parent_task_id", req.GetParentTaskId(),
 			"proposal_id", req.GetProposalId(),
+			"selected_task_ids", hashStringSlice(req.GetSelectedTaskIds()),
 		)
 		idemKey = idempotency.Key{
 			CallerKind: "agent",
@@ -997,13 +1004,13 @@ func (s *Server) ApplyTaskSplit(ctx context.Context, req *daemonv1.ApplyTaskSpli
 	proposalID := strings.TrimSpace(req.GetProposalId())
 	s.splitProposalsMu.Lock()
 	defer s.splitProposalsMu.Unlock()
-	if s.splitProposals == nil || s.splitProposals[proposalID] == nil {
+	proposal, err := s.loadSplitProposalLocked(ctx, proposalID)
+	if err != nil {
 		if idemReserved {
-			failIdempotency(ctx, s.idempotencyStore, idemKey, fmt.Errorf("split proposal not found: %s", proposalID))
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
 		}
-		return nil, fmt.Errorf("split proposal not found: %s", proposalID)
+		return nil, err
 	}
-	proposal := s.splitProposals[proposalID]
 
 	// Build proposed task lookup.
 	proposedByID := map[string]*daemonv1.Task{}
@@ -1117,7 +1124,15 @@ func (s *Server) ApplyTaskSplit(ctx context.Context, req *daemonv1.ApplyTaskSpli
 	}
 
 	// Clean up the used proposal.
-	delete(s.splitProposals, proposalID)
+	if err := s.deleteSplitProposalLocked(ctx, proposalID); err != nil {
+		for _, created := range createdSubtasks {
+			_, _ = s.agent.TaskService().Cancel(created.GetTaskId())
+		}
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
 
 	resp := &daemonv1.ApplyTaskSplitResponse{
 		ParentTask:      daemonhost.CollaborationTaskToProto(parentTask),
@@ -1135,6 +1150,117 @@ func (s *Server) ApplyTaskSplit(ctx context.Context, req *daemonv1.ApplyTaskSpli
 		}
 	}
 	return resp, nil
+}
+
+func (s *Server) storeSplitProposal(ctx context.Context, proposal *splitProposal) error {
+	if s == nil || proposal == nil || strings.TrimSpace(proposal.ProposalID) == "" {
+		return fmt.Errorf("split proposal is required")
+	}
+	s.splitProposalsMu.Lock()
+	defer s.splitProposalsMu.Unlock()
+	if err := s.storeSplitProposalLocked(ctx, proposal); err != nil {
+		return err
+	}
+	if s.splitProposals == nil {
+		s.splitProposals = map[string]*splitProposal{}
+	}
+	s.splitProposals[proposal.ProposalID] = cloneSplitProposal(proposal)
+	return nil
+}
+
+func (s *Server) storeSplitProposalLocked(ctx context.Context, proposal *splitProposal) error {
+	if s == nil || proposal == nil || strings.TrimSpace(proposal.ProposalID) == "" {
+		return fmt.Errorf("split proposal is required")
+	}
+	if s.kvStore == nil {
+		return nil
+	}
+	return s.kvStore.UpdateFunc(ctx, daemonSplitProposalKey, func(current interface{}) interface{} {
+		proposals := decodeSplitProposalStore(current)
+		proposals[proposal.ProposalID] = cloneSplitProposal(proposal)
+		return proposals
+	})
+}
+
+func (s *Server) loadSplitProposalLocked(ctx context.Context, proposalID string) (*splitProposal, error) {
+	proposalID = strings.TrimSpace(proposalID)
+	if proposalID == "" {
+		return nil, fmt.Errorf("proposal_id is required")
+	}
+	if s.splitProposals != nil {
+		if proposal := s.splitProposals[proposalID]; proposal != nil {
+			return cloneSplitProposal(proposal), nil
+		}
+	}
+	if s.kvStore == nil {
+		return nil, fmt.Errorf("split proposal not found: %s", proposalID)
+	}
+	value, ok, err := s.kvStore.Get(ctx, daemonSplitProposalKey)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("split proposal not found: %s", proposalID)
+	}
+	proposals := decodeSplitProposalStore(value)
+	proposal := proposals[proposalID]
+	if proposal == nil {
+		return nil, fmt.Errorf("split proposal not found: %s", proposalID)
+	}
+	if s.splitProposals == nil {
+		s.splitProposals = map[string]*splitProposal{}
+	}
+	s.splitProposals[proposalID] = cloneSplitProposal(proposal)
+	return cloneSplitProposal(proposal), nil
+}
+
+func (s *Server) deleteSplitProposalLocked(ctx context.Context, proposalID string) error {
+	proposalID = strings.TrimSpace(proposalID)
+	if proposalID == "" {
+		return fmt.Errorf("proposal_id is required")
+	}
+	if s.kvStore != nil {
+		if err := s.kvStore.UpdateFunc(ctx, daemonSplitProposalKey, func(current interface{}) interface{} {
+			proposals := decodeSplitProposalStore(current)
+			delete(proposals, proposalID)
+			return proposals
+		}); err != nil {
+			return err
+		}
+	}
+	if s.splitProposals != nil {
+		delete(s.splitProposals, proposalID)
+	}
+	return nil
+}
+
+func decodeSplitProposalStore(current interface{}) map[string]*splitProposal {
+	proposals := map[string]*splitProposal{}
+	payload, err := json.Marshal(current)
+	if err == nil {
+		_ = json.Unmarshal(payload, &proposals)
+	}
+	if proposals == nil {
+		return map[string]*splitProposal{}
+	}
+	return proposals
+}
+
+func cloneSplitProposal(proposal *splitProposal) *splitProposal {
+	if proposal == nil {
+		return nil
+	}
+	out := *proposal
+	if len(proposal.ProposedTasks) > 0 {
+		out.ProposedTasks = make([]*daemonv1.Task, 0, len(proposal.ProposedTasks))
+		for _, task := range proposal.ProposedTasks {
+			if task == nil {
+				continue
+			}
+			out.ProposedTasks = append(out.ProposedTasks, proto.Clone(task).(*daemonv1.Task))
+		}
+	}
+	return &out
 }
 
 func (s *Server) CreateTaskGraph(ctx context.Context, req *daemonv1.CreateTaskGraphRequest) (*daemonv1.CreateTaskGraphResponse, error) {
@@ -3401,6 +3527,11 @@ func protoHashString(msg *daemonv1.Task) string {
 
 func protoHashProposedSubtaskSlice(tasks []*daemonv1.ProposedSubtask) string {
 	b, _ := json.Marshal(tasks)
+	return idempotency.Hash(b)
+}
+
+func hashStringSlice(values []string) string {
+	b, _ := json.Marshal(values)
 	return idempotency.Hash(b)
 }
 

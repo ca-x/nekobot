@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -198,6 +199,35 @@ func TestTaskGraphApplySplitPersistsDependenciesAndListability(t *testing.T) {
 	if !taskGraphHasEdge(graph, setupID, verifyID, "depends_on") {
 		t.Fatalf("missing depends_on edge setup -> verify in %+v", graph.GetEdges())
 	}
+
+	replayed, err := s.ApplyTaskSplit(ctx, &daemonv1.ApplyTaskSplitRequest{
+		ParentTaskId: "parent-ordinary",
+		ProposalId:   proposal.GetProposalId(),
+		RequestId:    "req-apply-deps-1",
+	})
+	if err != nil {
+		t.Fatalf("replay apply split: %v", err)
+	}
+	if got := replayed.GetCreatedSubtasks(); len(got) != 2 || got[0].GetTaskId() != setupID || got[1].GetTaskId() != verifyID {
+		t.Fatalf("unexpected replay subtasks: %+v", got)
+	}
+	afterReplay, err := s.ListTaskGraph(ctx, &daemonv1.ListTaskGraphRequest{RootTaskId: "parent-ordinary"})
+	if err != nil {
+		t.Fatalf("list graph after replay: %v", err)
+	}
+	if len(afterReplay.GetGraph().GetNodes()) != 3 {
+		t.Fatalf("apply replay duplicated nodes: %+v", afterReplay.GetGraph().GetNodes())
+	}
+
+	_, err = s.ApplyTaskSplit(ctx, &daemonv1.ApplyTaskSplitRequest{
+		ParentTaskId:    "parent-ordinary",
+		ProposalId:      proposal.GetProposalId(),
+		SelectedTaskIds: []string{setupID},
+		RequestId:       "req-apply-deps-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "idempotency conflict") {
+		t.Fatalf("expected idempotency conflict for changed selected_task_ids, got %v", err)
+	}
 }
 
 func TestTaskGraphSplitProposalsConcurrentAccess(t *testing.T) {
@@ -230,6 +260,68 @@ func TestTaskGraphSplitProposalsConcurrentAccess(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestTaskGraphSplitProposalSurvivesServerMemoryLoss(t *testing.T) {
+	s := newTaskGraphTestServer(t)
+	ctx := context.Background()
+	enqueueTaskGraphParent(t, s, "parent-persisted-proposal")
+
+	proposal, err := s.ProposeTaskSplit(ctx, &daemonv1.ProposeTaskSplitRequest{
+		ParentTaskId: "parent-persisted-proposal",
+		RequestId:    "req-propose-persisted-1",
+		ProposedTasks: []*daemonv1.ProposedSubtask{
+			{ClientProposedId: "restore", Summary: "restored child"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("propose split: %v", err)
+	}
+	if proposal.GetProposalId() == "" {
+		t.Fatalf("expected proposal id")
+	}
+
+	s.splitProposalsMu.Lock()
+	s.splitProposals = nil
+	s.splitProposalsMu.Unlock()
+
+	persistedRaw, ok, err := s.kvStore.Get(ctx, daemonSplitProposalKey)
+	if err != nil {
+		t.Fatalf("get persisted split proposals: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected persisted split proposal store")
+	}
+	persistedJSON, err := json.Marshal(persistedRaw)
+	if err != nil {
+		t.Fatalf("marshal persisted split proposals: %v", err)
+	}
+	if err := s.kvStore.Set(ctx, daemonSplitProposalKey, json.RawMessage(persistedJSON)); err != nil {
+		t.Fatalf("simulate json-backed proposal reload: %v", err)
+	}
+
+	applied, err := s.ApplyTaskSplit(ctx, &daemonv1.ApplyTaskSplitRequest{
+		ParentTaskId: "parent-persisted-proposal",
+		ProposalId:   proposal.GetProposalId(),
+		RequestId:    "req-apply-persisted-1",
+	})
+	if err != nil {
+		t.Fatalf("apply persisted split proposal: %v", err)
+	}
+	if len(applied.GetCreatedSubtasks()) != 1 || applied.GetCreatedSubtasks()[0].GetSummary() != "restored child" {
+		t.Fatalf("unexpected created subtasks: %+v", applied.GetCreatedSubtasks())
+	}
+
+	s.splitProposalsMu.Lock()
+	s.splitProposals = nil
+	s.splitProposalsMu.Unlock()
+	_, err = s.ApplyTaskSplit(ctx, &daemonv1.ApplyTaskSplitRequest{
+		ParentTaskId: "parent-persisted-proposal",
+		ProposalId:   proposal.GetProposalId(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "split proposal not found") {
+		t.Fatalf("expected persisted proposal deletion after apply, got %v", err)
+	}
 }
 
 func taskGraphHasEdge(graph *daemonv1.TaskGraphSnapshot, fromID, toID, kind string) bool {
