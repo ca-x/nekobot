@@ -902,6 +902,8 @@ message UploadAttachmentResponse {
 
 message GetAttachmentRequest {
   string attachment_id = 1;
+  string target = 2;
+  string requester_agent_id = 3;
 }
 
 message GetAttachmentResponse {

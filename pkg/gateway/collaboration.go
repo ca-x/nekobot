@@ -55,6 +55,28 @@ const (
 	lifecyclePolicyFullResetCommand    = "full_reset_cmd"
 )
 
+const (
+	capabilityMessageSend        = "message.send"
+	capabilityMessageSave        = "message.save"
+	capabilityMessageUnsave      = "message.unsave"
+	capabilityAttachmentUpload   = "attachment.upload"
+	capabilityAttachmentDownload = "attachment.download"
+	capabilityTaskWrite          = "task.write"
+	capabilityAgentControl       = "agent.control"
+	capabilityAgentMessage       = "agent.message"
+)
+
+var collaborationCapabilityCatalog = []string{
+	capabilityMessageSend,
+	capabilityMessageSave,
+	capabilityMessageUnsave,
+	capabilityAttachmentUpload,
+	capabilityAttachmentDownload,
+	capabilityTaskWrite,
+	capabilityAgentControl,
+	capabilityAgentMessage,
+}
+
 type agentLifecycleExecutor interface {
 	ExecuteAgentControl(ctx context.Context, runtime *runtimeagents.AgentRuntime, operation *daemonv1.AgentControlOperation) lifecycleExecutionResult
 }
@@ -212,6 +234,10 @@ func (s *Server) ReadMessages(ctx context.Context, req *daemonv1.ReadMessagesReq
 }
 
 func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageRequest) (*daemonv1.SendMessageResponse, error) {
+	return s.sendMessage(ctx, req, true)
+}
+
+func (s *Server) sendMessage(ctx context.Context, req *daemonv1.SendMessageRequest, enforceSendPermission bool) (*daemonv1.SendMessageResponse, error) {
 	if s == nil || s.sessionMgr == nil {
 		return nil, fmt.Errorf("session manager not available")
 	}
@@ -224,12 +250,18 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 	if content == "" && len(attachmentIDs) == 0 {
 		return nil, fmt.Errorf("content is required")
 	}
+	senderAgentID := strings.TrimSpace(req.GetSenderAgentId())
+	if enforceSendPermission && senderAgentID != "" {
+		if err := s.requireAgentPermission(ctx, senderAgentID, capabilityMessageSend, target); err != nil {
+			return nil, err
+		}
+	}
 
 	// Idempotency guard.
 	reqID := strings.TrimSpace(req.GetRequestId())
 	idemKey := idempotency.Key{
 		CallerKind: "agent",
-		CallerID:   strings.TrimSpace(req.GetSenderAgentId()),
+		CallerID:   senderAgentID,
 		Method:     "SendMessage",
 		RequestID:  reqID,
 	}
@@ -298,7 +330,7 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 		ThreadId:          sessionID,
 		Role:              role,
 		Content:           content,
-		SenderAgentId:     strings.TrimSpace(req.GetSenderAgentId()),
+		SenderAgentId:     senderAgentID,
 		SenderDisplayName: strings.TrimSpace(req.GetSenderDisplayName()),
 		ReplyToMessageId:  strings.TrimSpace(req.GetReplyToMessageId()),
 		CreatedTimeUnix:   time.Now().Unix(),
@@ -371,6 +403,11 @@ func (s *Server) SaveMessage(ctx context.Context, req *daemonv1.SaveMessageReque
 	actorID, actorKind, err := savedMessageActor(req.GetSavedByAgentId(), req.GetSavedByUserId())
 	if err != nil {
 		return nil, err
+	}
+	if actorKind == "agent" {
+		if err := s.requireAgentPermission(ctx, actorID, capabilityMessageSave, target); err != nil {
+			return nil, err
+		}
 	}
 	reqID := strings.TrimSpace(req.GetRequestId())
 	idemKey := idempotency.Key{CallerKind: actorKind, CallerID: actorID, Method: "SaveMessage", RequestID: reqID}
@@ -479,6 +516,11 @@ func (s *Server) UnsaveMessage(ctx context.Context, req *daemonv1.UnsaveMessageR
 	actorID, actorKind, err := savedMessageActor(req.GetSavedByAgentId(), req.GetSavedByUserId())
 	if err != nil {
 		return nil, err
+	}
+	if actorKind == "agent" {
+		if err := s.requireAgentPermission(ctx, actorID, capabilityMessageUnsave, target); err != nil {
+			return nil, err
+		}
 	}
 	reqID := strings.TrimSpace(req.GetRequestId())
 	idemKey := idempotency.Key{CallerKind: actorKind, CallerID: actorID, Method: "UnsaveMessage", RequestID: reqID}
@@ -633,6 +675,11 @@ func (s *Server) CreateCollaborationTask(ctx context.Context, req *daemonv1.Crea
 	summary := strings.TrimSpace(req.GetSummary())
 	if summary == "" {
 		return nil, fmt.Errorf("summary is required")
+	}
+	if agentID := strings.TrimSpace(req.GetAgentId()); agentID != "" {
+		if err := s.requireAgentPermission(ctx, agentID, capabilityTaskWrite, target); err != nil {
+			return nil, err
+		}
 	}
 
 	// Idempotency guard.
@@ -795,12 +842,20 @@ func (s *Server) ClaimCollaborationTask(ctx context.Context, req *daemonv1.Claim
 	if s == nil || s.agent == nil || s.agent.TaskService() == nil {
 		return nil, fmt.Errorf("task service unavailable")
 	}
+	agentID := strings.TrimSpace(req.GetAgentId())
+	if agentID != "" {
+		if task, err := s.agent.TaskService().Get(req.GetTaskId()); err == nil {
+			if err := s.requireAgentPermission(ctx, agentID, capabilityTaskWrite, metadataString(task.Metadata, "target")); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	// Idempotency guard.
 	reqID := strings.TrimSpace(req.GetRequestId())
 	idemKey := idempotency.Key{
 		CallerKind: "agent",
-		CallerID:   strings.TrimSpace(req.GetAgentId()),
+		CallerID:   agentID,
 		Method:     "ClaimCollaborationTask",
 		RequestID:  reqID,
 	}
@@ -923,6 +978,12 @@ func (s *Server) ProposeTaskSplit(ctx context.Context, req *daemonv1.ProposeTask
 	proposedTasks := make([]*daemonv1.Task, 0, len(req.GetProposedTasks()))
 	for _, p := range req.GetProposedTasks() {
 		cid := p.GetClientProposedId()
+		if err := s.requireAgentCapabilities(ctx, p.GetAssigneeId(), p.GetRequiredCapabilities(), graphRootTaskID(parentTask)); err != nil {
+			if idemReserved {
+				failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+			}
+			return nil, err
+		}
 		dependsOn := make([]string, 0, len(p.GetDependsOnProposedIds()))
 		for _, depClientID := range p.GetDependsOnProposedIds() {
 			depID, ok := proposedIDMap[strings.TrimSpace(depClientID)]
@@ -1624,6 +1685,12 @@ func (s *Server) ControlAgent(ctx context.Context, req *daemonv1.ControlAgentReq
 	if req.GetAction() == daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_UNSPECIFIED {
 		return nil, fmt.Errorf("action is required")
 	}
+	requestedBy := strings.TrimSpace(req.GetRequestedByAgentId())
+	if requestedBy != "" {
+		if err := s.requireAgentPermission(ctx, requestedBy, capabilityAgentControl, agentDMTarget(agentID)); err != nil {
+			return nil, err
+		}
+	}
 	reqID := strings.TrimSpace(req.GetRequestId())
 	callerID := firstNonEmpty(strings.TrimSpace(req.GetRequestedByAgentId()), agentID)
 	idemKey := idempotency.Key{
@@ -1753,16 +1820,22 @@ func (s *Server) SendAgentDirectMessage(ctx context.Context, req *daemonv1.SendA
 	if agentID == "" {
 		return nil, fmt.Errorf("agent_id is required")
 	}
-	resp, err := s.SendMessage(ctx, &daemonv1.SendMessageRequest{
+	senderAgentID := strings.TrimSpace(req.GetSenderAgentId())
+	if senderAgentID != "" {
+		if err := s.requireAgentPermission(ctx, senderAgentID, capabilityAgentMessage, agentDMTarget(agentID)); err != nil {
+			return nil, err
+		}
+	}
+	resp, err := s.sendMessage(ctx, &daemonv1.SendMessageRequest{
 		Target:            agentDMTarget(agentID),
 		Role:              "user",
 		Content:           req.GetContent(),
-		SenderAgentId:     strings.TrimSpace(req.GetSenderAgentId()),
+		SenderAgentId:     senderAgentID,
 		SenderDisplayName: strings.TrimSpace(req.GetSenderDisplayName()),
 		ReplyToMessageId:  strings.TrimSpace(req.GetReplyToMessageId()),
 		RequestId:         strings.TrimSpace(req.GetRequestId()),
 		AttachmentIds:     req.GetAttachmentIds(),
-	})
+	}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2158,6 +2231,11 @@ func (s *Server) UploadAttachment(ctx context.Context, req *daemonv1.UploadAttac
 	}
 	reqID := strings.TrimSpace(req.GetRequestId())
 	ownerID := strings.TrimSpace(req.GetOwnerId())
+	if ownerID != "" {
+		if err := s.requireAgentPermission(ctx, ownerID, capabilityAttachmentUpload, target); err != nil {
+			return nil, err
+		}
+	}
 	idemKey := idempotency.Key{
 		CallerKind: "agent",
 		CallerID:   ownerID,
@@ -2242,6 +2320,22 @@ func (s *Server) GetAttachment(ctx context.Context, req *daemonv1.GetAttachmentR
 	record, content, err := s.loadAttachment(ctx, attachmentID)
 	if err != nil {
 		return nil, err
+	}
+	target := strings.TrimSpace(req.GetTarget())
+	if target != "" {
+		validatedTarget, err := daemonhost.ValidateCollaborationTarget(target)
+		if err != nil {
+			return nil, err
+		}
+		if record.GetTarget() != validatedTarget {
+			return nil, fmt.Errorf("permission denied: attachment %s belongs to %s, not %s", attachmentID, record.GetTarget(), validatedTarget)
+		}
+	}
+	requesterAgentID := strings.TrimSpace(req.GetRequesterAgentId())
+	if requesterAgentID != "" {
+		if err := s.requireAgentPermission(ctx, requesterAgentID, capabilityAttachmentDownload, record.GetTarget()); err != nil {
+			return nil, err
+		}
 	}
 	return &daemonv1.GetAttachmentResponse{Attachment: record, Content: content}, nil
 }
@@ -2367,16 +2461,18 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 			skillFilter[id] = struct{}{}
 		}
 		profile := &daemonv1.AgentProfile{
-			AgentId:     item.ID,
-			Name:        item.Name,
-			DisplayName: item.DisplayName,
-			Description: item.Description,
-			Enabled:     item.Enabled,
-			Provider:    item.Provider,
-			Model:       item.Model,
-			Env:         profileEnvVars(envByRuntime[item.ID]),
-			Skills:      s.skillRecords(skillFilter),
-			DmTargets:   []string{agentDMTarget(item.ID)},
+			AgentId:      item.ID,
+			Name:         item.Name,
+			DisplayName:  item.DisplayName,
+			Description:  item.Description,
+			Enabled:      item.Enabled,
+			Provider:     item.Provider,
+			Model:        item.Model,
+			Env:          profileEnvVars(envByRuntime[item.ID]),
+			Skills:       s.skillRecords(skillFilter),
+			DmTargets:    []string{agentDMTarget(item.ID)},
+			Capabilities: collaborationCapabilitiesForPolicy(item.Policy),
+			Permissions:  collaborationPermissionsForPolicy(item.Policy),
 		}
 		applyAgentStatusProfile(profile, statusByRuntime[item.ID])
 		out = append(out, profile)
@@ -2386,13 +2482,15 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 	}
 	if len(out) == 0 {
 		profile := &daemonv1.AgentProfile{
-			AgentId:     "default",
-			Name:        "default",
-			DisplayName: "Default Agent",
-			Enabled:     true,
-			Env:         profileEnvVars(envByRuntime["default"]),
-			Skills:      allSkills,
-			DmTargets:   []string{agentDMTarget("default")},
+			AgentId:      "default",
+			Name:         "default",
+			DisplayName:  "Default Agent",
+			Enabled:      true,
+			Env:          profileEnvVars(envByRuntime["default"]),
+			Skills:       allSkills,
+			DmTargets:    []string{agentDMTarget("default")},
+			Capabilities: collaborationCapabilitiesForPolicy(nil),
+			Permissions:  collaborationPermissionsForPolicy(nil),
 		}
 		applyAgentStatusProfile(profile, statusByRuntime["default"])
 		out = append(out, profile)
@@ -2447,6 +2545,73 @@ func (s *Server) findAgentRuntime(ctx context.Context, agentID, runtimeProfileID
 		}
 	}
 	return nil, nil
+}
+
+func (s *Server) requireAgentPermission(ctx context.Context, agentID, capabilityName, target string) error {
+	agentID = strings.TrimSpace(agentID)
+	capabilityName = normalizeCapabilityName(capabilityName)
+	if agentID == "" || capabilityName == "" {
+		return nil
+	}
+	profile, err := s.findAgentProfile(ctx, agentID)
+	if err != nil {
+		// Some collaboration calls predate durable agent profiles. Preserve that
+		// fallback path, but enforce permissions whenever a profile exists.
+		return nil
+	}
+	if permission := matchingPermission(profile.GetPermissions(), capabilityName, target); permission != nil {
+		if permission.GetAllowed() {
+			return nil
+		}
+		reason := firstNonEmpty(permission.GetReason(), "permission denied")
+		return fmt.Errorf("permission denied: %s", reason)
+	}
+	if capability := matchingCapability(profile.GetCapabilities(), capabilityName); capability != nil && !capability.GetEnabled() {
+		return fmt.Errorf("permission denied: capability %s is disabled", capabilityName)
+	}
+	return nil
+}
+
+func (s *Server) requireAgentCapabilities(ctx context.Context, agentID string, required []string, target string) error {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" || len(required) == 0 {
+		return nil
+	}
+	for _, capabilityName := range required {
+		if err := s.requireAgentPermission(ctx, agentID, capabilityName, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func matchingPermission(items []*daemonv1.Permission, capabilityName, target string) *daemonv1.Permission {
+	capabilityName = normalizeCapabilityName(capabilityName)
+	target = strings.TrimSpace(target)
+	var wildcard *daemonv1.Permission
+	for _, item := range items {
+		if item == nil || normalizeCapabilityName(item.GetName()) != capabilityName {
+			continue
+		}
+		permissionTarget := strings.TrimSpace(item.GetTarget())
+		if permissionTarget == target {
+			return item
+		}
+		if permissionTarget == "" || permissionTarget == "*" {
+			wildcard = item
+		}
+	}
+	return wildcard
+}
+
+func matchingCapability(items []*daemonv1.Capability, capabilityName string) *daemonv1.Capability {
+	capabilityName = normalizeCapabilityName(capabilityName)
+	for _, item := range items {
+		if item != nil && normalizeCapabilityName(item.GetName()) == capabilityName {
+			return item
+		}
+	}
+	return nil
 }
 
 func (s *Server) runtimeDefinitions(ctx context.Context) ([]runtimeagents.AgentRuntime, error) {
@@ -2509,6 +2674,103 @@ func skillToProto(skill *skills.Skill, eligible bool) *daemonv1.SkillRecord {
 		Always:      skill.Always,
 		Eligible:    eligible,
 		FilePath:    skill.FilePath,
+	}
+}
+
+func collaborationCapabilitiesForPolicy(policy map[string]interface{}) []*daemonv1.Capability {
+	allowed := policyCapabilitySet(policy, "allowed_capabilities", "capabilities")
+	denied := policyCapabilitySet(policy, "denied_capabilities", "disabled_capabilities")
+	out := make([]*daemonv1.Capability, 0, len(collaborationCapabilityCatalog))
+	for _, name := range collaborationCapabilityCatalog {
+		enabled := true
+		switch {
+		case len(allowed) > 0:
+			_, enabled = allowed[name]
+		case len(denied) > 0:
+			_, disabled := denied[name]
+			enabled = !disabled
+		}
+		out = append(out, &daemonv1.Capability{Name: name, Enabled: enabled})
+	}
+	return out
+}
+
+func collaborationPermissionsForPolicy(policy map[string]interface{}) []*daemonv1.Permission {
+	allowed := policyCapabilitySet(policy, "allowed_capabilities", "capabilities")
+	denied := policyCapabilitySet(policy, "denied_capabilities", "disabled_capabilities")
+	out := make([]*daemonv1.Permission, 0, len(collaborationCapabilityCatalog))
+	for _, name := range collaborationCapabilityCatalog {
+		permission := &daemonv1.Permission{Name: name, Target: "*", Allowed: true}
+		switch {
+		case len(allowed) > 0:
+			if _, ok := allowed[name]; !ok {
+				permission.Allowed = false
+				permission.Reason = "not in runtime allowed_capabilities"
+			}
+		case len(denied) > 0:
+			if _, ok := denied[name]; ok {
+				permission.Allowed = false
+				permission.Reason = "disabled by runtime policy"
+			}
+		}
+		out = append(out, permission)
+	}
+	return out
+}
+
+func policyCapabilitySet(policy map[string]interface{}, keys ...string) map[string]struct{} {
+	result := map[string]struct{}{}
+	if policy == nil {
+		return result
+	}
+	for _, key := range keys {
+		appendPolicyCapabilityValue(result, policy[key])
+	}
+	return result
+}
+
+func appendPolicyCapabilityValue(result map[string]struct{}, value interface{}) {
+	switch typed := value.(type) {
+	case []string:
+		for _, item := range typed {
+			if normalized := normalizeCapabilityName(item); normalized != "" {
+				result[normalized] = struct{}{}
+			}
+		}
+	case []interface{}:
+		for _, item := range typed {
+			appendPolicyCapabilityValue(result, item)
+		}
+	case string:
+		for _, item := range strings.Split(typed, ",") {
+			if normalized := normalizeCapabilityName(item); normalized != "" {
+				result[normalized] = struct{}{}
+			}
+		}
+	}
+}
+
+func normalizeCapabilityName(name string) string {
+	name = strings.TrimSpace(strings.ToLower(name))
+	switch name {
+	case "messages.send":
+		return capabilityMessageSend
+	case "messages.save":
+		return capabilityMessageSave
+	case "messages.unsave":
+		return capabilityMessageUnsave
+	case "attachments.upload":
+		return capabilityAttachmentUpload
+	case "attachments.download":
+		return capabilityAttachmentDownload
+	case "tasks.write", "tasks.claim", "tasks.update":
+		return capabilityTaskWrite
+	case "agents.control", "lifecycle.control":
+		return capabilityAgentControl
+	case "agents.message", "direct_message.send":
+		return capabilityAgentMessage
+	default:
+		return name
 	}
 }
 

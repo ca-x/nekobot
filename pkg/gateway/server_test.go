@@ -406,6 +406,16 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create runtime: %v", err)
 	}
+	limitedRuntime, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "limited",
+		DisplayName: "Limited Agent",
+		Policy: map[string]interface{}{
+			"denied_capabilities": []interface{}{capabilityAgentControl, capabilityAttachmentDownload, capabilityMessageSend},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create limited runtime: %v", err)
+	}
 	s.runtimeMgr = runtimeMgr
 	eventMgr, err := eventlog.NewManager(client)
 	if err != nil {
@@ -456,7 +466,7 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetServerInfo failed: %v", err)
 	}
-	if len(info.Agents) != 1 || info.Agents[0].GetAgentId() != runtimeItem.ID {
+	if len(info.Agents) != 2 || info.Agents[0].GetAgentId() != runtimeItem.ID {
 		t.Fatalf("unexpected server info agents: %+v", info.Agents)
 	}
 	assertSecretEnvRedacted(t, info.Agents[0].Env, "TOKEN", "secret")
@@ -464,10 +474,29 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListAgentProfiles failed: %v", err)
 	}
-	if len(profiles.Profiles) != 1 || profiles.Profiles[0].GetAgentId() != runtimeItem.ID {
+	if len(profiles.Profiles) != 2 || profiles.Profiles[0].GetAgentId() != runtimeItem.ID || profiles.Profiles[1].GetAgentId() != limitedRuntime.ID {
 		t.Fatalf("unexpected profiles: %+v", profiles.Profiles)
 	}
 	assertSecretEnvRedacted(t, profiles.Profiles[0].Env, "TOKEN", "secret")
+	if permission := matchingPermission(profiles.Profiles[1].GetPermissions(), capabilityAgentControl, "*"); permission == nil || permission.GetAllowed() {
+		t.Fatalf("expected denied agent.control permission, got %+v", profiles.Profiles[1].GetPermissions())
+	}
+	if _, err := s.SendMessage(context.Background(), &daemonv1.SendMessageRequest{
+		Target:        "#websocket:thread-a",
+		Content:       "blocked message",
+		SenderAgentId: limitedRuntime.ID,
+		RequestId:     "send-denied-1",
+	}); err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected limited runtime message send denial, got %v", err)
+	}
+	if _, err := s.ControlAgent(context.Background(), &daemonv1.ControlAgentRequest{
+		AgentId:            runtimeItem.ID,
+		Action:             daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART,
+		RequestedByAgentId: limitedRuntime.ID,
+		RequestId:          "control-denied-1",
+	}); err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected limited runtime control denial, got %v", err)
+	}
 
 	activity, err := s.LogActivity(context.Background(), &daemonv1.LogActivityRequest{
 		Target:    "#websocket:thread-a",
@@ -869,6 +898,23 @@ func TestDaemonCollaborationAttachments(t *testing.T) {
 	}
 	if got.Attachment.GetFilename() != "note.txt" || string(got.GetContent()) != "attachment body" {
 		t.Fatalf("unexpected attachment payload: %+v content=%q", got.Attachment, string(got.GetContent()))
+	}
+	gotWithTarget, err := s.GetAttachment(context.Background(), &daemonv1.GetAttachmentRequest{
+		AttachmentId: upload.Attachment.GetAttachmentId(),
+		Target:       "#websocket:thread-attachments",
+	})
+	if err != nil {
+		t.Fatalf("GetAttachment with target failed: %v", err)
+	}
+	if gotWithTarget.Attachment.GetAttachmentId() != upload.Attachment.GetAttachmentId() {
+		t.Fatalf("unexpected target-scoped attachment: %+v", gotWithTarget.Attachment)
+	}
+	_, err = s.GetAttachment(context.Background(), &daemonv1.GetAttachmentRequest{
+		AttachmentId: upload.Attachment.GetAttachmentId(),
+		Target:       "#websocket:other-thread",
+	})
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected target mismatch denial, got %v", err)
 	}
 	uploadReplay, err := s.UploadAttachment(context.Background(), &daemonv1.UploadAttachmentRequest{
 		Target:    "#websocket:thread-attachments",

@@ -8385,10 +8385,12 @@ func (x *UploadAttachmentResponse) GetAttachment() *AttachmentRecord {
 }
 
 type GetAttachmentRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AttachmentId  string                 `protobuf:"bytes,1,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	AttachmentId     string                 `protobuf:"bytes,1,opt,name=attachment_id,json=attachmentId,proto3" json:"attachment_id,omitempty"`
+	Target           string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	RequesterAgentId string                 `protobuf:"bytes,3,opt,name=requester_agent_id,json=requesterAgentId,proto3" json:"requester_agent_id,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetAttachmentRequest) Reset() {
@@ -8424,6 +8426,20 @@ func (*GetAttachmentRequest) Descriptor() ([]byte, []int) {
 func (x *GetAttachmentRequest) GetAttachmentId() string {
 	if x != nil {
 		return x.AttachmentId
+	}
+	return ""
+}
+
+func (x *GetAttachmentRequest) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
+func (x *GetAttachmentRequest) GetRequesterAgentId() string {
+	if x != nil {
+		return x.RequesterAgentId
 	}
 	return ""
 }
@@ -9402,9 +9418,11 @@ const file_nekobot_daemon_v1_daemon_proto_rawDesc = "" +
 	"\x18UploadAttachmentResponse\x12C\n" +
 	"\n" +
 	"attachment\x18\x01 \x01(\v2#.nekobot.daemon.v1.AttachmentRecordR\n" +
-	"attachment\";\n" +
+	"attachment\"\x81\x01\n" +
 	"\x14GetAttachmentRequest\x12#\n" +
-	"\rattachment_id\x18\x01 \x01(\tR\fattachmentId\"v\n" +
+	"\rattachment_id\x18\x01 \x01(\tR\fattachmentId\x12\x16\n" +
+	"\x06target\x18\x02 \x01(\tR\x06target\x12,\n" +
+	"\x12requester_agent_id\x18\x03 \x01(\tR\x10requesterAgentId\"v\n" +
 	"\x15GetAttachmentResponse\x12C\n" +
 	"\n" +
 	"attachment\x18\x01 \x01(\v2#.nekobot.daemon.v1.AttachmentRecordR\n" +

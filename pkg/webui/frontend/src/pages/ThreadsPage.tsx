@@ -77,9 +77,9 @@ export default function ThreadsPage() {
     navigate(`/chat?thread=${encodeURIComponent(detail.id)}`);
   };
 
-  const handleOpenAttachment = async (attachmentId: string, filename: string) => {
+  const handleOpenAttachment = async (attachmentId: string, filename: string, target: string) => {
     const token = getToken();
-    const resp = await fetch(`/api/daemon/attachments/${encodeURIComponent(attachmentId)}`, {
+    const resp = await fetch(`/api/daemon/attachments/${encodeURIComponent(attachmentId)}?target=${encodeURIComponent(target)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
     if (!resp.ok) {
@@ -256,7 +256,7 @@ export default function ThreadsPage() {
                                   size="sm"
                                   className="h-auto min-h-8 gap-2 whitespace-normal px-2 py-1 text-xs"
                                   onClick={() => {
-                                    void handleOpenAttachment(attachment.attachment_id, attachment.filename).catch((error) => {
+                                    void handleOpenAttachment(attachment.attachment_id, attachment.filename, detailTarget).catch((error) => {
                                       toast.error(error instanceof Error ? error.message : 'Failed to open attachment');
                                     });
                                   }}

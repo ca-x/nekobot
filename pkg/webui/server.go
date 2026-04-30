@@ -2803,10 +2803,19 @@ func (s *Server) handleGetDaemonAttachment(c *echo.Context) error {
 	if attachmentID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "attachment_id is required"})
 	}
-	record, content, err := gateway.LoadCollaborationAttachment(c.Request().Context(), s.kvStore, attachmentID)
+	target := strings.TrimSpace(c.QueryParam("target"))
+	if target == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "target is required"})
+	}
+	resp, err := s.collaborationFacade().GetAttachment(c.Request().Context(), &daemonv1.GetAttachmentRequest{
+		AttachmentId: attachmentID,
+		Target:       target,
+	})
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 	}
+	record := resp.GetAttachment()
+	content := resp.GetContent()
 	mimeType := strings.TrimSpace(record.GetMimeType())
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
