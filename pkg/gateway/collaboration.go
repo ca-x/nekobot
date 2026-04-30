@@ -22,6 +22,7 @@ import (
 	"nekobot/pkg/channels"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/daemonhost"
+	eventlog "nekobot/pkg/events"
 	"nekobot/pkg/idempotency"
 	"nekobot/pkg/runtimeagents"
 	"nekobot/pkg/session"
@@ -541,9 +542,9 @@ func (s *Server) CreateTaskGraph(ctx context.Context, req *daemonv1.CreateTaskGr
 	}
 
 	snapshot := &daemonv1.TaskGraphSnapshot{
-		RootTaskId:    rootID,
-		GraphVersion:  graphVersion,
-		Nodes:         append([]*daemonv1.Task{daemonhost.CollaborationTaskToProto(rootTask)}, createdSubtasks...),
+		RootTaskId:   rootID,
+		GraphVersion: graphVersion,
+		Nodes:        append([]*daemonv1.Task{daemonhost.CollaborationTaskToProto(rootTask)}, createdSubtasks...),
 	}
 
 	resp := &daemonv1.CreateTaskGraphResponse{Graph: snapshot}
@@ -793,6 +794,38 @@ func (s *Server) LogActivity(ctx context.Context, req *daemonv1.LogActivityReque
 	if err != nil {
 		return nil, err
 	}
+	reqID := strings.TrimSpace(req.GetRequestId())
+	idemKey := idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   strings.TrimSpace(req.GetAgentId()),
+		Method:     "LogActivity",
+		RequestID:  reqID,
+	}
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"target", req.GetTarget(),
+			"agent_id", req.GetAgentId(),
+			"kind", req.GetKind(),
+			"summary", req.GetSummary(),
+			"detail", req.GetDetail(),
+			"run_id", req.GetRunId(),
+			"step_id", req.GetStepId(),
+		)
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 7*24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replayLogActivity(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+	}
+	idemReserved := reqID != "" && s.idempotencyStore != nil
+
 	activity := &daemonv1.ActivityRecord{
 		ActivityId:      "activity-" + uuid.NewString(),
 		Target:          target,
@@ -808,10 +841,36 @@ func (s *Server) LogActivity(ctx context.Context, req *daemonv1.LogActivityReque
 		activity.Kind = "event"
 	}
 	if activity.Summary == "" {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, fmt.Errorf("summary is required"))
+		}
 		return nil, fmt.Errorf("summary is required")
 	}
 	if err := s.appendActivity(ctx, activity); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
 		return nil, err
+	}
+	eventID := ""
+	if event, err := s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+		EventType:         "activity.logged",
+		Target:            target,
+		ActorKind:         "agent",
+		ActorID:           activity.AgentId,
+		SubjectKind:       "activity",
+		SubjectID:         activity.ActivityId,
+		ParentSubjectKind: "run",
+		ParentSubjectID:   activity.RunId,
+		IdempotencyKey:    reqID,
+		PayloadJSON:       mustMarshalJSON(activity),
+	}); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	} else if event != nil {
+		eventID = event.EventID
 	}
 	if s.auditLogger != nil {
 		s.auditLogger.Log(&audit.Entry{
@@ -823,7 +882,17 @@ func (s *Server) LogActivity(ctx context.Context, req *daemonv1.LogActivityReque
 			SessionID:     target,
 		})
 	}
-	return &daemonv1.LogActivityResponse{Activity: activity}, nil
+	resp := &daemonv1.LogActivityResponse{Activity: activity}
+	if idemReserved {
+		_ = completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:LogActivityResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "activity",
+			ResourceID:   activity.ActivityId,
+			EventID:      eventID,
+		})
+	}
+	return resp, nil
 }
 
 func (s *Server) ListActivity(ctx context.Context, req *daemonv1.ListActivityRequest) (*daemonv1.ListActivityResponse, error) {
@@ -898,6 +967,34 @@ func (s *Server) GetAttachment(ctx context.Context, req *daemonv1.GetAttachmentR
 func (s *Server) ListEventsSince(ctx context.Context, req *daemonv1.ListEventsSinceRequest) (*daemonv1.ListEventsSinceResponse, error) {
 	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
 	cursor := req.GetCursor()
+	if s != nil && s.eventMgr != nil {
+		target := ""
+		opaque := ""
+		if cursor != nil {
+			target = strings.TrimSpace(cursor.GetTarget())
+			opaque = strings.TrimSpace(cursor.GetCursor())
+		}
+		records, nextCursor, err := s.eventMgr.ListSince(ctx, opaque, eventlog.ListFilter{Target: target}, limit)
+		if err != nil {
+			return nil, err
+		}
+		events := make([]*daemonv1.CollaborationEvent, 0, len(records))
+		for i := range records {
+			events = append(events, eventRecordToProto(&records[i]))
+		}
+		next := &daemonv1.EventCursor{Cursor: nextCursor, Target: target}
+		if len(events) > 0 {
+			last := events[len(events)-1]
+			next.LastEventId = last.GetEventId()
+			next.LastMessageId = last.GetMessageId()
+			next.LastActivityId = last.GetActivityId()
+		} else if cursor != nil {
+			next.LastEventId = cursor.GetLastEventId()
+			next.LastMessageId = cursor.GetLastMessageId()
+			next.LastActivityId = cursor.GetLastActivityId()
+		}
+		return &daemonv1.ListEventsSinceResponse{Events: events, NextCursor: next}, nil
+	}
 	afterActivityID := ""
 	target := ""
 	if cursor != nil {
@@ -1327,6 +1424,45 @@ func activityToEvent(activity *daemonv1.ActivityRecord) *daemonv1.CollaborationE
 	}
 }
 
+func (s *Server) appendCollaborationEvent(ctx context.Context, item eventlog.EventRecord) (*eventlog.EventRecord, error) {
+	if s == nil || s.eventMgr == nil {
+		return nil, nil
+	}
+	rec, err := s.eventMgr.Append(ctx, item)
+	if err != nil {
+		return nil, fmt.Errorf("append collaboration event: %w", err)
+	}
+	return rec, nil
+}
+
+func eventRecordToProto(record *eventlog.EventRecord) *daemonv1.CollaborationEvent {
+	if record == nil {
+		return nil
+	}
+	out := &daemonv1.CollaborationEvent{
+		EventId:         record.EventID,
+		Target:          record.Target,
+		Kind:            record.EventType,
+		CreatedTimeUnix: record.CreatedAt.Unix(),
+	}
+	switch record.SubjectKind {
+	case "message":
+		out.MessageId = record.SubjectID
+	case "activity":
+		out.ActivityId = record.SubjectID
+	case "task":
+		out.TaskId = record.SubjectID
+	case "run":
+		out.RunId = record.SubjectID
+	case "run_step":
+		out.RunId = record.ParentSubjectID
+	}
+	if out.RunId == "" && record.ParentSubjectKind == "run" {
+		out.RunId = record.ParentSubjectID
+	}
+	return out
+}
+
 func (s *Server) storeAttachment(ctx context.Context, record *daemonv1.AttachmentRecord, content []byte) error {
 	if s == nil || s.kvStore == nil || record == nil {
 		return fmt.Errorf("attachment store unavailable")
@@ -1597,6 +1733,19 @@ func replayClaimTask(rec *idempotency.Record) (*daemonv1.ClaimCollaborationTaskR
 	}
 	if rec != nil && rec.ResponseJSON != "" {
 		var resp daemonv1.ClaimCollaborationTaskResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return nil, fmt.Errorf("idempotency record missing response data")
+}
+
+func replayLogActivity(rec *idempotency.Record) (*daemonv1.LogActivityResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.LogActivityResponse
 		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
 			return &resp, nil
 		}

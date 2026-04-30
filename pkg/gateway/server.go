@@ -33,6 +33,7 @@ import (
 	"nekobot/pkg/channels"
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
+	eventlog "nekobot/pkg/events"
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/idempotency"
 	"nekobot/pkg/inboundrouter"
@@ -111,6 +112,7 @@ type Server struct {
 	runtimeMgr                *runtimeagents.Manager
 	auditLogger               *audit.Logger
 	idempotencyStore          *idempotency.Store
+	eventMgr                  *eventlog.Manager
 	grpcServer                *grpc.Server
 	mux                       *http.ServeMux
 	server                    *http.Server
@@ -196,7 +198,15 @@ func NewServer(
 		rateLimiters:              make(map[string]*rate.Limiter),
 	}
 
-	s.idempotencyStore = idempotency.NewStore(entClient)
+	if entClient != nil {
+		s.idempotencyStore = idempotency.NewStore(entClient)
+		eventMgr, err := eventlog.NewManager(entClient)
+		if err != nil {
+			log.Warn("Failed to initialize collaboration event manager", zap.Error(err))
+		} else {
+			s.eventMgr = eventMgr
+		}
+	}
 
 	s.setupGRPC()
 	s.setupRoutes()

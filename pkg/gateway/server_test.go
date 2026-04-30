@@ -28,6 +28,7 @@ import (
 	"nekobot/pkg/config"
 	"nekobot/pkg/cron"
 	"nekobot/pkg/daemonhost"
+	eventlog "nekobot/pkg/events"
 	"nekobot/pkg/externalagent"
 	"nekobot/pkg/idempotency"
 	"nekobot/pkg/logger"
@@ -333,6 +334,12 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 		t.Fatalf("create runtime: %v", err)
 	}
 	s.runtimeMgr = runtimeMgr
+	eventMgr, err := eventlog.NewManager(client)
+	if err != nil {
+		t.Fatalf("new event manager: %v", err)
+	}
+	s.eventMgr = eventMgr
+	s.idempotencyStore = idempotency.NewStore(client)
 
 	workspaceDir := t.TempDir()
 	skillsDir := filepath.Join(workspaceDir, "skills", "review")
@@ -390,10 +397,11 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	assertSecretEnvRedacted(t, profiles.Profiles[0].Env, "TOKEN", "secret")
 
 	activity, err := s.LogActivity(context.Background(), &daemonv1.LogActivityRequest{
-		Target:  "#websocket:thread-a",
-		AgentId: runtimeItem.ID,
-		Kind:    "review",
-		Summary: "reviewed proto",
+		Target:    "#websocket:thread-a",
+		AgentId:   runtimeItem.ID,
+		Kind:      "review",
+		Summary:   "reviewed proto",
+		RequestId: "activity-req-1",
 	})
 	if err != nil {
 		t.Fatalf("LogActivity failed: %v", err)
@@ -414,6 +422,31 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	}
 	if len(events.Events) != 1 || events.Events[0].GetActivityId() != activity.Activity.GetActivityId() {
 		t.Fatalf("unexpected replay events: %+v", events.Events)
+	}
+	idem, err := s.idempotencyStore.Check(context.Background(), idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   runtimeItem.ID,
+		Method:     "LogActivity",
+		RequestID:  "activity-req-1",
+	})
+	if err != nil {
+		t.Fatalf("check log activity idempotency: %v", err)
+	}
+	if idem.Record == nil || idem.Record.EventID != events.Events[0].GetEventId() {
+		t.Fatalf("expected idempotency event_id %q, got %+v", events.Events[0].GetEventId(), idem.Record)
+	}
+	replayActivity, err := s.LogActivity(context.Background(), &daemonv1.LogActivityRequest{
+		Target:    "#websocket:thread-a",
+		AgentId:   runtimeItem.ID,
+		Kind:      "review",
+		Summary:   "reviewed proto",
+		RequestId: "activity-req-1",
+	})
+	if err != nil {
+		t.Fatalf("LogActivity replay failed: %v", err)
+	}
+	if replayActivity.Activity.GetActivityId() != activity.Activity.GetActivityId() {
+		t.Fatalf("expected replay activity %q, got %q", activity.Activity.GetActivityId(), replayActivity.Activity.GetActivityId())
 	}
 	nextEvents, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Cursor: events.NextCursor, Limit: 10})
 	if err != nil {
