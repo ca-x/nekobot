@@ -125,7 +125,7 @@ export interface AgentDefinitionStatus {
 
 export interface DaemonWorkspaceInfo {
   workspace_id: string;
-  machine_id: string;
+  computer_id: string;
   path: string;
   display_name: string;
   aliases: string[];
@@ -157,8 +157,8 @@ export interface DaemonWorkspaceFileData {
 export interface DaemonMachineStatus {
   info: {
     daemon_id: string;
-    machine_id: string;
-    machine_name: string;
+    computer_id: string;
+    display_name: string;
     hostname: string;
     os: string;
     arch: string;
@@ -176,7 +176,7 @@ export interface DaemonMachineStatus {
 
 export interface DaemonRuntimeDetail {
   runtime_id: string;
-  machine_id: string;
+  computer_id: string;
   workspace_id: string;
   kind: string;
   display_name: string;
@@ -196,8 +196,8 @@ export interface DaemonRuntimeDetail {
 export interface DaemonMachineInventory {
   info: {
     daemon_id: string;
-    machine_id: string;
-    machine_name: string;
+    computer_id: string;
+    display_name: string;
     hostname: string;
     os: string;
     arch: string;
@@ -508,31 +508,31 @@ export function useCleanupToolSessionEvents() {
   });
 }
 
-export function useDaemonWorkspaceTree(machineID: string | null, workspaceID: string | null, path: string) {
+export function useDaemonWorkspaceTree(computerID: string | null, workspaceID: string | null, path: string) {
   return useQuery<DaemonWorkspaceTreeData>({
-    queryKey: ["daemon-workspace-tree", machineID, workspaceID, path],
+    queryKey: ["daemon-workspace-tree", computerID, workspaceID, path],
     queryFn: () =>
       api.post("/api/daemon/explorer/tree", {
-        machine_id: machineID,
+        computer_id: computerID,
         workspace_id: workspaceID,
         path,
       }),
-    enabled: Boolean(machineID && workspaceID),
+    enabled: Boolean(computerID && workspaceID),
     staleTime: 10_000,
   });
 }
 
 export function useDaemonWorkspaceFile() {
   return useMutation({
-    mutationFn: (payload: { machine_id: string; workspace_id: string; path: string }) =>
+    mutationFn: (payload: { computer_id: string; workspace_id: string; path: string }) =>
       api.post<DaemonWorkspaceFileData>("/api/daemon/explorer/file", payload),
   });
 }
-export function useDaemonExplorerWorkspaces(machineID: string | null) {
+export function useDaemonExplorerWorkspaces(computerID: string | null) {
   return useQuery<{ workspaces: DaemonWorkspaceInfo[] }>({
-    queryKey: ["daemon-explorer-workspaces", machineID],
-    queryFn: () => api.get(`/api/daemon/explorer/workspaces?machine_id=${encodeURIComponent(machineID ?? "")}`),
-    enabled: Boolean(machineID),
+    queryKey: ["daemon-explorer-workspaces", computerID],
+    queryFn: () => api.get(`/api/daemon/explorer/workspaces?computer_id=${encodeURIComponent(computerID ?? "")}`),
+    enabled: Boolean(computerID),
     staleTime: 10_000,
   });
 }

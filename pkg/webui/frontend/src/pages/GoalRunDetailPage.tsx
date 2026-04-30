@@ -315,8 +315,8 @@ function ConfirmCriteriaCard({
             machine.goal_run_runnable,
         )
         .map((machine) => ({
-          value: machine.info.machine_id,
-          label: machine.info.machine_name || machine.info.machine_id,
+          value: machine.info.computer_id,
+          label: machine.info.display_name || machine.info.computer_id,
         })),
     [status?.daemon_machines],
   );

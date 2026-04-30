@@ -70,17 +70,17 @@ export default function SystemPage() {
   const runtimeStates = status?.runtime_states ?? [];
   const daemonMachines = status?.daemon_machines ?? [];
   const daemonMachinesWithURL = daemonMachines.filter((machine) => machine.info.daemon_url);
-  const selectedMachine = useMemo(() => daemonMachinesWithURL.find((machine) => machine.info.machine_id === selectedDaemonMachine) ?? daemonMachinesWithURL[0] ?? null, [daemonMachinesWithURL, selectedDaemonMachine]);
+  const selectedMachine = useMemo(() => daemonMachinesWithURL.find((machine) => machine.info.computer_id === selectedDaemonMachine) ?? daemonMachinesWithURL[0] ?? null, [daemonMachinesWithURL, selectedDaemonMachine]);
   useEffect(() => {
     if (!selectedMachine) {
       setSelectedDaemonMachine("");
       return;
     }
-    if (!selectedDaemonMachine || !daemonMachinesWithURL.some((machine) => machine.info.machine_id === selectedDaemonMachine)) {
-      setSelectedDaemonMachine(selectedMachine.info.machine_id);
+    if (!selectedDaemonMachine || !daemonMachinesWithURL.some((machine) => machine.info.computer_id === selectedDaemonMachine)) {
+      setSelectedDaemonMachine(selectedMachine.info.computer_id);
     }
   }, [daemonMachinesWithURL, selectedDaemonMachine, selectedMachine]);
-  const daemonWorkspaces = useDaemonExplorerWorkspaces(selectedMachine?.info.machine_id ?? null);
+  const daemonWorkspaces = useDaemonExplorerWorkspaces(selectedMachine?.info.computer_id ?? null);
   const selectedWorkspace = useMemo(() => {
     const items = daemonWorkspaces.data?.workspaces ?? [];
     return items.find((workspace) => workspace.workspace_id === selectedDaemonWorkspace)
@@ -99,7 +99,7 @@ export default function SystemPage() {
     }
   }, [daemonWorkspaces.data?.workspaces, selectedDaemonWorkspace, selectedWorkspace]);
   const selectedWorkspaceId = selectedWorkspace?.workspace_id ?? null;
-  const daemonTree = useDaemonWorkspaceTree(selectedMachine?.info.machine_id ?? null, selectedWorkspaceId, daemonPath);
+  const daemonTree = useDaemonWorkspaceTree(selectedMachine?.info.computer_id ?? null, selectedWorkspaceId, daemonPath);
   const {
     mutate: loadDaemonFile,
     data: daemonFileData,
@@ -110,7 +110,7 @@ export default function SystemPage() {
   useEffect(() => {
     setSelectedPreviewPath("");
     resetDaemonFile();
-  }, [selectedMachine?.info.machine_id, selectedWorkspaceId, resetDaemonFile]);
+  }, [selectedMachine?.info.computer_id, selectedWorkspaceId, resetDaemonFile]);
   const sessionStates = status?.session_runtime_states ?? [];
   const agentDefinition = status?.agent_definition ?? null;
   const agentRoute = agentDefinition?.route ?? null;
@@ -418,7 +418,7 @@ export default function SystemPage() {
               <div className="mt-4 space-y-3">
                 {daemonMachines.map((machine) => (
                   <div
-                    key={machine.info.machine_id}
+                    key={machine.info.computer_id}
                     className="rounded-2xl border border-border/70 bg-muted/35 p-4"
                   >
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -439,7 +439,7 @@ export default function SystemPage() {
                           </span>
                         </div>
                         <div className="mt-3 text-sm font-semibold text-foreground">
-                          {machine.info.machine_name || machine.info.hostname}
+                          {machine.info.display_name || machine.info.hostname}
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                           <span>
@@ -463,7 +463,7 @@ export default function SystemPage() {
                         </div>
                       </div>
                       <div className="break-all text-xs text-muted-foreground md:max-w-[14rem] md:text-right">
-                        {machine.info.machine_id}
+                        {machine.info.computer_id}
                       </div>
                     </div>
                   </div>
@@ -501,25 +501,25 @@ export default function SystemPage() {
                       <div className="mt-3 space-y-2">
                         {daemonMachinesWithURL.map((machine) => (
                           <button
-                            key={machine.info.machine_id}
+                            key={machine.info.computer_id}
                             type="button"
                             onClick={() => {
-                              setSelectedDaemonMachine(machine.info.machine_id);
+                              setSelectedDaemonMachine(machine.info.computer_id);
                               setSelectedDaemonWorkspace("");
                               setDaemonPath("");
                               setSelectedPreviewPath("");
                             }}
                             className={cn(
                               "w-full rounded-xl border px-3 py-2 text-left text-sm transition",
-                              selectedMachine?.info.machine_id === machine.info.machine_id
+                              selectedMachine?.info.computer_id === machine.info.computer_id
                                 ? "border-primary/60 bg-primary/10 text-foreground"
                                 : "border-border/70 bg-background/80 text-muted-foreground hover:border-primary/30 hover:text-foreground",
                             )}
                           >
                             <div className="font-medium text-foreground">
-                              {machine.info.machine_name || machine.info.hostname}
+                              {machine.info.display_name || machine.info.hostname}
                             </div>
-                            <div className="mt-1 text-xs break-all">{machine.info.machine_id}</div>
+                            <div className="mt-1 text-xs break-all">{machine.info.computer_id}</div>
                           </button>
                         ))}
                       </div>
@@ -602,7 +602,7 @@ export default function SystemPage() {
                                   setSelectedPreviewPath(entry.path);
                                   if (selectedMachine && selectedWorkspaceId) {
                                     loadDaemonFile({
-                                      machine_id: selectedMachine.info.machine_id,
+                                      computer_id: selectedMachine.info.computer_id,
                                       workspace_id: selectedWorkspaceId,
                                       path: entry.path,
                                     });
