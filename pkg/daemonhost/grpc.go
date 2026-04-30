@@ -49,6 +49,8 @@ type CollaborationService interface {
 	ListAgentDMs(context.Context, *daemonv1.ListAgentDMsRequest) (*daemonv1.ListAgentDMsResponse, error)
 	ControlAgent(context.Context, *daemonv1.ControlAgentRequest) (*daemonv1.ControlAgentResponse, error)
 	SendAgentDirectMessage(context.Context, *daemonv1.SendAgentDirectMessageRequest) (*daemonv1.SendAgentDirectMessageResponse, error)
+	UpdateAgentStatus(context.Context, *daemonv1.UpdateAgentStatusRequest) (*daemonv1.UpdateAgentStatusResponse, error)
+	ListAgentStatuses(context.Context, *daemonv1.ListAgentStatusesRequest) (*daemonv1.ListAgentStatusesResponse, error)
 	ScheduleReminder(context.Context, *daemonv1.ScheduleReminderRequest) (*daemonv1.ScheduleReminderResponse, error)
 	ListReminders(context.Context, *daemonv1.ListRemindersRequest) (*daemonv1.ListRemindersResponse, error)
 	CancelReminder(context.Context, *daemonv1.CancelReminderRequest) (*daemonv1.CancelReminderResponse, error)
@@ -292,6 +294,20 @@ func (s *GRPCService) SendAgentDirectMessage(ctx context.Context, req *daemonv1.
 		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
 	}
 	return s.Collaboration.SendAgentDirectMessage(ctx, req)
+}
+
+func (s *GRPCService) UpdateAgentStatus(ctx context.Context, req *daemonv1.UpdateAgentStatusRequest) (*daemonv1.UpdateAgentStatusResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.UpdateAgentStatus(ctx, req)
+}
+
+func (s *GRPCService) ListAgentStatuses(ctx context.Context, req *daemonv1.ListAgentStatusesRequest) (*daemonv1.ListAgentStatusesResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.ListAgentStatuses(ctx, req)
 }
 
 func (s *GRPCService) ScheduleReminder(ctx context.Context, req *daemonv1.ScheduleReminderRequest) (*daemonv1.ScheduleReminderResponse, error) {

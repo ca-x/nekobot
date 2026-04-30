@@ -285,6 +285,22 @@ func (c *Client) SendAgentDirectMessageRemote(req *daemonv1.SendAgentDirectMessa
 	}
 	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
 }
+func (c *Client) UpdateAgentStatusRemote(req *daemonv1.UpdateAgentStatusRequest) (*daemonv1.UpdateAgentStatusResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.UpdateAgentStatus(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) ListAgentStatusesRemote(req *daemonv1.ListAgentStatusesRequest) (*daemonv1.ListAgentStatusesResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.ListAgentStatuses(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
 func (c *Client) ScheduleReminderRemote(req *daemonv1.ScheduleReminderRequest) (*daemonv1.ScheduleReminderResponse, error) {
 	if c.grpcClient != nil {
 		ctx, cancel := c.rpcContext()

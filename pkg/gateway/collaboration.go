@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/agent"
@@ -37,6 +38,7 @@ const (
 	daemonReminderMetaKey  = "daemon.collaboration.reminder_meta.v1"
 	daemonActivityStoreKey = "daemon.collaboration.activity.v1"
 	daemonAttachmentKey    = "daemon.collaboration.attachments.v1"
+	daemonAgentStatusKey   = "daemon.collaboration.agent_status.v1"
 
 	maxDaemonAttachmentBytes = 32 << 20
 )
@@ -1179,6 +1181,151 @@ func (s *Server) SendAgentDirectMessage(ctx context.Context, req *daemonv1.SendA
 	return &daemonv1.SendAgentDirectMessageResponse{Accepted: resp.GetAccepted(), Message: resp.GetMessage()}, nil
 }
 
+func (s *Server) UpdateAgentStatus(ctx context.Context, req *daemonv1.UpdateAgentStatusRequest) (*daemonv1.UpdateAgentStatusResponse, error) {
+	statusReq := req.GetStatus()
+	if statusReq == nil {
+		return nil, fmt.Errorf("status is required")
+	}
+	agentID := strings.TrimSpace(statusReq.GetAgentId())
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	reqID := strings.TrimSpace(req.GetRequestId())
+	idemKey := idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   agentID,
+		Method:     "UpdateAgentStatus",
+		RequestID:  reqID,
+	}
+	if reqID != "" && s.idempotencyStore != nil {
+		hash := idempotentRequestHash(
+			"agent_id", statusReq.GetAgentId(),
+			"computer_id", statusReq.GetComputerId(),
+			"runtime_profile_id", statusReq.GetRuntimeProfileId(),
+			"presence", fmt.Sprintf("%d", statusReq.GetPresence()),
+			"activity_state", fmt.Sprintf("%d", statusReq.GetActivityState()),
+			"health", fmt.Sprintf("%d", statusReq.GetHealth()),
+			"summary", statusReq.GetSummary(),
+			"detail", statusReq.GetDetail(),
+			"target", statusReq.GetTarget(),
+			"thread_id", statusReq.GetThreadId(),
+			"message_id", statusReq.GetMessageId(),
+			"task_id", statusReq.GetTaskId(),
+			"run_id", statusReq.GetRunId(),
+			"operation_id", statusReq.GetOperationId(),
+			"severity", statusReq.GetSeverity(),
+			"started_time_unix", fmt.Sprintf("%d", statusReq.GetStartedTimeUnix()),
+			"updated_time_unix", fmt.Sprintf("%d", statusReq.GetUpdatedTimeUnix()),
+			"expires_time_unix", fmt.Sprintf("%d", statusReq.GetExpiresTimeUnix()),
+		)
+		result, err := s.idempotencyStore.Reserve(ctx, idemKey, hash, 24*time.Hour)
+		if err != nil {
+			return nil, err
+		}
+		switch result.Outcome {
+		case idempotency.OutcomeReplay:
+			return replayUpdateAgentStatus(result.Record)
+		case idempotency.OutcomeConflict:
+			return nil, fmt.Errorf("idempotency conflict: request_id %s already used with different body", reqID)
+		case idempotency.OutcomeInProgress:
+			return nil, fmt.Errorf("request %s is already being processed", reqID)
+		}
+	}
+	idemReserved := reqID != "" && s.idempotencyStore != nil
+	profile, err := s.findAgentProfile(ctx, agentID)
+	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	statusSnapshot, err := normalizeAgentStatusSnapshot(statusReq, profile, time.Now().Unix())
+	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	if err := s.storeAgentStatus(ctx, statusSnapshot); err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	eventID := ""
+	event, err := s.appendCollaborationEvent(ctx, eventlog.EventRecord{
+		EventType:      "agent.status_updated",
+		Target:         statusSnapshot.GetTarget(),
+		ActorKind:      "agent",
+		ActorID:        statusSnapshot.GetAgentId(),
+		SubjectKind:    "agent",
+		SubjectID:      statusSnapshot.GetAgentId(),
+		IdempotencyKey: reqID,
+		PayloadJSON:    mustMarshalJSON(statusSnapshot),
+	})
+	if err != nil {
+		if idemReserved {
+			failIdempotency(ctx, s.idempotencyStore, idemKey, err)
+		}
+		return nil, err
+	}
+	if event != nil {
+		eventID = event.EventID
+	}
+	resp := &daemonv1.UpdateAgentStatusResponse{Status: cloneAgentStatus(statusSnapshot)}
+	if idemReserved {
+		_ = completeIdempotency(ctx, s.idempotencyStore, idemKey, idempotency.CompleteRequest{
+			ResponseType: "json:UpdateAgentStatusResponse",
+			ResponseJSON: mustMarshalJSON(resp),
+			ResourceKind: "agent_status",
+			ResourceID:   statusSnapshot.GetAgentId(),
+			EventID:      eventID,
+		})
+	}
+	return resp, nil
+}
+
+func (s *Server) ListAgentStatuses(ctx context.Context, req *daemonv1.ListAgentStatusesRequest) (*daemonv1.ListAgentStatusesResponse, error) {
+	agentID := strings.TrimSpace(req.GetAgentId())
+	target := strings.TrimSpace(req.GetTarget())
+	if target != "" {
+		var err error
+		target, err = daemonhost.ValidateCollaborationTarget(target)
+		if err != nil {
+			return nil, err
+		}
+	}
+	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
+	now := time.Now().Unix()
+	statuses := s.agentStatuses(ctx)
+	out := make([]*daemonv1.AgentStatusSnapshot, 0, len(statuses))
+	for _, item := range statuses {
+		if item == nil {
+			continue
+		}
+		if item.GetExpiresTimeUnix() > 0 && item.GetExpiresTimeUnix() <= now {
+			continue
+		}
+		if agentID != "" && item.GetAgentId() != agentID {
+			continue
+		}
+		if target != "" && item.GetTarget() != target {
+			continue
+		}
+		out = append(out, cloneAgentStatus(item))
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].GetUpdatedTimeUnix() == out[j].GetUpdatedTimeUnix() {
+			return out[i].GetAgentId() < out[j].GetAgentId()
+		}
+		return out[i].GetUpdatedTimeUnix() > out[j].GetUpdatedTimeUnix()
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return &daemonv1.ListAgentStatusesResponse{Statuses: out}, nil
+}
+
 func (s *Server) ScheduleReminder(ctx context.Context, req *daemonv1.ScheduleReminderRequest) (*daemonv1.ScheduleReminderResponse, error) {
 	if s == nil || s.cronMgr == nil {
 		return nil, fmt.Errorf("reminder scheduler unavailable")
@@ -1561,6 +1708,7 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 		return nil, err
 	}
 	envByRuntime := s.agentEnv(ctx)
+	statusByRuntime := s.agentStatuses(ctx)
 	allSkills := s.skillRecords(nil)
 	out := make([]*daemonv1.AgentProfile, 0, len(runtimes))
 	for _, item := range runtimes {
@@ -1568,7 +1716,7 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 		for _, id := range item.Skills {
 			skillFilter[id] = struct{}{}
 		}
-		out = append(out, &daemonv1.AgentProfile{
+		profile := &daemonv1.AgentProfile{
 			AgentId:     item.ID,
 			Name:        item.Name,
 			DisplayName: item.DisplayName,
@@ -1579,13 +1727,15 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 			Env:         profileEnvVars(envByRuntime[item.ID]),
 			Skills:      s.skillRecords(skillFilter),
 			DmTargets:   []string{agentDMTarget(item.ID)},
-		})
+		}
+		applyAgentStatusProfile(profile, statusByRuntime[item.ID])
+		out = append(out, profile)
 		if len(out) >= limit {
 			return out, nil
 		}
 	}
 	if len(out) == 0 {
-		out = append(out, &daemonv1.AgentProfile{
+		profile := &daemonv1.AgentProfile{
 			AgentId:     "default",
 			Name:        "default",
 			DisplayName: "Default Agent",
@@ -1593,7 +1743,9 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 			Env:         profileEnvVars(envByRuntime["default"]),
 			Skills:      allSkills,
 			DmTargets:   []string{agentDMTarget("default")},
-		})
+		}
+		applyAgentStatusProfile(profile, statusByRuntime["default"])
+		out = append(out, profile)
 	}
 	return out, nil
 }
@@ -1921,6 +2073,162 @@ func (s *Server) activityLog(ctx context.Context) []*daemonv1.ActivityRecord {
 		return nil
 	}
 	return activities
+}
+
+func (s *Server) storeAgentStatus(ctx context.Context, status *daemonv1.AgentStatusSnapshot) error {
+	if s == nil || s.kvStore == nil {
+		return fmt.Errorf("agent status store unavailable")
+	}
+	if status == nil || strings.TrimSpace(status.GetAgentId()) == "" {
+		return fmt.Errorf("agent_id is required")
+	}
+	return s.kvStore.UpdateFunc(ctx, daemonAgentStatusKey, func(current interface{}) interface{} {
+		statuses := map[string]*daemonv1.AgentStatusSnapshot{}
+		payload, err := json.Marshal(current)
+		if err == nil {
+			_ = json.Unmarshal(payload, &statuses)
+		}
+		if statuses == nil {
+			statuses = map[string]*daemonv1.AgentStatusSnapshot{}
+		}
+		statuses[status.GetAgentId()] = cloneAgentStatus(status)
+		return statuses
+	})
+}
+
+func (s *Server) agentStatuses(ctx context.Context) map[string]*daemonv1.AgentStatusSnapshot {
+	result := map[string]*daemonv1.AgentStatusSnapshot{}
+	if s == nil || s.kvStore == nil {
+		return result
+	}
+	value, ok, err := s.kvStore.Get(ctx, daemonAgentStatusKey)
+	if err != nil || !ok {
+		return result
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return result
+	}
+	_ = json.Unmarshal(payload, &result)
+	if result == nil {
+		return map[string]*daemonv1.AgentStatusSnapshot{}
+	}
+	now := time.Now().Unix()
+	for agentID, item := range result {
+		if item == nil || strings.TrimSpace(agentID) == "" || (item.GetExpiresTimeUnix() > 0 && item.GetExpiresTimeUnix() <= now) {
+			delete(result, agentID)
+			continue
+		}
+		result[agentID] = cloneAgentStatus(item)
+	}
+	return result
+}
+
+func normalizeAgentStatusSnapshot(status *daemonv1.AgentStatusSnapshot, profile *daemonv1.AgentProfile, now int64) (*daemonv1.AgentStatusSnapshot, error) {
+	if status == nil {
+		return nil, fmt.Errorf("status is required")
+	}
+	agentID := strings.TrimSpace(status.GetAgentId())
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	if profile != nil && profile.GetAgentId() != "" && agentID != profile.GetAgentId() && agentID != profile.GetName() {
+		return nil, fmt.Errorf("agent profile mismatch: %s", agentID)
+	}
+	target := strings.TrimSpace(status.GetTarget())
+	if target != "" {
+		var err error
+		target, err = daemonhost.ValidateCollaborationTarget(target)
+		if err != nil {
+			return nil, err
+		}
+	}
+	started := status.GetStartedTimeUnix()
+	updated := status.GetUpdatedTimeUnix()
+	if updated == 0 {
+		updated = now
+	}
+	if started == 0 {
+		started = updated
+	}
+	snapshot := &daemonv1.AgentStatusSnapshot{
+		AgentId:          firstNonEmpty(profile.GetAgentId(), agentID),
+		ComputerId:       firstNonEmpty(strings.TrimSpace(status.GetComputerId()), profile.GetComputerId()),
+		RuntimeProfileId: firstNonEmpty(strings.TrimSpace(status.GetRuntimeProfileId()), profile.GetRuntimeProfileId()),
+		Presence:         status.GetPresence(),
+		ActivityState:    status.GetActivityState(),
+		Health:           status.GetHealth(),
+		Summary:          strings.TrimSpace(status.GetSummary()),
+		Detail:           strings.TrimSpace(status.GetDetail()),
+		Target:           target,
+		ThreadId:         strings.TrimSpace(status.GetThreadId()),
+		MessageId:        strings.TrimSpace(status.GetMessageId()),
+		TaskId:           strings.TrimSpace(status.GetTaskId()),
+		RunId:            strings.TrimSpace(status.GetRunId()),
+		OperationId:      strings.TrimSpace(status.GetOperationId()),
+		Severity:         normalizeAgentStatusSeverity(status.GetSeverity()),
+		StartedTimeUnix:  started,
+		UpdatedTimeUnix:  updated,
+		ExpiresTimeUnix:  status.GetExpiresTimeUnix(),
+	}
+	if snapshot.Presence == daemonv1.AgentPresence_AGENT_PRESENCE_UNSPECIFIED && snapshot.ActivityState != daemonv1.AgentActivityState_AGENT_ACTIVITY_STATE_UNSPECIFIED {
+		snapshot.Presence = daemonv1.AgentPresence_AGENT_PRESENCE_BUSY
+	}
+	if snapshot.Health == daemonv1.AgentHealth_AGENT_HEALTH_UNSPECIFIED {
+		snapshot.Health = daemonv1.AgentHealth_AGENT_HEALTH_OK
+	}
+	if snapshot.Summary == "" {
+		snapshot.Summary = agentStatusDisplay(snapshot)
+	}
+	return snapshot, nil
+}
+
+func normalizeAgentStatusSeverity(severity string) string {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "info", "":
+		return "info"
+	case "warning", "warn":
+		return "warning"
+	case "error", "failed", "failure":
+		return "error"
+	default:
+		return strings.ToLower(strings.TrimSpace(severity))
+	}
+}
+
+func applyAgentStatusProfile(profile *daemonv1.AgentProfile, status *daemonv1.AgentStatusSnapshot) {
+	if profile == nil || status == nil {
+		return
+	}
+	profile.StatusSnapshot = cloneAgentStatus(status)
+	profile.Status = agentStatusDisplay(status)
+	profile.LastActivityTimeUnix = status.GetUpdatedTimeUnix()
+}
+
+func agentStatusDisplay(status *daemonv1.AgentStatusSnapshot) string {
+	if status == nil {
+		return ""
+	}
+	if summary := strings.TrimSpace(status.GetSummary()); summary != "" {
+		return summary
+	}
+	if status.GetActivityState() != daemonv1.AgentActivityState_AGENT_ACTIVITY_STATE_UNSPECIFIED {
+		return strings.ToLower(strings.TrimPrefix(status.GetActivityState().String(), "AGENT_ACTIVITY_"))
+	}
+	if status.GetPresence() != daemonv1.AgentPresence_AGENT_PRESENCE_UNSPECIFIED {
+		return strings.ToLower(strings.TrimPrefix(status.GetPresence().String(), "AGENT_PRESENCE_"))
+	}
+	if status.GetHealth() != daemonv1.AgentHealth_AGENT_HEALTH_UNSPECIFIED {
+		return strings.ToLower(strings.TrimPrefix(status.GetHealth().String(), "AGENT_HEALTH_"))
+	}
+	return ""
+}
+
+func cloneAgentStatus(status *daemonv1.AgentStatusSnapshot) *daemonv1.AgentStatusSnapshot {
+	if status == nil {
+		return nil
+	}
+	return proto.Clone(status).(*daemonv1.AgentStatusSnapshot)
 }
 
 func activityToEvent(activity *daemonv1.ActivityRecord) *daemonv1.CollaborationEvent {
@@ -2312,6 +2620,19 @@ func replayControlAgent(rec *idempotency.Record) (*daemonv1.ControlAgentResponse
 	}
 	if rec != nil && rec.ResponseJSON != "" {
 		var resp daemonv1.ControlAgentResponse
+		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
+			return &resp, nil
+		}
+	}
+	return nil, fmt.Errorf("idempotency record missing response data")
+}
+
+func replayUpdateAgentStatus(rec *idempotency.Record) (*daemonv1.UpdateAgentStatusResponse, error) {
+	if rec != nil && rec.Status == idempotency.StatusFailed {
+		return nil, fmt.Errorf("previous request failed: %s", rec.ErrorMessage)
+	}
+	if rec != nil && rec.ResponseJSON != "" {
+		var resp daemonv1.UpdateAgentStatusResponse
 		if json.Unmarshal([]byte(rec.ResponseJSON), &resp) == nil {
 			return &resp, nil
 		}

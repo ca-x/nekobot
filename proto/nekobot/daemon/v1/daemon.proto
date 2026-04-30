@@ -558,6 +558,7 @@ message AgentProfile {
   int64 last_activity_time_unix = 14;
   repeated Capability capabilities = 15;
   repeated Permission permissions = 16;
+  AgentStatusSnapshot status_snapshot = 17;
 }
 
 message GetAgentProfileRequest {
@@ -645,6 +646,84 @@ message SendAgentDirectMessageRequest {
 message SendAgentDirectMessageResponse {
   bool accepted = 1;
   CollaborationMessage message = 2;
+}
+
+enum AgentPresence {
+  AGENT_PRESENCE_UNSPECIFIED = 0;
+  AGENT_PRESENCE_ONLINE = 1;
+  AGENT_PRESENCE_IDLE = 2;
+  AGENT_PRESENCE_BUSY = 3;
+  AGENT_PRESENCE_SLEEPING = 4;
+  AGENT_PRESENCE_STALE = 5;
+  AGENT_PRESENCE_OFFLINE = 6;
+  AGENT_PRESENCE_DEGRADED = 7;
+}
+
+enum AgentActivityState {
+  AGENT_ACTIVITY_STATE_UNSPECIFIED = 0;
+  AGENT_ACTIVITY_STATE_RECEIVING_MESSAGE = 1;
+  AGENT_ACTIVITY_STATE_READING_CONTEXT = 2;
+  AGENT_ACTIVITY_STATE_COMPACTING_CONTEXT = 3;
+  AGENT_ACTIVITY_STATE_THINKING = 4;
+  AGENT_ACTIVITY_STATE_CODING = 5;
+  AGENT_ACTIVITY_STATE_RUNNING_COMMAND = 6;
+  AGENT_ACTIVITY_STATE_RUNNING_TEST = 7;
+  AGENT_ACTIVITY_STATE_REVIEWING = 8;
+  AGENT_ACTIVITY_STATE_WAITING = 9;
+  AGENT_ACTIVITY_STATE_BLOCKED = 10;
+  AGENT_ACTIVITY_STATE_RESTARTING = 11;
+  AGENT_ACTIVITY_STATE_RESTORING_MEMORY = 12;
+}
+
+enum AgentHealth {
+  AGENT_HEALTH_UNSPECIFIED = 0;
+  AGENT_HEALTH_OK = 1;
+  AGENT_HEALTH_PROVIDER_QUOTA = 2;
+  AGENT_HEALTH_COMMAND_FAILED = 3;
+  AGENT_HEALTH_TEST_FAILED = 4;
+  AGENT_HEALTH_AUTH_REQUIRED = 5;
+  AGENT_HEALTH_RUNTIME_ERROR = 6;
+  AGENT_HEALTH_OFFLINE = 7;
+}
+
+message AgentStatusSnapshot {
+  string agent_id = 1;
+  string computer_id = 2;
+  string runtime_profile_id = 3;
+  AgentPresence presence = 4;
+  AgentActivityState activity_state = 5;
+  AgentHealth health = 6;
+  string summary = 7;
+  string detail = 8;
+  string target = 9;
+  string thread_id = 10;
+  string message_id = 11;
+  string task_id = 12;
+  string run_id = 13;
+  string operation_id = 14;
+  string severity = 15;
+  int64 started_time_unix = 16;
+  int64 updated_time_unix = 17;
+  int64 expires_time_unix = 18;
+}
+
+message UpdateAgentStatusRequest {
+  AgentStatusSnapshot status = 1;
+  string request_id = 2;
+}
+
+message UpdateAgentStatusResponse {
+  AgentStatusSnapshot status = 1;
+}
+
+message ListAgentStatusesRequest {
+  string agent_id = 1;
+  string target = 2;
+  uint32 limit = 3;
+}
+
+message ListAgentStatusesResponse {
+  repeated AgentStatusSnapshot statuses = 1;
 }
 
 message ReminderRecord {
@@ -806,6 +885,8 @@ service DaemonControlService {
   rpc ListAgentDMs(ListAgentDMsRequest) returns (ListAgentDMsResponse);
   rpc ControlAgent(ControlAgentRequest) returns (ControlAgentResponse);
   rpc SendAgentDirectMessage(SendAgentDirectMessageRequest) returns (SendAgentDirectMessageResponse);
+  rpc UpdateAgentStatus(UpdateAgentStatusRequest) returns (UpdateAgentStatusResponse);
+  rpc ListAgentStatuses(ListAgentStatusesRequest) returns (ListAgentStatusesResponse);
   rpc ScheduleReminder(ScheduleReminderRequest) returns (ScheduleReminderResponse);
   rpc ListReminders(ListRemindersRequest) returns (ListRemindersResponse);
   rpc CancelReminder(CancelReminderRequest) returns (CancelReminderResponse);

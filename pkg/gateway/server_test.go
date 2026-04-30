@@ -501,6 +501,98 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if controlIdem.Record == nil || controlIdem.Record.EventID != controlEvents.Events[1].GetEventId() {
 		t.Fatalf("expected control idempotency event_id %q, got %+v", controlEvents.Events[1].GetEventId(), controlIdem.Record)
 	}
+	statusResp, err := s.UpdateAgentStatus(context.Background(), &daemonv1.UpdateAgentStatusRequest{
+		Status: &daemonv1.AgentStatusSnapshot{
+			AgentId:       runtimeItem.ID,
+			Presence:      daemonv1.AgentPresence_AGENT_PRESENCE_BUSY,
+			ActivityState: daemonv1.AgentActivityState_AGENT_ACTIVITY_STATE_REVIEWING,
+			Health:        daemonv1.AgentHealth_AGENT_HEALTH_OK,
+			Summary:       "reviewing lifecycle patch",
+			Target:        "#websocket:thread-a",
+			TaskId:        "20",
+			Severity:      "info",
+		},
+		RequestId: "status-req-1",
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgentStatus failed: %v", err)
+	}
+	if statusResp.Status.GetAgentId() != runtimeItem.ID || statusResp.Status.GetUpdatedTimeUnix() == 0 {
+		t.Fatalf("unexpected status response: %+v", statusResp.Status)
+	}
+	statuses, err := s.ListAgentStatuses(context.Background(), &daemonv1.ListAgentStatusesRequest{AgentId: runtimeItem.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListAgentStatuses failed: %v", err)
+	}
+	if len(statuses.Statuses) != 1 || statuses.Statuses[0].GetSummary() != "reviewing lifecycle patch" {
+		t.Fatalf("unexpected statuses: %+v", statuses.Statuses)
+	}
+	profileWithStatus, err := s.GetAgentProfile(context.Background(), &daemonv1.GetAgentProfileRequest{AgentId: runtimeItem.ID})
+	if err != nil {
+		t.Fatalf("GetAgentProfile with status failed: %v", err)
+	}
+	if profileWithStatus.Profile.GetStatus() != "reviewing lifecycle patch" || profileWithStatus.Profile.GetStatusSnapshot().GetActivityState() != daemonv1.AgentActivityState_AGENT_ACTIVITY_STATE_REVIEWING {
+		t.Fatalf("expected profile status projection, got %+v", profileWithStatus.Profile)
+	}
+	statusEvents, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince after UpdateAgentStatus failed: %v", err)
+	}
+	if len(statusEvents.Events) != 3 || statusEvents.Events[2].GetKind() != "agent.status_updated" {
+		t.Fatalf("unexpected status events: %+v", statusEvents.Events)
+	}
+	statusIdem, err := s.idempotencyStore.Check(context.Background(), idempotency.Key{
+		CallerKind: "agent",
+		CallerID:   runtimeItem.ID,
+		Method:     "UpdateAgentStatus",
+		RequestID:  "status-req-1",
+	})
+	if err != nil {
+		t.Fatalf("check status idempotency: %v", err)
+	}
+	if statusIdem.Record == nil || statusIdem.Record.EventID != statusEvents.Events[2].GetEventId() {
+		t.Fatalf("expected status idempotency event_id %q, got %+v", statusEvents.Events[2].GetEventId(), statusIdem.Record)
+	}
+	replayStatus, err := s.UpdateAgentStatus(context.Background(), &daemonv1.UpdateAgentStatusRequest{
+		Status: &daemonv1.AgentStatusSnapshot{
+			AgentId:       runtimeItem.ID,
+			Presence:      daemonv1.AgentPresence_AGENT_PRESENCE_BUSY,
+			ActivityState: daemonv1.AgentActivityState_AGENT_ACTIVITY_STATE_REVIEWING,
+			Health:        daemonv1.AgentHealth_AGENT_HEALTH_OK,
+			Summary:       "reviewing lifecycle patch",
+			Target:        "#websocket:thread-a",
+			TaskId:        "20",
+			Severity:      "info",
+		},
+		RequestId: "status-req-1",
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgentStatus replay failed: %v", err)
+	}
+	if replayStatus.Status.GetUpdatedTimeUnix() != statusResp.Status.GetUpdatedTimeUnix() {
+		t.Fatalf("expected replay status timestamp %d, got %d", statusResp.Status.GetUpdatedTimeUnix(), replayStatus.Status.GetUpdatedTimeUnix())
+	}
+	afterStatusReplayEvents, err := s.ListEventsSince(context.Background(), &daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSince after status replay failed: %v", err)
+	}
+	if len(afterStatusReplayEvents.Events) != len(statusEvents.Events) {
+		t.Fatalf("expected status replay to avoid duplicate events, before=%d after=%d", len(statusEvents.Events), len(afterStatusReplayEvents.Events))
+	}
+	_, err = s.UpdateAgentStatus(context.Background(), &daemonv1.UpdateAgentStatusRequest{
+		Status: &daemonv1.AgentStatusSnapshot{
+			AgentId:       runtimeItem.ID,
+			Presence:      daemonv1.AgentPresence_AGENT_PRESENCE_BUSY,
+			ActivityState: daemonv1.AgentActivityState_AGENT_ACTIVITY_STATE_BLOCKED,
+			Health:        daemonv1.AgentHealth_AGENT_HEALTH_OK,
+			Summary:       "blocked on review",
+			Target:        "#websocket:thread-a",
+		},
+		RequestId: "status-req-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "idempotency conflict") {
+		t.Fatalf("expected status idempotency conflict, got %v", err)
+	}
 	_, err = s.ControlAgent(context.Background(), &daemonv1.ControlAgentRequest{
 		AgentId:            runtimeItem.ID,
 		Action:             daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART_FULL_RESET,
@@ -515,7 +607,7 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListEventsSince from cursor failed: %v", err)
 	}
-	if len(nextEvents.Events) != 1 || nextEvents.Events[0].GetEventId() != controlEvents.Events[1].GetEventId() {
+	if len(nextEvents.Events) != 2 || nextEvents.Events[0].GetEventId() != controlEvents.Events[1].GetEventId() || nextEvents.Events[1].GetKind() != "agent.status_updated" {
 		t.Fatalf("expected control event after cursor, got %+v", nextEvents.Events)
 	}
 	if _, err := s.LogActivity(context.Background(), &daemonv1.LogActivityRequest{
@@ -533,7 +625,7 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListEventsSince target filter failed: %v", err)
 	}
-	if len(targetEvents.Events) != 1 || targetEvents.Events[0].GetTarget() != "#websocket:thread-a" {
+	if len(targetEvents.Events) != 2 || targetEvents.Events[0].GetTarget() != "#websocket:thread-a" || targetEvents.Events[1].GetKind() != "agent.status_updated" {
 		t.Fatalf("expected only thread-a events, got %+v", targetEvents.Events)
 	}
 }
