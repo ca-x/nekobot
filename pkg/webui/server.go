@@ -359,8 +359,8 @@ func (s *Server) setup() {
 	e.POST("/api/auth/init/repair-workspace", s.handleInitRepairWorkspace)
 	e.POST("/api/daemon/register", s.handleRegisterDaemon)
 	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
-	e.POST("/api/daemon/tasks/fetch", s.handleFetchDaemonTasks)
-	e.POST("/api/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+	e.POST("/api/daemon/runs/fetch", s.handleFetchDaemonRuns)
+	e.POST("/api/daemon/runs/update", s.handleUpdateDaemonRunStatus)
 	e.GET("/api/nekoclientd/bootstrap", s.handleGetNekoClientdBootstrap)
 
 	// Chat WebSocket (auth handled inside via token query param)
@@ -2457,7 +2457,7 @@ func (s *Server) handleGetDaemonInventory(c *echo.Context) error {
 
 	type runtimeDetail struct {
 		RuntimeID        string   `json:"runtime_id"`
-		MachineID        string   `json:"machine_id"`
+		MachineID        string   `json:"computer_id"`
 		WorkspaceID      string   `json:"workspace_id"`
 		Kind             string   `json:"kind"`
 		DisplayName      string   `json:"display_name"`
@@ -2475,14 +2475,14 @@ func (s *Server) handleGetDaemonInventory(c *echo.Context) error {
 	}
 
 	type machineInventory struct {
-		Info                  *daemonv1.DaemonInfo `json:"info"`
-		Status                string               `json:"status"`
-		WorkspaceCount        int                  `json:"workspace_count"`
-		RuntimeCount          int                  `json:"runtime_count"`
-		InstalledRuntimeCount int                  `json:"installed_runtime_count"`
-		HealthyRuntimeCount   int                  `json:"healthy_runtime_count"`
-		GoalRunRunnable       bool                 `json:"goal_run_runnable"`
-		Runtimes              []runtimeDetail      `json:"runtimes"`
+		Info                  *daemonv1.ComputerInfo `json:"info"`
+		Status                string                 `json:"status"`
+		WorkspaceCount        int                    `json:"workspace_count"`
+		RuntimeCount          int                    `json:"runtime_count"`
+		InstalledRuntimeCount int                    `json:"installed_runtime_count"`
+		HealthyRuntimeCount   int                    `json:"healthy_runtime_count"`
+		GoalRunRunnable       bool                   `json:"goal_run_runnable"`
+		Runtimes              []runtimeDetail        `json:"runtimes"`
 	}
 
 	emptyResponse := map[string]any{"machines": []machineInventory{}}
@@ -2545,7 +2545,7 @@ func (s *Server) handleGetDaemonInventory(c *echo.Context) error {
 		if info == nil {
 			continue
 		}
-		cloned := proto.Clone(info).(*daemonv1.DaemonInfo)
+		cloned := proto.Clone(info).(*daemonv1.ComputerInfo)
 		cloned.Status = daemonhost.DeriveMachineStatus(info, now)
 		mi := machineInventory{
 			Info:   cloned,
@@ -2567,7 +2567,7 @@ func (s *Server) handleGetDaemonInventory(c *echo.Context) error {
 				}
 				rd := runtimeDetail{
 					RuntimeID:        rt.RuntimeId,
-					MachineID:        rt.MachineId,
+					MachineID:        rt.ComputerId,
 					WorkspaceID:      rt.WorkspaceId,
 					Kind:             rt.Kind,
 					DisplayName:      rt.DisplayName,
@@ -2594,7 +2594,7 @@ func (s *Server) handleGetDaemonInventory(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"machines": machines})
 }
 
-func (s *Server) daemonClientForMachine(ctx context.Context, machineID string) (*daemonhost.Client, *daemonv1.RuntimeInventory, error) {
+func (s *Server) daemonClientForMachine(ctx context.Context, machineID string) (*daemonhost.Client, *daemonv1.ComputerInventory, error) {
 	if s == nil || s.kvStore == nil {
 		return nil, nil, fmt.Errorf("daemon registry unavailable")
 	}
@@ -2604,7 +2604,7 @@ func (s *Server) daemonClientForMachine(ctx context.Context, machineID string) (
 	}
 	machineID = strings.TrimSpace(machineID)
 	if machineID == "" {
-		return nil, nil, fmt.Errorf("machine_id is required")
+		return nil, nil, fmt.Errorf("computer_id is required")
 	}
 	info := snapshot.Machines[machineID]
 	if info == nil {
@@ -2616,13 +2616,13 @@ func (s *Server) daemonClientForMachine(ctx context.Context, machineID string) (
 	}
 	inv := snapshot.Inventories[machineID]
 	if inv == nil {
-		inv = &daemonv1.RuntimeInventory{}
+		inv = &daemonv1.ComputerInventory{}
 	}
 	return daemonhost.NewClient(baseURL), inv, nil
 }
 
 func (s *Server) handleDaemonExplorerWorkspaces(c *echo.Context) error {
-	machineID := strings.TrimSpace(c.QueryParam("machine_id"))
+	machineID := strings.TrimSpace(c.QueryParam("computer_id"))
 	_, inv, err := s.daemonClientForMachine(c.Request().Context(), machineID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -2639,7 +2639,7 @@ func (s *Server) handleDaemonExplorerWorkspaces(c *echo.Context) error {
 
 func (s *Server) handleDaemonExplorerTree(c *echo.Context) error {
 	var body struct {
-		MachineID   string `json:"machine_id"`
+		MachineID   string `json:"computer_id"`
 		WorkspaceID string `json:"workspace_id"`
 		Path        string `json:"path"`
 	}
@@ -2671,7 +2671,7 @@ func (s *Server) handleDaemonExplorerTree(c *echo.Context) error {
 
 func (s *Server) handleDaemonExplorerFile(c *echo.Context) error {
 	var body struct {
-		MachineID   string `json:"machine_id"`
+		MachineID   string `json:"computer_id"`
 		WorkspaceID string `json:"workspace_id"`
 		Path        string `json:"path"`
 	}
@@ -2912,7 +2912,7 @@ func (s *Server) handleRegisterDaemon(c *echo.Context) error {
 	if s.kvStore == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "daemon registry unavailable"})
 	}
-	var req daemonv1.RegisterMachineRequest
+	var req daemonv1.RegisterComputerRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
@@ -2930,7 +2930,7 @@ func (s *Server) handleHeartbeatDaemon(c *echo.Context) error {
 	if s.kvStore == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "daemon registry unavailable"})
 	}
-	var req daemonv1.HeartbeatMachineRequest
+	var req daemonv1.HeartbeatComputerRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
@@ -2941,33 +2941,33 @@ func (s *Server) handleHeartbeatDaemon(c *echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-func (s *Server) handleFetchDaemonTasks(c *echo.Context) error {
+func (s *Server) handleFetchDaemonRuns(c *echo.Context) error {
 	if !s.authorizeDaemonRequest(c) {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid daemon token"})
 	}
 	if s.agent == nil || s.agent.TaskService() == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "task service unavailable"})
 	}
-	var req daemonv1.FetchAssignedTasksRequest
+	var req daemonv1.FetchAssignedRunsRequest
 	if err := daemonhost.DecodeProtoJSON(c.Request(), &req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	resp := daemonhost.BuildAssignedTasks(s.agent.TaskService(), req.MachineId, req.RuntimeIds, int(req.Limit))
+	resp := daemonhost.BuildAssignedRuns(s.agent.TaskService(), req.ComputerId, req.AgentIds, int(req.Limit))
 	return c.JSON(http.StatusOK, resp)
 }
 
-func (s *Server) handleUpdateDaemonTaskStatus(c *echo.Context) error {
+func (s *Server) handleUpdateDaemonRunStatus(c *echo.Context) error {
 	if !s.authorizeDaemonRequest(c) {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid daemon token"})
 	}
 	if s.agent == nil || s.agent.TaskService() == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "task service unavailable"})
 	}
-	var req daemonv1.UpdateTaskStatusRequest
+	var req daemonv1.UpdateRunStatusRequest
 	if err := daemonhost.DecodeProtoJSON(c.Request(), &req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
-	resp, task, err := daemonhost.ApplyTaskStatusUpdate(s.agent.TaskService(), &req)
+	resp, task, err := daemonhost.ApplyRunStatusUpdate(s.agent.TaskService(), &req)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
@@ -2977,7 +2977,7 @@ func (s *Server) handleUpdateDaemonTaskStatus(c *echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.Task, req *daemonv1.UpdateTaskStatusRequest) error {
+func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.Task, req *daemonv1.UpdateRunStatusRequest) error {
 	if s == nil || s.sessionMgr == nil || req == nil {
 		return nil
 	}
@@ -7818,10 +7818,10 @@ func (s *Server) handleDaemonRuntimeChatMessage(
 	if !runtimeIsDaemonBacked(runtimeItem) {
 		return false, "", nil
 	}
-	machineID, _ := runtimeItem.Policy["daemon_machine_id"].(string)
+	machineID, _ := runtimeItem.Policy["daemon_computer_id"].(string)
 	workspaceID, _ := runtimeItem.Policy["daemon_workspace_id"].(string)
 	if strings.TrimSpace(machineID) == "" {
-		return false, "", fmt.Errorf("daemon-backed runtime %s is missing daemon_machine_id policy", runtimeID)
+		return false, "", fmt.Errorf("daemon-backed runtime %s is missing daemon_computer_id policy", runtimeID)
 	}
 	taskID := "daemon-task-" + uuid.NewString()
 	_, err = s.agent.TaskService().Enqueue(tasks.Task{
@@ -7831,7 +7831,7 @@ func (s *Server) handleDaemonRuntimeChatMessage(
 		SessionID: sessionID,
 		RuntimeID: runtimeID,
 		Metadata: map[string]any{
-			"machine_id":         strings.TrimSpace(machineID),
+			"computer_id":        strings.TrimSpace(machineID),
 			"workspace_id":       strings.TrimSpace(workspaceID),
 			"created_by_user_id": strings.TrimSpace(username),
 			"delivery":           "daemon",

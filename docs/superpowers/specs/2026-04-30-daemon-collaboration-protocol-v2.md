@@ -367,8 +367,8 @@ Keep the existing broad categories, but reshape names and payloads around the v2
 
 Current status:
 
-- `RegisterMachine` and `HeartbeatMachine` exist and can be kept as compatibility wrappers or renamed before external release.
-- Inventory should evolve from `Workspace + Runtime` to `Computer + Agent + RuntimeProfile + Workspace + Capabilities`.
+- Implemented in v1 before external release as `RegisterComputer` and `HeartbeatComputer`.
+- Inventory now evolves from `Workspace + Runtime` toward `Computer + Agent + RuntimeProfile + Workspace + Capabilities`.
 
 ### Collaboration
 
@@ -410,7 +410,8 @@ Current status:
 
 Current status:
 
-- Missing. Current `FetchAssignedTasks` and `UpdateTaskStatus` are too coarse to recover progress after daemon restart.
+- First protocol slice is implemented as `FetchAssignedRuns`, `UpdateRunStatus`, `AppendRunStep`, `ListRuns`, and `GetRun`.
+- Durable run/step storage is still pending; current execution bridges remote-agent tasks into run-shaped payloads.
 
 ### Event Replay
 
@@ -419,7 +420,7 @@ Current status:
 
 Current status:
 
-- Missing. Existing callers can poll specific list endpoints, but there is no unified cursor.
+- First protocol slice adds `EventCursor` and `ListEventsSince`; durable event persistence is still pending.
 
 ## Idempotency
 
@@ -444,7 +445,7 @@ Server behavior:
 
 Current status:
 
-- Missing from existing proto.
+- Added to the v2-shaped mutating requests in proto; server-side idempotency storage is still pending.
 
 ## Resume Semantics
 
@@ -489,11 +490,11 @@ Resume algorithm:
 
 Current `proto/nekobot/daemon/v1/daemon.proto` is directionally correct and should not be thrown away wholesale.
 
-Keep:
+Kept:
 
 - `Workspace`
 - `Runtime` as a temporary runtime inventory item
-- `DaemonInfo` as temporary computer info
+- `ComputerInfo`
 - `ListChannels`
 - `ListThreads`
 - `ReadMessages`
@@ -508,14 +509,14 @@ Keep:
 
 Adjust:
 
-- Rename `Machine` terminology to `Computer` before the protocol is considered public.
+- Rename `Machine` terminology to `Computer` before the protocol is considered public. Done in the proto surface.
 - Split `Runtime` into `Agent` and `RuntimeProfile`.
-- Add `Capability`, `Permission`, `Run`, `RunStep`, `Lease`, `EventCursor`, and `Attachment`.
-- Add `request_id` to all mutating calls.
+- Add `Capability`, `Permission`, `Run`, `RunStep`, `Lease`, `EventCursor`, and `Attachment`. Done in the proto surface.
+- Add `request_id` to all mutating calls. Done for the first v2-shaped protocol slice.
 - Add explicit `target` fields to tasks/runs where missing.
 - Stop deriving all non-DM thread targets as `#websocket:<session>`; persist the channel/thread target relation.
 - Make `ActivityRecord` run-aware.
-- Replace coarse `FetchAssignedTasks` / `UpdateTaskStatus` execution flow with run/step RPCs while keeping wrappers during migration.
+- Replace coarse `FetchAssignedTasks` / `UpdateTaskStatus` execution flow with run/step RPCs. Done at the proto and daemon client/server boundary.
 
 ## Migration Plan
 
@@ -523,7 +524,7 @@ Adjust:
 
 - Add v2 messages for `Capability`, `Permission`, `Run`, `RunStep`, `Lease`, `EventCursor`, and `Attachment`.
 - Add request IDs to mutating v1-style requests.
-- Keep old RPCs compiling.
+- Replace old machine/task-status RPC names before public release.
 
 ### Slice 2: Inventory Alignment
 

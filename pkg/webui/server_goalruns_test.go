@@ -756,8 +756,8 @@ func TestDaemonBackedGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 	registerDaemonMachineHTTP(t, cfg.WebUI.Port, daemonToken, map[string]any{
 		"info": map[string]any{
 			"daemon_id":      "daemon-goalrun",
-			"machine_id":     "machine-goalrun",
-			"machine_name":   "machine-goalrun",
+			"computer_id":    "machine-goalrun",
+			"display_name":   "machine-goalrun",
 			"status":         "online",
 			"last_seen_unix": time.Now().Unix(),
 			"daemon_url":     "http://127.0.0.1:9999",
@@ -766,7 +766,7 @@ func TestDaemonBackedGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 			"workspaces": []map[string]any{
 				{
 					"workspace_id": "machine-goalrun:default",
-					"machine_id":   "machine-goalrun",
+					"computer_id":  "machine-goalrun",
 					"path":         filepath.Join(t.TempDir(), "daemon-workspace"),
 					"display_name": "default",
 					"is_default":   true,
@@ -775,7 +775,7 @@ func TestDaemonBackedGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 			"runtimes": []map[string]any{
 				{
 					"runtime_id":   "machine-goalrun:default:claude",
-					"machine_id":   "machine-goalrun",
+					"computer_id":  "machine-goalrun",
 					"workspace_id": "machine-goalrun:default",
 					"kind":         "claude",
 					"display_name": "Claude",
@@ -974,7 +974,7 @@ func waitForDaemonMachineHTTP(t *testing.T, webuiPort int, token, machineID stri
 		for _, item := range items {
 			machine, _ := item.(map[string]any)
 			info, _ := machine["info"].(map[string]any)
-			gotID, _ := info["machine_id"].(string)
+			gotID, _ := info["computer_id"].(string)
 			if gotID == machineID {
 				return
 			}

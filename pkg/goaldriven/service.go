@@ -1264,7 +1264,7 @@ func resolveAndValidateHTTPHost(ctx context.Context, target *neturl.URL) ([]stri
 	return out, nil
 }
 
-func workspaceIDForScope(inventory *daemonv1.RuntimeInventory, itemScope shared.ExecutionScope) (string, error) {
+func workspaceIDForScope(inventory *daemonv1.ComputerInventory, itemScope shared.ExecutionScope) (string, error) {
 	if inventory == nil {
 		return "", fmt.Errorf("inventory is nil")
 	}
@@ -1273,7 +1273,7 @@ func workspaceIDForScope(inventory *daemonv1.RuntimeInventory, itemScope shared.
 			if ws == nil {
 				continue
 			}
-			if strings.TrimSpace(ws.MachineId) == strings.TrimSpace(itemScope.MachineID) && ws.IsDefault {
+			if strings.TrimSpace(ws.ComputerId) == strings.TrimSpace(itemScope.MachineID) && ws.IsDefault {
 				return strings.TrimSpace(ws.WorkspaceId), nil
 			}
 		}
@@ -1292,7 +1292,7 @@ func workspaceIDForScope(inventory *daemonv1.RuntimeInventory, itemScope shared.
 	return "", fmt.Errorf("no workspace available in daemon inventory")
 }
 
-func chooseDaemonRuntime(inventory *daemonv1.RuntimeInventory) (string, string, error) {
+func chooseDaemonRuntime(inventory *daemonv1.ComputerInventory) (string, string, error) {
 	runtimeID, workspaceID, ok := daemonhost.SelectRunnableWorkspaceRuntime(inventory)
 	if ok {
 		return runtimeID, workspaceID, nil

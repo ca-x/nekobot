@@ -22,11 +22,11 @@ import (
 
 const DefaultAddr = "127.0.0.1:7777"
 
-func BuildInfo(machineName string) (*daemonv1.DaemonInfo, error) {
+func BuildInfo(machineName string) (*daemonv1.ComputerInfo, error) {
 	return BuildInfoWithURL(machineName, "")
 }
 
-func BuildInfoWithURL(machineName, daemonURL string) (*daemonv1.DaemonInfo, error) {
+func BuildInfoWithURL(machineName, daemonURL string) (*daemonv1.ComputerInfo, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("resolve hostname: %w", err)
@@ -39,10 +39,10 @@ func BuildInfoWithURL(machineName, daemonURL string) (*daemonv1.DaemonInfo, erro
 	if machineID == "" {
 		machineID = hostname
 	}
-	return &daemonv1.DaemonInfo{
+	return &daemonv1.ComputerInfo{
 		DaemonId:     hostname,
-		MachineId:    machineID,
-		MachineName:  name,
+		ComputerId:   machineID,
+		DisplayName:  name,
 		Hostname:     hostname,
 		Os:           runtime.GOOS,
 		Arch:         runtime.GOARCH,
@@ -53,7 +53,7 @@ func BuildInfoWithURL(machineName, daemonURL string) (*daemonv1.DaemonInfo, erro
 	}, nil
 }
 
-func BuildInventory(homeDir string) (*daemonv1.RuntimeInventory, error) {
+func BuildInventory(homeDir string) (*daemonv1.ComputerInventory, error) {
 	if strings.TrimSpace(homeDir) == "" {
 		resolved, err := os.UserHomeDir()
 		if err != nil {
@@ -75,19 +75,19 @@ func BuildInventory(homeDir string) (*daemonv1.RuntimeInventory, error) {
 	}
 	workspaceRoot := filepath.Join(homeDir, "code")
 	workspace := &daemonv1.Workspace{
-		WorkspaceId: info.MachineId + ":default",
-		MachineId:   info.MachineId,
+		WorkspaceId: info.ComputerId + ":default",
+		ComputerId:  info.ComputerId,
 		Path:        workspaceRoot,
 		DisplayName: "default",
 		Aliases:     []string{"default"},
 		IsDefault:   true,
 	}
 	registry := externalagent.NewRegistry()
-	result := &daemonv1.RuntimeInventory{Workspaces: []*daemonv1.Workspace{workspace}}
+	result := &daemonv1.ComputerInventory{Workspaces: []*daemonv1.Workspace{workspace}}
 	for _, adapter := range registry.List() {
 		runtimeItem := &daemonv1.Runtime{
 			RuntimeId:           workspace.WorkspaceId + ":" + adapter.Kind(),
-			MachineId:           info.MachineId,
+			ComputerId:          info.ComputerId,
 			WorkspaceId:         workspace.WorkspaceId,
 			Kind:                adapter.Kind(),
 			DisplayName:         strings.Title(adapter.Kind()),
@@ -127,7 +127,7 @@ func NewServer(addr, machineName string, kv state.KV) *Server {
 	return &Server{addr: addr, machineName: machineName, registry: NewRegistry(kv)}
 }
 
-func (s *Server) buildInventory() (*daemonv1.RuntimeInventory, error) {
+func (s *Server) buildInventory() (*daemonv1.ComputerInventory, error) {
 	return BuildInventory(s.inventoryHome)
 }
 
@@ -194,7 +194,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "daemon registry unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	var req daemonv1.RegisterMachineRequest
+	var req daemonv1.RegisterComputerRequest
 	if err := DecodeProtoJSON(r, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -212,7 +212,7 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "daemon registry unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	var req daemonv1.HeartbeatMachineRequest
+	var req daemonv1.HeartbeatComputerRequest
 	if err := DecodeProtoJSON(r, &req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -255,8 +255,8 @@ func DecodeProtoJSON(r *http.Request, target proto.Message) error {
 	return protojson.UnmarshalOptions{DiscardUnknown: true}.Unmarshal(body, target)
 }
 
-func snapshotToMessage(snapshot *Snapshot) *daemonv1.RuntimeInventory {
-	result := &daemonv1.RuntimeInventory{}
+func snapshotToMessage(snapshot *Snapshot) *daemonv1.ComputerInventory {
+	result := &daemonv1.ComputerInventory{}
 	for _, inventory := range snapshot.Inventories {
 		if inventory == nil {
 			continue

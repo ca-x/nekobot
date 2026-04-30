@@ -80,7 +80,7 @@ func runClientLoop(ctx context.Context) error {
 		return err
 	}
 	defer client.Close()
-	return daemonhost.RegisterAndPoll(ctx, client, daemonhost.PollOptions{MachineName: machineName, InventoryHomeDir: inventoryHomeDir, PollInterval: 15 * time.Second})
+	return daemonhost.RegisterAndPoll(ctx, client, daemonhost.PollOptions{DisplayName: machineName, InventoryHomeDir: inventoryHomeDir, PollInterval: 15 * time.Second})
 }
 
 func runClientService() error {

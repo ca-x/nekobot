@@ -15,8 +15,8 @@ type GRPCService struct {
 	daemonv1.UnimplementedDaemonControlServiceServer
 	Registry        *Registry
 	TaskService     *tasks.Service
-	InventoryLoader func() (*daemonv1.RuntimeInventory, error)
-	AppendSession   func(context.Context, tasks.Task, *daemonv1.UpdateTaskStatusRequest) error
+	InventoryLoader func() (*daemonv1.ComputerInventory, error)
+	AppendSession   func(context.Context, tasks.Task, *daemonv1.UpdateRunStatusRequest) error
 	Collaboration   CollaborationService
 }
 
@@ -31,7 +31,7 @@ type CollaborationService interface {
 	CreateCollaborationTask(context.Context, *daemonv1.CreateCollaborationTaskRequest) (*daemonv1.CreateCollaborationTaskResponse, error)
 	ListCollaborationTasks(context.Context, *daemonv1.ListCollaborationTasksRequest) (*daemonv1.ListCollaborationTasksResponse, error)
 	ClaimCollaborationTask(context.Context, *daemonv1.ClaimCollaborationTaskRequest) (*daemonv1.ClaimCollaborationTaskResponse, error)
-	GetServerInfo(context.Context, *daemonv1.ServerInfoRequest) (*daemonv1.ServerInfoResponse, error)
+	GetServerInfo(context.Context, *daemonv1.GetServerInfoRequest) (*daemonv1.GetServerInfoResponse, error)
 	GetAgentProfile(context.Context, *daemonv1.GetAgentProfileRequest) (*daemonv1.GetAgentProfileResponse, error)
 	SetAgentEnv(context.Context, *daemonv1.SetAgentEnvRequest) (*daemonv1.SetAgentEnvResponse, error)
 	ListAgentProfiles(context.Context, *daemonv1.ListAgentProfilesRequest) (*daemonv1.ListAgentProfilesResponse, error)
@@ -43,7 +43,7 @@ type CollaborationService interface {
 	ListActivity(context.Context, *daemonv1.ListActivityRequest) (*daemonv1.ListActivityResponse, error)
 }
 
-func NewGRPCService(registry *Registry, taskService *tasks.Service, inventoryLoader func() (*daemonv1.RuntimeInventory, error), appendSession func(context.Context, tasks.Task, *daemonv1.UpdateTaskStatusRequest) error, collaboration ...CollaborationService) *GRPCService {
+func NewGRPCService(registry *Registry, taskService *tasks.Service, inventoryLoader func() (*daemonv1.ComputerInventory, error), appendSession func(context.Context, tasks.Task, *daemonv1.UpdateRunStatusRequest) error, collaboration ...CollaborationService) *GRPCService {
 	svc := &GRPCService{Registry: registry, TaskService: taskService, InventoryLoader: inventoryLoader, AppendSession: appendSession}
 	if len(collaboration) > 0 {
 		svc.Collaboration = collaboration[0]
@@ -51,29 +51,29 @@ func NewGRPCService(registry *Registry, taskService *tasks.Service, inventoryLoa
 	return svc
 }
 
-func (s *GRPCService) RegisterMachine(ctx context.Context, req *daemonv1.RegisterMachineRequest) (*daemonv1.RegisterMachineResponse, error) {
+func (s *GRPCService) RegisterComputer(ctx context.Context, req *daemonv1.RegisterComputerRequest) (*daemonv1.RegisterComputerResponse, error) {
 	if s == nil || s.Registry == nil {
 		return nil, fmt.Errorf("daemon registry unavailable")
 	}
 	return s.Registry.Register(ctx, req)
 }
-func (s *GRPCService) HeartbeatMachine(ctx context.Context, req *daemonv1.HeartbeatMachineRequest) (*daemonv1.HeartbeatMachineResponse, error) {
+func (s *GRPCService) HeartbeatComputer(ctx context.Context, req *daemonv1.HeartbeatComputerRequest) (*daemonv1.HeartbeatComputerResponse, error) {
 	if s == nil || s.Registry == nil {
 		return nil, fmt.Errorf("daemon registry unavailable")
 	}
 	return s.Registry.Heartbeat(ctx, req)
 }
-func (s *GRPCService) FetchAssignedTasks(ctx context.Context, req *daemonv1.FetchAssignedTasksRequest) (*daemonv1.FetchAssignedTasksResponse, error) {
+func (s *GRPCService) FetchAssignedRuns(ctx context.Context, req *daemonv1.FetchAssignedRunsRequest) (*daemonv1.FetchAssignedRunsResponse, error) {
 	if s == nil || s.TaskService == nil {
 		return nil, fmt.Errorf("task service unavailable")
 	}
-	return BuildAssignedTasks(s.TaskService, strings.TrimSpace(req.GetMachineId()), req.GetRuntimeIds(), int(req.GetLimit())), nil
+	return BuildAssignedRuns(s.TaskService, strings.TrimSpace(req.GetComputerId()), req.GetAgentIds(), int(req.GetLimit())), nil
 }
-func (s *GRPCService) UpdateTaskStatus(ctx context.Context, req *daemonv1.UpdateTaskStatusRequest) (*daemonv1.UpdateTaskStatusResponse, error) {
+func (s *GRPCService) UpdateRunStatus(ctx context.Context, req *daemonv1.UpdateRunStatusRequest) (*daemonv1.UpdateRunStatusResponse, error) {
 	if s == nil || s.TaskService == nil {
 		return nil, fmt.Errorf("task service unavailable")
 	}
-	resp, task, err := ApplyTaskStatusUpdate(s.TaskService, req)
+	resp, task, err := ApplyRunStatusUpdate(s.TaskService, req)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (s *GRPCService) ClaimCollaborationTask(ctx context.Context, req *daemonv1.
 	return s.Collaboration.ClaimCollaborationTask(ctx, req)
 }
 
-func (s *GRPCService) GetServerInfo(ctx context.Context, req *daemonv1.ServerInfoRequest) (*daemonv1.ServerInfoResponse, error) {
+func (s *GRPCService) GetServerInfo(ctx context.Context, req *daemonv1.GetServerInfoRequest) (*daemonv1.GetServerInfoResponse, error) {
 	if s == nil || s.Collaboration == nil {
 		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
 	}
@@ -240,7 +240,7 @@ func (s *GRPCService) ListActivity(ctx context.Context, req *daemonv1.ListActivi
 	return s.Collaboration.ListActivity(ctx, req)
 }
 
-func (s *GRPCService) loadInventory() (*daemonv1.RuntimeInventory, error) {
+func (s *GRPCService) loadInventory() (*daemonv1.ComputerInventory, error) {
 	if s == nil || s.InventoryLoader == nil {
 		return nil, status.Error(codes.Unimplemented, "workspace RPCs are not implemented on this daemon control surface")
 	}

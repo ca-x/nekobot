@@ -454,7 +454,7 @@ func TestHandleChatWSQueuesDaemonTaskForDaemonBackedRuntime(t *testing.T) {
 		Model:       "daemon-runtime",
 		Policy: map[string]interface{}{
 			"daemon_enabled":      true,
-			"daemon_machine_id":   "machine-a",
+			"daemon_computer_id":  "machine-a",
 			"daemon_workspace_id": "workspace-a",
 		},
 	})
@@ -478,7 +478,7 @@ func TestHandleChatWSQueuesDaemonTaskForDaemonBackedRuntime(t *testing.T) {
 	if len(items) != 1 || items[0].Type != tasks.TypeRemoteAgent {
 		t.Fatalf("expected one remote-agent task, got %+v", items)
 	}
-	if items[0].Metadata["machine_id"] != "machine-a" {
+	if items[0].Metadata["computer_id"] != "machine-a" {
 		t.Fatalf("expected machine-a metadata, got %+v", items[0].Metadata)
 	}
 }

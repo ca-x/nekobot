@@ -49,78 +49,78 @@ func (c *Client) Close() error {
 	}
 	return c.grpcConn.Close()
 }
-func (c *Client) GetInfo() (*daemonv1.DaemonInfo, error) {
-	var info daemonv1.DaemonInfo
+func (c *Client) GetInfo() (*daemonv1.ComputerInfo, error) {
+	var info daemonv1.ComputerInfo
 	if err := c.getProto("/v1/info", &info); err != nil {
 		return nil, err
 	}
 	return &info, nil
 }
-func (c *Client) GetInventory() (*daemonv1.RuntimeInventory, error) {
-	var inventory daemonv1.RuntimeInventory
+func (c *Client) GetInventory() (*daemonv1.ComputerInventory, error) {
+	var inventory daemonv1.ComputerInventory
 	if err := c.getProto("/v1/runtimes", &inventory); err != nil {
 		return nil, err
 	}
 	return &inventory, nil
 }
-func (c *Client) Register(req *daemonv1.RegisterMachineRequest) (*daemonv1.RegisterMachineResponse, error) {
-	var resp daemonv1.RegisterMachineResponse
+func (c *Client) Register(req *daemonv1.RegisterComputerRequest) (*daemonv1.RegisterComputerResponse, error) {
+	var resp daemonv1.RegisterComputerResponse
 	if err := c.postProto("/v1/register", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
-func (c *Client) RegisterRemote(req *daemonv1.RegisterMachineRequest) (*daemonv1.RegisterMachineResponse, error) {
+func (c *Client) RegisterRemote(req *daemonv1.RegisterComputerRequest) (*daemonv1.RegisterComputerResponse, error) {
 	if c.grpcClient != nil {
 		ctx, cancel := c.rpcContext()
 		defer cancel()
-		return c.grpcClient.RegisterMachine(ctx, req)
+		return c.grpcClient.RegisterComputer(ctx, req)
 	}
-	var resp daemonv1.RegisterMachineResponse
+	var resp daemonv1.RegisterComputerResponse
 	if err := c.postProto("/api/daemon/register", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
-func (c *Client) Heartbeat(req *daemonv1.HeartbeatMachineRequest) (*daemonv1.HeartbeatMachineResponse, error) {
-	var resp daemonv1.HeartbeatMachineResponse
+func (c *Client) Heartbeat(req *daemonv1.HeartbeatComputerRequest) (*daemonv1.HeartbeatComputerResponse, error) {
+	var resp daemonv1.HeartbeatComputerResponse
 	if err := c.postProto("/v1/heartbeat", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
-func (c *Client) HeartbeatRemote(req *daemonv1.HeartbeatMachineRequest) (*daemonv1.HeartbeatMachineResponse, error) {
+func (c *Client) HeartbeatRemote(req *daemonv1.HeartbeatComputerRequest) (*daemonv1.HeartbeatComputerResponse, error) {
 	if c.grpcClient != nil {
 		ctx, cancel := c.rpcContext()
 		defer cancel()
-		return c.grpcClient.HeartbeatMachine(ctx, req)
+		return c.grpcClient.HeartbeatComputer(ctx, req)
 	}
-	var resp daemonv1.HeartbeatMachineResponse
+	var resp daemonv1.HeartbeatComputerResponse
 	if err := c.postProto("/api/daemon/heartbeat", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
-func (c *Client) FetchAssignedTasksRemote(req *daemonv1.FetchAssignedTasksRequest) (*daemonv1.FetchAssignedTasksResponse, error) {
+func (c *Client) FetchAssignedRunsRemote(req *daemonv1.FetchAssignedRunsRequest) (*daemonv1.FetchAssignedRunsResponse, error) {
 	if c.grpcClient != nil {
 		ctx, cancel := c.rpcContext()
 		defer cancel()
-		return c.grpcClient.FetchAssignedTasks(ctx, req)
+		return c.grpcClient.FetchAssignedRuns(ctx, req)
 	}
-	var resp daemonv1.FetchAssignedTasksResponse
-	if err := c.postProto("/api/daemon/tasks/fetch", req, &resp); err != nil {
+	var resp daemonv1.FetchAssignedRunsResponse
+	if err := c.postProto("/api/daemon/runs/fetch", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
-func (c *Client) UpdateTaskStatusRemote(req *daemonv1.UpdateTaskStatusRequest) (*daemonv1.UpdateTaskStatusResponse, error) {
+func (c *Client) UpdateRunStatusRemote(req *daemonv1.UpdateRunStatusRequest) (*daemonv1.UpdateRunStatusResponse, error) {
 	if c.grpcClient != nil {
 		ctx, cancel := c.rpcContext()
 		defer cancel()
-		return c.grpcClient.UpdateTaskStatus(ctx, req)
+		return c.grpcClient.UpdateRunStatus(ctx, req)
 	}
-	var resp daemonv1.UpdateTaskStatusResponse
-	if err := c.postProto("/api/daemon/tasks/update", req, &resp); err != nil {
+	var resp daemonv1.UpdateRunStatusResponse
+	if err := c.postProto("/api/daemon/runs/update", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
@@ -229,7 +229,7 @@ func (c *Client) ClaimCollaborationTaskRemote(req *daemonv1.ClaimCollaborationTa
 	}
 	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
 }
-func (c *Client) GetServerInfoRemote(req *daemonv1.ServerInfoRequest) (*daemonv1.ServerInfoResponse, error) {
+func (c *Client) GetServerInfoRemote(req *daemonv1.GetServerInfoRequest) (*daemonv1.GetServerInfoResponse, error) {
 	if c.grpcClient != nil {
 		ctx, cancel := c.rpcContext()
 		defer cancel()

@@ -62,17 +62,17 @@ func TestHandleInitStatusIncludesBootstrapSummary(t *testing.T) {
 	var payload struct {
 		Initialized bool `json:"initialized"`
 		Bootstrap   struct {
-			ConfigPath string               `json:"config_path"`
-			DBDir      string               `json:"db_dir"`
-			Workspace  string               `json:"workspace"`
-			Logger     config.LoggerConfig  `json:"logger"`
-			Gateway    config.GatewayConfig `json:"gateway"`
-			WebUI      config.WebUIConfig   `json:"webui"`
-			Webhook    config.WebhookConfig `json:"webhook"`
+			ConfigPath      string               `json:"config_path"`
+			DBDir           string               `json:"db_dir"`
+			Workspace       string               `json:"workspace"`
+			Logger          config.LoggerConfig  `json:"logger"`
+			Gateway         config.GatewayConfig `json:"gateway"`
+			WebUI           config.WebUIConfig   `json:"webui"`
+			Webhook         config.WebhookConfig `json:"webhook"`
 			WorkspaceStatus struct {
-				Path             string   `json:"path"`
-				Bootstrapped     bool     `json:"bootstrapped"`
-				Contract         struct {
+				Path         string `json:"path"`
+				Bootstrapped bool   `json:"bootstrapped"`
+				Contract     struct {
 					Kind string `json:"kind"`
 				} `json:"contract"`
 				ValidationSummary struct {
@@ -267,7 +267,7 @@ func TestHandleInitRepairWorkspaceBootstrapsMissingFiles(t *testing.T) {
 	}
 
 	var payload struct {
-		Status string `json:"status"`
+		Status          string `json:"status"`
 		WorkspaceStatus struct {
 			Bootstrapped bool `json:"bootstrapped"`
 		} `json:"workspace_status"`

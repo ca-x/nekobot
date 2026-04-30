@@ -18,28 +18,28 @@ const DefaultHeartbeatInterval = 15 * time.Second
 type TaskExecutor func(context.Context, *daemonv1.Task) (string, error)
 
 type TaskReporter interface {
-	UpdateTaskStatusRemote(req *daemonv1.UpdateTaskStatusRequest) (*daemonv1.UpdateTaskStatusResponse, error)
+	UpdateRunStatusRemote(req *daemonv1.UpdateRunStatusRequest) (*daemonv1.UpdateRunStatusResponse, error)
 }
 
 type TaskFetcher interface {
-	FetchAssignedTasksRemote(req *daemonv1.FetchAssignedTasksRequest) (*daemonv1.FetchAssignedTasksResponse, error)
+	FetchAssignedRunsRemote(req *daemonv1.FetchAssignedRunsRequest) (*daemonv1.FetchAssignedRunsResponse, error)
 }
 
 type RemoteRegistryClient interface {
-	RegisterRemote(req *daemonv1.RegisterMachineRequest) (*daemonv1.RegisterMachineResponse, error)
-	HeartbeatRemote(req *daemonv1.HeartbeatMachineRequest) (*daemonv1.HeartbeatMachineResponse, error)
+	RegisterRemote(req *daemonv1.RegisterComputerRequest) (*daemonv1.RegisterComputerResponse, error)
+	HeartbeatRemote(req *daemonv1.HeartbeatComputerRequest) (*daemonv1.HeartbeatComputerResponse, error)
 	TaskFetcher
 	TaskReporter
 }
 
 type PollOptions struct {
-	MachineName      string
+	DisplayName      string
 	PollInterval     time.Duration
 	TaskLimit        uint32
 	Executor         TaskExecutor
-	BuildInfo        func(string) (*daemonv1.DaemonInfo, error)
+	BuildInfo        func(string) (*daemonv1.ComputerInfo, error)
 	DaemonURL        string
-	BuildInventory   func(string) (*daemonv1.RuntimeInventory, error)
+	BuildInventory   func(string) (*daemonv1.ComputerInventory, error)
 	InventoryHomeDir string
 }
 
@@ -60,11 +60,11 @@ func RegisterAndPoll(ctx context.Context, client RemoteRegistryClient, opts Poll
 	if buildInventory == nil {
 		buildInventory = BuildInventory
 	}
-	info, inventory, err := buildDaemonSnapshot(opts.MachineName, opts.InventoryHomeDir, opts.DaemonURL, buildInfo, buildInventory)
+	info, inventory, err := buildDaemonSnapshot(opts.DisplayName, opts.InventoryHomeDir, opts.DaemonURL, buildInfo, buildInventory)
 	if err != nil {
 		return err
 	}
-	if _, err := client.RegisterRemote(&daemonv1.RegisterMachineRequest{Info: info, Inventory: inventory}); err != nil {
+	if _, err := client.RegisterRemote(&daemonv1.RegisterComputerRequest{Info: info, Inventory: inventory}); err != nil {
 		return err
 	}
 
@@ -90,17 +90,17 @@ func RegisterAndPoll(ctx context.Context, client RemoteRegistryClient, opts Poll
 	}
 }
 
-func pollOnce(ctx context.Context, client RemoteRegistryClient, opts PollOptions, buildInfo func(string) (*daemonv1.DaemonInfo, error), buildInventory func(string) (*daemonv1.RuntimeInventory, error)) error {
-	info, inventory, err := buildDaemonSnapshot(opts.MachineName, opts.InventoryHomeDir, opts.DaemonURL, buildInfo, buildInventory)
+func pollOnce(ctx context.Context, client RemoteRegistryClient, opts PollOptions, buildInfo func(string) (*daemonv1.ComputerInfo, error), buildInventory func(string) (*daemonv1.ComputerInventory, error)) error {
+	info, inventory, err := buildDaemonSnapshot(opts.DisplayName, opts.InventoryHomeDir, opts.DaemonURL, buildInfo, buildInventory)
 	if err != nil {
 		return err
 	}
-	if _, err := client.HeartbeatRemote(&daemonv1.HeartbeatMachineRequest{Info: info, Inventory: inventory}); err != nil {
+	if _, err := client.HeartbeatRemote(&daemonv1.HeartbeatComputerRequest{Info: info, Inventory: inventory}); err != nil {
 		return err
 	}
-	fetchResp, err := client.FetchAssignedTasksRemote(&daemonv1.FetchAssignedTasksRequest{
-		MachineId:  info.MachineId,
-		RuntimeIds: collectRuntimeIDs(inventory),
+	fetchResp, err := client.FetchAssignedRunsRemote(&daemonv1.FetchAssignedRunsRequest{
+		ComputerId: info.ComputerId,
+		AgentIds:   collectRuntimeIDs(inventory),
 		Limit:      normalizedTaskLimit(opts.TaskLimit),
 	})
 	if err != nil {
@@ -110,15 +110,15 @@ func pollOnce(ctx context.Context, client RemoteRegistryClient, opts PollOptions
 	if executor == nil {
 		executor = DefaultCLIExecutor(inventory)
 	}
-	for _, task := range fetchResp.Tasks {
-		if err := executeFetchedTask(ctx, client, executor, task); err != nil {
+	for _, run := range fetchResp.Runs {
+		if err := executeFetchedRun(ctx, client, executor, run); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func buildDaemonSnapshot(machineName, inventoryHomeDir, daemonURL string, buildInfo func(string) (*daemonv1.DaemonInfo, error), buildInventory func(string) (*daemonv1.RuntimeInventory, error)) (*daemonv1.DaemonInfo, *daemonv1.RuntimeInventory, error) {
+func buildDaemonSnapshot(machineName, inventoryHomeDir, daemonURL string, buildInfo func(string) (*daemonv1.ComputerInfo, error), buildInventory func(string) (*daemonv1.ComputerInventory, error)) (*daemonv1.ComputerInfo, *daemonv1.ComputerInventory, error) {
 	info, err := buildInfo(machineName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build daemon info: %w", err)
@@ -138,28 +138,28 @@ func executeFetchedTask(ctx context.Context, reporter TaskReporter, executor Tas
 	if reporter == nil || task == nil || strings.TrimSpace(task.TaskId) == "" {
 		return nil
 	}
-	if _, err := reporter.UpdateTaskStatusRemote(&daemonv1.UpdateTaskStatusRequest{
-		TaskId:    task.TaskId,
-		RuntimeId: task.RuntimeId,
-		State:     "claimed",
-		Summary:   task.Summary,
+	if _, err := reporter.UpdateRunStatusRemote(&daemonv1.UpdateRunStatusRequest{
+		RunId:   task.TaskId,
+		AgentId: task.RuntimeId,
+		State:   "claimed",
+		Summary: task.Summary,
 	}); err != nil {
 		return err
 	}
-	if _, err := reporter.UpdateTaskStatusRemote(&daemonv1.UpdateTaskStatusRequest{
-		TaskId:    task.TaskId,
-		RuntimeId: task.RuntimeId,
-		State:     "running",
-		Summary:   task.Summary,
+	if _, err := reporter.UpdateRunStatusRemote(&daemonv1.UpdateRunStatusRequest{
+		RunId:   task.TaskId,
+		AgentId: task.RuntimeId,
+		State:   "running",
+		Summary: task.Summary,
 	}); err != nil {
 		return err
 	}
 
 	resultMessage, execErr := runTaskExecutor(ctx, executor, task)
 	if execErr != nil {
-		_, reportErr := reporter.UpdateTaskStatusRemote(&daemonv1.UpdateTaskStatusRequest{
-			TaskId:        task.TaskId,
-			RuntimeId:     task.RuntimeId,
+		_, reportErr := reporter.UpdateRunStatusRemote(&daemonv1.UpdateRunStatusRequest{
+			RunId:         task.TaskId,
+			AgentId:       task.RuntimeId,
 			State:         "failed",
 			Summary:       task.Summary,
 			Error:         execErr.Error(),
@@ -171,14 +171,39 @@ func executeFetchedTask(ctx context.Context, reporter TaskReporter, executor Tas
 		}
 		return nil
 	}
-	_, err := reporter.UpdateTaskStatusRemote(&daemonv1.UpdateTaskStatusRequest{
-		TaskId:        task.TaskId,
-		RuntimeId:     task.RuntimeId,
+	_, err := reporter.UpdateRunStatusRemote(&daemonv1.UpdateRunStatusRequest{
+		RunId:         task.TaskId,
+		AgentId:       task.RuntimeId,
 		State:         "completed",
 		Summary:       task.Summary,
 		ResultMessage: strings.TrimSpace(resultMessage),
 	})
 	return err
+}
+
+func executeFetchedRun(ctx context.Context, reporter TaskReporter, executor TaskExecutor, run *daemonv1.Run) error {
+	if run == nil {
+		return nil
+	}
+	return executeFetchedTask(ctx, reporter, executor, runToTask(run))
+}
+
+func runToTask(run *daemonv1.Run) *daemonv1.Task {
+	if run == nil {
+		return nil
+	}
+	runID := strings.TrimSpace(run.RunId)
+	if runID == "" {
+		runID = strings.TrimSpace(run.TaskId)
+	}
+	return &daemonv1.Task{
+		TaskId:     runID,
+		Summary:    run.Summary,
+		State:      run.State,
+		RuntimeId:  run.AgentId,
+		ThreadId:   run.Target,
+		ComputerId: run.ComputerId,
+	}
 }
 
 func runTaskExecutor(ctx context.Context, executor TaskExecutor, task *daemonv1.Task) (string, error) {
@@ -209,7 +234,7 @@ func defaultTaskResult(task *daemonv1.Task) string {
 	return strings.Join(parts, "\n")
 }
 
-func DefaultCLIExecutor(inventory *daemonv1.RuntimeInventory) TaskExecutor {
+func DefaultCLIExecutor(inventory *daemonv1.ComputerInventory) TaskExecutor {
 	contexts := buildRuntimeContexts(inventory)
 	return func(ctx context.Context, task *daemonv1.Task) (string, error) {
 		if task == nil {
@@ -240,7 +265,7 @@ func DefaultCLIExecutor(inventory *daemonv1.RuntimeInventory) TaskExecutor {
 	}
 }
 
-func buildRuntimeContexts(inventory *daemonv1.RuntimeInventory) map[string]runtimeContext {
+func buildRuntimeContexts(inventory *daemonv1.ComputerInventory) map[string]runtimeContext {
 	result := map[string]runtimeContext{}
 	if inventory == nil {
 		return result
@@ -272,11 +297,11 @@ func buildRuntimeContexts(inventory *daemonv1.RuntimeInventory) map[string]runti
 	return result
 }
 
-func normalizeInventoryMachine(info *daemonv1.DaemonInfo, inventory *daemonv1.RuntimeInventory) {
+func normalizeInventoryMachine(info *daemonv1.ComputerInfo, inventory *daemonv1.ComputerInventory) {
 	if info == nil || inventory == nil {
 		return
 	}
-	machineID := strings.TrimSpace(info.MachineId)
+	machineID := strings.TrimSpace(info.ComputerId)
 	if machineID == "" {
 		return
 	}
@@ -294,7 +319,7 @@ func normalizeInventoryMachine(info *daemonv1.DaemonInfo, inventory *daemonv1.Ru
 		}
 		workspaceIDMap[oldWorkspaceID] = newWorkspaceID
 		workspace.WorkspaceId = newWorkspaceID
-		workspace.MachineId = machineID
+		workspace.ComputerId = machineID
 	}
 	for _, runtime := range inventory.Runtimes {
 		if runtime == nil {
@@ -306,7 +331,7 @@ func normalizeInventoryMachine(info *daemonv1.DaemonInfo, inventory *daemonv1.Ru
 			newWorkspaceID = machineID + ":default"
 		}
 		runtime.WorkspaceId = newWorkspaceID
-		runtime.MachineId = machineID
+		runtime.ComputerId = machineID
 		kind := strings.TrimSpace(runtime.Kind)
 		if kind == "" {
 			kind = strings.TrimSpace(runtime.RuntimeId)
@@ -508,7 +533,7 @@ func normalizedTaskLimit(limit uint32) uint32 {
 	return limit
 }
 
-func collectRuntimeIDs(inventory *daemonv1.RuntimeInventory) []string {
+func collectRuntimeIDs(inventory *daemonv1.ComputerInventory) []string {
 	if inventory == nil {
 		return nil
 	}

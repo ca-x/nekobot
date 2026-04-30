@@ -214,7 +214,7 @@ func TestDaemonCollaborationSendReadAndFollowThread(t *testing.T) {
 	sendResp, err := s.SendMessage(context.Background(), &daemonv1.SendMessageRequest{
 		Target:            "#websocket:thread-a",
 		Content:           "daemon reply",
-		SenderRuntimeId:   "runtime-a",
+		SenderAgentId:     "runtime-a",
 		SenderDisplayName: "Agent A",
 	})
 	if err != nil {
@@ -232,7 +232,7 @@ func TestDaemonCollaborationSendReadAndFollowThread(t *testing.T) {
 		t.Fatalf("unexpected messages: %+v", readResp.Messages)
 	}
 
-	if _, err := s.FollowThread(context.Background(), &daemonv1.FollowThreadRequest{Target: "#websocket:thread-a", RuntimeId: "runtime-a"}); err != nil {
+	if _, err := s.FollowThread(context.Background(), &daemonv1.FollowThreadRequest{Target: "#websocket:thread-a", AgentId: "runtime-a"}); err != nil {
 		t.Fatalf("FollowThread failed: %v", err)
 	}
 	listResp, err := s.ListThreads(context.Background(), &daemonv1.ListThreadsRequest{Limit: 10})
@@ -270,7 +270,7 @@ func TestDaemonCollaborationTasks(t *testing.T) {
 	createResp, err := s.CreateCollaborationTask(context.Background(), &daemonv1.CreateCollaborationTaskRequest{
 		Target:          "#websocket:thread-task",
 		Summary:         "do work",
-		RuntimeId:       "runtime-a",
+		AgentId:         "runtime-a",
 		CreatedByUserId: "tester",
 	})
 	if err != nil {
@@ -281,8 +281,8 @@ func TestDaemonCollaborationTasks(t *testing.T) {
 	}
 
 	claimResp, err := s.ClaimCollaborationTask(context.Background(), &daemonv1.ClaimCollaborationTaskRequest{
-		TaskId:    createResp.Task.GetTaskId(),
-		RuntimeId: "runtime-a",
+		TaskId:  createResp.Task.GetTaskId(),
+		AgentId: "runtime-a",
 	})
 	if err != nil {
 		t.Fatalf("ClaimCollaborationTask failed: %v", err)
@@ -348,7 +348,7 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	s.skillsMgr = skillsMgr
 
 	envResp, err := s.SetAgentEnv(context.Background(), &daemonv1.SetAgentEnvRequest{
-		RuntimeId: runtimeItem.ID,
+		AgentId: runtimeItem.ID,
 		Env: []*daemonv1.EnvVar{
 			{Name: "NEKOBOT_TEST", Value: "ok"},
 			{Name: "TOKEN", Value: "secret", Secret: true},
@@ -357,7 +357,7 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetAgentEnv failed: %v", err)
 	}
-	if envResp.Profile.GetRuntimeId() != runtimeItem.ID || len(envResp.Profile.Env) != 2 {
+	if envResp.Profile.GetAgentId() != runtimeItem.ID || len(envResp.Profile.Env) != 2 {
 		t.Fatalf("unexpected env profile: %+v", envResp.Profile)
 	}
 	foundSkill := false
@@ -370,19 +370,19 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 		t.Fatalf("expected skill inventory to include review, got %+v", envResp.Profile.Skills)
 	}
 
-	info, err := s.GetServerInfo(context.Background(), &daemonv1.ServerInfoRequest{})
+	info, err := s.GetServerInfo(context.Background(), &daemonv1.GetServerInfoRequest{})
 	if err != nil {
 		t.Fatalf("GetServerInfo failed: %v", err)
 	}
-	if len(info.Agents) != 1 || info.Agents[0].GetRuntimeId() != runtimeItem.ID {
+	if len(info.Agents) != 1 || info.Agents[0].GetAgentId() != runtimeItem.ID {
 		t.Fatalf("unexpected server info agents: %+v", info.Agents)
 	}
 
 	activity, err := s.LogActivity(context.Background(), &daemonv1.LogActivityRequest{
-		Target:    "#websocket:thread-a",
-		RuntimeId: runtimeItem.ID,
-		Kind:      "review",
-		Summary:   "reviewed proto",
+		Target:  "#websocket:thread-a",
+		AgentId: runtimeItem.ID,
+		Kind:    "review",
+		Summary: "reviewed proto",
 	})
 	if err != nil {
 		t.Fatalf("LogActivity failed: %v", err)
@@ -390,7 +390,7 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 	if activity.Activity.GetActivityId() == "" {
 		t.Fatalf("expected activity id")
 	}
-	list, err := s.ListActivity(context.Background(), &daemonv1.ListActivityRequest{RuntimeId: runtimeItem.ID, Limit: 10})
+	list, err := s.ListActivity(context.Background(), &daemonv1.ListActivityRequest{AgentId: runtimeItem.ID, Limit: 10})
 	if err != nil {
 		t.Fatalf("ListActivity failed: %v", err)
 	}
@@ -2967,7 +2967,7 @@ func TestGatewayGRPCFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 	}
 	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
 	_, err = ag.TaskService().Enqueue(tasks.Task{
-		ID: "task-grpc", Type: tasks.TypeRemoteAgent, Summary: "grpc work", SessionID: "webui-chat:grpc", RuntimeID: "runtime-a", Metadata: map[string]any{"machine_id": "machine-a"},
+		ID: "task-grpc", Type: tasks.TypeRemoteAgent, Summary: "grpc work", SessionID: "webui-chat:grpc", RuntimeID: "runtime-a", Metadata: map[string]any{"computer_id": "machine-a"},
 	})
 	if err != nil {
 		t.Fatalf("enqueue task: %v", err)
@@ -2993,22 +2993,22 @@ func TestGatewayGRPCFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 	}
 	defer client.Close()
 
-	if _, err := client.RegisterRemote(&daemonv1.RegisterMachineRequest{Info: &daemonv1.DaemonInfo{MachineId: "machine-a", DaemonId: "daemon-a"}}); err != nil {
+	if _, err := client.RegisterRemote(&daemonv1.RegisterComputerRequest{Info: &daemonv1.ComputerInfo{ComputerId: "machine-a", DaemonId: "daemon-a"}}); err != nil {
 		t.Fatalf("register remote: %v", err)
 	}
-	fetchResp, err := client.FetchAssignedTasksRemote(&daemonv1.FetchAssignedTasksRequest{MachineId: "machine-a", RuntimeIds: []string{"runtime-a"}, Limit: 10})
+	fetchResp, err := client.FetchAssignedRunsRemote(&daemonv1.FetchAssignedRunsRequest{ComputerId: "machine-a", AgentIds: []string{"runtime-a"}, Limit: 10})
 	if err != nil {
 		t.Fatalf("fetch tasks: %v", err)
 	}
-	if len(fetchResp.Tasks) != 1 || fetchResp.Tasks[0].TaskId != "task-grpc" {
-		t.Fatalf("unexpected fetched tasks: %+v", fetchResp.Tasks)
+	if len(fetchResp.Runs) != 1 || fetchResp.Runs[0].TaskId != "task-grpc" {
+		t.Fatalf("unexpected fetched tasks: %+v", fetchResp.Runs)
 	}
 	for _, stateValue := range []string{string(tasks.StateClaimed), string(tasks.StateRunning), string(tasks.StateCompleted)} {
-		req := &daemonv1.UpdateTaskStatusRequest{TaskId: "task-grpc", RuntimeId: "runtime-a", State: stateValue, Summary: "grpc work"}
+		req := &daemonv1.UpdateRunStatusRequest{RunId: "task-grpc", AgentId: "runtime-a", State: stateValue, Summary: "grpc work"}
 		if stateValue == string(tasks.StateCompleted) {
 			req.ResultMessage = "grpc-ok"
 		}
-		if _, err := client.UpdateTaskStatusRemote(req); err != nil {
+		if _, err := client.UpdateRunStatusRemote(req); err != nil {
 			t.Fatalf("update status %s: %v", stateValue, err)
 		}
 	}
@@ -3085,7 +3085,7 @@ func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 	if len(readResp.Messages) != 1 || readResp.Messages[0].Content != "hello from daemon" {
 		t.Fatalf("unexpected messages: %+v", readResp.Messages)
 	}
-	if _, err := client.FollowThreadRemote(&daemonv1.FollowThreadRequest{Target: "#websocket:grpc-thread", RuntimeId: "runtime-a"}); err != nil {
+	if _, err := client.FollowThreadRemote(&daemonv1.FollowThreadRequest{Target: "#websocket:grpc-thread", AgentId: "runtime-a"}); err != nil {
 		t.Fatalf("FollowThreadRemote failed: %v", err)
 	}
 	threads, err := client.ListThreadsRemote(&daemonv1.ListThreadsRequest{Limit: 10})
@@ -3096,8 +3096,8 @@ func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected threads: %+v", threads.Threads)
 	}
 	if _, err := client.SetAgentEnvRemote(&daemonv1.SetAgentEnvRequest{
-		RuntimeId: "default",
-		Env:       []*daemonv1.EnvVar{{Name: "NEKOBOT_MODE", Value: "test"}},
+		AgentId: "default",
+		Env:     []*daemonv1.EnvVar{{Name: "NEKOBOT_MODE", Value: "test"}},
 	}); err != nil {
 		t.Fatalf("SetAgentEnvRemote failed: %v", err)
 	}
@@ -3108,14 +3108,14 @@ func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 	if len(profiles.Profiles) == 0 || len(profiles.Profiles[0].Env) != 1 {
 		t.Fatalf("unexpected profiles: %+v", profiles.Profiles)
 	}
-	activity, err := client.LogActivityRemote(&daemonv1.LogActivityRequest{Target: "#websocket:grpc-thread", RuntimeId: "default", Summary: "grpc activity"})
+	activity, err := client.LogActivityRemote(&daemonv1.LogActivityRequest{Target: "#websocket:grpc-thread", AgentId: "default", Summary: "grpc activity"})
 	if err != nil {
 		t.Fatalf("LogActivityRemote failed: %v", err)
 	}
 	if activity.Activity.GetActivityId() == "" {
 		t.Fatalf("expected activity id")
 	}
-	taskResp, err := client.CreateCollaborationTaskRemote(&daemonv1.CreateCollaborationTaskRequest{Target: "#websocket:grpc-thread", Summary: "do grpc work", RuntimeId: "runtime-a"})
+	taskResp, err := client.CreateCollaborationTaskRemote(&daemonv1.CreateCollaborationTaskRequest{Target: "#websocket:grpc-thread", Summary: "do grpc work", AgentId: "runtime-a"})
 	if err != nil {
 		t.Fatalf("CreateCollaborationTaskRemote failed: %v", err)
 	}

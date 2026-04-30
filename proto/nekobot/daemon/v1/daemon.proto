@@ -4,18 +4,71 @@ package nekobot.daemon.v1;
 
 option go_package = "nekobot/gen/go/nekobot/daemon/v1;daemonv1";
 
+message Capability {
+  string name = 1;
+  string description = 2;
+  bool enabled = 3;
+}
+
+message Permission {
+  string name = 1;
+  string target = 2;
+  bool allowed = 3;
+  string reason = 4;
+}
+
+message Lease {
+  string lease_id = 1;
+  string holder_id = 2;
+  string resource_type = 3;
+  string resource_id = 4;
+  int64 expires_time_unix = 5;
+  uint32 heartbeat_after_seconds = 6;
+}
+
+message EventCursor {
+  string cursor = 1;
+  string target = 2;
+  string last_event_id = 3;
+  string last_message_id = 4;
+  string last_activity_id = 5;
+}
+
+message AttachmentRecord {
+  string attachment_id = 1;
+  string target = 2;
+  string owner_id = 3;
+  string filename = 4;
+  string mime_type = 5;
+  int64 size_bytes = 6;
+  string storage_ref = 7;
+  int64 created_time_unix = 8;
+}
+
 message Workspace {
   string workspace_id = 1;
-  string machine_id = 2;
+  string computer_id = 2;
   string path = 3;
   string display_name = 4;
   repeated string aliases = 5;
   bool is_default = 6;
 }
 
+message RuntimeProfile {
+  string runtime_profile_id = 1;
+  string kind = 2;
+  string provider = 3;
+  string model = 4;
+  string adapter_config_json = 5;
+  string workspace_id = 6;
+  repeated EnvVar env = 7;
+  repeated SkillRecord skills = 8;
+  repeated Capability capabilities = 9;
+}
+
 message Runtime {
   string runtime_id = 1;
-  string machine_id = 2;
+  string computer_id = 2;
   string workspace_id = 3;
   string kind = 4;
   string display_name = 5;
@@ -29,17 +82,21 @@ message Runtime {
   string config_dir = 13;
   uint32 current_task_count = 14;
   uint32 pending_task_count = 15;
+  repeated Capability capabilities = 16;
+  RuntimeProfile runtime_profile = 17;
 }
 
-message RuntimeInventory {
+message ComputerInventory {
   repeated Workspace workspaces = 1;
   repeated Runtime runtimes = 2;
+  repeated AgentProfile agents = 3;
+  repeated RuntimeProfile runtime_profiles = 4;
 }
 
-message DaemonInfo {
+message ComputerInfo {
   string daemon_id = 1;
-  string machine_id = 2;
-  string machine_name = 3;
+  string computer_id = 2;
+  string display_name = 3;
   string hostname = 4;
   string os = 5;
   string arch = 6;
@@ -47,27 +104,34 @@ message DaemonInfo {
   string status = 8;
   int64 last_seen_unix = 9;
   string daemon_url = 10;
+  string lease_id = 11;
+  repeated Capability capabilities = 12;
 }
 
-message RegisterMachineRequest {
-  DaemonInfo info = 1;
-  RuntimeInventory inventory = 2;
+message RegisterComputerRequest {
+  ComputerInfo info = 1;
+  ComputerInventory inventory = 2;
+  string request_id = 3;
 }
 
-message RegisterMachineResponse {
+message RegisterComputerResponse {
   bool accepted = 1;
   int64 server_time_unix = 2;
+  Lease lease = 3;
 }
 
-message HeartbeatMachineRequest {
-  DaemonInfo info = 1;
-  RuntimeInventory inventory = 2;
+message HeartbeatComputerRequest {
+  ComputerInfo info = 1;
+  ComputerInventory inventory = 2;
+  string lease_id = 3;
+  string request_id = 4;
 }
 
-message HeartbeatMachineResponse {
+message HeartbeatComputerResponse {
   bool accepted = 1;
   int64 server_time_unix = 2;
   uint32 next_heartbeat_after_seconds = 3;
+  Lease lease = 4;
 }
 
 message Task {
@@ -77,35 +141,103 @@ message Task {
   string runtime_id = 4;
   string thread_id = 5;
   string workspace_id = 6;
-  string machine_id = 7;
+  string computer_id = 7;
   string created_by_user_id = 8;
   string blocked_reason = 9;
+  string target = 10;
+  string assignee_id = 11;
+  string current_run_id = 12;
 }
 
-message FetchAssignedTasksRequest {
-  string machine_id = 1;
-  repeated string runtime_ids = 2;
+message Run {
+  string run_id = 1;
+  string task_id = 2;
+  string target = 3;
+  string agent_id = 4;
+  string computer_id = 5;
+  string runtime_profile_id = 6;
+  string status = 7;
+  string lease_id = 8;
+  string request_id = 9;
+  string input_message_id = 10;
+  string last_seen_event_id = 11;
+  int64 started_time_unix = 12;
+  int64 updated_time_unix = 13;
+  int64 completed_time_unix = 14;
+  string error = 15;
+  string summary = 16;
+  string state = 17;
+}
+
+message RunStep {
+  string step_id = 1;
+  string run_id = 2;
+  uint32 sequence = 3;
+  string kind = 4;
+  string status = 5;
+  string summary = 6;
+  string detail = 7;
+  repeated string artifact_ids = 8;
+  int64 started_time_unix = 9;
+  int64 completed_time_unix = 10;
+  string request_id = 11;
+}
+
+message FetchAssignedRunsRequest {
+  string computer_id = 1;
+  repeated string agent_ids = 2;
   uint32 limit = 3;
+  string request_id = 4;
 }
 
-message FetchAssignedTasksResponse {
-  repeated Task tasks = 1;
+message FetchAssignedRunsResponse {
+  repeated Run runs = 1;
 }
 
-message UpdateTaskStatusRequest {
-  string task_id = 1;
-  string runtime_id = 2;
+message UpdateRunStatusRequest {
+  string run_id = 1;
+  string agent_id = 2;
   string state = 3;
   string summary = 4;
   string error = 5;
   string blocked_reason = 6;
   string result_message = 7;
+  string request_id = 8;
 }
 
-message UpdateTaskStatusResponse {
+message UpdateRunStatusResponse {
   bool accepted = 1;
 }
 
+message AppendRunStepRequest {
+  RunStep step = 1;
+  string request_id = 2;
+}
+
+message AppendRunStepResponse {
+  bool accepted = 1;
+  RunStep step = 2;
+}
+
+message ListRunsRequest {
+  string target = 1;
+  string task_id = 2;
+  string agent_id = 3;
+  uint32 limit = 4;
+}
+
+message ListRunsResponse {
+  repeated Run runs = 1;
+}
+
+message GetRunRequest {
+  string run_id = 1;
+}
+
+message GetRunResponse {
+  Run run = 1;
+  repeated RunStep steps = 2;
+}
 
 message WorkspaceTreeEntry {
   string path = 1;
@@ -192,10 +324,13 @@ message CollaborationMessage {
   string thread_id = 3;
   string role = 4;
   string content = 5;
-  string sender_runtime_id = 6;
+  string sender_agent_id = 6;
   string sender_display_name = 7;
   string reply_to_message_id = 8;
   int64 created_time_unix = 9;
+  string sender_kind = 10;
+  repeated AttachmentRecord attachments = 11;
+  string request_id = 12;
 }
 
 message ReadMessagesRequest {
@@ -211,10 +346,12 @@ message SendMessageRequest {
   string target = 1;
   string role = 2;
   string content = 3;
-  string sender_runtime_id = 4;
+  string sender_agent_id = 4;
   string sender_display_name = 5;
   string reply_to_message_id = 6;
   bool emit_outbound = 7;
+  string request_id = 8;
+  repeated string attachment_ids = 9;
 }
 
 message SendMessageResponse {
@@ -224,7 +361,8 @@ message SendMessageResponse {
 
 message FollowThreadRequest {
   string target = 1;
-  string runtime_id = 2;
+  string agent_id = 2;
+  string request_id = 3;
 }
 
 message FollowThreadResponse {
@@ -233,7 +371,8 @@ message FollowThreadResponse {
 
 message UnfollowThreadRequest {
   string target = 1;
-  string runtime_id = 2;
+  string agent_id = 2;
+  string request_id = 3;
 }
 
 message UnfollowThreadResponse {
@@ -243,8 +382,9 @@ message UnfollowThreadResponse {
 message CreateCollaborationTaskRequest {
   string target = 1;
   string summary = 2;
-  string runtime_id = 3;
+  string agent_id = 3;
   string created_by_user_id = 4;
+  string request_id = 5;
 }
 
 message CreateCollaborationTaskResponse {
@@ -253,7 +393,7 @@ message CreateCollaborationTaskResponse {
 
 message ListCollaborationTasksRequest {
   string target = 1;
-  string runtime_id = 2;
+  string agent_id = 2;
   uint32 limit = 3;
 }
 
@@ -263,17 +403,18 @@ message ListCollaborationTasksResponse {
 
 message ClaimCollaborationTaskRequest {
   string task_id = 1;
-  string runtime_id = 2;
+  string agent_id = 2;
+  string request_id = 3;
 }
 
 message ClaimCollaborationTaskResponse {
   Task task = 1;
 }
 
-message ServerInfoRequest {
+message GetServerInfoRequest {
 }
 
-message ServerInfoResponse {
+message GetServerInfoResponse {
   string server_name = 1;
   string version = 2;
   repeated ChannelRecord channels = 3;
@@ -298,7 +439,7 @@ message SkillRecord {
 }
 
 message AgentProfile {
-  string runtime_id = 1;
+  string agent_id = 1;
   string name = 2;
   string display_name = 3;
   string description = 4;
@@ -308,10 +449,16 @@ message AgentProfile {
   repeated EnvVar env = 8;
   repeated SkillRecord skills = 9;
   repeated string dm_targets = 10;
+  string computer_id = 11;
+  string runtime_profile_id = 12;
+  string status = 13;
+  int64 last_activity_time_unix = 14;
+  repeated Capability capabilities = 15;
+  repeated Permission permissions = 16;
 }
 
 message GetAgentProfileRequest {
-  string runtime_id = 1;
+  string agent_id = 1;
 }
 
 message GetAgentProfileResponse {
@@ -319,8 +466,9 @@ message GetAgentProfileResponse {
 }
 
 message SetAgentEnvRequest {
-  string runtime_id = 1;
+  string agent_id = 1;
   repeated EnvVar env = 2;
+  string request_id = 3;
 }
 
 message SetAgentEnvResponse {
@@ -336,7 +484,7 @@ message ListAgentProfilesResponse {
 }
 
 message ListAgentDMsRequest {
-  string runtime_id = 1;
+  string agent_id = 1;
   uint32 limit = 2;
 }
 
@@ -364,6 +512,7 @@ message ScheduleReminderRequest {
   string schedule = 4;
   string prompt = 5;
   repeated string skills = 6;
+  string request_id = 7;
 }
 
 message ScheduleReminderResponse {
@@ -381,6 +530,7 @@ message ListRemindersResponse {
 
 message CancelReminderRequest {
   string reminder_id = 1;
+  string request_id = 2;
 }
 
 message CancelReminderResponse {
@@ -390,19 +540,24 @@ message CancelReminderResponse {
 message ActivityRecord {
   string activity_id = 1;
   string target = 2;
-  string runtime_id = 3;
+  string agent_id = 3;
   string kind = 4;
   string summary = 5;
   string detail = 6;
   int64 created_time_unix = 7;
+  string run_id = 8;
+  string step_id = 9;
 }
 
 message LogActivityRequest {
   string target = 1;
-  string runtime_id = 2;
+  string agent_id = 2;
   string kind = 3;
   string summary = 4;
   string detail = 5;
+  string run_id = 6;
+  string step_id = 7;
+  string request_id = 8;
 }
 
 message LogActivityResponse {
@@ -411,19 +566,67 @@ message LogActivityResponse {
 
 message ListActivityRequest {
   string target = 1;
-  string runtime_id = 2;
+  string agent_id = 2;
   uint32 limit = 3;
+  EventCursor cursor = 4;
 }
 
 message ListActivityResponse {
   repeated ActivityRecord activities = 1;
+  EventCursor next_cursor = 2;
+}
+
+message UploadAttachmentRequest {
+  string target = 1;
+  string filename = 2;
+  string mime_type = 3;
+  bytes content = 4;
+  string owner_id = 5;
+  string request_id = 6;
+}
+
+message UploadAttachmentResponse {
+  AttachmentRecord attachment = 1;
+}
+
+message GetAttachmentRequest {
+  string attachment_id = 1;
+}
+
+message GetAttachmentResponse {
+  AttachmentRecord attachment = 1;
+  bytes content = 2;
+}
+
+message ListEventsSinceRequest {
+  EventCursor cursor = 1;
+  uint32 limit = 2;
+}
+
+message CollaborationEvent {
+  string event_id = 1;
+  string target = 2;
+  string kind = 3;
+  string message_id = 4;
+  string activity_id = 5;
+  string task_id = 6;
+  string run_id = 7;
+  int64 created_time_unix = 8;
+}
+
+message ListEventsSinceResponse {
+  repeated CollaborationEvent events = 1;
+  EventCursor next_cursor = 2;
 }
 
 service DaemonControlService {
-  rpc RegisterMachine(RegisterMachineRequest) returns (RegisterMachineResponse);
-  rpc HeartbeatMachine(HeartbeatMachineRequest) returns (HeartbeatMachineResponse);
-  rpc FetchAssignedTasks(FetchAssignedTasksRequest) returns (FetchAssignedTasksResponse);
-  rpc UpdateTaskStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);
+  rpc RegisterComputer(RegisterComputerRequest) returns (RegisterComputerResponse);
+  rpc HeartbeatComputer(HeartbeatComputerRequest) returns (HeartbeatComputerResponse);
+  rpc FetchAssignedRuns(FetchAssignedRunsRequest) returns (FetchAssignedRunsResponse);
+  rpc UpdateRunStatus(UpdateRunStatusRequest) returns (UpdateRunStatusResponse);
+  rpc AppendRunStep(AppendRunStepRequest) returns (AppendRunStepResponse);
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
+  rpc GetRun(GetRunRequest) returns (GetRunResponse);
   rpc ListWorkspaceTree(ListWorkspaceTreeRequest) returns (ListWorkspaceTreeResponse);
   rpc ReadWorkspaceFile(ReadWorkspaceFileRequest) returns (ReadWorkspaceFileResponse);
   rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
@@ -436,7 +639,7 @@ service DaemonControlService {
   rpc CreateCollaborationTask(CreateCollaborationTaskRequest) returns (CreateCollaborationTaskResponse);
   rpc ListCollaborationTasks(ListCollaborationTasksRequest) returns (ListCollaborationTasksResponse);
   rpc ClaimCollaborationTask(ClaimCollaborationTaskRequest) returns (ClaimCollaborationTaskResponse);
-  rpc GetServerInfo(ServerInfoRequest) returns (ServerInfoResponse);
+  rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
   rpc GetAgentProfile(GetAgentProfileRequest) returns (GetAgentProfileResponse);
   rpc SetAgentEnv(SetAgentEnvRequest) returns (SetAgentEnvResponse);
   rpc ListAgentProfiles(ListAgentProfilesRequest) returns (ListAgentProfilesResponse);
@@ -444,6 +647,9 @@ service DaemonControlService {
   rpc ScheduleReminder(ScheduleReminderRequest) returns (ScheduleReminderResponse);
   rpc ListReminders(ListRemindersRequest) returns (ListRemindersResponse);
   rpc CancelReminder(CancelReminderRequest) returns (CancelReminderResponse);
+  rpc UploadAttachment(UploadAttachmentRequest) returns (UploadAttachmentResponse);
+  rpc GetAttachment(GetAttachmentRequest) returns (GetAttachmentResponse);
   rpc LogActivity(LogActivityRequest) returns (LogActivityResponse);
   rpc ListActivity(ListActivityRequest) returns (ListActivityResponse);
+  rpc ListEventsSince(ListEventsSinceRequest) returns (ListEventsSinceResponse);
 }

@@ -356,21 +356,21 @@ func TestServiceAutofillsOnlyOnlineDaemonMachine(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	registry := daemonhost.NewRegistry(store)
-	_, err = registry.Register(t.Context(), &daemonv1.RegisterMachineRequest{
-		Info: &daemonv1.DaemonInfo{
+	_, err = registry.Register(t.Context(), &daemonv1.RegisterComputerRequest{
+		Info: &daemonv1.ComputerInfo{
 			DaemonId:     "daemon-a",
-			MachineId:    "machine-a",
-			MachineName:  "machine-a",
+			ComputerId:   "machine-a",
+			DisplayName:  "machine-a",
 			Status:       "online",
 			LastSeenUnix: time.Now().Unix(),
 			DaemonUrl:    "http://127.0.0.1:7777",
 		},
-		Inventory: &daemonv1.RuntimeInventory{
+		Inventory: &daemonv1.ComputerInventory{
 			Workspaces: []*daemonv1.Workspace{
-				{WorkspaceId: "machine-a:default", MachineId: "machine-a", Path: "/tmp/demo", DisplayName: "default", IsDefault: true},
+				{WorkspaceId: "machine-a:default", ComputerId: "machine-a", Path: "/tmp/demo", DisplayName: "default", IsDefault: true},
 			},
 			Runtimes: []*daemonv1.Runtime{
-				{RuntimeId: "machine-a:default:codex", MachineId: "machine-a", WorkspaceId: "machine-a:default", Kind: "codex", Installed: true, Healthy: true},
+				{RuntimeId: "machine-a:default:codex", ComputerId: "machine-a", WorkspaceId: "machine-a:default", Kind: "codex", Installed: true, Healthy: true},
 			},
 		},
 	})
@@ -416,21 +416,21 @@ func TestServiceConfirmCriteriaRejectsUnrunnableDaemonMachine(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	registry := daemonhost.NewRegistry(store)
-	_, err = registry.Register(t.Context(), &daemonv1.RegisterMachineRequest{
-		Info: &daemonv1.DaemonInfo{
+	_, err = registry.Register(t.Context(), &daemonv1.RegisterComputerRequest{
+		Info: &daemonv1.ComputerInfo{
 			DaemonId:     "daemon-a",
-			MachineId:    "machine-a",
-			MachineName:  "machine-a",
+			ComputerId:   "machine-a",
+			DisplayName:  "machine-a",
 			Status:       "online",
 			LastSeenUnix: time.Now().Unix(),
 			DaemonUrl:    "http://127.0.0.1:7777",
 		},
-		Inventory: &daemonv1.RuntimeInventory{
+		Inventory: &daemonv1.ComputerInventory{
 			Workspaces: []*daemonv1.Workspace{
-				{WorkspaceId: "machine-a:default", MachineId: "machine-a", Path: "/tmp/demo", DisplayName: "default", IsDefault: true},
+				{WorkspaceId: "machine-a:default", ComputerId: "machine-a", Path: "/tmp/demo", DisplayName: "default", IsDefault: true},
 			},
 			Runtimes: []*daemonv1.Runtime{
-				{RuntimeId: "machine-a:default:codex", MachineId: "machine-a", WorkspaceId: "machine-a:default", Kind: "codex", Installed: false, Healthy: false},
+				{RuntimeId: "machine-a:default:codex", ComputerId: "machine-a", WorkspaceId: "machine-a:default", Kind: "codex", Installed: false, Healthy: false},
 			},
 		},
 	})
@@ -493,21 +493,21 @@ func TestServiceAutofillSkipsOnlineDaemonWithoutHealthyRuntime(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	registry := daemonhost.NewRegistry(store)
-	_, err = registry.Register(t.Context(), &daemonv1.RegisterMachineRequest{
-		Info: &daemonv1.DaemonInfo{
+	_, err = registry.Register(t.Context(), &daemonv1.RegisterComputerRequest{
+		Info: &daemonv1.ComputerInfo{
 			DaemonId:     "daemon-a",
-			MachineId:    "machine-a",
-			MachineName:  "machine-a",
+			ComputerId:   "machine-a",
+			DisplayName:  "machine-a",
 			Status:       "online",
 			LastSeenUnix: time.Now().Unix(),
 			DaemonUrl:    "http://127.0.0.1:7777",
 		},
-		Inventory: &daemonv1.RuntimeInventory{
+		Inventory: &daemonv1.ComputerInventory{
 			Workspaces: []*daemonv1.Workspace{
-				{WorkspaceId: "machine-a:default", MachineId: "machine-a", Path: "/tmp/demo", DisplayName: "default", IsDefault: true},
+				{WorkspaceId: "machine-a:default", ComputerId: "machine-a", Path: "/tmp/demo", DisplayName: "default", IsDefault: true},
 			},
 			Runtimes: []*daemonv1.Runtime{
-				{RuntimeId: "machine-a:default:codex", MachineId: "machine-a", WorkspaceId: "machine-a:default", Kind: "codex", Installed: false, Healthy: false},
+				{RuntimeId: "machine-a:default:codex", ComputerId: "machine-a", WorkspaceId: "machine-a:default", Kind: "codex", Installed: false, Healthy: false},
 			},
 		},
 	})

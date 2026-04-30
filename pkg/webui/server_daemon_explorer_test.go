@@ -39,14 +39,14 @@ func TestHandleDaemonExplorerTreeProxiesToDaemon(t *testing.T) {
 	defer daemonSrv.Close()
 
 	registry := daemonhost.NewRegistry(store)
-	_, err = registry.Register(t.Context(), &daemonv1.RegisterMachineRequest{Info: &daemonv1.DaemonInfo{DaemonId: "daemon-a", MachineId: "machine-a", MachineName: "machine-a", Status: "online", DaemonUrl: daemonSrv.URL}, Inventory: &daemonv1.RuntimeInventory{Workspaces: []*daemonv1.Workspace{{WorkspaceId: "machine-a:default", MachineId: "machine-a", Path: "/tmp/workspace", DisplayName: "default", IsDefault: true}}}})
+	_, err = registry.Register(t.Context(), &daemonv1.RegisterComputerRequest{Info: &daemonv1.ComputerInfo{DaemonId: "daemon-a", ComputerId: "machine-a", DisplayName: "machine-a", Status: "online", DaemonUrl: daemonSrv.URL}, Inventory: &daemonv1.ComputerInventory{Workspaces: []*daemonv1.Workspace{{WorkspaceId: "machine-a:default", ComputerId: "machine-a", Path: "/tmp/workspace", DisplayName: "default", IsDefault: true}}}})
 	if err != nil {
 		t.Fatalf("register daemon machine: %v", err)
 	}
 
 	s := &Server{config: cfg, kvStore: store}
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/daemon/explorer/tree", strings.NewReader(`{"machine_id":"machine-a","workspace_id":"machine-a:default","path":""}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/daemon/explorer/tree", strings.NewReader(`{"computer_id":"machine-a","workspace_id":"machine-a:default","path":""}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ctx := e.NewContext(req, rec)
@@ -69,14 +69,14 @@ func TestHandleDaemonExplorerTreeRejectsMissingDaemonURL(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	registry := daemonhost.NewRegistry(store)
-	_, err = registry.Register(t.Context(), &daemonv1.RegisterMachineRequest{Info: &daemonv1.DaemonInfo{DaemonId: "daemon-a", MachineId: "machine-a", MachineName: "machine-a", Status: "online"}, Inventory: &daemonv1.RuntimeInventory{}})
+	_, err = registry.Register(t.Context(), &daemonv1.RegisterComputerRequest{Info: &daemonv1.ComputerInfo{DaemonId: "daemon-a", ComputerId: "machine-a", DisplayName: "machine-a", Status: "online"}, Inventory: &daemonv1.ComputerInventory{}})
 	if err != nil {
 		t.Fatalf("register daemon machine: %v", err)
 	}
 
 	s := &Server{config: cfg, kvStore: store}
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/daemon/explorer/tree", strings.NewReader(`{"machine_id":"machine-a","workspace_id":"machine-a:default","path":""}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/daemon/explorer/tree", strings.NewReader(`{"computer_id":"machine-a","workspace_id":"machine-a:default","path":""}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	ctx := e.NewContext(req, rec)
@@ -104,14 +104,14 @@ func TestHandleDaemonExplorerWorkspacesReturnsInventory(t *testing.T) {
 	defer daemonSrv.Close()
 
 	registry := daemonhost.NewRegistry(store)
-	_, err = registry.Register(t.Context(), &daemonv1.RegisterMachineRequest{Info: &daemonv1.DaemonInfo{DaemonId: "daemon-a", MachineId: "machine-a", MachineName: "machine-a", Status: "online", DaemonUrl: daemonSrv.URL}, Inventory: &daemonv1.RuntimeInventory{Workspaces: []*daemonv1.Workspace{{WorkspaceId: "machine-a:default", MachineId: "machine-a", Path: "/tmp/workspace", DisplayName: "default", IsDefault: true}, {WorkspaceId: "machine-a:docs", MachineId: "machine-a", Path: "/tmp/docs", DisplayName: "docs", Aliases: []string{"docs"}}}}})
+	_, err = registry.Register(t.Context(), &daemonv1.RegisterComputerRequest{Info: &daemonv1.ComputerInfo{DaemonId: "daemon-a", ComputerId: "machine-a", DisplayName: "machine-a", Status: "online", DaemonUrl: daemonSrv.URL}, Inventory: &daemonv1.ComputerInventory{Workspaces: []*daemonv1.Workspace{{WorkspaceId: "machine-a:default", ComputerId: "machine-a", Path: "/tmp/workspace", DisplayName: "default", IsDefault: true}, {WorkspaceId: "machine-a:docs", ComputerId: "machine-a", Path: "/tmp/docs", DisplayName: "docs", Aliases: []string{"docs"}}}}})
 	if err != nil {
 		t.Fatalf("register daemon machine: %v", err)
 	}
 
 	s := &Server{config: cfg, kvStore: store}
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/daemon/explorer/workspaces?machine_id=machine-a", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/daemon/explorer/workspaces?computer_id=machine-a", nil)
 	rec := httptest.NewRecorder()
 	ctx := e.NewContext(req, rec)
 	if err := s.handleDaemonExplorerWorkspaces(ctx); err != nil {

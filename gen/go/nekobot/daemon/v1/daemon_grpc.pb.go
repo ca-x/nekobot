@@ -19,10 +19,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DaemonControlService_RegisterMachine_FullMethodName         = "/nekobot.daemon.v1.DaemonControlService/RegisterMachine"
-	DaemonControlService_HeartbeatMachine_FullMethodName        = "/nekobot.daemon.v1.DaemonControlService/HeartbeatMachine"
-	DaemonControlService_FetchAssignedTasks_FullMethodName      = "/nekobot.daemon.v1.DaemonControlService/FetchAssignedTasks"
-	DaemonControlService_UpdateTaskStatus_FullMethodName        = "/nekobot.daemon.v1.DaemonControlService/UpdateTaskStatus"
+	DaemonControlService_RegisterComputer_FullMethodName        = "/nekobot.daemon.v1.DaemonControlService/RegisterComputer"
+	DaemonControlService_HeartbeatComputer_FullMethodName       = "/nekobot.daemon.v1.DaemonControlService/HeartbeatComputer"
+	DaemonControlService_FetchAssignedRuns_FullMethodName       = "/nekobot.daemon.v1.DaemonControlService/FetchAssignedRuns"
+	DaemonControlService_UpdateRunStatus_FullMethodName         = "/nekobot.daemon.v1.DaemonControlService/UpdateRunStatus"
+	DaemonControlService_AppendRunStep_FullMethodName           = "/nekobot.daemon.v1.DaemonControlService/AppendRunStep"
+	DaemonControlService_ListRuns_FullMethodName                = "/nekobot.daemon.v1.DaemonControlService/ListRuns"
+	DaemonControlService_GetRun_FullMethodName                  = "/nekobot.daemon.v1.DaemonControlService/GetRun"
 	DaemonControlService_ListWorkspaceTree_FullMethodName       = "/nekobot.daemon.v1.DaemonControlService/ListWorkspaceTree"
 	DaemonControlService_ReadWorkspaceFile_FullMethodName       = "/nekobot.daemon.v1.DaemonControlService/ReadWorkspaceFile"
 	DaemonControlService_ListChannels_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/ListChannels"
@@ -43,18 +46,24 @@ const (
 	DaemonControlService_ScheduleReminder_FullMethodName        = "/nekobot.daemon.v1.DaemonControlService/ScheduleReminder"
 	DaemonControlService_ListReminders_FullMethodName           = "/nekobot.daemon.v1.DaemonControlService/ListReminders"
 	DaemonControlService_CancelReminder_FullMethodName          = "/nekobot.daemon.v1.DaemonControlService/CancelReminder"
+	DaemonControlService_UploadAttachment_FullMethodName        = "/nekobot.daemon.v1.DaemonControlService/UploadAttachment"
+	DaemonControlService_GetAttachment_FullMethodName           = "/nekobot.daemon.v1.DaemonControlService/GetAttachment"
 	DaemonControlService_LogActivity_FullMethodName             = "/nekobot.daemon.v1.DaemonControlService/LogActivity"
 	DaemonControlService_ListActivity_FullMethodName            = "/nekobot.daemon.v1.DaemonControlService/ListActivity"
+	DaemonControlService_ListEventsSince_FullMethodName         = "/nekobot.daemon.v1.DaemonControlService/ListEventsSince"
 )
 
 // DaemonControlServiceClient is the client API for DaemonControlService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DaemonControlServiceClient interface {
-	RegisterMachine(ctx context.Context, in *RegisterMachineRequest, opts ...grpc.CallOption) (*RegisterMachineResponse, error)
-	HeartbeatMachine(ctx context.Context, in *HeartbeatMachineRequest, opts ...grpc.CallOption) (*HeartbeatMachineResponse, error)
-	FetchAssignedTasks(ctx context.Context, in *FetchAssignedTasksRequest, opts ...grpc.CallOption) (*FetchAssignedTasksResponse, error)
-	UpdateTaskStatus(ctx context.Context, in *UpdateTaskStatusRequest, opts ...grpc.CallOption) (*UpdateTaskStatusResponse, error)
+	RegisterComputer(ctx context.Context, in *RegisterComputerRequest, opts ...grpc.CallOption) (*RegisterComputerResponse, error)
+	HeartbeatComputer(ctx context.Context, in *HeartbeatComputerRequest, opts ...grpc.CallOption) (*HeartbeatComputerResponse, error)
+	FetchAssignedRuns(ctx context.Context, in *FetchAssignedRunsRequest, opts ...grpc.CallOption) (*FetchAssignedRunsResponse, error)
+	UpdateRunStatus(ctx context.Context, in *UpdateRunStatusRequest, opts ...grpc.CallOption) (*UpdateRunStatusResponse, error)
+	AppendRunStep(ctx context.Context, in *AppendRunStepRequest, opts ...grpc.CallOption) (*AppendRunStepResponse, error)
+	ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsResponse, error)
+	GetRun(ctx context.Context, in *GetRunRequest, opts ...grpc.CallOption) (*GetRunResponse, error)
 	ListWorkspaceTree(ctx context.Context, in *ListWorkspaceTreeRequest, opts ...grpc.CallOption) (*ListWorkspaceTreeResponse, error)
 	ReadWorkspaceFile(ctx context.Context, in *ReadWorkspaceFileRequest, opts ...grpc.CallOption) (*ReadWorkspaceFileResponse, error)
 	ListChannels(ctx context.Context, in *ListChannelsRequest, opts ...grpc.CallOption) (*ListChannelsResponse, error)
@@ -67,7 +76,7 @@ type DaemonControlServiceClient interface {
 	CreateCollaborationTask(ctx context.Context, in *CreateCollaborationTaskRequest, opts ...grpc.CallOption) (*CreateCollaborationTaskResponse, error)
 	ListCollaborationTasks(ctx context.Context, in *ListCollaborationTasksRequest, opts ...grpc.CallOption) (*ListCollaborationTasksResponse, error)
 	ClaimCollaborationTask(ctx context.Context, in *ClaimCollaborationTaskRequest, opts ...grpc.CallOption) (*ClaimCollaborationTaskResponse, error)
-	GetServerInfo(ctx context.Context, in *ServerInfoRequest, opts ...grpc.CallOption) (*ServerInfoResponse, error)
+	GetServerInfo(ctx context.Context, in *GetServerInfoRequest, opts ...grpc.CallOption) (*GetServerInfoResponse, error)
 	GetAgentProfile(ctx context.Context, in *GetAgentProfileRequest, opts ...grpc.CallOption) (*GetAgentProfileResponse, error)
 	SetAgentEnv(ctx context.Context, in *SetAgentEnvRequest, opts ...grpc.CallOption) (*SetAgentEnvResponse, error)
 	ListAgentProfiles(ctx context.Context, in *ListAgentProfilesRequest, opts ...grpc.CallOption) (*ListAgentProfilesResponse, error)
@@ -75,8 +84,11 @@ type DaemonControlServiceClient interface {
 	ScheduleReminder(ctx context.Context, in *ScheduleReminderRequest, opts ...grpc.CallOption) (*ScheduleReminderResponse, error)
 	ListReminders(ctx context.Context, in *ListRemindersRequest, opts ...grpc.CallOption) (*ListRemindersResponse, error)
 	CancelReminder(ctx context.Context, in *CancelReminderRequest, opts ...grpc.CallOption) (*CancelReminderResponse, error)
+	UploadAttachment(ctx context.Context, in *UploadAttachmentRequest, opts ...grpc.CallOption) (*UploadAttachmentResponse, error)
+	GetAttachment(ctx context.Context, in *GetAttachmentRequest, opts ...grpc.CallOption) (*GetAttachmentResponse, error)
 	LogActivity(ctx context.Context, in *LogActivityRequest, opts ...grpc.CallOption) (*LogActivityResponse, error)
 	ListActivity(ctx context.Context, in *ListActivityRequest, opts ...grpc.CallOption) (*ListActivityResponse, error)
+	ListEventsSince(ctx context.Context, in *ListEventsSinceRequest, opts ...grpc.CallOption) (*ListEventsSinceResponse, error)
 }
 
 type daemonControlServiceClient struct {
@@ -87,40 +99,70 @@ func NewDaemonControlServiceClient(cc grpc.ClientConnInterface) DaemonControlSer
 	return &daemonControlServiceClient{cc}
 }
 
-func (c *daemonControlServiceClient) RegisterMachine(ctx context.Context, in *RegisterMachineRequest, opts ...grpc.CallOption) (*RegisterMachineResponse, error) {
+func (c *daemonControlServiceClient) RegisterComputer(ctx context.Context, in *RegisterComputerRequest, opts ...grpc.CallOption) (*RegisterComputerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RegisterMachineResponse)
-	err := c.cc.Invoke(ctx, DaemonControlService_RegisterMachine_FullMethodName, in, out, cOpts...)
+	out := new(RegisterComputerResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_RegisterComputer_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *daemonControlServiceClient) HeartbeatMachine(ctx context.Context, in *HeartbeatMachineRequest, opts ...grpc.CallOption) (*HeartbeatMachineResponse, error) {
+func (c *daemonControlServiceClient) HeartbeatComputer(ctx context.Context, in *HeartbeatComputerRequest, opts ...grpc.CallOption) (*HeartbeatComputerResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(HeartbeatMachineResponse)
-	err := c.cc.Invoke(ctx, DaemonControlService_HeartbeatMachine_FullMethodName, in, out, cOpts...)
+	out := new(HeartbeatComputerResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_HeartbeatComputer_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *daemonControlServiceClient) FetchAssignedTasks(ctx context.Context, in *FetchAssignedTasksRequest, opts ...grpc.CallOption) (*FetchAssignedTasksResponse, error) {
+func (c *daemonControlServiceClient) FetchAssignedRuns(ctx context.Context, in *FetchAssignedRunsRequest, opts ...grpc.CallOption) (*FetchAssignedRunsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(FetchAssignedTasksResponse)
-	err := c.cc.Invoke(ctx, DaemonControlService_FetchAssignedTasks_FullMethodName, in, out, cOpts...)
+	out := new(FetchAssignedRunsResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_FetchAssignedRuns_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *daemonControlServiceClient) UpdateTaskStatus(ctx context.Context, in *UpdateTaskStatusRequest, opts ...grpc.CallOption) (*UpdateTaskStatusResponse, error) {
+func (c *daemonControlServiceClient) UpdateRunStatus(ctx context.Context, in *UpdateRunStatusRequest, opts ...grpc.CallOption) (*UpdateRunStatusResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateTaskStatusResponse)
-	err := c.cc.Invoke(ctx, DaemonControlService_UpdateTaskStatus_FullMethodName, in, out, cOpts...)
+	out := new(UpdateRunStatusResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_UpdateRunStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) AppendRunStep(ctx context.Context, in *AppendRunStepRequest, opts ...grpc.CallOption) (*AppendRunStepResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AppendRunStepResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_AppendRunStep_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListRunsResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListRuns_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) GetRun(ctx context.Context, in *GetRunRequest, opts ...grpc.CallOption) (*GetRunResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRunResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_GetRun_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -247,9 +289,9 @@ func (c *daemonControlServiceClient) ClaimCollaborationTask(ctx context.Context,
 	return out, nil
 }
 
-func (c *daemonControlServiceClient) GetServerInfo(ctx context.Context, in *ServerInfoRequest, opts ...grpc.CallOption) (*ServerInfoResponse, error) {
+func (c *daemonControlServiceClient) GetServerInfo(ctx context.Context, in *GetServerInfoRequest, opts ...grpc.CallOption) (*GetServerInfoResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ServerInfoResponse)
+	out := new(GetServerInfoResponse)
 	err := c.cc.Invoke(ctx, DaemonControlService_GetServerInfo_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -327,6 +369,26 @@ func (c *daemonControlServiceClient) CancelReminder(ctx context.Context, in *Can
 	return out, nil
 }
 
+func (c *daemonControlServiceClient) UploadAttachment(ctx context.Context, in *UploadAttachmentRequest, opts ...grpc.CallOption) (*UploadAttachmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UploadAttachmentResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_UploadAttachment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *daemonControlServiceClient) GetAttachment(ctx context.Context, in *GetAttachmentRequest, opts ...grpc.CallOption) (*GetAttachmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAttachmentResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_GetAttachment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *daemonControlServiceClient) LogActivity(ctx context.Context, in *LogActivityRequest, opts ...grpc.CallOption) (*LogActivityResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(LogActivityResponse)
@@ -347,14 +409,27 @@ func (c *daemonControlServiceClient) ListActivity(ctx context.Context, in *ListA
 	return out, nil
 }
 
+func (c *daemonControlServiceClient) ListEventsSince(ctx context.Context, in *ListEventsSinceRequest, opts ...grpc.CallOption) (*ListEventsSinceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEventsSinceResponse)
+	err := c.cc.Invoke(ctx, DaemonControlService_ListEventsSince_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DaemonControlServiceServer is the server API for DaemonControlService service.
 // All implementations must embed UnimplementedDaemonControlServiceServer
 // for forward compatibility.
 type DaemonControlServiceServer interface {
-	RegisterMachine(context.Context, *RegisterMachineRequest) (*RegisterMachineResponse, error)
-	HeartbeatMachine(context.Context, *HeartbeatMachineRequest) (*HeartbeatMachineResponse, error)
-	FetchAssignedTasks(context.Context, *FetchAssignedTasksRequest) (*FetchAssignedTasksResponse, error)
-	UpdateTaskStatus(context.Context, *UpdateTaskStatusRequest) (*UpdateTaskStatusResponse, error)
+	RegisterComputer(context.Context, *RegisterComputerRequest) (*RegisterComputerResponse, error)
+	HeartbeatComputer(context.Context, *HeartbeatComputerRequest) (*HeartbeatComputerResponse, error)
+	FetchAssignedRuns(context.Context, *FetchAssignedRunsRequest) (*FetchAssignedRunsResponse, error)
+	UpdateRunStatus(context.Context, *UpdateRunStatusRequest) (*UpdateRunStatusResponse, error)
+	AppendRunStep(context.Context, *AppendRunStepRequest) (*AppendRunStepResponse, error)
+	ListRuns(context.Context, *ListRunsRequest) (*ListRunsResponse, error)
+	GetRun(context.Context, *GetRunRequest) (*GetRunResponse, error)
 	ListWorkspaceTree(context.Context, *ListWorkspaceTreeRequest) (*ListWorkspaceTreeResponse, error)
 	ReadWorkspaceFile(context.Context, *ReadWorkspaceFileRequest) (*ReadWorkspaceFileResponse, error)
 	ListChannels(context.Context, *ListChannelsRequest) (*ListChannelsResponse, error)
@@ -367,7 +442,7 @@ type DaemonControlServiceServer interface {
 	CreateCollaborationTask(context.Context, *CreateCollaborationTaskRequest) (*CreateCollaborationTaskResponse, error)
 	ListCollaborationTasks(context.Context, *ListCollaborationTasksRequest) (*ListCollaborationTasksResponse, error)
 	ClaimCollaborationTask(context.Context, *ClaimCollaborationTaskRequest) (*ClaimCollaborationTaskResponse, error)
-	GetServerInfo(context.Context, *ServerInfoRequest) (*ServerInfoResponse, error)
+	GetServerInfo(context.Context, *GetServerInfoRequest) (*GetServerInfoResponse, error)
 	GetAgentProfile(context.Context, *GetAgentProfileRequest) (*GetAgentProfileResponse, error)
 	SetAgentEnv(context.Context, *SetAgentEnvRequest) (*SetAgentEnvResponse, error)
 	ListAgentProfiles(context.Context, *ListAgentProfilesRequest) (*ListAgentProfilesResponse, error)
@@ -375,8 +450,11 @@ type DaemonControlServiceServer interface {
 	ScheduleReminder(context.Context, *ScheduleReminderRequest) (*ScheduleReminderResponse, error)
 	ListReminders(context.Context, *ListRemindersRequest) (*ListRemindersResponse, error)
 	CancelReminder(context.Context, *CancelReminderRequest) (*CancelReminderResponse, error)
+	UploadAttachment(context.Context, *UploadAttachmentRequest) (*UploadAttachmentResponse, error)
+	GetAttachment(context.Context, *GetAttachmentRequest) (*GetAttachmentResponse, error)
 	LogActivity(context.Context, *LogActivityRequest) (*LogActivityResponse, error)
 	ListActivity(context.Context, *ListActivityRequest) (*ListActivityResponse, error)
+	ListEventsSince(context.Context, *ListEventsSinceRequest) (*ListEventsSinceResponse, error)
 	mustEmbedUnimplementedDaemonControlServiceServer()
 }
 
@@ -387,17 +465,26 @@ type DaemonControlServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDaemonControlServiceServer struct{}
 
-func (UnimplementedDaemonControlServiceServer) RegisterMachine(context.Context, *RegisterMachineRequest) (*RegisterMachineResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RegisterMachine not implemented")
+func (UnimplementedDaemonControlServiceServer) RegisterComputer(context.Context, *RegisterComputerRequest) (*RegisterComputerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterComputer not implemented")
 }
-func (UnimplementedDaemonControlServiceServer) HeartbeatMachine(context.Context, *HeartbeatMachineRequest) (*HeartbeatMachineResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method HeartbeatMachine not implemented")
+func (UnimplementedDaemonControlServiceServer) HeartbeatComputer(context.Context, *HeartbeatComputerRequest) (*HeartbeatComputerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HeartbeatComputer not implemented")
 }
-func (UnimplementedDaemonControlServiceServer) FetchAssignedTasks(context.Context, *FetchAssignedTasksRequest) (*FetchAssignedTasksResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method FetchAssignedTasks not implemented")
+func (UnimplementedDaemonControlServiceServer) FetchAssignedRuns(context.Context, *FetchAssignedRunsRequest) (*FetchAssignedRunsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FetchAssignedRuns not implemented")
 }
-func (UnimplementedDaemonControlServiceServer) UpdateTaskStatus(context.Context, *UpdateTaskStatusRequest) (*UpdateTaskStatusResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateTaskStatus not implemented")
+func (UnimplementedDaemonControlServiceServer) UpdateRunStatus(context.Context, *UpdateRunStatusRequest) (*UpdateRunStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateRunStatus not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) AppendRunStep(context.Context, *AppendRunStepRequest) (*AppendRunStepResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AppendRunStep not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListRuns(context.Context, *ListRunsRequest) (*ListRunsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRuns not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) GetRun(context.Context, *GetRunRequest) (*GetRunResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRun not implemented")
 }
 func (UnimplementedDaemonControlServiceServer) ListWorkspaceTree(context.Context, *ListWorkspaceTreeRequest) (*ListWorkspaceTreeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListWorkspaceTree not implemented")
@@ -435,7 +522,7 @@ func (UnimplementedDaemonControlServiceServer) ListCollaborationTasks(context.Co
 func (UnimplementedDaemonControlServiceServer) ClaimCollaborationTask(context.Context, *ClaimCollaborationTaskRequest) (*ClaimCollaborationTaskResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ClaimCollaborationTask not implemented")
 }
-func (UnimplementedDaemonControlServiceServer) GetServerInfo(context.Context, *ServerInfoRequest) (*ServerInfoResponse, error) {
+func (UnimplementedDaemonControlServiceServer) GetServerInfo(context.Context, *GetServerInfoRequest) (*GetServerInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetServerInfo not implemented")
 }
 func (UnimplementedDaemonControlServiceServer) GetAgentProfile(context.Context, *GetAgentProfileRequest) (*GetAgentProfileResponse, error) {
@@ -459,11 +546,20 @@ func (UnimplementedDaemonControlServiceServer) ListReminders(context.Context, *L
 func (UnimplementedDaemonControlServiceServer) CancelReminder(context.Context, *CancelReminderRequest) (*CancelReminderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CancelReminder not implemented")
 }
+func (UnimplementedDaemonControlServiceServer) UploadAttachment(context.Context, *UploadAttachmentRequest) (*UploadAttachmentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UploadAttachment not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) GetAttachment(context.Context, *GetAttachmentRequest) (*GetAttachmentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAttachment not implemented")
+}
 func (UnimplementedDaemonControlServiceServer) LogActivity(context.Context, *LogActivityRequest) (*LogActivityResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LogActivity not implemented")
 }
 func (UnimplementedDaemonControlServiceServer) ListActivity(context.Context, *ListActivityRequest) (*ListActivityResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListActivity not implemented")
+}
+func (UnimplementedDaemonControlServiceServer) ListEventsSince(context.Context, *ListEventsSinceRequest) (*ListEventsSinceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListEventsSince not implemented")
 }
 func (UnimplementedDaemonControlServiceServer) mustEmbedUnimplementedDaemonControlServiceServer() {}
 func (UnimplementedDaemonControlServiceServer) testEmbeddedByValue()                              {}
@@ -486,74 +582,128 @@ func RegisterDaemonControlServiceServer(s grpc.ServiceRegistrar, srv DaemonContr
 	s.RegisterService(&DaemonControlService_ServiceDesc, srv)
 }
 
-func _DaemonControlService_RegisterMachine_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RegisterMachineRequest)
+func _DaemonControlService_RegisterComputer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterComputerRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DaemonControlServiceServer).RegisterMachine(ctx, in)
+		return srv.(DaemonControlServiceServer).RegisterComputer(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DaemonControlService_RegisterMachine_FullMethodName,
+		FullMethod: DaemonControlService_RegisterComputer_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DaemonControlServiceServer).RegisterMachine(ctx, req.(*RegisterMachineRequest))
+		return srv.(DaemonControlServiceServer).RegisterComputer(ctx, req.(*RegisterComputerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DaemonControlService_HeartbeatMachine_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HeartbeatMachineRequest)
+func _DaemonControlService_HeartbeatComputer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HeartbeatComputerRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DaemonControlServiceServer).HeartbeatMachine(ctx, in)
+		return srv.(DaemonControlServiceServer).HeartbeatComputer(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DaemonControlService_HeartbeatMachine_FullMethodName,
+		FullMethod: DaemonControlService_HeartbeatComputer_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DaemonControlServiceServer).HeartbeatMachine(ctx, req.(*HeartbeatMachineRequest))
+		return srv.(DaemonControlServiceServer).HeartbeatComputer(ctx, req.(*HeartbeatComputerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DaemonControlService_FetchAssignedTasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FetchAssignedTasksRequest)
+func _DaemonControlService_FetchAssignedRuns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchAssignedRunsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DaemonControlServiceServer).FetchAssignedTasks(ctx, in)
+		return srv.(DaemonControlServiceServer).FetchAssignedRuns(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DaemonControlService_FetchAssignedTasks_FullMethodName,
+		FullMethod: DaemonControlService_FetchAssignedRuns_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DaemonControlServiceServer).FetchAssignedTasks(ctx, req.(*FetchAssignedTasksRequest))
+		return srv.(DaemonControlServiceServer).FetchAssignedRuns(ctx, req.(*FetchAssignedRunsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DaemonControlService_UpdateTaskStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateTaskStatusRequest)
+func _DaemonControlService_UpdateRunStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRunStatusRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DaemonControlServiceServer).UpdateTaskStatus(ctx, in)
+		return srv.(DaemonControlServiceServer).UpdateRunStatus(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DaemonControlService_UpdateTaskStatus_FullMethodName,
+		FullMethod: DaemonControlService_UpdateRunStatus_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DaemonControlServiceServer).UpdateTaskStatus(ctx, req.(*UpdateTaskStatusRequest))
+		return srv.(DaemonControlServiceServer).UpdateRunStatus(ctx, req.(*UpdateRunStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_AppendRunStep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendRunStepRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).AppendRunStep(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_AppendRunStep_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).AppendRunStep(ctx, req.(*AppendRunStepRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_ListRuns_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRunsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListRuns(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListRuns_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListRuns(ctx, req.(*ListRunsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_GetRun_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRunRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).GetRun(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_GetRun_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).GetRun(ctx, req.(*GetRunRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -775,7 +925,7 @@ func _DaemonControlService_ClaimCollaborationTask_Handler(srv interface{}, ctx c
 }
 
 func _DaemonControlService_GetServerInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ServerInfoRequest)
+	in := new(GetServerInfoRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -787,7 +937,7 @@ func _DaemonControlService_GetServerInfo_Handler(srv interface{}, ctx context.Co
 		FullMethod: DaemonControlService_GetServerInfo_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DaemonControlServiceServer).GetServerInfo(ctx, req.(*ServerInfoRequest))
+		return srv.(DaemonControlServiceServer).GetServerInfo(ctx, req.(*GetServerInfoRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -918,6 +1068,42 @@ func _DaemonControlService_CancelReminder_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonControlService_UploadAttachment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadAttachmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).UploadAttachment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_UploadAttachment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).UploadAttachment(ctx, req.(*UploadAttachmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DaemonControlService_GetAttachment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAttachmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).GetAttachment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_GetAttachment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).GetAttachment(ctx, req.(*GetAttachmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DaemonControlService_LogActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(LogActivityRequest)
 	if err := dec(in); err != nil {
@@ -954,6 +1140,24 @@ func _DaemonControlService_ListActivity_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonControlService_ListEventsSince_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListEventsSinceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DaemonControlServiceServer).ListEventsSince(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DaemonControlService_ListEventsSince_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DaemonControlServiceServer).ListEventsSince(ctx, req.(*ListEventsSinceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DaemonControlService_ServiceDesc is the grpc.ServiceDesc for DaemonControlService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -962,20 +1166,32 @@ var DaemonControlService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*DaemonControlServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "RegisterMachine",
-			Handler:    _DaemonControlService_RegisterMachine_Handler,
+			MethodName: "RegisterComputer",
+			Handler:    _DaemonControlService_RegisterComputer_Handler,
 		},
 		{
-			MethodName: "HeartbeatMachine",
-			Handler:    _DaemonControlService_HeartbeatMachine_Handler,
+			MethodName: "HeartbeatComputer",
+			Handler:    _DaemonControlService_HeartbeatComputer_Handler,
 		},
 		{
-			MethodName: "FetchAssignedTasks",
-			Handler:    _DaemonControlService_FetchAssignedTasks_Handler,
+			MethodName: "FetchAssignedRuns",
+			Handler:    _DaemonControlService_FetchAssignedRuns_Handler,
 		},
 		{
-			MethodName: "UpdateTaskStatus",
-			Handler:    _DaemonControlService_UpdateTaskStatus_Handler,
+			MethodName: "UpdateRunStatus",
+			Handler:    _DaemonControlService_UpdateRunStatus_Handler,
+		},
+		{
+			MethodName: "AppendRunStep",
+			Handler:    _DaemonControlService_AppendRunStep_Handler,
+		},
+		{
+			MethodName: "ListRuns",
+			Handler:    _DaemonControlService_ListRuns_Handler,
+		},
+		{
+			MethodName: "GetRun",
+			Handler:    _DaemonControlService_GetRun_Handler,
 		},
 		{
 			MethodName: "ListWorkspaceTree",
@@ -1058,12 +1274,24 @@ var DaemonControlService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DaemonControlService_CancelReminder_Handler,
 		},
 		{
+			MethodName: "UploadAttachment",
+			Handler:    _DaemonControlService_UploadAttachment_Handler,
+		},
+		{
+			MethodName: "GetAttachment",
+			Handler:    _DaemonControlService_GetAttachment_Handler,
+		},
+		{
 			MethodName: "LogActivity",
 			Handler:    _DaemonControlService_LogActivity_Handler,
 		},
 		{
 			MethodName: "ListActivity",
 			Handler:    _DaemonControlService_ListActivity_Handler,
+		},
+		{
+			MethodName: "ListEventsSince",
+			Handler:    _DaemonControlService_ListEventsSince_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

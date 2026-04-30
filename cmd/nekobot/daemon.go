@@ -17,7 +17,7 @@ import (
 )
 
 var daemonAddr string
-var daemonMachineName string
+var daemonDisplayName string
 var daemonServerURL string
 var daemonToken string
 
@@ -34,7 +34,7 @@ var daemonRunCmd = &cobra.Command{
 
 func init() {
 	daemonRunCmd.Flags().StringVar(&daemonAddr, "addr", daemonhost.DefaultAddr, "daemon listen address")
-	daemonRunCmd.Flags().StringVar(&daemonMachineName, "machine-name", "", "machine display name")
+	daemonRunCmd.Flags().StringVar(&daemonDisplayName, "machine-name", "", "machine display name")
 	daemonRunCmd.Flags().StringVar(&daemonServerURL, "server-url", "", "optional server URL for machine registration/heartbeat")
 	daemonRunCmd.Flags().StringVar(&daemonToken, "token", "", "daemon bearer token for server registration/heartbeat")
 	daemonCmd.AddCommand(daemonRunCmd)
@@ -70,14 +70,14 @@ func runDaemon(cmd *cobra.Command, args []string) {
 		client := daemonhost.NewAuthedClient(daemonServerURL, daemonToken)
 		go func() {
 			if err := daemonhost.RegisterAndPoll(ctx, client, daemonhost.PollOptions{
-				MachineName: daemonMachineName,
+				DisplayName: daemonDisplayName,
 				DaemonURL:   daemonURL,
 			}); err != nil && ctx.Err() == nil {
 				log.Warn("Daemon remote polling stopped", zap.Error(err))
 			}
 		}()
 	}
-	server := daemonhost.NewServer(daemonAddr, daemonMachineName, store)
+	server := daemonhost.NewServer(daemonAddr, daemonDisplayName, store)
 	log.Info("Starting daemon host", zap.String("addr", daemonAddr))
 	if err := server.Serve(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "serve daemon host: %v\n", err)

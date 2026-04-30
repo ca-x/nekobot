@@ -208,8 +208,8 @@ func (s *Server) setupGRPC() {
 			}
 			return s.agent.TaskService()
 		}(),
-		func() (*daemonv1.RuntimeInventory, error) { return daemonhost.BuildInventory("") },
-		func(ctx context.Context, task tasks.Task, req *daemonv1.UpdateTaskStatusRequest) error {
+		func() (*daemonv1.ComputerInventory, error) { return daemonhost.BuildInventory("") },
+		func(ctx context.Context, task tasks.Task, req *daemonv1.UpdateRunStatusRequest) error {
 			return s.appendDaemonTaskSessionUpdate(ctx, task, req)
 		},
 		s,
@@ -350,7 +350,7 @@ func (s *Server) Stop(ctx context.Context) error {
 
 // --- WebSocket Handler ---
 
-func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.Task, req *daemonv1.UpdateTaskStatusRequest) error {
+func (s *Server) appendDaemonTaskSessionUpdate(ctx context.Context, task tasks.Task, req *daemonv1.UpdateRunStatusRequest) error {
 	if s == nil || s.sessionMgr == nil || req == nil {
 		return nil
 	}

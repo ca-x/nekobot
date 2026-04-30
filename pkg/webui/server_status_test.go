@@ -1157,28 +1157,28 @@ func TestHandleGetDaemonRegistryReturnsMachineStatuses(t *testing.T) {
 	defer func() { _ = store.Close() }()
 
 	registry := daemonhost.NewRegistry(store)
-	_, err = registry.Register(t.Context(), &daemonv1.RegisterMachineRequest{
-		Info: &daemonv1.DaemonInfo{
+	_, err = registry.Register(t.Context(), &daemonv1.RegisterComputerRequest{
+		Info: &daemonv1.ComputerInfo{
 			DaemonId:    "daemon-a",
-			MachineId:   "machine-a",
-			MachineName: "machine-a",
+			ComputerId:  "machine-a",
+			DisplayName: "machine-a",
 			Hostname:    "host-a",
 			Os:          "linux",
 			Arch:        "arm64",
 			Version:     "v1alpha1",
 			Status:      "online",
 		},
-		Inventory: &daemonv1.RuntimeInventory{
+		Inventory: &daemonv1.ComputerInventory{
 			Workspaces: []*daemonv1.Workspace{{
 				WorkspaceId: "machine-a:default",
-				MachineId:   "machine-a",
+				ComputerId:  "machine-a",
 				Path:        "/tmp/workspace",
 				DisplayName: "default",
 				IsDefault:   true,
 			}},
 			Runtimes: []*daemonv1.Runtime{{
 				RuntimeId:   "machine-a:default:codex",
-				MachineId:   "machine-a",
+				ComputerId:  "machine-a",
 				WorkspaceId: "machine-a:default",
 				Kind:        "codex",
 				Installed:   true,
@@ -1207,8 +1207,8 @@ func TestHandleGetDaemonRegistryReturnsMachineStatuses(t *testing.T) {
 			RuntimeCount          int `json:"runtime_count"`
 			InstalledRuntimeCount int `json:"installed_runtime_count"`
 			Info                  struct {
-				MachineId string `json:"machine_id"`
-				Status    string `json:"status"`
+				ComputerId string `json:"computer_id"`
+				Status     string `json:"status"`
 			} `json:"info"`
 		} `json:"machines"`
 	}
@@ -1218,7 +1218,7 @@ func TestHandleGetDaemonRegistryReturnsMachineStatuses(t *testing.T) {
 	if len(payload.Machines) != 1 {
 		t.Fatalf("expected 1 machine, got %+v", payload.Machines)
 	}
-	if payload.Machines[0].Info.MachineId != "machine-a" || payload.Machines[0].Info.Status != "online" {
+	if payload.Machines[0].Info.ComputerId != "machine-a" || payload.Machines[0].Info.Status != "online" {
 		t.Fatalf("unexpected machine payload: %+v", payload.Machines[0])
 	}
 	if payload.Machines[0].WorkspaceCount != 1 || payload.Machines[0].RuntimeCount != 1 || payload.Machines[0].InstalledRuntimeCount != 1 {
@@ -1242,8 +1242,8 @@ func TestHandleGetDaemonRegistryDerivesOfflineStatus(t *testing.T) {
 		"machines": map[string]any{
 			"machine-a": map[string]any{
 				"daemon_id":      "daemon-a",
-				"machine_id":     "machine-a",
-				"machine_name":   "machine-a",
+				"computer_id":    "machine-a",
+				"display_name":   "machine-a",
 				"hostname":       "host-a",
 				"os":             "linux",
 				"arch":           "arm64",
@@ -1274,8 +1274,8 @@ func TestHandleGetDaemonRegistryDerivesOfflineStatus(t *testing.T) {
 	var payload struct {
 		Machines []struct {
 			Info struct {
-				MachineId string `json:"machine_id"`
-				Status    string `json:"status"`
+				ComputerId string `json:"computer_id"`
+				Status     string `json:"status"`
 			} `json:"info"`
 		} `json:"machines"`
 	}
@@ -1298,7 +1298,7 @@ func TestHandleRegisterDaemonRequiresToken(t *testing.T) {
 	defer func() { _ = store.Close() }()
 	s := &Server{config: cfg, kvStore: store}
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/daemon/register", strings.NewReader(`{"info":{"machine_id":"m1"}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/daemon/register", strings.NewReader(`{"info":{"computer_id":"m1"}}`))
 	rec := httptest.NewRecorder()
 	ctx := e.NewContext(req, rec)
 	if err := s.handleRegisterDaemon(ctx); err != nil {
@@ -1309,7 +1309,7 @@ func TestHandleRegisterDaemonRequiresToken(t *testing.T) {
 	}
 }
 
-func TestHandleFetchDaemonTasksAndUpdateStatus(t *testing.T) {
+func TestHandleFetchDaemonRunsAndUpdateStatus(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()
 	cfg.Sessions.Sources.WebUI = true
@@ -1331,7 +1331,7 @@ func TestHandleFetchDaemonTasksAndUpdateStatus(t *testing.T) {
 		SessionID: "webui-chat:alice",
 		RuntimeID: "runtime-a",
 		Metadata: map[string]any{
-			"machine_id": "machine-a",
+			"computer_id": "machine-a",
 		},
 	})
 	if err != nil {
@@ -1341,35 +1341,35 @@ func TestHandleFetchDaemonTasksAndUpdateStatus(t *testing.T) {
 	s := &Server{config: cfg, kvStore: store, agent: ag, sessionMgr: sessionMgr}
 	e := echo.New()
 
-	fetchReq := httptest.NewRequest(http.MethodPost, "/api/daemon/tasks/fetch", strings.NewReader(`{"machine_id":"machine-a","runtime_ids":["runtime-a"],"limit":10}`))
+	fetchReq := httptest.NewRequest(http.MethodPost, "/api/daemon/runs/fetch", strings.NewReader(`{"computer_id":"machine-a","agent_ids":["runtime-a"],"limit":10}`))
 	fetchReq.Header.Set("Authorization", "Bearer "+token)
 	fetchRec := httptest.NewRecorder()
 	fetchCtx := e.NewContext(fetchReq, fetchRec)
-	if err := s.handleFetchDaemonTasks(fetchCtx); err != nil {
-		t.Fatalf("handleFetchDaemonTasks failed: %v", err)
+	if err := s.handleFetchDaemonRuns(fetchCtx); err != nil {
+		t.Fatalf("handleFetchDaemonRuns failed: %v", err)
 	}
 	if fetchRec.Code != http.StatusOK {
 		t.Fatalf("expected fetch status %d, got %d: %s", http.StatusOK, fetchRec.Code, fetchRec.Body.String())
 	}
 	var fetchPayload struct {
-		Tasks []struct {
-			TaskId string `json:"task_id"`
-			State  string `json:"state"`
-		} `json:"tasks"`
+		Runs []struct {
+			RunId string `json:"run_id"`
+			State string `json:"state"`
+		} `json:"runs"`
 	}
 	if err := json.Unmarshal(fetchRec.Body.Bytes(), &fetchPayload); err != nil {
 		t.Fatalf("unmarshal fetch payload failed: %v", err)
 	}
-	if len(fetchPayload.Tasks) != 1 || fetchPayload.Tasks[0].TaskId != "task-1" {
-		t.Fatalf("unexpected fetch payload: %+v", fetchPayload.Tasks)
+	if len(fetchPayload.Runs) != 1 || fetchPayload.Runs[0].RunId != "task-1" {
+		t.Fatalf("unexpected fetch payload: %+v", fetchPayload.Runs)
 	}
 
-	updateReq := httptest.NewRequest(http.MethodPost, "/api/daemon/tasks/update", strings.NewReader(`{"task_id":"task-1","runtime_id":"runtime-a","state":"claimed"}`))
+	updateReq := httptest.NewRequest(http.MethodPost, "/api/daemon/runs/update", strings.NewReader(`{"run_id":"task-1","agent_id":"runtime-a","state":"claimed"}`))
 	updateReq.Header.Set("Authorization", "Bearer "+token)
 	updateRec := httptest.NewRecorder()
 	updateCtx := e.NewContext(updateReq, updateRec)
-	if err := s.handleUpdateDaemonTaskStatus(updateCtx); err != nil {
-		t.Fatalf("handleUpdateDaemonTaskStatus failed: %v", err)
+	if err := s.handleUpdateDaemonRunStatus(updateCtx); err != nil {
+		t.Fatalf("handleUpdateDaemonRunStatus failed: %v", err)
 	}
 	if updateRec.Code != http.StatusOK {
 		t.Fatalf("expected update status %d, got %d: %s", http.StatusOK, updateRec.Code, updateRec.Body.String())
@@ -1379,23 +1379,23 @@ func TestHandleFetchDaemonTasksAndUpdateStatus(t *testing.T) {
 		t.Fatalf("unexpected task state after daemon update: %+v", items)
 	}
 
-	completeReq := httptest.NewRequest(http.MethodPost, "/api/daemon/tasks/update", strings.NewReader(`{"task_id":"task-1","runtime_id":"runtime-a","state":"running"}`))
+	completeReq := httptest.NewRequest(http.MethodPost, "/api/daemon/runs/update", strings.NewReader(`{"run_id":"task-1","agent_id":"runtime-a","state":"running"}`))
 	completeReq.Header.Set("Authorization", "Bearer "+token)
 	completeRec := httptest.NewRecorder()
 	completeCtx := e.NewContext(completeReq, completeRec)
-	if err := s.handleUpdateDaemonTaskStatus(completeCtx); err != nil {
-		t.Fatalf("handleUpdateDaemonTaskStatus running failed: %v", err)
+	if err := s.handleUpdateDaemonRunStatus(completeCtx); err != nil {
+		t.Fatalf("handleUpdateDaemonRunStatus running failed: %v", err)
 	}
 	if completeRec.Code != http.StatusOK {
 		t.Fatalf("expected running status %d, got %d: %s", http.StatusOK, completeRec.Code, completeRec.Body.String())
 	}
 
-	resultReq := httptest.NewRequest(http.MethodPost, "/api/daemon/tasks/update", strings.NewReader(`{"task_id":"task-1","runtime_id":"runtime-a","state":"completed","result_message":"remote execution done"}`))
+	resultReq := httptest.NewRequest(http.MethodPost, "/api/daemon/runs/update", strings.NewReader(`{"run_id":"task-1","agent_id":"runtime-a","state":"completed","result_message":"remote execution done"}`))
 	resultReq.Header.Set("Authorization", "Bearer "+token)
 	resultRec := httptest.NewRecorder()
 	resultCtx := e.NewContext(resultReq, resultRec)
-	if err := s.handleUpdateDaemonTaskStatus(resultCtx); err != nil {
-		t.Fatalf("handleUpdateDaemonTaskStatus completed failed: %v", err)
+	if err := s.handleUpdateDaemonRunStatus(resultCtx); err != nil {
+		t.Fatalf("handleUpdateDaemonRunStatus completed failed: %v", err)
 	}
 	if resultRec.Code != http.StatusOK {
 		t.Fatalf("expected completed status %d, got %d: %s", http.StatusOK, resultRec.Code, resultRec.Body.String())
@@ -1448,7 +1448,7 @@ func TestDaemonHTTPFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 		SessionID: "webui-chat:daemon-e2e",
 		RuntimeID: "runtime-a",
 		Metadata: map[string]any{
-			"machine_id": "machine-a",
+			"computer_id": "machine-a",
 		},
 	})
 	if err != nil {
@@ -1459,30 +1459,30 @@ func TestDaemonHTTPFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 	e := echo.New()
 	e.POST("/api/daemon/register", s.handleRegisterDaemon)
 	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
-	e.POST("/api/daemon/tasks/fetch", s.handleFetchDaemonTasks)
-	e.POST("/api/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+	e.POST("/api/daemon/runs/fetch", s.handleFetchDaemonRuns)
+	e.POST("/api/daemon/runs/update", s.handleUpdateDaemonRunStatus)
 
 	httpServer := httptest.NewServer(e)
 	defer httpServer.Close()
 
 	client := daemonhost.NewAuthedClient(httpServer.URL, s.getDaemonToken())
-	info := &daemonv1.DaemonInfo{
+	info := &daemonv1.ComputerInfo{
 		DaemonId:    "daemon-a",
-		MachineId:   "machine-a",
-		MachineName: "machine-a",
+		ComputerId:  "machine-a",
+		DisplayName: "machine-a",
 		Status:      "online",
 	}
-	inventory := &daemonv1.RuntimeInventory{
+	inventory := &daemonv1.ComputerInventory{
 		Workspaces: []*daemonv1.Workspace{{
 			WorkspaceId: "workspace-a",
-			MachineId:   "machine-a",
+			ComputerId:  "machine-a",
 			Path:        cfg.WorkspacePath(),
 			DisplayName: "workspace-a",
 			IsDefault:   true,
 		}},
 		Runtimes: []*daemonv1.Runtime{{
 			RuntimeId:   "runtime-a",
-			MachineId:   "machine-a",
+			ComputerId:  "machine-a",
 			WorkspaceId: "workspace-a",
 			Kind:        "codex",
 			Installed:   true,
@@ -1490,34 +1490,34 @@ func TestDaemonHTTPFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 		}},
 	}
 
-	if _, err := client.RegisterRemote(&daemonv1.RegisterMachineRequest{Info: info, Inventory: inventory}); err != nil {
+	if _, err := client.RegisterRemote(&daemonv1.RegisterComputerRequest{Info: info, Inventory: inventory}); err != nil {
 		t.Fatalf("register daemon failed: %v", err)
 	}
-	if _, err := client.HeartbeatRemote(&daemonv1.HeartbeatMachineRequest{Info: info, Inventory: inventory}); err != nil {
+	if _, err := client.HeartbeatRemote(&daemonv1.HeartbeatComputerRequest{Info: info, Inventory: inventory}); err != nil {
 		t.Fatalf("daemon heartbeat failed: %v", err)
 	}
-	fetchResp, err := client.FetchAssignedTasksRemote(&daemonv1.FetchAssignedTasksRequest{
-		MachineId:  "machine-a",
-		RuntimeIds: []string{"runtime-a"},
+	fetchResp, err := client.FetchAssignedRunsRemote(&daemonv1.FetchAssignedRunsRequest{
+		ComputerId: "machine-a",
+		AgentIds:   []string{"runtime-a"},
 		Limit:      10,
 	})
 	if err != nil {
 		t.Fatalf("fetch assigned tasks failed: %v", err)
 	}
-	if len(fetchResp.Tasks) != 1 || fetchResp.Tasks[0].TaskId != "task-e2e" {
-		t.Fatalf("unexpected fetched tasks: %+v", fetchResp.Tasks)
+	if len(fetchResp.Runs) != 1 || fetchResp.Runs[0].TaskId != "task-e2e" {
+		t.Fatalf("unexpected fetched tasks: %+v", fetchResp.Runs)
 	}
 	for _, state := range []string{string(tasks.StateClaimed), string(tasks.StateRunning), string(tasks.StateCompleted)} {
-		req := &daemonv1.UpdateTaskStatusRequest{
-			TaskId:    "task-e2e",
-			RuntimeId: "runtime-a",
-			State:     state,
-			Summary:   "daemon e2e work",
+		req := &daemonv1.UpdateRunStatusRequest{
+			RunId:   "task-e2e",
+			AgentId: "runtime-a",
+			State:   state,
+			Summary: "daemon e2e work",
 		}
 		if state == string(tasks.StateCompleted) {
 			req.ResultMessage = "daemon-ok"
 		}
-		if _, err := client.UpdateTaskStatusRemote(req); err != nil {
+		if _, err := client.UpdateRunStatusRemote(req); err != nil {
 			t.Fatalf("update task status %s failed: %v", state, err)
 		}
 	}
@@ -1571,7 +1571,7 @@ func TestLiveDaemonProcessCompletesTaskAndWritesSessionResult(t *testing.T) {
 		SessionID: "webui-chat:daemon-live",
 		RuntimeID: "machine-live:default:claude",
 		Metadata: map[string]any{
-			"machine_id": "machine-live",
+			"computer_id": "machine-live",
 		},
 	})
 	if err != nil {
@@ -1582,8 +1582,8 @@ func TestLiveDaemonProcessCompletesTaskAndWritesSessionResult(t *testing.T) {
 	e := echo.New()
 	e.POST("/api/daemon/register", s.handleRegisterDaemon)
 	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
-	e.POST("/api/daemon/tasks/fetch", s.handleFetchDaemonTasks)
-	e.POST("/api/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+	e.POST("/api/daemon/runs/fetch", s.handleFetchDaemonRuns)
+	e.POST("/api/daemon/runs/update", s.handleUpdateDaemonRunStatus)
 	httpServer := httptest.NewServer(e)
 	defer httpServer.Close()
 
@@ -1704,7 +1704,7 @@ func TestLiveDaemonProcessCompletesTaskAndWritesSessionResultWithOpenCode(t *tes
 		SessionID: "webui-chat:daemon-live-opencode",
 		RuntimeID: "machine-live:default:opencode",
 		Metadata: map[string]any{
-			"machine_id": "machine-live",
+			"computer_id": "machine-live",
 		},
 	})
 	if err != nil {
@@ -1715,8 +1715,8 @@ func TestLiveDaemonProcessCompletesTaskAndWritesSessionResultWithOpenCode(t *tes
 	e := echo.New()
 	e.POST("/api/daemon/register", s.handleRegisterDaemon)
 	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
-	e.POST("/api/daemon/tasks/fetch", s.handleFetchDaemonTasks)
-	e.POST("/api/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+	e.POST("/api/daemon/runs/fetch", s.handleFetchDaemonRuns)
+	e.POST("/api/daemon/runs/update", s.handleUpdateDaemonRunStatus)
 	httpServer := httptest.NewServer(e)
 	defer httpServer.Close()
 
@@ -1837,7 +1837,7 @@ func TestLiveDaemonProcessCompletesTaskAndWritesSessionResultWithCodex(t *testin
 		SessionID: "webui-chat:daemon-live-codex",
 		RuntimeID: "machine-live:default:codex",
 		Metadata: map[string]any{
-			"machine_id": "machine-live",
+			"computer_id": "machine-live",
 		},
 	})
 	if err != nil {
@@ -1848,8 +1848,8 @@ func TestLiveDaemonProcessCompletesTaskAndWritesSessionResultWithCodex(t *testin
 	e := echo.New()
 	e.POST("/api/daemon/register", s.handleRegisterDaemon)
 	e.POST("/api/daemon/heartbeat", s.handleHeartbeatDaemon)
-	e.POST("/api/daemon/tasks/fetch", s.handleFetchDaemonTasks)
-	e.POST("/api/daemon/tasks/update", s.handleUpdateDaemonTaskStatus)
+	e.POST("/api/daemon/runs/fetch", s.handleFetchDaemonRuns)
+	e.POST("/api/daemon/runs/update", s.handleUpdateDaemonRunStatus)
 	httpServer := httptest.NewServer(e)
 	defer httpServer.Close()
 

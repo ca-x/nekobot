@@ -21,7 +21,7 @@ const (
 
 var errWorkspaceNotFound = errors.New("workspace not found")
 
-func findWorkspaceByID(inventory *daemonv1.RuntimeInventory, workspaceID string) (*daemonv1.Workspace, error) {
+func findWorkspaceByID(inventory *daemonv1.ComputerInventory, workspaceID string) (*daemonv1.Workspace, error) {
 	if inventory == nil {
 		return nil, errWorkspaceNotFound
 	}
@@ -114,7 +114,7 @@ func normalizeWorkspaceReadLimit(limit uint32) int {
 	return int(limit)
 }
 
-func ListWorkspaceTree(inventory *daemonv1.RuntimeInventory, req *daemonv1.ListWorkspaceTreeRequest) (*daemonv1.ListWorkspaceTreeResponse, error) {
+func ListWorkspaceTree(inventory *daemonv1.ComputerInventory, req *daemonv1.ListWorkspaceTreeRequest) (*daemonv1.ListWorkspaceTreeResponse, error) {
 	if req == nil {
 		return nil, fmt.Errorf("request is required")
 	}
@@ -162,7 +162,7 @@ func ListWorkspaceTree(inventory *daemonv1.RuntimeInventory, req *daemonv1.ListW
 	return &daemonv1.ListWorkspaceTreeResponse{WorkspaceId: workspace.WorkspaceId, Path: cleanRel, Entries: items}, nil
 }
 
-func ReadWorkspaceFile(inventory *daemonv1.RuntimeInventory, req *daemonv1.ReadWorkspaceFileRequest) (*daemonv1.ReadWorkspaceFileResponse, error) {
+func ReadWorkspaceFile(inventory *daemonv1.ComputerInventory, req *daemonv1.ReadWorkspaceFileRequest) (*daemonv1.ReadWorkspaceFileResponse, error) {
 	if req == nil {
 		return nil, fmt.Errorf("request is required")
 	}

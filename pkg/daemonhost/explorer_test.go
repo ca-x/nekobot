@@ -26,7 +26,7 @@ func TestListWorkspaceTreeSortsDirectoriesBeforeFiles(t *testing.T) {
 	_ = os.Mkdir(filepath.Join(root, "a-dir"), 0o755)
 	_ = os.WriteFile(filepath.Join(root, "b.txt"), []byte("b"), 0o644)
 	_ = os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644)
-	resp, err := ListWorkspaceTree(&daemonv1.RuntimeInventory{Workspaces: []*daemonv1.Workspace{{WorkspaceId: "ws-1", Path: root}}}, &daemonv1.ListWorkspaceTreeRequest{WorkspaceId: "ws-1"})
+	resp, err := ListWorkspaceTree(&daemonv1.ComputerInventory{Workspaces: []*daemonv1.Workspace{{WorkspaceId: "ws-1", Path: root}}}, &daemonv1.ListWorkspaceTreeRequest{WorkspaceId: "ws-1"})
 	if err != nil {
 		t.Fatalf("ListWorkspaceTree: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestListWorkspaceTreeSortsDirectoriesBeforeFiles(t *testing.T) {
 func TestReadWorkspaceFileTruncatesAtLimit(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "demo.txt"), []byte("abcdef"), 0o644)
-	resp, err := ReadWorkspaceFile(&daemonv1.RuntimeInventory{Workspaces: []*daemonv1.Workspace{{WorkspaceId: "ws-1", Path: root}}}, &daemonv1.ReadWorkspaceFileRequest{WorkspaceId: "ws-1", Path: "demo.txt", MaxBytes: 4})
+	resp, err := ReadWorkspaceFile(&daemonv1.ComputerInventory{Workspaces: []*daemonv1.Workspace{{WorkspaceId: "ws-1", Path: root}}}, &daemonv1.ReadWorkspaceFileRequest{WorkspaceId: "ws-1", Path: "demo.txt", MaxBytes: 4})
 	if err != nil {
 		t.Fatalf("ReadWorkspaceFile: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestHandleWorkspaceTreeRejectsEscapedPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildInfo: %v", err)
 	}
-	workspaceID := info.MachineId + ":default"
+	workspaceID := info.ComputerId + ":default"
 	payload, err := protojson.Marshal(&daemonv1.ListWorkspaceTreeRequest{WorkspaceId: workspaceID, Path: "../etc"})
 	if err != nil {
 		t.Fatalf("marshal escaped request: %v", err)
@@ -85,7 +85,7 @@ func TestHandleWorkspaceFileReturnsContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildInfo: %v", err)
 	}
-	workspaceID := info.MachineId + ":default"
+	workspaceID := info.ComputerId + ":default"
 	payload, err := protojson.Marshal(&daemonv1.ReadWorkspaceFileRequest{WorkspaceId: workspaceID, Path: "hello.txt"})
 	if err != nil {
 		t.Fatalf("marshal request: %v", err)

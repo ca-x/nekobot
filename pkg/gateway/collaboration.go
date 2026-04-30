@@ -160,7 +160,7 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 		ThreadId:          sessionID,
 		Role:              role,
 		Content:           content,
-		SenderRuntimeId:   strings.TrimSpace(req.GetSenderRuntimeId()),
+		SenderAgentId:     strings.TrimSpace(req.GetSenderAgentId()),
 		SenderDisplayName: strings.TrimSpace(req.GetSenderDisplayName()),
 		ReplyToMessageId:  strings.TrimSpace(req.GetReplyToMessageId()),
 		CreatedTimeUnix:   time.Now().Unix(),
@@ -170,7 +170,7 @@ func (s *Server) SendMessage(ctx context.Context, req *daemonv1.SendMessageReque
 			ID:        protoMsg.MessageId,
 			ChannelID: targetChannelID(target),
 			SessionID: sessionID,
-			UserID:    protoMsg.SenderRuntimeId,
+			UserID:    protoMsg.SenderAgentId,
 			Username:  protoMsg.SenderDisplayName,
 			Type:      bus.MessageTypeText,
 			Content:   content,
@@ -221,7 +221,7 @@ func (s *Server) CreateCollaborationTask(ctx context.Context, req *daemonv1.Crea
 		Type:      tasks.TypeRemoteAgent,
 		Summary:   summary,
 		SessionID: sessionID,
-		RuntimeID: strings.TrimSpace(req.GetRuntimeId()),
+		RuntimeID: strings.TrimSpace(req.GetAgentId()),
 		Metadata: map[string]any{
 			"target":             target,
 			"created_by_user_id": strings.TrimSpace(req.GetCreatedByUserId()),
@@ -239,7 +239,7 @@ func (s *Server) ListCollaborationTasks(ctx context.Context, req *daemonv1.ListC
 		return nil, fmt.Errorf("task service unavailable")
 	}
 	target := strings.TrimSpace(req.GetTarget())
-	runtimeID := strings.TrimSpace(req.GetRuntimeId())
+	runtimeID := strings.TrimSpace(req.GetAgentId())
 	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
 	out := make([]*daemonv1.Task, 0)
 	for _, item := range s.agent.TaskService().List() {
@@ -261,14 +261,14 @@ func (s *Server) ClaimCollaborationTask(ctx context.Context, req *daemonv1.Claim
 	if s == nil || s.agent == nil || s.agent.TaskService() == nil {
 		return nil, fmt.Errorf("task service unavailable")
 	}
-	task, err := s.agent.TaskService().Claim(req.GetTaskId(), req.GetRuntimeId())
+	task, err := s.agent.TaskService().Claim(req.GetTaskId(), req.GetAgentId())
 	if err != nil {
 		return nil, err
 	}
 	return &daemonv1.ClaimCollaborationTaskResponse{Task: daemonhost.CollaborationTaskToProto(task)}, nil
 }
 
-func (s *Server) GetServerInfo(ctx context.Context, req *daemonv1.ServerInfoRequest) (*daemonv1.ServerInfoResponse, error) {
+func (s *Server) GetServerInfo(ctx context.Context, req *daemonv1.GetServerInfoRequest) (*daemonv1.GetServerInfoResponse, error) {
 	channels, err := s.ListChannels(ctx, &daemonv1.ListChannelsRequest{Limit: 200})
 	if err != nil {
 		return nil, err
@@ -277,7 +277,7 @@ func (s *Server) GetServerInfo(ctx context.Context, req *daemonv1.ServerInfoRequ
 	if err != nil {
 		return nil, err
 	}
-	return &daemonv1.ServerInfoResponse{
+	return &daemonv1.GetServerInfoResponse{
 		ServerName: "nekobot",
 		Version:    version.GetVersion(),
 		Channels:   channels.Channels,
@@ -286,13 +286,13 @@ func (s *Server) GetServerInfo(ctx context.Context, req *daemonv1.ServerInfoRequ
 }
 
 func (s *Server) GetAgentProfile(ctx context.Context, req *daemonv1.GetAgentProfileRequest) (*daemonv1.GetAgentProfileResponse, error) {
-	runtimeID := strings.TrimSpace(req.GetRuntimeId())
+	runtimeID := strings.TrimSpace(req.GetAgentId())
 	profiles, err := s.agentProfiles(ctx, 1000)
 	if err != nil {
 		return nil, err
 	}
 	for _, profile := range profiles {
-		if runtimeID == "" || profile.RuntimeId == runtimeID || profile.Name == runtimeID {
+		if runtimeID == "" || profile.AgentId == runtimeID || profile.Name == runtimeID {
 			return &daemonv1.GetAgentProfileResponse{Profile: profile}, nil
 		}
 	}
@@ -300,7 +300,7 @@ func (s *Server) GetAgentProfile(ctx context.Context, req *daemonv1.GetAgentProf
 }
 
 func (s *Server) SetAgentEnv(ctx context.Context, req *daemonv1.SetAgentEnvRequest) (*daemonv1.SetAgentEnvResponse, error) {
-	runtimeID := strings.TrimSpace(req.GetRuntimeId())
+	runtimeID := strings.TrimSpace(req.GetAgentId())
 	if runtimeID == "" {
 		return nil, fmt.Errorf("runtime_id is required")
 	}
@@ -308,7 +308,7 @@ func (s *Server) SetAgentEnv(ctx context.Context, req *daemonv1.SetAgentEnvReque
 	if err := s.storeAgentEnv(ctx, runtimeID, env); err != nil {
 		return nil, err
 	}
-	profile, err := s.GetAgentProfile(ctx, &daemonv1.GetAgentProfileRequest{RuntimeId: runtimeID})
+	profile, err := s.GetAgentProfile(ctx, &daemonv1.GetAgentProfileRequest{AgentId: runtimeID})
 	if err != nil {
 		return nil, err
 	}
@@ -328,15 +328,15 @@ func (s *Server) ListAgentDMs(ctx context.Context, req *daemonv1.ListAgentDMsReq
 	if err != nil {
 		return nil, err
 	}
-	self := strings.TrimSpace(req.GetRuntimeId())
+	self := strings.TrimSpace(req.GetAgentId())
 	dms := make([]*daemonv1.ChannelRecord, 0, len(profiles))
 	for _, profile := range profiles {
-		if profile == nil || profile.RuntimeId == "" || profile.RuntimeId == self {
+		if profile == nil || profile.AgentId == "" || profile.AgentId == self {
 			continue
 		}
 		dms = append(dms, &daemonv1.ChannelRecord{
-			Target:      agentDMTarget(profile.RuntimeId),
-			ChannelId:   "dm:" + profile.RuntimeId,
+			Target:      agentDMTarget(profile.AgentId),
+			ChannelId:   "dm:" + profile.AgentId,
 			DisplayName: profile.DisplayName,
 			ChannelType: "dm",
 			Enabled:     profile.Enabled,
@@ -448,7 +448,7 @@ func (s *Server) LogActivity(ctx context.Context, req *daemonv1.LogActivityReque
 	activity := &daemonv1.ActivityRecord{
 		ActivityId:      "activity-" + uuid.NewString(),
 		Target:          target,
-		RuntimeId:       strings.TrimSpace(req.GetRuntimeId()),
+		AgentId:         strings.TrimSpace(req.GetAgentId()),
 		Kind:            strings.TrimSpace(req.GetKind()),
 		Summary:         strings.TrimSpace(req.GetSummary()),
 		Detail:          strings.TrimSpace(req.GetDetail()),
@@ -467,7 +467,7 @@ func (s *Server) LogActivity(ctx context.Context, req *daemonv1.LogActivityReque
 		s.auditLogger.Log(&audit.Entry{
 			Timestamp:     time.Unix(activity.CreatedTimeUnix, 0),
 			ToolName:      "daemon.activity." + activity.Kind,
-			Arguments:     map[string]interface{}{"target": target, "runtime_id": activity.RuntimeId},
+			Arguments:     map[string]interface{}{"target": target, "runtime_id": activity.AgentId},
 			Success:       true,
 			ResultPreview: activity.Summary,
 			SessionID:     target,
@@ -478,7 +478,7 @@ func (s *Server) LogActivity(ctx context.Context, req *daemonv1.LogActivityReque
 
 func (s *Server) ListActivity(ctx context.Context, req *daemonv1.ListActivityRequest) (*daemonv1.ListActivityResponse, error) {
 	target := strings.TrimSpace(req.GetTarget())
-	runtimeID := strings.TrimSpace(req.GetRuntimeId())
+	runtimeID := strings.TrimSpace(req.GetAgentId())
 	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
 	activities := s.activityLog(ctx)
 	out := make([]*daemonv1.ActivityRecord, 0, len(activities))
@@ -490,7 +490,7 @@ func (s *Server) ListActivity(ctx context.Context, req *daemonv1.ListActivityReq
 		if target != "" && item.Target != target {
 			continue
 		}
-		if runtimeID != "" && item.RuntimeId != runtimeID {
+		if runtimeID != "" && item.AgentId != runtimeID {
 			continue
 		}
 		out = append(out, item)
@@ -540,7 +540,7 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 			skillFilter[id] = struct{}{}
 		}
 		out = append(out, &daemonv1.AgentProfile{
-			RuntimeId:   item.ID,
+			AgentId:     item.ID,
 			Name:        item.Name,
 			DisplayName: item.DisplayName,
 			Description: item.Description,
@@ -557,7 +557,7 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 	}
 	if len(out) == 0 {
 		out = append(out, &daemonv1.AgentProfile{
-			RuntimeId:   "default",
+			AgentId:     "default",
 			Name:        "default",
 			DisplayName: "Default Agent",
 			Enabled:     true,

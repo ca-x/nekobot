@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	daemonv1 "nekobot/gen/go/nekobot/daemon/v1"
 	"nekobot/pkg/state"
-	"google.golang.org/protobuf/proto"
 )
 
 const daemonRegistryKey = "daemonhost.registry.v1"
@@ -20,22 +20,22 @@ type Registry struct {
 }
 
 type Snapshot struct {
-	Machines    map[string]*daemonv1.DaemonInfo       `json:"machines"`
-	Inventories map[string]*daemonv1.RuntimeInventory `json:"inventories"`
+	Machines    map[string]*daemonv1.ComputerInfo      `json:"machines"`
+	Inventories map[string]*daemonv1.ComputerInventory `json:"inventories"`
 }
 
 type MachineStatus struct {
-	Info                  *daemonv1.DaemonInfo `json:"info"`
-	WorkspaceCount        int                  `json:"workspace_count"`
-	RuntimeCount          int                  `json:"runtime_count"`
-	InstalledRuntimeCount int                  `json:"installed_runtime_count"`
-	HealthyRuntimeCount   int                  `json:"healthy_runtime_count"`
-	GoalRunRunnable       bool                 `json:"goal_run_runnable"`
+	Info                  *daemonv1.ComputerInfo `json:"info"`
+	WorkspaceCount        int                    `json:"workspace_count"`
+	RuntimeCount          int                    `json:"runtime_count"`
+	InstalledRuntimeCount int                    `json:"installed_runtime_count"`
+	HealthyRuntimeCount   int                    `json:"healthy_runtime_count"`
+	GoalRunRunnable       bool                   `json:"goal_run_runnable"`
 }
 
 func NewRegistry(kv state.KV) *Registry { return &Registry{kv: kv} }
 
-func (r *Registry) Register(ctx context.Context, req *daemonv1.RegisterMachineRequest) (*daemonv1.RegisterMachineResponse, error) {
+func (r *Registry) Register(ctx context.Context, req *daemonv1.RegisterComputerRequest) (*daemonv1.RegisterComputerResponse, error) {
 	if r == nil || r.kv == nil {
 		return nil, fmt.Errorf("daemon registry is unavailable")
 	}
@@ -50,10 +50,10 @@ func (r *Registry) Register(ctx context.Context, req *daemonv1.RegisterMachineRe
 	if err := r.update(ctx, req.Info, req.Inventory); err != nil {
 		return nil, err
 	}
-	return &daemonv1.RegisterMachineResponse{Accepted: true, ServerTimeUnix: now}, nil
+	return &daemonv1.RegisterComputerResponse{Accepted: true, ServerTimeUnix: now}, nil
 }
 
-func (r *Registry) Heartbeat(ctx context.Context, req *daemonv1.HeartbeatMachineRequest) (*daemonv1.HeartbeatMachineResponse, error) {
+func (r *Registry) Heartbeat(ctx context.Context, req *daemonv1.HeartbeatComputerRequest) (*daemonv1.HeartbeatComputerResponse, error) {
 	if r == nil || r.kv == nil {
 		return nil, fmt.Errorf("daemon registry is unavailable")
 	}
@@ -68,39 +68,39 @@ func (r *Registry) Heartbeat(ctx context.Context, req *daemonv1.HeartbeatMachine
 	if err := r.update(ctx, req.Info, req.Inventory); err != nil {
 		return nil, err
 	}
-	return &daemonv1.HeartbeatMachineResponse{Accepted: true, ServerTimeUnix: now, NextHeartbeatAfterSeconds: 15}, nil
+	return &daemonv1.HeartbeatComputerResponse{Accepted: true, ServerTimeUnix: now, NextHeartbeatAfterSeconds: 15}, nil
 }
 
 func (r *Registry) Snapshot(ctx context.Context) (*Snapshot, error) {
 	if r == nil || r.kv == nil {
-		return &Snapshot{Machines: map[string]*daemonv1.DaemonInfo{}, Inventories: map[string]*daemonv1.RuntimeInventory{}}, nil
+		return &Snapshot{Machines: map[string]*daemonv1.ComputerInfo{}, Inventories: map[string]*daemonv1.ComputerInventory{}}, nil
 	}
 	value, ok, err := r.kv.Get(ctx, daemonRegistryKey)
 	if err != nil {
 		return nil, err
 	}
 	if !ok || value == nil {
-		return &Snapshot{Machines: map[string]*daemonv1.DaemonInfo{}, Inventories: map[string]*daemonv1.RuntimeInventory{}}, nil
+		return &Snapshot{Machines: map[string]*daemonv1.ComputerInfo{}, Inventories: map[string]*daemonv1.ComputerInventory{}}, nil
 	}
 	raw, ok := value.(map[string]interface{})
 	if !ok {
-		return &Snapshot{Machines: map[string]*daemonv1.DaemonInfo{}, Inventories: map[string]*daemonv1.RuntimeInventory{}}, nil
+		return &Snapshot{Machines: map[string]*daemonv1.ComputerInfo{}, Inventories: map[string]*daemonv1.ComputerInventory{}}, nil
 	}
 	return decodeSnapshot(raw), nil
 }
 
-func (r *Registry) update(ctx context.Context, info *daemonv1.DaemonInfo, inventory *daemonv1.RuntimeInventory) error {
+func (r *Registry) update(ctx context.Context, info *daemonv1.ComputerInfo, inventory *daemonv1.ComputerInventory) error {
 	return r.kv.UpdateFunc(ctx, daemonRegistryKey, func(current interface{}) interface{} {
-		snapshot := &Snapshot{Machines: map[string]*daemonv1.DaemonInfo{}, Inventories: map[string]*daemonv1.RuntimeInventory{}}
+		snapshot := &Snapshot{Machines: map[string]*daemonv1.ComputerInfo{}, Inventories: map[string]*daemonv1.ComputerInventory{}}
 		if raw, ok := current.(map[string]interface{}); ok {
 			snapshot = decodeSnapshot(raw)
 		}
-		machineID := strings.TrimSpace(info.MachineId)
+		machineID := strings.TrimSpace(info.ComputerId)
 		if machineID == "" {
 			machineID = strings.TrimSpace(info.DaemonId)
 		}
-		copiedInfo := proto.Clone(info).(*daemonv1.DaemonInfo)
-		copiedInfo.MachineId = machineID
+		copiedInfo := proto.Clone(info).(*daemonv1.ComputerInfo)
+		copiedInfo.ComputerId = machineID
 		snapshot.Machines[machineID] = copiedInfo
 		if inventory != nil {
 			snapshot.Inventories[machineID] = inventory
@@ -110,14 +110,14 @@ func (r *Registry) update(ctx context.Context, info *daemonv1.DaemonInfo, invent
 }
 
 func decodeSnapshot(raw map[string]interface{}) *Snapshot {
-	result := &Snapshot{Machines: map[string]*daemonv1.DaemonInfo{}, Inventories: map[string]*daemonv1.RuntimeInventory{}}
+	result := &Snapshot{Machines: map[string]*daemonv1.ComputerInfo{}, Inventories: map[string]*daemonv1.ComputerInventory{}}
 	if machinesRaw, ok := raw["machines"].(map[string]interface{}); ok {
 		for key, value := range machinesRaw {
 			if item, ok := value.(map[string]interface{}); ok {
-				result.Machines[key] = &daemonv1.DaemonInfo{
+				result.Machines[key] = &daemonv1.ComputerInfo{
 					DaemonId:     getString(item, "daemon_id"),
-					MachineId:    getString(item, "machine_id"),
-					MachineName:  getString(item, "machine_name"),
+					ComputerId:   getString(item, "computer_id"),
+					DisplayName:  getString(item, "display_name"),
 					Hostname:     getString(item, "hostname"),
 					Os:           getString(item, "os"),
 					Arch:         getString(item, "arch"),
@@ -155,7 +155,7 @@ func MachineStatuses(snapshot *Snapshot) []MachineStatus {
 		if info == nil {
 			continue
 		}
-		cloned := proto.Clone(info).(*daemonv1.DaemonInfo)
+		cloned := proto.Clone(info).(*daemonv1.ComputerInfo)
 		cloned.Status = DeriveMachineStatus(info, now)
 		status := MachineStatus{Info: cloned}
 		if inv, ok := snapshot.Inventories[id]; ok && inv != nil {
@@ -181,7 +181,7 @@ func MachineStatuses(snapshot *Snapshot) []MachineStatus {
 
 // SelectRunnableWorkspaceRuntime returns the runnable runtime in the selected/default workspace.
 // The chosen runtime must be installed and healthy.
-func SelectRunnableWorkspaceRuntime(inventory *daemonv1.RuntimeInventory) (runtimeID, workspaceID string, ok bool) {
+func SelectRunnableWorkspaceRuntime(inventory *daemonv1.ComputerInventory) (runtimeID, workspaceID string, ok bool) {
 	if inventory == nil {
 		return "", "", false
 	}
@@ -214,7 +214,7 @@ func SelectRunnableWorkspaceRuntime(inventory *daemonv1.RuntimeInventory) (runti
 	return "", workspaceID, false
 }
 
-func DeriveMachineStatus(info *daemonv1.DaemonInfo, now time.Time) string {
+func DeriveMachineStatus(info *daemonv1.ComputerInfo, now time.Time) string {
 	if info == nil {
 		return "offline"
 	}
@@ -236,12 +236,12 @@ func DeriveMachineStatus(info *daemonv1.DaemonInfo, now time.Time) string {
 	return current
 }
 
-func decodeInventory(raw map[string]interface{}) *daemonv1.RuntimeInventory {
-	inventory := &daemonv1.RuntimeInventory{}
+func decodeInventory(raw map[string]interface{}) *daemonv1.ComputerInventory {
+	inventory := &daemonv1.ComputerInventory{}
 	for _, ws := range getMapSlice(raw, "workspaces") {
 		inventory.Workspaces = append(inventory.Workspaces, &daemonv1.Workspace{
 			WorkspaceId: getString(ws, "workspace_id"),
-			MachineId:   getString(ws, "machine_id"),
+			ComputerId:  getString(ws, "computer_id"),
 			Path:        getString(ws, "path"),
 			DisplayName: getString(ws, "display_name"),
 			Aliases:     getStringSlice(ws, "aliases"),
@@ -251,7 +251,7 @@ func decodeInventory(raw map[string]interface{}) *daemonv1.RuntimeInventory {
 	for _, rt := range getMapSlice(raw, "runtimes") {
 		inventory.Runtimes = append(inventory.Runtimes, &daemonv1.Runtime{
 			RuntimeId:           getString(rt, "runtime_id"),
-			MachineId:           getString(rt, "machine_id"),
+			ComputerId:          getString(rt, "computer_id"),
 			WorkspaceId:         getString(rt, "workspace_id"),
 			Kind:                getString(rt, "kind"),
 			DisplayName:         getString(rt, "display_name"),
@@ -282,8 +282,8 @@ func encodeSnapshot(snapshot *Snapshot) map[string]interface{} {
 		item := snapshot.Machines[id]
 		machines[id] = map[string]interface{}{
 			"daemon_id":      item.DaemonId,
-			"machine_id":     item.MachineId,
-			"machine_name":   item.MachineName,
+			"computer_id":    item.ComputerId,
+			"display_name":   item.DisplayName,
 			"hostname":       item.Hostname,
 			"os":             item.Os,
 			"arch":           item.Arch,
@@ -313,7 +313,7 @@ func encodeWorkspaces(items []*daemonv1.Workspace) []map[string]interface{} {
 		}
 		out = append(out, map[string]interface{}{
 			"workspace_id": item.WorkspaceId,
-			"machine_id":   item.MachineId,
+			"computer_id":  item.ComputerId,
 			"path":         item.Path,
 			"display_name": item.DisplayName,
 			"aliases":      append([]string(nil), item.Aliases...),
@@ -331,7 +331,7 @@ func encodeRuntimes(items []*daemonv1.Runtime) []map[string]interface{} {
 		}
 		out = append(out, map[string]interface{}{
 			"runtime_id":            item.RuntimeId,
-			"machine_id":            item.MachineId,
+			"computer_id":           item.ComputerId,
 			"workspace_id":          item.WorkspaceId,
 			"kind":                  item.Kind,
 			"display_name":          item.DisplayName,

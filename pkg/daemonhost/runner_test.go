@@ -17,22 +17,22 @@ type stubRemoteRegistryClient struct {
 	registered int
 	heartbeats int
 	fetches    int
-	updates    []*daemonv1.UpdateTaskStatusRequest
-	tasks      []*daemonv1.Task
+	updates    []*daemonv1.UpdateRunStatusRequest
+	runs       []*daemonv1.Run
 	fetchCh    chan struct{}
 }
 
-func (s *stubRemoteRegistryClient) RegisterRemote(req *daemonv1.RegisterMachineRequest) (*daemonv1.RegisterMachineResponse, error) {
+func (s *stubRemoteRegistryClient) RegisterRemote(req *daemonv1.RegisterComputerRequest) (*daemonv1.RegisterComputerResponse, error) {
 	s.registered++
-	return &daemonv1.RegisterMachineResponse{Accepted: true}, nil
+	return &daemonv1.RegisterComputerResponse{Accepted: true}, nil
 }
 
-func (s *stubRemoteRegistryClient) HeartbeatRemote(req *daemonv1.HeartbeatMachineRequest) (*daemonv1.HeartbeatMachineResponse, error) {
+func (s *stubRemoteRegistryClient) HeartbeatRemote(req *daemonv1.HeartbeatComputerRequest) (*daemonv1.HeartbeatComputerResponse, error) {
 	s.heartbeats++
-	return &daemonv1.HeartbeatMachineResponse{Accepted: true}, nil
+	return &daemonv1.HeartbeatComputerResponse{Accepted: true}, nil
 }
 
-func (s *stubRemoteRegistryClient) FetchAssignedTasksRemote(req *daemonv1.FetchAssignedTasksRequest) (*daemonv1.FetchAssignedTasksResponse, error) {
+func (s *stubRemoteRegistryClient) FetchAssignedRunsRemote(req *daemonv1.FetchAssignedRunsRequest) (*daemonv1.FetchAssignedRunsResponse, error) {
 	s.fetches++
 	if s.fetchCh != nil {
 		select {
@@ -40,20 +40,20 @@ func (s *stubRemoteRegistryClient) FetchAssignedTasksRemote(req *daemonv1.FetchA
 		default:
 		}
 	}
-	tasks := s.tasks
-	s.tasks = nil
-	return &daemonv1.FetchAssignedTasksResponse{Tasks: tasks}, nil
+	runs := s.runs
+	s.runs = nil
+	return &daemonv1.FetchAssignedRunsResponse{Runs: runs}, nil
 }
 
-func (s *stubRemoteRegistryClient) UpdateTaskStatusRemote(req *daemonv1.UpdateTaskStatusRequest) (*daemonv1.UpdateTaskStatusResponse, error) {
-	cloned := proto.Clone(req).(*daemonv1.UpdateTaskStatusRequest)
+func (s *stubRemoteRegistryClient) UpdateRunStatusRemote(req *daemonv1.UpdateRunStatusRequest) (*daemonv1.UpdateRunStatusResponse, error) {
+	cloned := proto.Clone(req).(*daemonv1.UpdateRunStatusRequest)
 	s.updates = append(s.updates, cloned)
-	return &daemonv1.UpdateTaskStatusResponse{Accepted: true}, nil
+	return &daemonv1.UpdateRunStatusResponse{Accepted: true}, nil
 }
 
 func TestRegisterAndPollProcessesFetchedTasks(t *testing.T) {
 	client := &stubRemoteRegistryClient{
-		tasks:   []*daemonv1.Task{{TaskId: "task-1", RuntimeId: "runtime-a", Summary: "run tests"}},
+		runs:    []*daemonv1.Run{{RunId: "task-1", TaskId: "task-1", AgentId: "runtime-a", Summary: "run tests"}},
 		fetchCh: make(chan struct{}, 1),
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -64,13 +64,13 @@ func TestRegisterAndPollProcessesFetchedTasks(t *testing.T) {
 	}()
 
 	err := RegisterAndPoll(ctx, client, PollOptions{
-		MachineName:  "machine-a",
+		DisplayName:  "machine-a",
 		PollInterval: time.Millisecond,
-		BuildInfo: func(string) (*daemonv1.DaemonInfo, error) {
-			return &daemonv1.DaemonInfo{MachineId: "machine-a", MachineName: "machine-a"}, nil
+		BuildInfo: func(string) (*daemonv1.ComputerInfo, error) {
+			return &daemonv1.ComputerInfo{ComputerId: "machine-a", DisplayName: "machine-a"}, nil
 		},
-		BuildInventory: func(string) (*daemonv1.RuntimeInventory, error) {
-			return &daemonv1.RuntimeInventory{Runtimes: []*daemonv1.Runtime{{RuntimeId: "runtime-a"}}}, nil
+		BuildInventory: func(string) (*daemonv1.ComputerInventory, error) {
+			return &daemonv1.ComputerInventory{Runtimes: []*daemonv1.Runtime{{RuntimeId: "runtime-a"}}}, nil
 		},
 		Executor: func(ctx context.Context, task *daemonv1.Task) (string, error) {
 			return "done:" + task.TaskId, nil
@@ -116,7 +116,7 @@ func TestExecuteFetchedTaskReportsFailure(t *testing.T) {
 }
 
 func TestCollectRuntimeIDsFiltersUnavailableRuntimes(t *testing.T) {
-	inventory := &daemonv1.RuntimeInventory{
+	inventory := &daemonv1.ComputerInventory{
 		Runtimes: []*daemonv1.Runtime{
 			{RuntimeId: "runtime-a", Installed: true, Healthy: true},
 			{RuntimeId: "runtime-b", Installed: false, Healthy: true},
@@ -130,7 +130,7 @@ func TestCollectRuntimeIDsFiltersUnavailableRuntimes(t *testing.T) {
 }
 
 func TestDefaultCLIExecutorRejectsUnavailableRuntime(t *testing.T) {
-	executor := DefaultCLIExecutor(&daemonv1.RuntimeInventory{
+	executor := DefaultCLIExecutor(&daemonv1.ComputerInventory{
 		Runtimes: []*daemonv1.Runtime{
 			{RuntimeId: "runtime-a", Kind: "codex", Installed: false, Healthy: true},
 		},
@@ -142,16 +142,16 @@ func TestDefaultCLIExecutorRejectsUnavailableRuntime(t *testing.T) {
 }
 
 func TestNormalizeInventoryMachineAlignsWorkspaceAndRuntimeIDs(t *testing.T) {
-	info := &daemonv1.DaemonInfo{MachineId: "machine-a"}
-	inventory := &daemonv1.RuntimeInventory{
+	info := &daemonv1.ComputerInfo{ComputerId: "machine-a"}
+	inventory := &daemonv1.ComputerInventory{
 		Workspaces: []*daemonv1.Workspace{{
 			WorkspaceId: "host123:default",
-			MachineId:   "host123",
+			ComputerId:  "host123",
 			IsDefault:   true,
 		}},
 		Runtimes: []*daemonv1.Runtime{{
 			RuntimeId:   "host123:default:claude",
-			MachineId:   "host123",
+			ComputerId:  "host123",
 			WorkspaceId: "host123:default",
 			Kind:        "claude",
 		}},
@@ -163,7 +163,7 @@ func TestNormalizeInventoryMachineAlignsWorkspaceAndRuntimeIDs(t *testing.T) {
 	if inventory.Runtimes[0].RuntimeId != "machine-a:default:claude" {
 		t.Fatalf("unexpected runtime id: %+v", inventory.Runtimes[0])
 	}
-	if inventory.Runtimes[0].MachineId != "machine-a" {
+	if inventory.Runtimes[0].ComputerId != "machine-a" {
 		t.Fatalf("unexpected runtime machine id: %+v", inventory.Runtimes[0])
 	}
 }

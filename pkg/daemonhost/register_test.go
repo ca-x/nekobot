@@ -22,16 +22,16 @@ func TestRegistryRegisterAndHeartbeatPersistMachineState(t *testing.T) {
 	defer func() { _ = store.Close() }()
 	registry := NewRegistry(store)
 
-	_, err = registry.Register(t.Context(), &daemonv1.RegisterMachineRequest{
-		Info:      &daemonv1.DaemonInfo{DaemonId: "daemon-a", MachineId: "machine-a", MachineName: "machine-a", Status: "online"},
-		Inventory: &daemonv1.RuntimeInventory{},
+	_, err = registry.Register(t.Context(), &daemonv1.RegisterComputerRequest{
+		Info:      &daemonv1.ComputerInfo{DaemonId: "daemon-a", ComputerId: "machine-a", DisplayName: "machine-a", Status: "online"},
+		Inventory: &daemonv1.ComputerInventory{},
 	})
 	if err != nil {
 		t.Fatalf("register failed: %v", err)
 	}
-	_, err = registry.Heartbeat(t.Context(), &daemonv1.HeartbeatMachineRequest{
-		Info:      &daemonv1.DaemonInfo{DaemonId: "daemon-a", MachineId: "machine-a", MachineName: "machine-a", Status: "online"},
-		Inventory: &daemonv1.RuntimeInventory{},
+	_, err = registry.Heartbeat(t.Context(), &daemonv1.HeartbeatComputerRequest{
+		Info:      &daemonv1.ComputerInfo{DaemonId: "daemon-a", ComputerId: "machine-a", DisplayName: "machine-a", Status: "online"},
+		Inventory: &daemonv1.ComputerInventory{},
 	})
 	if err != nil {
 		t.Fatalf("heartbeat failed: %v", err)
@@ -46,8 +46,8 @@ func TestRegistryRegisterAndHeartbeatPersistMachineState(t *testing.T) {
 }
 
 func TestDeriveMachineStatusMarksOldHeartbeatOffline(t *testing.T) {
-	info := &daemonv1.DaemonInfo{
-		MachineId:    "machine-a",
+	info := &daemonv1.ComputerInfo{
+		ComputerId:   "machine-a",
 		Status:       "online",
 		LastSeenUnix: time.Now().Add(-(OfflineThreshold + time.Second)).Unix(),
 	}
@@ -57,8 +57,8 @@ func TestDeriveMachineStatusMarksOldHeartbeatOffline(t *testing.T) {
 }
 
 func TestDeriveMachineStatusKeepsRecentHeartbeatOnline(t *testing.T) {
-	info := &daemonv1.DaemonInfo{
-		MachineId:    "machine-a",
+	info := &daemonv1.ComputerInfo{
+		ComputerId:   "machine-a",
 		Status:       "online",
 		LastSeenUnix: time.Now().Unix(),
 	}
