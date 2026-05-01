@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { t } from "@/lib/i18n";
 import {
   SessionRuntimeState,
@@ -15,17 +15,44 @@ import {
 } from "@/hooks/useConfig";
 import { useInstallQMD, useQMDStatus, useUpdateQMD } from "@/hooks/useQMD";
 import type { CronJob } from "@/hooks/useCron";
+import {
+  type LicenseStatus,
+  type UserRecord,
+  UserLimitError,
+  useCreateUser,
+  useDeleteUser,
+  useImportLicense,
+  useLicenseStatus,
+  useUpdateUser,
+  useUsers,
+} from "@/hooks/useUsers";
 import Header from "@/components/layout/Header";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
   Clock3,
   Copy,
   DatabaseZap,
+  Edit3,
+  KeyRound,
+  Plus,
   RefreshCw,
+  Save,
+  Trash2,
+  Users,
 } from "lucide-react";
 import { toast } from '@/lib/notify';
 
@@ -255,6 +282,8 @@ export default function SystemPage() {
               ) : null}
             </Card>
           ) : null}
+
+          <UserManagementCard />
 
           <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
             <div>
@@ -1204,6 +1233,392 @@ export default function SystemPage() {
       </ScrollArea>
     </div>
   );
+}
+
+type UserFormState = {
+  username: string;
+  nickname: string;
+  password: string;
+  role: string;
+  enabled: boolean;
+};
+
+const emptyUserForm: UserFormState = {
+  username: "",
+  nickname: "",
+  password: "",
+  role: "member",
+  enabled: true,
+};
+
+function UserManagementCard() {
+  const users = useUsers();
+  const createUser = useCreateUser();
+  const updateUser = useUpdateUser();
+  const deleteUser = useDeleteUser();
+  const importLicense = useImportLicense();
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
+  const [form, setForm] = useState<UserFormState>(emptyUserForm);
+  const [licenseOpen, setLicenseOpen] = useState(false);
+  const [blockedLicense, setBlockedLicense] = useState<LicenseStatus | undefined>();
+  const [licenseText, setLicenseText] = useState("");
+  const licenseStatus = useLicenseStatus(licenseOpen && !blockedLicense);
+  const effectiveLicense = blockedLicense ?? licenseStatus.data;
+  const items = users.data ?? [];
+  const enabledCount = items.filter((item) => item.enabled).length;
+  const submitting = createUser.isPending || updateUser.isPending;
+
+  function openCreate() {
+    setEditingUser(null);
+    setForm(emptyUserForm);
+    setFormOpen(true);
+  }
+
+  function openEdit(user: UserRecord) {
+    setEditingUser(user);
+    setForm({
+      username: user.username,
+      nickname: user.nickname || "",
+      password: "",
+      role: normalizeUserRoleForForm(user.role),
+      enabled: user.enabled,
+    });
+    setFormOpen(true);
+  }
+
+  function handleUserError(error: unknown) {
+    if (error instanceof UserLimitError) {
+      setBlockedLicense(error.license);
+      setLicenseOpen(true);
+      toast.error(t("systemUsersLimitReachedToast"));
+      return;
+    }
+    toast.error(errorMessage(error));
+  }
+
+  async function submitUserForm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      const input = {
+        username: form.username.trim(),
+        nickname: form.nickname.trim(),
+        password: form.password,
+        role: form.role,
+        enabled: form.enabled,
+      };
+      if (editingUser) {
+        await updateUser.mutateAsync({ id: editingUser.id, input });
+      } else {
+        await createUser.mutateAsync(input);
+      }
+      toast.success(t("saved"));
+      setFormOpen(false);
+      setEditingUser(null);
+      setForm(emptyUserForm);
+    } catch (error) {
+      handleUserError(error);
+    }
+  }
+
+  async function removeUser(user: UserRecord) {
+    if (!window.confirm(t("systemUsersDeleteConfirm", user.username))) {
+      return;
+    }
+    try {
+      await deleteUser.mutateAsync(user.id);
+      toast.success(t("deleted"));
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  }
+
+  async function copyInstallID() {
+    const installID = effectiveLicense?.install_id?.trim();
+    if (!installID) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(installID);
+      toast.success(t("copied"));
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  }
+
+  async function submitLicense() {
+    try {
+      await importLicense.mutateAsync(licenseText);
+      toast.success(t("systemLicenseImported"));
+      setLicenseText("");
+      setBlockedLicense(undefined);
+      setLicenseOpen(false);
+    } catch (error) {
+      toast.error(errorMessage(error));
+    }
+  }
+
+  return (
+    <>
+      <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              <Users className="h-4 w-4" />
+              {t("systemUsersTitle")}
+            </div>
+            <h3 className="mt-2 text-lg font-semibold text-foreground">
+              {t("systemUsersHeadline")}
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {t("systemUsersDescription")}
+            </p>
+          </div>
+          <Button size="sm" onClick={openCreate} className="w-full sm:w-auto">
+            <Plus className="mr-2 h-4 w-4" />
+            {t("systemUsersAdd")}
+          </Button>
+        </div>
+
+        {users.isLoading ? (
+          <div className="text-muted-foreground py-8 text-center animate-pulse">
+            {t("systemLoading")}
+          </div>
+        ) : users.error ? (
+          <div className="mt-4 rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {errorMessage(users.error)}
+          </div>
+        ) : items.length > 0 ? (
+          <div className="mt-4 space-y-3">
+            <div className="grid gap-3 md:grid-cols-3">
+              <StatusMetric label={t("systemUsersTotal")} value={String(items.length)} />
+              <StatusMetric label={t("systemUsersEnabled")} value={String(enabledCount)} />
+              <StatusMetric label={t("systemUsersDisabled")} value={String(items.length - enabledCount)} />
+            </div>
+            {items.map((user) => (
+              <div key={user.id} className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={cn(
+                        "rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em]",
+                        user.enabled
+                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                          : "bg-muted text-muted-foreground",
+                      )}>
+                        {user.enabled ? t("enabled") : t("off")}
+                      </span>
+                      <span className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-foreground/80">
+                        {formatUserRole(user.role)}
+                      </span>
+                      {user.tenant_slug ? (
+                        <span className="rounded-full bg-background/80 px-2.5 py-1 text-[11px] text-muted-foreground">
+                          {user.tenant_slug}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 text-sm font-semibold text-foreground">
+                      {user.nickname || user.username}
+                    </div>
+                    <div className="mt-1 break-all text-xs text-muted-foreground">
+                      @{user.username}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => openEdit(user)}>
+                      <Edit3 className="mr-2 h-4 w-4" />
+                      {t("edit")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => removeUser(user)}
+                      disabled={deleteUser.isPending}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {t("delete")}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+            {t("systemUsersEmpty")}
+          </div>
+        )}
+      </Card>
+
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <form onSubmit={submitUserForm}>
+            <DialogHeader>
+              <DialogTitle>
+                {editingUser ? t("systemUsersEditTitle") : t("systemUsersCreateTitle")}
+              </DialogTitle>
+              <DialogDescription>
+                {editingUser ? t("systemUsersEditDescription") : t("systemUsersCreateDescription")}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="text-sm text-muted-foreground">
+                {t("username")}
+                <Input
+                  className="mt-1"
+                  value={form.username}
+                  onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
+                  required
+                />
+              </label>
+              <label className="text-sm text-muted-foreground">
+                {t("systemUsersNickname")}
+                <Input
+                  className="mt-1"
+                  value={form.nickname}
+                  onChange={(event) => setForm((current) => ({ ...current, nickname: event.target.value }))}
+                />
+              </label>
+              <label className="text-sm text-muted-foreground">
+                {editingUser ? t("systemUsersNewPassword") : t("password")}
+                <Input
+                  className="mt-1"
+                  type="password"
+                  value={form.password}
+                  onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                  required={!editingUser}
+                  autoComplete="new-password"
+                />
+              </label>
+              <label className="text-sm text-muted-foreground">
+                {t("systemUsersRole")}
+                <select
+                  className="mt-1 h-11 w-full rounded-2xl border border-input/80 bg-background/82 px-4 py-2 text-sm text-foreground shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  value={form.role}
+                  onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))}
+                >
+                  <option value="member">{t("systemUsersRoleMember")}</option>
+                  <option value="owner">{t("systemUsersRoleOwner")}</option>
+                  <option value="admin">{t("systemUsersRoleAdmin")}</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-3 rounded-2xl border border-border/70 bg-muted/35 px-4 py-3 text-sm text-foreground md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
+                  className="h-4 w-4 rounded border-border"
+                />
+                <span>{t("systemUsersEnabledHint")}</span>
+              </label>
+            </div>
+            <DialogFooter className="mt-5">
+              <Button type="button" variant="outline" onClick={() => setFormOpen(false)}>
+                {t("cancel")}
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                <Save className="mr-2 h-4 w-4" />
+                {submitting ? t("saving") : t("save")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={licenseOpen} onOpenChange={(open) => {
+        setLicenseOpen(open);
+        if (!open) {
+          setBlockedLicense(undefined);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("systemLicenseRequiredTitle")}</DialogTitle>
+            <DialogDescription>{t("systemLicenseRequiredDescription")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border/70 bg-muted/35 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    {t("systemLicenseInstallID")}
+                  </div>
+                  <div className="mt-2 break-all font-mono text-sm text-foreground">
+                    {effectiveLicense?.install_id || (licenseStatus.isLoading ? t("systemLoading") : "-")}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={copyInstallID}
+                  disabled={!effectiveLicense?.install_id}
+                  className="w-full sm:w-auto"
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  {t("copyAccess")}
+                </Button>
+              </div>
+              {effectiveLicense ? (
+                <div className="mt-3 text-xs text-muted-foreground">
+                  {t(
+                    "systemLicenseLimitSummary",
+                    String(effectiveLicense.enabled_user_count),
+                    String(effectiveLicense.max_users),
+                  )}
+                </div>
+              ) : null}
+            </div>
+            <label className="text-sm text-muted-foreground">
+              {t("systemLicensePayload")}
+              <Textarea
+                className="mt-1 min-h-[180px] font-mono"
+                value={licenseText}
+                onChange={(event) => setLicenseText(event.target.value)}
+                placeholder={t("systemLicensePayloadPlaceholder")}
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setLicenseOpen(false)}>
+              {t("cancel")}
+            </Button>
+            <Button type="button" onClick={submitLicense} disabled={importLicense.isPending || licenseText.trim() === ""}>
+              <KeyRound className="mr-2 h-4 w-4" />
+              {importLicense.isPending ? t("systemLicenseImporting") : t("systemLicenseImport")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function normalizeUserRoleForForm(role: string) {
+  switch (role) {
+    case "admin":
+    case "owner":
+      return role;
+    default:
+      return "member";
+  }
+}
+
+function formatUserRole(role: string) {
+  switch (role) {
+    case "admin":
+      return t("systemUsersRoleAdmin");
+    case "owner":
+      return t("systemUsersRoleOwner");
+    default:
+      return t("systemUsersRoleMember");
+  }
+}
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
 }
 
 function formatServiceStatus(status: string) {
