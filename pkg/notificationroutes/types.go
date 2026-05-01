@@ -5,11 +5,17 @@ import "time"
 const (
 	// ScopeCronJob binds notifications for a specific cron job ID.
 	ScopeCronJob = "cron_job"
+	// ScopeChannel binds Web channel traffic to a default notification route.
+	ScopeChannel = "channel"
+	// ScopeThread binds a Web thread/session to a default notification route.
+	ScopeThread = "thread"
 
 	// EventCronSucceeded fires when a cron job run succeeds.
 	EventCronSucceeded = "cron.succeeded"
 	// EventCronFailed fires when a cron job run fails.
 	EventCronFailed = "cron.failed"
+	// EventWebMessage fires when Web-side channel/thread communication changes.
+	EventWebMessage = "web.message"
 )
 
 // NotificationRoute defines a named notification routing target (e.g. a channel account + config).

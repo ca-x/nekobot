@@ -13,6 +13,7 @@ import (
 
 	"nekobot/pkg/agent"
 	"nekobot/pkg/config"
+	"nekobot/pkg/notificationroutes"
 	"nekobot/pkg/session"
 	"nekobot/pkg/state"
 	"nekobot/pkg/threads"
@@ -368,6 +369,7 @@ func TestSessionHandlers_NotFoundBehavior(t *testing.T) {
 
 func TestThreadHandlers_EndToEndFlow(t *testing.T) {
 	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
 	sm := session.NewManager(t.TempDir(), cfg.Sessions)
 	log := newTestLogger(t)
 	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "thread-state.json")})
@@ -375,7 +377,27 @@ func TestThreadHandlers_EndToEndFlow(t *testing.T) {
 		t.Fatalf("new file store failed: %v", err)
 	}
 	defer func() { _ = store.Close() }()
-	s := &Server{sessionMgr: sm, kvStore: store, threads: threads.NewManager(store)}
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close ent client: %v", err)
+		}
+	})
+	notificationMgr, err := notificationroutes.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new notification manager: %v", err)
+	}
+	route, err := notificationMgr.CreateRoute(t.Context(), notificationroutes.NotificationRoute{
+		Name:             "thread-im",
+		Enabled:          true,
+		ChannelAccountID: "account-1",
+		TargetConfigJSON: `{"target":"owner-chat"}`,
+		Visibility:       "shared",
+	})
+	if err != nil {
+		t.Fatalf("create notification route: %v", err)
+	}
+	s := &Server{sessionMgr: sm, kvStore: store, threads: threads.NewManager(store), notificationMgr: notificationMgr}
 	e := echo.New()
 
 	const threadID = "thread-e2e"
@@ -436,7 +458,7 @@ func TestThreadHandlers_EndToEndFlow(t *testing.T) {
 		t.Fatalf("expected topic ops triage, got %q", topic)
 	}
 
-	updateReq := httptest.NewRequest(http.MethodPut, "/api/threads/"+threadID, strings.NewReader(`{"summary":"updated thread","runtime_id":"daemon-runtime-2","topic":"incident response"}`))
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/threads/"+threadID, strings.NewReader(`{"summary":"updated thread","runtime_id":"daemon-runtime-2","topic":"incident response","notification_route_id":"`+route.ID+`"}`))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateRec := httptest.NewRecorder()
 	updateCtx := e.NewContext(updateReq, updateRec)
@@ -474,6 +496,20 @@ func TestThreadHandlers_EndToEndFlow(t *testing.T) {
 	}
 	if topic != "incident response" {
 		t.Fatalf("expected topic incident response, got %q", topic)
+	}
+	var notificationRouteID string
+	if err := json.Unmarshal(detailAfter["notification_route_id"], &notificationRouteID); err != nil {
+		t.Fatalf("unmarshal notification_route_id failed: %v", err)
+	}
+	if notificationRouteID != route.ID {
+		t.Fatalf("expected notification route %q, got %q", route.ID, notificationRouteID)
+	}
+	binding, err := notificationMgr.FindBindingForTarget(t.Context(), notificationroutes.ScopeThread, sessionTarget(threadID))
+	if err != nil {
+		t.Fatalf("find thread notification binding: %v", err)
+	}
+	if binding == nil || binding.RouteID != route.ID {
+		t.Fatalf("expected thread notification binding to route %q, got %+v", route.ID, binding)
 	}
 }
 

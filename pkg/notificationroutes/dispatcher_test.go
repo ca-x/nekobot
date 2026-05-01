@@ -81,6 +81,83 @@ func TestDispatcherDeliversCronNotificationToRouteTarget(t *testing.T) {
 	}
 }
 
+func TestDispatcherDeliversWebThreadMessageToRouteTarget(t *testing.T) {
+	ctx := context.Background()
+	cfg, log, client := newDispatcherTestRuntime(t)
+	routeMgr, err := NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new route manager: %v", err)
+	}
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new channel account manager: %v", err)
+	}
+	account, err := accountMgr.Create(ctx, channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "owner-bot",
+		DisplayName: "Owner WeChat",
+		Enabled:     true,
+		Config:      map[string]interface{}{},
+	})
+	if err != nil {
+		t.Fatalf("create channel account: %v", err)
+	}
+	route, err := routeMgr.CreateRoute(ctx, NotificationRoute{
+		Name:             "owner-im",
+		Enabled:          true,
+		ChannelAccountID: account.ID,
+		TargetConfigJSON: `{"target":"owner-chat","title":"Thread mirror"}`,
+	})
+	if err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+	if _, err := routeMgr.CreateBinding(ctx, NotificationBinding{
+		Scope:          ScopeThread,
+		Target:         "#websocket:thread-1",
+		RouteID:        route.ID,
+		EventTypesJSON: `["web.message"]`,
+		Enabled:        true,
+	}); err != nil {
+		t.Fatalf("create binding: %v", err)
+	}
+
+	messageBus := &recordingBus{}
+	dispatcher := NewDispatcher(log, routeMgr, accountMgr, messageBus)
+	dispatcher.HandleWebMessageEvent(ctx, WebMessageEvent{
+		Scope:     ScopeThread,
+		Target:    "#websocket:thread-1",
+		EventType: EventWebMessage,
+		Role:      "assistant",
+		Content:   "done from web",
+		SessionID: "thread-1",
+		ThreadID:  "#websocket:thread-1",
+		Username:  "alice",
+		RuntimeID: "runtime-1",
+		Topic:     "incident",
+		CreatedAt: time.Date(2026, 5, 1, 9, 30, 0, 0, time.UTC),
+	})
+
+	if len(messageBus.outbound) != 1 {
+		t.Fatalf("expected one outbound Web notification, got %d", len(messageBus.outbound))
+	}
+	msg := messageBus.outbound[0]
+	if msg.ChannelID != "wechat:owner-bot" {
+		t.Fatalf("expected channel id wechat:owner-bot, got %q", msg.ChannelID)
+	}
+	if msg.SessionID != "wechat:owner-chat" {
+		t.Fatalf("expected target session, got %q", msg.SessionID)
+	}
+	if msg.Username != "alice" {
+		t.Fatalf("expected username alice, got %q", msg.Username)
+	}
+	if !strings.Contains(msg.Content, "done from web") || !strings.Contains(msg.Content, "incident") {
+		t.Fatalf("expected topic and content in notification, got %q", msg.Content)
+	}
+	if source, _ := msg.Data["source"].(string); source != "web" {
+		t.Fatalf("expected web source, got %q", source)
+	}
+}
+
 func TestDispatcherSkipsUnmatchedCronEvent(t *testing.T) {
 	ctx := context.Background()
 	cfg, log, client := newDispatcherTestRuntime(t)
@@ -970,9 +1047,9 @@ func TestDispatcherLogsActivityOnSuccess(t *testing.T) {
 
 	// Success event
 	dispatcher.HandleCronJobEvent(ctx, cron.JobEvent{
-		EventType: EventCronSucceeded,
-		Job:       cron.Job{ID: "job-activity", Name: "daily report"},
-		Response:  "all good",
+		EventType:  EventCronSucceeded,
+		Job:        cron.Job{ID: "job-activity", Name: "daily report"},
+		Response:   "all good",
 		FinishedAt: time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC),
 	})
 	if len(activities) != 1 {

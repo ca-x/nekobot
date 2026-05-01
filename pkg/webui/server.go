@@ -93,48 +93,49 @@ import (
 
 // Server is the WebUI HTTP server.
 type Server struct {
-	echo                *echo.Echo
-	httpServer          *http.Server
-	config              *config.Config
-	loader              *config.Loader
-	logger              *logger.Logger
-	agent               *agent.Agent
-	approval            *approval.Manager
-	channels            *channels.Manager
-	bus                 bus.Bus
-	commands            *commands.Registry
-	prefs               *userprefs.Manager
-	toolSess            *toolsessions.Manager
-	externalAgent       *externalagent.Manager
-	sessionMgr          *session.Manager
-	processMgr          *process.Manager
-	prompts             *prompts.Manager
-	providers           *providerstore.Manager
-	runtimeMgr          *runtimeagents.Manager
-	accountMgr          *channelaccounts.Manager
-	bindingMgr          *accountbindings.Manager
-	notificationMgr     *notificationroutes.Manager
-	topologySvc         *runtimetopology.Service
-	cronMgr             *cron.Manager
-	skillsMgr           *skills.Manager
-	workspace           *workspace.Manager
-	entClient           *ent.Client
-	snapshotMgr         *session.SnapshotManager
-	auditLogger         *audit.Logger
-	ilinkAuth           *ilinkauth.Service
-	serviceCtrl         serviceController
-	taskStore           *tasks.Store
-	kvStore             state.KV
-	threads             *threads.Manager
-	goalSvc             *goaldriven.Service
-	chatEventMu         sync.RWMutex
-	chatEventSubs       map[string]map[chan chatEvent]struct{}
-	watcher             *watch.Watcher
-	jwtFallbackSecret   string
-	daemonFallbackToken string
-	webhookTestHandler  func(ctx context.Context, username, message string) (string, error)
-	port                int
-	startedAt           time.Time
+	echo                 *echo.Echo
+	httpServer           *http.Server
+	config               *config.Config
+	loader               *config.Loader
+	logger               *logger.Logger
+	agent                *agent.Agent
+	approval             *approval.Manager
+	channels             *channels.Manager
+	bus                  bus.Bus
+	commands             *commands.Registry
+	prefs                *userprefs.Manager
+	toolSess             *toolsessions.Manager
+	externalAgent        *externalagent.Manager
+	sessionMgr           *session.Manager
+	processMgr           *process.Manager
+	prompts              *prompts.Manager
+	providers            *providerstore.Manager
+	runtimeMgr           *runtimeagents.Manager
+	accountMgr           *channelaccounts.Manager
+	bindingMgr           *accountbindings.Manager
+	notificationMgr      *notificationroutes.Manager
+	notificationDispatch *notificationroutes.Dispatcher
+	topologySvc          *runtimetopology.Service
+	cronMgr              *cron.Manager
+	skillsMgr            *skills.Manager
+	workspace            *workspace.Manager
+	entClient            *ent.Client
+	snapshotMgr          *session.SnapshotManager
+	auditLogger          *audit.Logger
+	ilinkAuth            *ilinkauth.Service
+	serviceCtrl          serviceController
+	taskStore            *tasks.Store
+	kvStore              state.KV
+	threads              *threads.Manager
+	goalSvc              *goaldriven.Service
+	chatEventMu          sync.RWMutex
+	chatEventSubs        map[string]map[chan chatEvent]struct{}
+	watcher              *watch.Watcher
+	jwtFallbackSecret    string
+	daemonFallbackToken  string
+	webhookTestHandler   func(ctx context.Context, username, message string) (string, error)
+	port                 int
+	startedAt            time.Time
 }
 
 type chatEvent struct {
@@ -329,9 +330,12 @@ func NewServer(
 			s.notificationMgr = notificationMgr
 		}
 	}
-	if s.cronMgr != nil && s.notificationMgr != nil && s.accountMgr != nil && s.bus != nil {
+	if s.notificationMgr != nil && s.accountMgr != nil && s.bus != nil {
 		dispatcher := notificationroutes.NewDispatcher(log, s.notificationMgr, s.accountMgr, s.bus)
-		s.cronMgr.SetJobEventHandler(dispatcher.HandleCronJobEvent)
+		s.notificationDispatch = dispatcher
+		if s.cronMgr != nil {
+			s.cronMgr.SetJobEventHandler(dispatcher.HandleCronJobEvent)
+		}
 	}
 
 	ilinkStore, err := ilinkauth.NewStore(cfg)
@@ -466,9 +470,11 @@ func (s *Server) setup() {
 	api.DELETE("/notification-routes/:id", s.handleDeleteNotificationRoute)
 	api.GET("/notification-bindings", s.handleListNotificationBindings)
 	api.POST("/notification-bindings", s.handleCreateNotificationBinding)
+	api.GET("/notification-bindings/by-target", s.handleGetNotificationBindingByTarget)
+	api.PUT("/notification-bindings/by-target", s.handleSetNotificationBindingByTarget)
+	api.GET("/notification-bindings/by-route/:routeId", s.handleListNotificationBindingsByRoute)
 	api.PUT("/notification-bindings/:id", s.handleUpdateNotificationBinding)
 	api.DELETE("/notification-bindings/:id", s.handleDeleteNotificationBinding)
-	api.GET("/notification-bindings/by-route/:routeId", s.handleListNotificationBindingsByRoute)
 
 	// Status
 	api.GET("/status", s.handleStatus)
@@ -6581,6 +6587,130 @@ func (s *Server) handleListNotificationBindingsByRoute(c *echo.Context) error {
 	return c.JSON(http.StatusOK, bindings)
 }
 
+type notificationBindingTargetRequest struct {
+	Scope      string   `json:"scope"`
+	Target     string   `json:"target"`
+	RouteID    string   `json:"route_id"`
+	Enabled    *bool    `json:"enabled,omitempty"`
+	EventTypes []string `json:"event_types,omitempty"`
+}
+
+func (s *Server) handleGetNotificationBindingByTarget(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification bindings not available"})
+	}
+	scope := strings.TrimSpace(c.QueryParam("scope"))
+	target := strings.TrimSpace(c.QueryParam("target"))
+	if scope == "" || target == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "scope and target are required"})
+	}
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	binding, err := s.notificationMgr.FindBindingForTarget(ctx, scope, target)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if binding == nil {
+		return c.JSON(http.StatusOK, map[string]interface{}{"binding": nil})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{"binding": binding})
+}
+
+func (s *Server) handleSetNotificationBindingByTarget(c *echo.Context) error {
+	if s.notificationMgr == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "notification bindings not available"})
+	}
+	var body notificationBindingTargetRequest
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	scope := strings.TrimSpace(body.Scope)
+	target := strings.TrimSpace(body.Target)
+	if scope == "" || target == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "scope and target are required"})
+	}
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+	binding, err := s.bindDefaultNotificationRoute(ctx, scope, target, strings.TrimSpace(body.RouteID), body.EventTypes, body.Enabled)
+	if err != nil {
+		if errors.Is(err, ownership.ErrPermissionDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{"binding": binding})
+}
+
+func (s *Server) bindDefaultNotificationRoute(
+	ctx context.Context,
+	scope string,
+	target string,
+	routeID string,
+	eventTypes []string,
+	enabled *bool,
+) (*notificationroutes.NotificationBinding, error) {
+	if s == nil || s.notificationMgr == nil {
+		return nil, fmt.Errorf("notification routes not available")
+	}
+	scope = strings.TrimSpace(scope)
+	target = strings.TrimSpace(target)
+	routeID = strings.TrimSpace(routeID)
+	if scope == "" || target == "" {
+		return nil, fmt.Errorf("scope and target are required")
+	}
+	normalizedEvents := normalizeNotificationEventTypes(eventTypes)
+	if len(normalizedEvents) == 0 {
+		normalizedEvents = []string{notificationroutes.EventWebMessage}
+	}
+	rawEvents, err := json.Marshal(normalizedEvents)
+	if err != nil {
+		return nil, err
+	}
+	isEnabled := true
+	if enabled != nil {
+		isEnabled = *enabled
+	}
+	var route *notificationroutes.NotificationRoute
+	if routeID != "" {
+		var err error
+		route, err = s.notificationMgr.GetRoute(ctx, routeID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := s.notificationMgr.DeleteBindingsForTarget(ctx, scope, target); err != nil {
+		return nil, err
+	}
+	if route == nil {
+		return nil, nil
+	}
+	return s.notificationMgr.CreateBinding(ctx, notificationroutes.NotificationBinding{
+		Scope:          scope,
+		Target:         target,
+		RouteID:        routeID,
+		EventTypesJSON: string(rawEvents),
+		Enabled:        isEnabled,
+		TenantID:       route.TenantID,
+		OwnerUserID:    route.OwnerUserID,
+		Visibility:     route.Visibility,
+	})
+}
+
+func normalizeNotificationEventTypes(events []string) []string {
+	out := make([]string, 0, len(events))
+	seen := map[string]struct{}{}
+	for _, event := range events {
+		event = strings.TrimSpace(event)
+		if event == "" {
+			continue
+		}
+		if _, ok := seen[event]; ok {
+			continue
+		}
+		seen[event] = struct{}{}
+		out = append(out, event)
+	}
+	return out
+}
+
 func (s *Server) saveBootstrapConfig() error {
 	if s == nil || s.config == nil {
 		return fmt.Errorf("config is unavailable")
@@ -6706,26 +6836,28 @@ type sessionDetailResponse struct {
 }
 
 type threadSummaryResponse struct {
-	ID           string    `json:"id"`
-	Target       string    `json:"target"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	Summary      string    `json:"summary"`
-	MessageCount int       `json:"message_count"`
-	RuntimeID    string    `json:"runtime_id"`
-	Topic        string    `json:"topic"`
+	ID                  string    `json:"id"`
+	Target              string    `json:"target"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+	Summary             string    `json:"summary"`
+	MessageCount        int       `json:"message_count"`
+	RuntimeID           string    `json:"runtime_id"`
+	Topic               string    `json:"topic"`
+	NotificationRouteID string    `json:"notification_route_id,omitempty"`
 }
 
 type threadDetailResponse struct {
-	ID           string                   `json:"id"`
-	Target       string                   `json:"target"`
-	CreatedAt    time.Time                `json:"created_at"`
-	UpdatedAt    time.Time                `json:"updated_at"`
-	Summary      string                   `json:"summary"`
-	MessageCount int                      `json:"message_count"`
-	RuntimeID    string                   `json:"runtime_id"`
-	Topic        string                   `json:"topic"`
-	Messages     []sessionMessageResponse `json:"messages"`
+	ID                  string                   `json:"id"`
+	Target              string                   `json:"target"`
+	CreatedAt           time.Time                `json:"created_at"`
+	UpdatedAt           time.Time                `json:"updated_at"`
+	Summary             string                   `json:"summary"`
+	MessageCount        int                      `json:"message_count"`
+	RuntimeID           string                   `json:"runtime_id"`
+	Topic               string                   `json:"topic"`
+	NotificationRouteID string                   `json:"notification_route_id,omitempty"`
+	Messages            []sessionMessageResponse `json:"messages"`
 }
 
 func buildSessionMessageResponses(messages []session.Message) []sessionMessageResponse {
@@ -7013,6 +7145,7 @@ func (s *Server) handleListThreads(c *echo.Context) error {
 	}
 
 	items := make([]threadSummaryResponse, 0, len(ids))
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
 	for _, id := range ids {
 		sess, err := s.sessionMgr.GetExisting(id)
 		if err != nil {
@@ -7022,15 +7155,17 @@ func (s *Server) handleListThreads(c *echo.Context) error {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load thread %q: %v", id, err)})
 		}
 		messages := sess.GetMessages()
+		target := sessionTarget(sess.GetID())
 		items = append(items, threadSummaryResponse{
-			ID:           sess.GetID(),
-			Target:       sessionTarget(sess.GetID()),
-			CreatedAt:    sess.GetCreatedAt(),
-			UpdatedAt:    sess.GetUpdatedAt(),
-			Summary:      sess.GetSummary(),
-			MessageCount: len(messages),
-			RuntimeID:    s.getThreadRuntimeBinding(id),
-			Topic:        s.getThreadTopic(id),
+			ID:                  sess.GetID(),
+			Target:              target,
+			CreatedAt:           sess.GetCreatedAt(),
+			UpdatedAt:           sess.GetUpdatedAt(),
+			Summary:             sess.GetSummary(),
+			MessageCount:        len(messages),
+			RuntimeID:           s.getThreadRuntimeBinding(id),
+			Topic:               s.getThreadTopic(id),
+			NotificationRouteID: s.getDefaultNotificationRouteID(ctx, notificationroutes.ScopeThread, target),
 		})
 	}
 
@@ -7060,16 +7195,19 @@ func (s *Server) handleGetThread(c *echo.Context) error {
 	}
 
 	messages := sess.GetMessages()
+	target := sessionTarget(sess.GetID())
+	ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
 	return c.JSON(http.StatusOK, threadDetailResponse{
-		ID:           sess.GetID(),
-		Target:       sessionTarget(sess.GetID()),
-		CreatedAt:    sess.GetCreatedAt(),
-		UpdatedAt:    sess.GetUpdatedAt(),
-		Summary:      sess.GetSummary(),
-		MessageCount: len(messages),
-		RuntimeID:    s.getThreadRuntimeBinding(id),
-		Topic:        s.getThreadTopic(id),
-		Messages:     buildSessionMessageResponses(messages),
+		ID:                  sess.GetID(),
+		Target:              target,
+		CreatedAt:           sess.GetCreatedAt(),
+		UpdatedAt:           sess.GetUpdatedAt(),
+		Summary:             sess.GetSummary(),
+		MessageCount:        len(messages),
+		RuntimeID:           s.getThreadRuntimeBinding(id),
+		Topic:               s.getThreadTopic(id),
+		NotificationRouteID: s.getDefaultNotificationRouteID(ctx, notificationroutes.ScopeThread, target),
+		Messages:            buildSessionMessageResponses(messages),
 	})
 }
 
@@ -7089,9 +7227,10 @@ func (s *Server) handleUpdateThread(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to load thread: %v", err)})
 	}
 	var body struct {
-		Summary   string `json:"summary"`
-		RuntimeID string `json:"runtime_id"`
-		Topic     string `json:"topic"`
+		Summary             string  `json:"summary"`
+		RuntimeID           string  `json:"runtime_id"`
+		Topic               string  `json:"topic"`
+		NotificationRouteID *string `json:"notification_route_id"`
 	}
 	if err := c.Bind(&body); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -7108,7 +7247,27 @@ func (s *Server) handleUpdateThread(c *echo.Context) error {
 	if err := s.setThreadTopic(id, body.Topic); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
+	if s.notificationMgr != nil && body.NotificationRouteID != nil {
+		ctx := ownership.WithAuthContext(c.Request().Context(), s.authContextFromEcho(c))
+		if _, err := s.bindDefaultNotificationRoute(ctx, notificationroutes.ScopeThread, sessionTarget(id), *body.NotificationRouteID, nil, nil); err != nil {
+			if errors.Is(err, ownership.ErrPermissionDenied) {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+			}
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
+}
+
+func (s *Server) getDefaultNotificationRouteID(ctx context.Context, scope, target string) string {
+	if s == nil || s.notificationMgr == nil {
+		return ""
+	}
+	binding, err := s.notificationMgr.FindBindingForTarget(ctx, scope, target)
+	if err != nil || binding == nil || !binding.Enabled {
+		return ""
+	}
+	return binding.RouteID
 }
 
 // --- Status Handler ---
@@ -7759,10 +7918,11 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 	if tokenStr == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "token required"})
 	}
-	username, _, _, err := s.parseScopedStreamToken(tokenStr, streamTokenPurposeChatWS)
+	username, _, role, userID, tenantID, err := s.parseScopedStreamTokenClaims(tokenStr, streamTokenPurposeChatWS)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
+	authCtx := ownership.AuthContext{UserID: userID, TenantID: tenantID, Role: role}
 
 	// Upgrade to WebSocket
 	conn, err := wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
@@ -7993,6 +8153,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Role:    "user",
 				Content: content,
 			})
+			s.dispatchWebChatNotification(context.Background(), authCtx, username, runtimeID, sessionID, "user", content)
 
 			if daemonHandled, daemonReply, daemonErr := s.handleDaemonRuntimeChatMessage(
 				context.Background(),
@@ -8009,6 +8170,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 					Role:    "assistant",
 					Content: daemonReply,
 				})
+				s.dispatchWebChatNotification(context.Background(), authCtx, username, runtimeID, sessionID, "assistant", daemonReply)
 				resp := chatWSResponse{
 					Type:      "message",
 					Content:   daemonReply,
@@ -8052,6 +8214,7 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 				Role:    "assistant",
 				Content: response,
 			})
+			s.dispatchWebChatNotification(context.Background(), authCtx, username, runtimeID, sessionID, "assistant", response)
 
 			resp := chatWSResponse{
 				Type:      "message",
@@ -8079,6 +8242,43 @@ func (s *Server) handleChatWS(c *echo.Context) error {
 			}
 		}
 	}
+}
+
+func (s *Server) dispatchWebChatNotification(
+	ctx context.Context,
+	authCtx ownership.AuthContext,
+	username string,
+	runtimeID string,
+	sessionID string,
+	role string,
+	content string,
+) {
+	if s == nil || s.notificationDispatch == nil || strings.TrimSpace(content) == "" {
+		return
+	}
+	if authCtx.UserID != "" {
+		ctx = ownership.WithAuthContext(ctx, authCtx)
+	}
+	threadTarget := sessionTarget(sessionID)
+	scope := notificationroutes.ScopeChannel
+	target := "#websocket"
+	if s.getDefaultNotificationRouteID(ctx, notificationroutes.ScopeThread, threadTarget) != "" {
+		scope = notificationroutes.ScopeThread
+		target = threadTarget
+	}
+	s.notificationDispatch.HandleWebMessageEvent(ctx, notificationroutes.WebMessageEvent{
+		Scope:     scope,
+		Target:    target,
+		EventType: notificationroutes.EventWebMessage,
+		Role:      role,
+		Content:   content,
+		SessionID: sessionID,
+		ThreadID:  threadTarget,
+		Username:  username,
+		RuntimeID: runtimeID,
+		Topic:     s.getThreadTopic(sessionID),
+		CreatedAt: time.Now(),
+	})
 }
 
 func (s *Server) handleDaemonRuntimeChatMessage(
@@ -9429,6 +9629,7 @@ func (s *Server) handleCreateStreamToken(c *echo.Context) error {
 	claims := jwt.MapClaims{
 		"sub":  s.currentUsername(c),
 		"uid":  s.currentUserID(c),
+		"tid":  s.currentTenantID(c),
 		"role": s.currentUserRole(c),
 		"pur":  string(purpose),
 		"exp":  now.Add(5 * time.Minute).Unix(),
@@ -9446,6 +9647,11 @@ func (s *Server) handleCreateStreamToken(c *echo.Context) error {
 }
 
 func (s *Server) parseScopedStreamToken(tokenStr string, purpose streamTokenPurpose) (string, string, string, error) {
+	sub, sid, role, _, _, err := s.parseScopedStreamTokenClaims(tokenStr, purpose)
+	return sub, sid, role, err
+}
+
+func (s *Server) parseScopedStreamTokenClaims(tokenStr string, purpose streamTokenPurpose) (string, string, string, string, string, error) {
 	parsed, err := jwt.Parse(strings.TrimSpace(tokenStr), func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
@@ -9453,23 +9659,25 @@ func (s *Server) parseScopedStreamToken(tokenStr string, purpose streamTokenPurp
 		return []byte(s.getJWTSecret()), nil
 	})
 	if err != nil || parsed == nil || !parsed.Valid {
-		return "", "", "", fmt.Errorf("invalid token")
+		return "", "", "", "", "", fmt.Errorf("invalid token")
 	}
 	claims, ok := parsed.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", "", "", fmt.Errorf("invalid token claims")
+		return "", "", "", "", "", fmt.Errorf("invalid token claims")
 	}
 	claimedPurpose, _ := claims["pur"].(string)
 	if normalizeStreamTokenPurpose(claimedPurpose) != purpose {
-		return "", "", "", fmt.Errorf("invalid token purpose")
+		return "", "", "", "", "", fmt.Errorf("invalid token purpose")
 	}
 	sub, _ := claims["sub"].(string)
 	sid, _ := claims["sid"].(string)
 	role, _ := claims["role"].(string)
+	uid, _ := claims["uid"].(string)
+	tid, _ := claims["tid"].(string)
 	if strings.TrimSpace(sub) == "" {
-		return "", "", "", fmt.Errorf("subject is empty")
+		return "", "", "", "", "", fmt.Errorf("subject is empty")
 	}
-	return strings.TrimSpace(sub), strings.TrimSpace(sid), strings.TrimSpace(role), nil
+	return strings.TrimSpace(sub), strings.TrimSpace(sid), strings.TrimSpace(role), strings.TrimSpace(uid), strings.TrimSpace(tid), nil
 }
 
 func (s *Server) parseJWTSubject(tokenStr string) (string, error) {

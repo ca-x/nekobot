@@ -3,12 +3,21 @@ import Header from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { getToken } from '@/api/client';
 import { t } from '@/lib/i18n';
 import { toast } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { useRuntimeAgents } from '@/hooks/useTopology';
+import { useNotificationRoutes } from '@/hooks/useNotificationRoutes';
 import { describeCollaborationTarget, useCollaborationTargets } from '@/hooks/useCollaborationTargets';
 import { useSaveMessage, useSavedMessages, useThreadDetail, useThreads, useUnsaveMessage, useUpdateThread } from '@/hooks/useThreads';
 import { Bookmark, Save, MessageSquare, Paperclip, Route } from 'lucide-react';
@@ -32,12 +41,14 @@ export default function ThreadsPage() {
   const navigate = useNavigate();
   const { data: threads = [], isLoading } = useThreads();
   const { data: runtimes = [] } = useRuntimeAgents();
+  const { data: notificationRoutes = [] } = useNotificationRoutes();
   const { optionMap } = useCollaborationTargets();
   const updateThread = useUpdateThread();
   const [selectedId, setSelectedId] = useState('');
   const [summaryDraft, setSummaryDraft] = useState('');
   const [runtimeDraft, setRuntimeDraft] = useState('');
   const [topicDraft, setTopicDraft] = useState('');
+  const [notificationRouteDraft, setNotificationRouteDraft] = useState('');
 
   const sortedThreads = useMemo(
     () => [...threads].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
@@ -63,6 +74,7 @@ export default function ThreadsPage() {
     setSummaryDraft(detail.summary || '');
     setRuntimeDraft(detail.runtime_id || '');
     setTopicDraft(detail.topic || '');
+    setNotificationRouteDraft(detail.notification_route_id || '');
   }, [detail]);
 
   const handleSave = () => {
@@ -72,6 +84,7 @@ export default function ThreadsPage() {
       summary: summaryDraft,
       runtime_id: runtimeDraft,
       topic: topicDraft,
+      notification_route_id: notificationRouteDraft,
     });
   };
 
@@ -218,17 +231,17 @@ export default function ThreadsPage() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-xs text-muted-foreground mb-1 block">{t('sessionThreadTopicLabel')}</label>
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('sessionThreadTopicLabel')}</Label>
                   <Input value={topicDraft} onChange={(e) => setTopicDraft(e.target.value)} placeholder={t('sessionThreadTopicPlaceholder')} />
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-xs text-muted-foreground mb-1 block">{t('sessionSummaryLabel')}</label>
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('sessionSummaryLabel')}</Label>
                   <Input value={summaryDraft} onChange={(e) => setSummaryDraft(e.target.value)} placeholder={t('sessionSummaryPlaceholder')} />
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-xs text-muted-foreground mb-1 block">{t('sessionRuntimeLabel')}</label>
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('sessionRuntimeLabel')}</Label>
                   <select
                     className="h-11 rounded-md border border-input bg-background px-3 text-sm"
                     value={runtimeDraft}
@@ -241,6 +254,27 @@ export default function ThreadsPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('threadNotificationRouteLabel')}</Label>
+                  <Select
+                    value={notificationRouteDraft || '__none__'}
+                    onValueChange={(value) => setNotificationRouteDraft(value === '__none__' ? '' : value)}
+                  >
+                    <SelectTrigger className="h-11 w-full rounded-md">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">{t('notificationBindingRouteNone')}</SelectItem>
+                      {notificationRoutes.filter((route) => route.enabled).map((route) => (
+                        <SelectItem key={route.id} value={route.id}>
+                          {route.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="text-xs leading-5 text-muted-foreground">{t('threadNotificationRouteHint')}</div>
                 </div>
 
                 <div className="flex gap-2">

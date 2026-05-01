@@ -12,6 +12,7 @@ export interface ThreadSummary {
   message_count: number;
   runtime_id: string;
   topic: string;
+  notification_route_id?: string;
 }
 
 export interface ThreadDetail extends ThreadSummary {
@@ -77,9 +78,9 @@ export function useThreadDetail(id?: string | null) {
 
 export function useUpdateThread() {
   const qc = useQueryClient();
-  return useMutation<unknown, Error, { id: string; summary: string; runtime_id: string; topic: string }>({
-    mutationFn: ({ id, summary, runtime_id, topic }) =>
-      api.put(`/api/threads/${encodeURIComponent(id)}`, { summary, runtime_id, topic }),
+  return useMutation<unknown, Error, { id: string; summary: string; runtime_id: string; topic: string; notification_route_id?: string }>({
+    mutationFn: ({ id, summary, runtime_id, topic, notification_route_id }) =>
+      api.put(`/api/threads/${encodeURIComponent(id)}`, { summary, runtime_id, topic, notification_route_id }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: threadKeys.list() });
       qc.invalidateQueries({ queryKey: threadKeys.detail(vars.id) });

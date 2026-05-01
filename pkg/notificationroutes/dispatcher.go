@@ -27,13 +27,29 @@ type ActivityEntry struct {
 	StepID  string
 }
 
+// WebMessageEvent describes a Web-originated channel/thread message that can
+// be mirrored to a user's configured IM notification route.
+type WebMessageEvent struct {
+	Scope     string
+	Target    string
+	EventType string
+	Role      string
+	Content   string
+	SessionID string
+	ThreadID  string
+	Username  string
+	RuntimeID string
+	Topic     string
+	CreatedAt time.Time
+}
+
 // Dispatcher delivers notification events to configured channel accounts.
 type Dispatcher struct {
-	log            *logger.Logger
-	routes         *Manager
-	accounts       *channelaccounts.Manager
-	bus            bus.Bus
-	logActivity    func(ctx context.Context, entry ActivityEntry)
+	log         *logger.Logger
+	routes      *Manager
+	accounts    *channelaccounts.Manager
+	bus         bus.Bus
+	logActivity func(ctx context.Context, entry ActivityEntry)
 }
 
 // NewDispatcher creates a notification dispatcher.
@@ -134,6 +150,84 @@ func (d *Dispatcher) HandleCronJobEvent(ctx context.Context, event cron.JobEvent
 	}
 }
 
+// HandleWebMessageEvent delivers Web channel/thread messages through the
+// notification binding model. Only explicit bindings are delivered.
+func (d *Dispatcher) HandleWebMessageEvent(ctx context.Context, event WebMessageEvent) {
+	if d == nil || d.routes == nil || d.accounts == nil || d.bus == nil {
+		return
+	}
+	event.Scope = strings.TrimSpace(event.Scope)
+	event.Target = strings.TrimSpace(event.Target)
+	if strings.TrimSpace(event.EventType) == "" {
+		event.EventType = EventWebMessage
+	}
+	if event.Scope == "" || event.Target == "" || strings.TrimSpace(event.Content) == "" {
+		return
+	}
+
+	dispatchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	binding, err := d.routes.FindBindingForTarget(dispatchCtx, event.Scope, event.Target)
+	if err != nil {
+		d.warn("Failed to find Web notification binding",
+			zap.String("scope", event.Scope),
+			zap.String("target", event.Target),
+			zap.Error(err))
+		return
+	}
+	if binding == nil || !binding.Enabled || !bindingMatchesEvent(binding.EventTypesJSON, event.EventType) {
+		return
+	}
+
+	route, err := d.routes.GetRoute(dispatchCtx, binding.RouteID)
+	if err != nil {
+		d.warn("Failed to load Web notification route", zap.String("route_id", binding.RouteID), zap.Error(err))
+		return
+	}
+	if route == nil || !route.Enabled {
+		return
+	}
+
+	account, err := d.accounts.Get(dispatchCtx, route.ChannelAccountID)
+	if err != nil {
+		d.warn("Failed to load Web notification channel account",
+			zap.String("route_id", route.ID),
+			zap.String("channel_account_id", route.ChannelAccountID),
+			zap.Error(err))
+		return
+	}
+	if account == nil || !account.Enabled {
+		return
+	}
+
+	target, err := parseTargetConfig(route.TargetConfigJSON)
+	if err != nil {
+		d.warn("Invalid Web notification route target config", zap.String("route_id", route.ID), zap.Error(err))
+		return
+	}
+
+	msg := buildWebNotificationMessage(event, *route, *account, target)
+	if err := d.bus.SendOutbound(msg); err != nil {
+		d.warn("Failed to send Web notification",
+			zap.String("scope", event.Scope),
+			zap.String("target", event.Target),
+			zap.String("route_id", route.ID),
+			zap.String("channel_id", msg.ChannelID),
+			zap.Error(err))
+		return
+	}
+
+	if d.logActivity != nil {
+		d.logActivity(dispatchCtx, ActivityEntry{
+			Target:  target.Target,
+			Kind:    event.EventType,
+			Summary: webNotificationSummary(event),
+			Detail:  webNotificationContent(event),
+		})
+	}
+}
+
 func (d *Dispatcher) warn(message string, fields ...zap.Field) {
 	if d != nil && d.log != nil {
 		d.log.Warn(message, fields...)
@@ -187,6 +281,51 @@ func parseTargetConfig(raw string) (targetConfig, error) {
 		}
 	}
 	return cfg, nil
+}
+
+func buildWebNotificationMessage(
+	event WebMessageEvent,
+	route NotificationRoute,
+	account channelaccounts.ChannelAccount,
+	target targetConfig,
+) *bus.Message {
+	channelType := strings.TrimSpace(strings.ToLower(account.ChannelType))
+	channelID := channelaccounts.RuntimeChannelID(account)
+	sessionID := notificationSessionID(channelType, target)
+	createdAt := event.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	data := map[string]interface{}{
+		"source":     "web",
+		"scope":      event.Scope,
+		"event":      event.EventType,
+		"target":     event.Target,
+		"session_id": event.SessionID,
+		"thread_id":  event.ThreadID,
+		"runtime_id": event.RuntimeID,
+		"role":       event.Role,
+		"route_id":   route.ID,
+		"title":      firstNonEmpty(target.Title, webNotificationTitle(event)),
+	}
+	for key, value := range target.Extra {
+		data[key] = value
+	}
+	if target.ContextToken != "" {
+		data["context_token"] = target.ContextToken
+	}
+	return &bus.Message{
+		ID:        "notification:" + uuid.NewString(),
+		ChannelID: channelID,
+		SessionID: sessionID,
+		UserID:    firstNonEmpty(target.UserID, target.ChatID, target.Target),
+		Username:  firstNonEmpty(target.Username, event.Username),
+		Type:      bus.MessageTypeText,
+		Content:   webNotificationContent(event),
+		Data:      data,
+		Timestamp: createdAt,
+		ReplyTo:   target.ReplyTo,
+	}
 }
 
 func buildCronNotificationMessage(
@@ -263,6 +402,38 @@ func cronNotificationContent(event cron.JobEvent) string {
 		lines = append(lines, "Result: "+truncate(event.Response, 800))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func webNotificationContent(event WebMessageEvent) string {
+	role := strings.TrimSpace(event.Role)
+	if role == "" {
+		role = "message"
+	}
+	lines := []string{
+		webNotificationTitle(event),
+		fmt.Sprintf("%s: %s", strings.ToUpper(role[:1])+role[1:], truncate(strings.TrimSpace(event.Content), 1200)),
+	}
+	if strings.TrimSpace(event.Target) != "" {
+		lines = append(lines, "Target: "+strings.TrimSpace(event.Target))
+	}
+	if strings.TrimSpace(event.RuntimeID) != "" {
+		lines = append(lines, "Runtime: "+strings.TrimSpace(event.RuntimeID))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func webNotificationTitle(event WebMessageEvent) string {
+	if strings.TrimSpace(event.Topic) != "" {
+		return "Nekobot Web update: " + strings.TrimSpace(event.Topic)
+	}
+	if event.Scope == ScopeThread {
+		return "Nekobot thread update"
+	}
+	return "Nekobot channel update"
+}
+
+func webNotificationSummary(event WebMessageEvent) string {
+	return fmt.Sprintf("Web %s message mirrored to IM", strings.TrimSpace(event.Scope))
 }
 
 func notificationTitle(event cron.JobEvent, target targetConfig) string {

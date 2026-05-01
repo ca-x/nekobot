@@ -1,7 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Header from '@/components/layout/Header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -15,6 +23,7 @@ import {
   useTestChannel,
   useWechatBindingStatus,
 } from '@/hooks/useChannels';
+import { useNotificationBindings, useNotificationRoutes, useSetNotificationBindingForTarget } from '@/hooks/useNotificationRoutes';
 import { ChannelForm } from '@/components/config/ChannelForm';
 import { t } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -60,6 +69,9 @@ export default function ChannelsPage() {
   const deleteWechatBinding = useDeleteWechatBinding();
   const activateWechatBinding = useActivateWechatBinding();
   const deleteWechatBindingAccount = useDeleteWechatBindingAccount();
+  const { data: notificationRoutes = [] } = useNotificationRoutes();
+  const { data: notificationBindings = [] } = useNotificationBindings();
+  const setNotificationBinding = useSetNotificationBindingForTarget();
 
   const [activeTab, setActiveTab] = useState<string>('all');
   const [editingChannel, setEditingChannel] = useState<string | null>(null);
@@ -81,6 +93,35 @@ export default function ChannelsPage() {
 
   // Derive channel list from the map.
   const runtimeInstances = channels?._instances ?? [];
+  const channelNotificationTargets = useMemo(() => {
+    const targets = [
+      {
+        target: '#websocket',
+        label: t('collaborationTargetWebsocket'),
+        description: t('channelNotificationWebsocketHint'),
+        enabled: true,
+      },
+    ];
+    for (const instance of runtimeInstances) {
+      const target = instance.id.startsWith('#') || instance.id.startsWith('dm:')
+        ? instance.id
+        : `#${instance.id}`;
+      targets.push({
+        target,
+        label: instance.name || target,
+        description: `${instance.type} · ${target}`,
+        enabled: instance.enabled,
+      });
+    }
+    return targets;
+  }, [runtimeInstances]);
+  const notificationBindingMap = useMemo(() => {
+    return new Map(
+      notificationBindings
+        .filter((binding) => binding.scope === 'channel' && binding.enabled)
+        .map((binding) => [binding.target, binding.route_id]),
+    );
+  }, [notificationBindings]);
   const channelConfigs: Record<string, ChannelConfig> = Object.fromEntries(
     Object.entries(channels ?? {}).filter(
       ([name, value]) => name !== '_instances' && value && !Array.isArray(value),
@@ -103,6 +144,15 @@ export default function ChannelsPage() {
     testChannel.mutate(name);
   };
 
+  const handleChannelNotificationRouteChange = (target: string, value: string) => {
+    setNotificationBinding.mutate({
+      scope: 'channel',
+      target,
+      route_id: value === '__none__' ? '' : value,
+      event_types: ['web.message'],
+    });
+  };
+
   return (
     <div>
       <Header title={t('tabChannels')} description={t('channelsPageDescription')} />
@@ -118,6 +168,54 @@ export default function ChannelsPage() {
           </TabsTrigger>
         </TabsList>
       </Tabs>
+
+      {!isLoading && channelNotificationTargets.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">{t('channelNotificationBindingsTitle')}</CardTitle>
+            <CardDescription>{t('channelNotificationBindingsDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {channelNotificationTargets.map((target) => (
+                <div key={target.target} className="rounded-md border border-border/70 bg-background px-3 py-3">
+                  <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">{target.label}</div>
+                      <div className="truncate text-xs text-muted-foreground" title={target.description}>
+                        {target.description}
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+                      {target.target}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">{t('channelNotificationRouteLabel')}</Label>
+                    <Select
+                      value={notificationBindingMap.get(target.target) || '__none__'}
+                      onValueChange={(value) => handleChannelNotificationRouteChange(target.target, value)}
+                      disabled={!target.enabled || setNotificationBinding.isPending}
+                    >
+                      <SelectTrigger className="h-10 w-full rounded-md">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">{t('notificationBindingRouteNone')}</SelectItem>
+                        {notificationRoutes.filter((route) => route.enabled).map((route) => (
+                          <SelectItem key={route.id} value={route.id}>
+                            {route.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Loading state */}
       {isLoading && (
