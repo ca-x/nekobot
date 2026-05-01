@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import DirectAgentMessageDialog from "@/components/DirectAgentMessageDialog";
 import { useSendAgentDirectMessage } from "@/hooks/useSendAgentDirectMessage";
 import {
@@ -168,11 +167,11 @@ export default function DaemonPage() {
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="space-y-6 p-6">
-          <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
+      <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="space-y-6 p-3 sm:p-6">
+          <Card className="rounded-[24px] border-border/70 bg-card/92 p-4 shadow-sm sm:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                   {t("systemDaemonTitle")}
                 </div>
@@ -183,7 +182,7 @@ export default function DaemonPage() {
                   {t("systemDaemonDescription")}
                 </p>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="grid w-full grid-cols-2 gap-2 text-center sm:grid-cols-3 lg:w-auto">
                 <DaemonStat label={t("daemonComputers")} value={String(inventoryMachines.length)} />
                 <DaemonStat
                   label={t("daemonAgents")}
@@ -218,8 +217,8 @@ export default function DaemonPage() {
             )}
           </Card>
 
-          <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
-            <div>
+          <Card className="rounded-[24px] border-border/70 bg-card/92 p-4 shadow-sm sm:p-5">
+            <div className="min-w-0">
               <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                 {t("systemDaemonExplorerTitle")}
               </div>
@@ -407,7 +406,7 @@ export default function DaemonPage() {
             )}
           </Card>
 
-          <Card className="rounded-[24px] border-border/70 bg-card/92 p-5 shadow-sm">
+          <Card className="rounded-[24px] border-border/70 bg-card/92 p-4 shadow-sm sm:p-5">
             <div className="flex flex-col items-start justify-between gap-3 sm:flex-row">
               <div>
                 <div className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
@@ -498,7 +497,7 @@ export default function DaemonPage() {
             )}
           </Card>
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
