@@ -7,6 +7,7 @@ import { useMarketplaceSkills } from '@/hooks/useMarketplace';
 import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
 import { useProviders } from '@/hooks/useProviders';
 import { useNotificationRoutes } from '@/hooks/useNotificationRoutes';
+import { parseNotificationRouteTarget } from '@/hooks/useCollaborationTargets';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { OwnershipBadge, type ResourceVisibility } from '@/components/common/OwnershipBadge';
@@ -31,6 +32,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { t } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 import {
   useCreateCronJob,
   useCronJobs,
@@ -138,6 +140,12 @@ export default function CronPage() {
   const [deleteJobId, setDeleteJobId] = useState<string>('');
 
   const isBusy = createJob.isPending || deleteJob.isPending || enableJob.isPending || disableJob.isPending || runJob.isPending;
+  const notificationRouteMap = useMemo(
+    () => new Map(notificationRoutes.map((route) => [route.id, route])),
+    [notificationRoutes],
+  );
+  const selectedNotificationRoute = notificationRouteMap.get(form.notification_route_id) ?? null;
+  const selectedRouteTargetPreview = parseNotificationRouteTarget(selectedNotificationRoute);
 
   const sortedJobs = useMemo(
     () => [...jobs].sort((a, b) => b.created_at.localeCompare(a.created_at)),
@@ -386,6 +394,7 @@ export default function CronPage() {
                 </SelectContent>
               </Select>
               <div className="text-xs leading-5 text-muted-foreground">{t('cronNotificationRouteHint')}</div>
+              <RouteTargetSummary routeName={selectedNotificationRoute?.name} preview={selectedRouteTargetPreview} />
             </div>
 
             <div className="space-y-1.5 xl:col-span-2">
@@ -658,10 +667,15 @@ export default function CronPage() {
                     <div className="rounded-md bg-muted/40 px-3 py-2 md:col-span-2">
                       <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronNotificationRoute')}</div>
                       <div className="mt-1 break-all text-foreground">
-                        {notificationRoutes.find((route) => route.id === job.notification_route_id)?.name ||
+                        {notificationRouteMap.get(job.notification_route_id ?? '')?.name ||
                           job.notification_route_id ||
                           t('cronNotificationRouteNone')}
                       </div>
+                      <RouteTargetSummary
+                        className="mt-2"
+                        routeName={notificationRouteMap.get(job.notification_route_id ?? '')?.name}
+                        preview={parseNotificationRouteTarget(notificationRouteMap.get(job.notification_route_id ?? ''))}
+                      />
                     </div>
                     <div className="rounded-md bg-muted/40 px-3 py-2">
                       <div className="uppercase tracking-[0.12em] text-[10px]">{t('cronNextRun')}</div>
@@ -772,6 +786,39 @@ export default function CronPage() {
           </DialogContent>
         </DialogPortal>
       </Dialog>
+    </div>
+  );
+}
+
+function RouteTargetSummary({
+  routeName,
+  preview,
+  className,
+}: {
+  routeName?: string;
+  preview: ReturnType<typeof parseNotificationRouteTarget>;
+  className?: string;
+}) {
+  if (!routeName && !preview) {
+    return (
+      <div className={cn('rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground', className)}>
+        {t('collaborationTargetRouteNone')}
+      </div>
+    );
+  }
+  if (preview?.parseError) {
+    return (
+      <div className={cn('rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300', className)}>
+        {t('collaborationTargetRouteInvalid')}: {preview.parseError}
+      </div>
+    );
+  }
+  return (
+    <div className={cn('rounded-md border border-dashed border-border/70 bg-muted/25 px-3 py-2 text-xs leading-5', className)}>
+      <div className="font-medium text-foreground">{preview?.title || routeName || '-'}</div>
+      <div className="mt-0.5 break-all text-muted-foreground">
+        {preview?.detail || t('collaborationTargetRouteUnspecified')}
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { BellRing, Edit3, Plus, Route, Trash2 } from 'lucide-react';
 
 import { OwnershipBadge, normalizeVisibility, type ResourceVisibility } from '@/components/common/OwnershipBadge';
+import { CollaborationTargetSelect } from '@/components/collaboration/CollaborationTargetSelect';
 import Header from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,6 +33,7 @@ import {
   useNotificationRoutes,
   useUpdateNotificationRoute,
 } from '@/hooks/useNotificationRoutes';
+import { describeCollaborationTarget, useCollaborationTargets } from '@/hooks/useCollaborationTargets';
 import { useChannelAccounts } from '@/hooks/useTopology';
 import { t } from '@/lib/i18n';
 import { toast } from '@/lib/notify';
@@ -78,6 +80,29 @@ function formatJSON(raw: string): string {
   }
 }
 
+function routeTargetFromJSON(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw || '{}') as Record<string, unknown>;
+    return typeof parsed.target === 'string' ? parsed.target : '';
+  } catch {
+    return '';
+  }
+}
+
+function routeJSONWithTarget(raw: string, target: string): string {
+  let parsed: Record<string, unknown> = {};
+  try {
+    const value = JSON.parse(raw || '{}');
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      parsed = value as Record<string, unknown>;
+    }
+  } catch {
+    parsed = {};
+  }
+  parsed.target = target;
+  return JSON.stringify(parsed, null, 2);
+}
+
 function accountLabel(accountID: string, accountMap: Map<string, { label: string }>): string {
   return accountMap.get(accountID)?.label ?? (accountID || '-');
 }
@@ -113,6 +138,7 @@ function parseRouteInput(state: RouteDialogState): NotificationRouteInput | null
 export default function NotificationRoutesPage() {
   const routesQuery = useNotificationRoutes();
   const accountsQuery = useChannelAccounts();
+  const { options: collaborationTargets, optionMap: collaborationTargetMap } = useCollaborationTargets();
   const createRoute = useCreateNotificationRoute();
   const updateRoute = useUpdateNotificationRoute();
   const deleteRoute = useDeleteNotificationRoute();
@@ -151,6 +177,10 @@ export default function NotificationRoutesPage() {
     isMutating ||
     !state.name.trim() ||
     !state.channel_account_id.trim();
+  const selectedTarget = routeTargetFromJSON(state.target_config_json);
+  const selectedTargetInfo = selectedTarget
+    ? describeCollaborationTarget(selectedTarget, collaborationTargetMap)
+    : null;
 
   function openCreateDialog() {
     setState(emptyRouteState());
@@ -365,6 +395,22 @@ export default function NotificationRoutesPage() {
               </span>
               <Switch checked={state.enabled} onCheckedChange={(enabled) => setState((prev) => ({ ...prev, enabled }))} />
             </label>
+            <div className="space-y-2 md:col-span-2">
+              <Label>{t('collaborationTargetBound')}</Label>
+              <CollaborationTargetSelect
+                value={selectedTarget}
+                options={collaborationTargets}
+                onValueChange={(target) => setState((prev) => ({
+                  ...prev,
+                  target_config_json: routeJSONWithTarget(prev.target_config_json, target),
+                }))}
+              />
+              <div className="text-xs leading-5 text-muted-foreground">
+                {selectedTargetInfo
+                  ? `${selectedTargetInfo.label} · ${selectedTargetInfo.target}`
+                  : t('collaborationTargetRouteNone')}
+              </div>
+            </div>
             <div className="space-y-2 md:col-span-2">
               <Label>{t('notificationRoutesTargetConfig')}</Label>
               <Textarea

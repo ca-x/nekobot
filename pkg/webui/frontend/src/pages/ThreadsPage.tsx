@@ -9,8 +9,9 @@ import { t } from '@/lib/i18n';
 import { toast } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 import { useRuntimeAgents } from '@/hooks/useTopology';
+import { describeCollaborationTarget, useCollaborationTargets } from '@/hooks/useCollaborationTargets';
 import { useSaveMessage, useSavedMessages, useThreadDetail, useThreads, useUnsaveMessage, useUpdateThread } from '@/hooks/useThreads';
-import { Bookmark, Save, MessageSquare, Paperclip } from 'lucide-react';
+import { Bookmark, Save, MessageSquare, Paperclip, Route } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 function formatDateTime(value: string): string {
@@ -31,6 +32,7 @@ export default function ThreadsPage() {
   const navigate = useNavigate();
   const { data: threads = [], isLoading } = useThreads();
   const { data: runtimes = [] } = useRuntimeAgents();
+  const { optionMap } = useCollaborationTargets();
   const updateThread = useUpdateThread();
   const [selectedId, setSelectedId] = useState('');
   const [summaryDraft, setSummaryDraft] = useState('');
@@ -50,6 +52,7 @@ export default function ThreadsPage() {
 
   const { data: detail } = useThreadDetail(selectedId || null);
   const detailTarget = detail?.target || (detail?.id ? `#websocket:${detail.id}` : '');
+  const detailTargetInfo = describeCollaborationTarget(detailTarget, optionMap);
   const { data: savedMessages } = useSavedMessages(detailTarget || null);
   const saveMessage = useSaveMessage();
   const unsaveMessage = useUnsaveMessage();
@@ -132,7 +135,9 @@ export default function ThreadsPage() {
                     </div>
                   </div>
                 ) : null}
-                {sortedThreads.map((item) => (
+                {sortedThreads.map((item) => {
+                  const targetInfo = describeCollaborationTarget(item.target || `#websocket:${item.id}`, optionMap);
+                  return (
                   <button
                     key={item.id}
                     type="button"
@@ -148,9 +153,16 @@ export default function ThreadsPage() {
                     <div className="text-sm font-medium truncate mb-1" title={item.topic || item.summary || item.id}>
                       {item.topic || item.summary || item.id}
                     </div>
+                    <div className="mb-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      <Route className="h-3 w-3 shrink-0" />
+                      <span className="truncate" title={`${targetInfo.label} · ${targetInfo.target}`}>
+                        {targetInfo.label}
+                      </span>
+                    </div>
                     <div className="text-xs text-muted-foreground">{t('sessionUpdatedAt', formatDateTime(item.updated_at))}</div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </ScrollArea>
           </CardContent>
@@ -183,6 +195,25 @@ export default function ThreadsPage() {
                   <div>
                     <div className="text-xs text-muted-foreground mb-1">{t('sessionUpdatedAtLabel')}</div>
                     <div>{formatDateTime(detail.updated_at)}</div>
+                  </div>
+                  <div className="sm:col-span-2 rounded-md border border-dashed border-border/70 bg-muted/25 px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-background">
+                        <Route className="h-3.5 w-3.5 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs text-muted-foreground">{t('collaborationTargetBound')}</div>
+                        <div className="truncate text-sm font-medium" title={`${detailTargetInfo.label} · ${detailTargetInfo.target}`}>
+                          {detailTargetInfo.label}
+                        </div>
+                      </div>
+                      <div className="ml-auto max-w-full rounded-full bg-background px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
+                        {detailTargetInfo.target}
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {t('collaborationThreadTargetHint')}
+                    </div>
                   </div>
                 </div>
 
