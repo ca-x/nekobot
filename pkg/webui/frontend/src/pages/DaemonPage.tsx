@@ -647,6 +647,7 @@ function RuntimeRow({ runtime }: { runtime: DaemonRuntimeDetail }) {
             onClick={() => setDmOpen(true)}
             className="gap-2"
             title="Send direct message to agent"
+            aria-label={`Send direct message to ${runtime.display_name || runtime.runtime_id}`}
           >
             <MessageSquare className="h-4 w-4" />
           </Button>

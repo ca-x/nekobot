@@ -72,6 +72,9 @@ export default function AgentLifecycleControls({
 
   const buttonState = getButtonState();
   const canExecute = buttonState === "enabled" || buttonState === "failed";
+  const canOpenControls = Boolean(agentId);
+  const canDirectMessage = Boolean(agentId && onDirectMessage);
+  const actionTarget = agentName || agentId;
 
   const handleAction = async (action: string) => {
     if (!canExecute) return;
@@ -107,6 +110,11 @@ export default function AgentLifecycleControls({
     }
   };
 
+  const handleDirectMessage = () => {
+    if (!canDirectMessage) return;
+    onDirectMessage?.(agentId);
+  };
+
   const getStateLabel = () => {
     switch (buttonState) {
       case "disabled":
@@ -138,14 +146,16 @@ export default function AgentLifecycleControls({
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            disabled={!canExecute}
+            disabled={!canOpenControls}
             className="gap-1"
+            aria-label={`Open controls for ${actionTarget || "agent"}`}
+            title={`Open controls for ${actionTarget || "agent"}`}
           >
             <Zap className="h-4 w-4" />
             <span>Control</span>
@@ -154,8 +164,10 @@ export default function AgentLifecycleControls({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem
-            onClick={() => onDirectMessage?.(agentId)}
-            disabled={!agentId}
+            onClick={handleDirectMessage}
+            disabled={!canDirectMessage}
+            aria-label={`Send direct message to ${actionTarget || "agent"}`}
+            title={`Send direct message to ${actionTarget || "agent"}`}
           >
             <MessageSquare className="h-4 w-4 mr-2" />
             <span>Direct Message</span>
@@ -166,6 +178,7 @@ export default function AgentLifecycleControls({
           <DropdownMenuItem
             onClick={() => setConfirmAction("terminate")}
             disabled={!canExecute}
+            aria-label={`Terminate ${actionTarget || "agent"}`}
           >
             <Power className="h-4 w-4 mr-2" />
             <span>Terminate</span>
@@ -174,6 +187,7 @@ export default function AgentLifecycleControls({
           <DropdownMenuItem
             onClick={() => setConfirmAction("restart")}
             disabled={!canExecute}
+            aria-label={`Restart ${actionTarget || "agent"}`}
           >
             <RotateCw className="h-4 w-4 mr-2" />
             <span>Restart</span>
@@ -182,6 +196,7 @@ export default function AgentLifecycleControls({
           <DropdownMenuItem
             onClick={() => setConfirmAction("reset_session")}
             disabled={!canExecute}
+            aria-label={`Reset session and restart ${actionTarget || "agent"}`}
           >
             <RotateCcw className="h-4 w-4 mr-2" />
             <span>Reset Session & Restart</span>
@@ -190,6 +205,7 @@ export default function AgentLifecycleControls({
           <DropdownMenuItem
             onClick={() => setConfirmAction("full_reset")}
             disabled={!canExecute}
+            aria-label={`Full reset and restart ${actionTarget || "agent"}`}
           >
             <Zap className="h-4 w-4 mr-2" />
             <span>Full Reset & Restart</span>

@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { toast } from "@/lib/notify";
 import { MessageSquare, Send } from "lucide-react";
 
@@ -29,6 +30,7 @@ export default function DirectAgentMessageDialog({
 }: DirectAgentMessageDialogProps) {
   const [content, setContent] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const messageInputId = `direct-agent-message-${agentId || "agent"}`;
 
   const handleSend = async () => {
     if (!content.trim()) {
@@ -63,7 +65,10 @@ export default function DirectAgentMessageDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <Label htmlFor={messageInputId}>Message</Label>
           <Textarea
+            id={messageInputId}
+            aria-label={`Message to ${agentName || agentId}`}
             placeholder="Type your message here..."
             value={content}
             onChange={(e) => setContent(e.target.value)}
