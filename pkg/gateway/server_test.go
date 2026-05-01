@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -3840,6 +3841,208 @@ func TestGatewayGRPCRegisterAndPollClientLoop(t *testing.T) {
 	}
 	if snapshot.Machines["machine-a"].GetStatus() != "online" || len(snapshot.Inventories["machine-a"].GetRuntimes()) != 1 {
 		t.Fatalf("expected registered online machine and inventory, got %+v", snapshot)
+	}
+}
+
+func TestGatewayGRPCNekoClientdFullFlowRunsLocalAgentCommand(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Port = 0
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Sessions.Sources.WebUI = true
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, store, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+	runtimeID := "machine-full:default:codex"
+	if _, err := ag.TaskService().Enqueue(tasks.Task{
+		ID:        "task-grpc-full-flow",
+		Type:      tasks.TypeRemoteAgent,
+		Summary:   "daemon grpc full flow",
+		SessionID: "webui-chat:grpc-full-flow",
+		RuntimeID: runtimeID,
+		Metadata:  map[string]any{"computer_id": "machine-full"},
+	}); err != nil {
+		t.Fatalf("enqueue task: %v", err)
+	}
+
+	s := NewServer(cfg, log, ag, bus.NewLocalBus(log, 10), nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, process.NewManager(log), sessionMgr, nil, store)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	httpServer := &http.Server{Handler: h2c.NewHandler(s.mixedHandler(), &http2.Server{})}
+	defer func() { _ = httpServer.Shutdown(context.Background()) }()
+	go func() { _ = httpServer.Serve(ln) }()
+
+	token := "daemon-test-token"
+	if err := store.Set(context.Background(), "daemonhost.auth.token", token); err != nil {
+		t.Fatalf("seed daemon token: %v", err)
+	}
+
+	tempHome := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tempHome, ".codex"), 0o755); err != nil {
+		t.Fatalf("mkdir fake codex config dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tempHome, "code"), 0o755); err != nil {
+		t.Fatalf("mkdir fake workspace root: %v", err)
+	}
+	binDir := t.TempDir()
+	codexLog := filepath.Join(tempHome, "code", "codex-call.txt")
+	scriptPath := filepath.Join(binDir, "codex")
+	script := `#!/usr/bin/env bash
+OUT=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "-o" ]; then
+    OUT="$arg"
+  fi
+  prev="$arg"
+done
+printf '%s\n' "$*" > "` + codexLog + `"
+printf 'grpc-local-agent-ok\n' > "$OUT"
+`
+	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codex binary: %v", err)
+	}
+
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	clientBin := filepath.Join(t.TempDir(), "nekoclientd-test")
+	buildCmd := exec.Command("go", "build", "-o", clientBin, "./cmd/nekoclientd")
+	buildCmd.Dir = repoRoot
+	buildOutput, buildErr := buildCmd.CombinedOutput()
+	if buildErr != nil {
+		t.Fatalf("build nekoclientd failed: %v\n%s", buildErr, string(buildOutput))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, clientBin, "run",
+		"--server", ln.Addr().String(),
+		"--token", token,
+		"--machine-name", "machine-full",
+		"--home", tempHome,
+	)
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(),
+		"HOME="+tempHome,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+
+	go func() {
+		for i := 0; i < 400; i++ {
+			items := ag.TaskService().List()
+			if len(items) == 1 && items[0].State == tasks.StateCompleted {
+				cancel()
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}()
+
+	output, err := cmd.CombinedOutput()
+	items := ag.TaskService().List()
+	if ctx.Err() != nil {
+		if len(items) != 1 || items[0].State != tasks.StateCompleted {
+			snapshot, _ := daemonhost.NewRegistry(store).Snapshot(context.Background())
+			t.Fatalf("nekoclientd context ended before success: %v\nprocess=%s\nsnapshot=%+v\ntasks=%+v", ctx.Err(), string(output), snapshot, items)
+		}
+	} else if err != nil {
+		snapshot, _ := daemonhost.NewRegistry(store).Snapshot(context.Background())
+		t.Fatalf("nekoclientd failed: %v\nprocess=%s\nsnapshot=%+v\ntasks=%+v", err, string(output), snapshot, items)
+	}
+
+	sess, err := sessionMgr.GetExisting("webui-chat:grpc-full-flow")
+	if err != nil {
+		t.Fatalf("get existing session: %v", err)
+	}
+	messages := sess.GetMessages()
+	if len(messages) < 3 || messages[len(messages)-1].Role != "assistant" || messages[len(messages)-1].Content != "grpc-local-agent-ok" {
+		t.Fatalf("unexpected full-flow session messages: %+v", messages)
+	}
+	codexCall, err := os.ReadFile(codexLog)
+	if err != nil {
+		t.Fatalf("read fake codex invocation log: %v", err)
+	}
+	if !strings.Contains(string(codexCall), "daemon grpc full flow") {
+		t.Fatalf("expected codex invocation to receive task summary, got %q", string(codexCall))
+	}
+	snapshot, err := daemonhost.NewRegistry(store).Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("registry snapshot: %v", err)
+	}
+	if snapshot.Machines["machine-full"].GetStatus() != "online" || len(snapshot.Inventories["machine-full"].GetRuntimes()) == 0 {
+		t.Fatalf("expected registered online machine and runtime inventory, got %+v", snapshot)
+	}
+
+	client, err := daemonhost.NewGRPCClient(ln.Addr().String(), token)
+	if err != nil {
+		t.Fatalf("new grpc client: %v", err)
+	}
+	defer client.Close()
+	sendResp, err := client.SendMessageRemote(&daemonv1.SendMessageRequest{Target: "#websocket:grpc-full-flow", Content: "hello over full flow", SenderAgentId: runtimeID})
+	if err != nil {
+		t.Fatalf("SendMessageRemote failed: %v", err)
+	}
+	readResp, err := client.ReadMessagesRemote(&daemonv1.ReadMessagesRequest{Target: "#websocket:grpc-full-flow", Limit: 10})
+	if err != nil {
+		t.Fatalf("ReadMessagesRemote failed: %v", err)
+	}
+	if len(readResp.Messages) != 1 || readResp.Messages[0].GetMessageId() != sendResp.Message.GetMessageId() {
+		t.Fatalf("unexpected full-flow read messages: %+v", readResp.Messages)
+	}
+	upload, err := client.UploadAttachmentRemote(&daemonv1.UploadAttachmentRequest{
+		Target:   "#websocket:grpc-full-flow",
+		Filename: "full-flow.txt",
+		MimeType: "text/plain",
+		Content:  []byte("full flow attachment"),
+		OwnerId:  runtimeID,
+	})
+	if err != nil {
+		t.Fatalf("UploadAttachmentRemote failed: %v", err)
+	}
+	download, err := client.GetAttachmentRemote(&daemonv1.GetAttachmentRequest{AttachmentId: upload.Attachment.GetAttachmentId(), Target: "#websocket:grpc-full-flow", RequesterAgentId: runtimeID})
+	if err != nil {
+		t.Fatalf("GetAttachmentRemote failed: %v", err)
+	}
+	if string(download.GetContent()) != "full flow attachment" {
+		t.Fatalf("unexpected full-flow attachment content: %q", string(download.GetContent()))
+	}
+	control, err := client.ControlAgentRemote(&daemonv1.ControlAgentRequest{
+		AgentId:   "default",
+		Action:    daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART,
+		Reason:    "full flow smoke",
+		RequestId: "grpc-full-flow-control",
+	})
+	if err != nil {
+		t.Fatalf("ControlAgentRemote failed: %v", err)
+	}
+	if control.GetAccepted() || control.GetOperation().GetState() != "unsupported" {
+		t.Fatalf("unexpected full-flow control response: %+v", control)
+	}
+	activity, err := client.LogActivityRemote(&daemonv1.LogActivityRequest{Target: "#websocket:grpc-full-flow", AgentId: runtimeID, Summary: "full flow activity"})
+	if err != nil {
+		t.Fatalf("LogActivityRemote failed: %v", err)
+	}
+	events, err := client.ListEventsSinceRemote(&daemonv1.ListEventsSinceRequest{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListEventsSinceRemote failed: %v", err)
+	}
+	if len(events.Events) == 0 || events.Events[len(events.Events)-1].GetActivityId() != activity.Activity.GetActivityId() {
+		t.Fatalf("unexpected full-flow replay events: %+v", events.Events)
 	}
 }
 
