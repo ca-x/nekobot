@@ -227,10 +227,31 @@ func (c *Channel) supportsNativeCommands() bool {
 // handleCommand processes a command message.
 func (c *Channel) handleCommand(senderID, senderName, spaceName, content string, event *chat.DeprecatedEvent) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		outMsg := &bus.Message{
+			ChannelID: "googlechat",
+			SessionID: fmt.Sprintf("googlechat:%s", spaceName),
+			Content:   commands.MalformedCommandMessage(),
+			Timestamp: time.Now(),
+		}
+		if err := c.SendMessage(context.Background(), outMsg); err != nil {
+			c.log.Error("Failed to send Google Chat malformed command response", zap.Error(err))
+		}
+		return
+	}
 
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		outMsg := &bus.Message{
+			ChannelID: "googlechat",
+			SessionID: fmt.Sprintf("googlechat:%s", spaceName),
+			Content:   c.commands.UnknownCommandMessage(cmdName),
+			Timestamp: time.Now(),
+		}
+		if err := c.SendMessage(context.Background(), outMsg); err != nil {
+			c.log.Error("Failed to send Google Chat unknown command response", zap.Error(err))
+		}
 		return
 	}
 

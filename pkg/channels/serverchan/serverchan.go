@@ -375,10 +375,19 @@ func (c *Channel) supportsNativeCommands(scope channelcapabilities.CapabilitySco
 // handleCommand processes a command message.
 func (c *Channel) handleCommand(userID, username, chatID, content string) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		if sendErr := c.sendMessage(chatID, commands.MalformedCommandMessage(), false); sendErr != nil {
+			c.log.Error("Failed to send ServerChan malformed command response", zap.Error(sendErr))
+		}
+		return
+	}
 
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		if sendErr := c.sendMessage(chatID, c.commands.UnknownCommandMessage(cmdName), false); sendErr != nil {
+			c.log.Error("Failed to send ServerChan unknown command response", zap.Error(sendErr))
+		}
 		return
 	}
 

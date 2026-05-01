@@ -381,18 +381,29 @@ func (c *Channel) handleSlashCommand(evt socketmode.Event) {
 
 	// Remove leading / from command name
 	cmdName := strings.TrimPrefix(cmd.Command, "/")
+	if strings.TrimSpace(cmdName) == "" {
+		if _, err := c.api.PostEphemeral(
+			cmd.ChannelID,
+			cmd.UserID,
+			slack.MsgOptionText(commands.MalformedCommandMessage(), false),
+		); err != nil {
+			c.log.Error("Failed to send Slack malformed command response", zap.Error(err))
+		}
+		return
+	}
 
 	// Get command from registry
 	command, exists := c.commands.Get(cmdName)
 	if !exists {
-		c.log.Debug("Unknown slash command, fallback to help", zap.String("command", cmdName))
-		helpCmd, ok := c.commands.Get("help")
-		if !ok {
-			return
+		c.log.Debug("Unknown slash command", zap.String("command", cmdName))
+		if _, err := c.api.PostEphemeral(
+			cmd.ChannelID,
+			cmd.UserID,
+			slack.MsgOptionText(c.commands.UnknownCommandMessage(cmdName), false),
+		); err != nil {
+			c.log.Error("Failed to send Slack unknown command response", zap.Error(err))
 		}
-		command = helpCmd
-		cmdName = "help"
-		cmd.Text = ""
+		return
 	}
 	if command.AdminOnly {
 		if _, err := c.api.PostEphemeral(

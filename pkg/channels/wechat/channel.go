@@ -398,8 +398,14 @@ func (c *Channel) handleInbound(msg wxtypes.WeixinMessage) {
 
 func (c *Channel) handleCommand(msg wxtypes.WeixinMessage, content string) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		_ = c.sendReply(context.Background(), msg.FromUserID, commands.MalformedCommandMessage(), msg.ContextToken)
+		return
+	}
+
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
+		_ = c.sendReply(context.Background(), msg.FromUserID, c.commands.UnknownCommandMessage(cmdName), msg.ContextToken)
 		return
 	}
 

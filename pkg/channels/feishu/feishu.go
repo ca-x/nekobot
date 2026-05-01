@@ -217,10 +217,19 @@ func (c *Channel) handleMessageReceive(_ context.Context, event *larkim.P2Messag
 // handleCommand processes a command message.
 func (c *Channel) handleCommand(message *larkim.EventMessage, sender *larkim.EventSender, senderID, chatID, content string) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		if sendErr := c.sendMessage(chatID, commands.MalformedCommandMessage()); sendErr != nil {
+			c.log.Error("Failed to send Feishu malformed command response", zap.Error(sendErr))
+		}
+		return
+	}
 
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		if sendErr := c.sendMessage(chatID, c.commands.UnknownCommandMessage(cmdName)); sendErr != nil {
+			c.log.Error("Failed to send Feishu unknown command response", zap.Error(sendErr))
+		}
 		return
 	}
 

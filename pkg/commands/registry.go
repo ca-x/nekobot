@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -71,14 +72,7 @@ func (r *Registry) List() []*Command {
 // IsCommand checks if a text starts with a command.
 func (r *Registry) IsCommand(text string) bool {
 	text = strings.TrimSpace(text)
-	if !strings.HasPrefix(text, "/") {
-		return false
-	}
-
-	// Extract command name (first word)
-	parts := strings.SplitN(text, " ", 2)
-	cmdName := normalizeCommandToken(strings.TrimPrefix(parts[0], "/"))
-	return cmdName != ""
+	return strings.HasPrefix(text, "/")
 }
 
 // Parse parses a command from text.
@@ -101,14 +95,47 @@ func (r *Registry) Parse(text string) (string, string) {
 		args = strings.TrimSpace(parts[1])
 	}
 
-	if _, exists := r.Get(cmdName); !exists {
-		if _, hasHelp := r.Get("help"); hasHelp {
-			// Treat unknown slash commands like /help for a friendlier UX.
-			return "help", ""
-		}
+	return cmdName, args
+}
+
+// MalformedCommandMessage returns the standard user-facing reply for slash text
+// that was recognized as a command attempt but has no command token.
+func MalformedCommandMessage() string {
+	return "❌ 命令格式不完整。请输入 `/help` 查看可用命令，或使用 `/help <command>` 查看具体用法。"
+}
+
+// UnknownCommandMessage returns the standard user-facing reply for unsupported
+// slash commands. Unknown commands are handled locally so they do not become
+// ordinary agent prompts.
+func (r *Registry) UnknownCommandMessage(cmdName string) string {
+	cmdName = strings.TrimPrefix(normalizeCommandToken(cmdName), "/")
+	if cmdName == "" {
+		return MalformedCommandMessage()
 	}
 
-	return cmdName, args
+	hint := r.availableCommandHint()
+	if hint == "" {
+		return fmt.Sprintf("❌ 未知命令 `/%s`。", cmdName)
+	}
+	return fmt.Sprintf("❌ 未知命令 `/%s`。\n\n%s", cmdName, hint)
+}
+
+func (r *Registry) availableCommandHint() string {
+	r.mu.RLock()
+	names := make([]string, 0, len(r.commands))
+	for name := range r.commands {
+		names = append(names, name)
+	}
+	r.mu.RUnlock()
+
+	if len(names) == 0 {
+		return ""
+	}
+	sort.Strings(names)
+	for i, name := range names {
+		names[i] = "/" + name
+	}
+	return "可用命令：" + strings.Join(names, ", ") + "\n普通文本请不要以 `/` 开头。"
 }
 
 func normalizeCommandToken(token string) string {

@@ -313,10 +313,19 @@ func defaultWeWorkName(displayName string) string {
 // handleCommand processes a command message.
 func (c *Channel) handleCommand(senderID, content string) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		if sendErr := c.sendMessageToUser(senderID, commands.MalformedCommandMessage()); sendErr != nil {
+			c.log.Error("Failed to send WeWork malformed command response", zap.Error(sendErr))
+		}
+		return
+	}
 
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		if sendErr := c.sendMessageToUser(senderID, c.commands.UnknownCommandMessage(cmdName)); sendErr != nil {
+			c.log.Error("Failed to send WeWork unknown command response", zap.Error(sendErr))
+		}
 		return
 	}
 

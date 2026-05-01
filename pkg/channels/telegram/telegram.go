@@ -590,6 +590,10 @@ func (c *Channel) downloadFile(fileID string) ([]byte, error) {
 // handleCommand processes a command message.
 func (c *Channel) handleCommand(message *tgbotapi.Message) {
 	cmdName, args := c.commands.Parse(message.Text)
+	if cmdName == "" {
+		c.sendCommandSystemReply(message.Chat.ID, message.MessageID, commands.MalformedCommandMessage())
+		return
+	}
 
 	if cmdName == "settings" && strings.TrimSpace(args) == "" {
 		c.sendSettingsMenu(message.Chat.ID, message.From.ID, message.MessageID, "")
@@ -599,6 +603,7 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		c.sendCommandSystemReply(message.Chat.ID, message.MessageID, c.commands.UnknownCommandMessage(cmdName))
 		return
 	}
 
@@ -660,6 +665,14 @@ func (c *Channel) handleCommand(message *tgbotapi.Message) {
 	}
 
 	c.finishThinkingMessage(message.Chat.ID, message.MessageID, thinkingMsgID, resp.Content)
+}
+
+func (c *Channel) sendCommandSystemReply(chatID int64, replyTo int, text string) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyToMessageID = replyTo
+	if _, err := c.bot.Send(msg); err != nil {
+		c.log.Error("Failed to send Telegram command system reply", zap.Error(err))
+	}
 }
 
 func (c *Channel) handleCallbackQuery(cb *tgbotapi.CallbackQuery) {

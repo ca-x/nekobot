@@ -229,10 +229,19 @@ func (c *Channel) supportsNativeCommands(scope channelcapabilities.CapabilitySco
 // handleCommand processes a command message.
 func (c *Channel) handleCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 	cmdName, args := c.commands.Parse(m.Content)
+	if cmdName == "" {
+		if _, sendErr := s.ChannelMessageSend(m.ChannelID, commands.MalformedCommandMessage()); sendErr != nil {
+			c.log.Error("Failed to send Discord malformed command response", zap.Error(sendErr))
+		}
+		return
+	}
 
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		if _, sendErr := s.ChannelMessageSend(m.ChannelID, c.commands.UnknownCommandMessage(cmdName)); sendErr != nil {
+			c.log.Error("Failed to send Discord unknown command response", zap.Error(sendErr))
+		}
 		return
 	}
 

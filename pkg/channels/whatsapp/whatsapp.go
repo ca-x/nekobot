@@ -281,10 +281,19 @@ func (c *Channel) supportsNativeCommands(senderID, chatID string) bool {
 // handleCommand processes a command message.
 func (c *Channel) handleCommand(rawMsg map[string]interface{}, senderID, chatID, content string) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		if sendErr := c.sendBridgeMessage(chatID, commands.MalformedCommandMessage()); sendErr != nil {
+			c.log.Error("Failed to send WhatsApp malformed command response", zap.Error(sendErr))
+		}
+		return
+	}
 
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		if sendErr := c.sendBridgeMessage(chatID, c.commands.UnknownCommandMessage(cmdName)); sendErr != nil {
+			c.log.Error("Failed to send WhatsApp unknown command response", zap.Error(sendErr))
+		}
 		return
 	}
 

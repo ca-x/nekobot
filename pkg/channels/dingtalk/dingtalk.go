@@ -227,10 +227,19 @@ func (c *Channel) supportsNativeCommands(scope channelcapabilities.CapabilitySco
 // handleCommand processes a command message.
 func (c *Channel) handleCommand(senderID, senderNick, chatID, content, sessionWebhook string) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		if sendErr := c.sendReply(sessionWebhook, commands.MalformedCommandMessage()); sendErr != nil {
+			c.log.Error("Failed to send DingTalk malformed command response", zap.Error(sendErr))
+		}
+		return
+	}
 
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		if sendErr := c.sendReply(sessionWebhook, c.commands.UnknownCommandMessage(cmdName)); sendErr != nil {
+			c.log.Error("Failed to send DingTalk unknown command response", zap.Error(sendErr))
+		}
 		return
 	}
 

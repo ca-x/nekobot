@@ -326,10 +326,15 @@ func (c *Channel) supportsNativeCommands() bool {
 // handleCommand processes a command message.
 func (c *Channel) handleCommand(msg MaixCamMessage, conn net.Conn, deviceID, content string) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		c.sendCommandResponse(conn, "", commands.MalformedCommandMessage())
+		return
+	}
 
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
 		c.log.Debug("Unknown command", zap.String("command", cmdName))
+		c.sendCommandResponse(conn, cmdName, c.commands.UnknownCommandMessage(cmdName))
 		return
 	}
 
@@ -361,20 +366,27 @@ func (c *Channel) handleCommand(msg MaixCamMessage, conn net.Conn, deviceID, con
 
 	// Send response back to device
 	if resp.Content != "" {
-		response := map[string]interface{}{
-			"type":    "command_response",
-			"command": cmdName,
-			"content": resp.Content,
-			"time":    time.Now().Unix(),
-		}
-		data, err := json.Marshal(response)
-		if err != nil {
-			c.log.Error("Failed to marshal command response", zap.Error(err))
-			return
-		}
-		if _, err := conn.Write(append(data, '\n')); err != nil {
-			c.log.Error("Failed to send command response to device", zap.Error(err))
-		}
+		c.sendCommandResponse(conn, cmdName, resp.Content)
+	}
+}
+
+func (c *Channel) sendCommandResponse(conn net.Conn, cmdName, content string) {
+	if strings.TrimSpace(content) == "" {
+		return
+	}
+	response := map[string]interface{}{
+		"type":    "command_response",
+		"command": cmdName,
+		"content": content,
+		"time":    time.Now().Unix(),
+	}
+	data, err := json.Marshal(response)
+	if err != nil {
+		c.log.Error("Failed to marshal command response", zap.Error(err))
+		return
+	}
+	if _, err := conn.Write(append(data, '\n')); err != nil {
+		c.log.Error("Failed to send command response to device", zap.Error(err))
 	}
 }
 

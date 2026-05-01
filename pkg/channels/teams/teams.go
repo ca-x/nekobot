@@ -256,8 +256,14 @@ func (c *Channel) supportsNativeCommands() bool {
 
 func (c *Channel) handleCommand(sessionID string, act activity, content string) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		_ = c.sendActivity(context.Background(), sessionID, commands.MalformedCommandMessage(), act.ID)
+		return
+	}
+
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
+		_ = c.sendActivity(context.Background(), sessionID, c.commands.UnknownCommandMessage(cmdName), act.ID)
 		return
 	}
 

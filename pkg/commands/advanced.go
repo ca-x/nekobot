@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"nekobot/pkg/agent"
-	"nekobot/pkg/message"
 	"nekobot/pkg/config"
+	"nekobot/pkg/message"
 	"nekobot/pkg/skills"
 	"nekobot/pkg/userprefs"
 )
@@ -90,6 +90,13 @@ func RegisterAdvancedCommands(registry *Registry, deps Dependencies) error {
 func modelHandler(cfg *config.Config) CommandHandler {
 	return func(ctx context.Context, req CommandRequest) (CommandResponse, error) {
 		args := strings.TrimSpace(req.Args)
+		parts := strings.Fields(args)
+		if len(parts) > 1 {
+			return CommandResponse{
+				Content:     "❌ 用法: /model [list|<provider>]",
+				ReplyInline: true,
+			}, nil
+		}
 
 		// List models
 		if args == "" || args == "list" {
@@ -202,6 +209,14 @@ func gatewayHandler(channelMgr ChannelManager, ctrl GatewayController) CommandHa
 			}, nil
 		}
 
+		parts := strings.Fields(args)
+		if len(parts) > 1 {
+			return CommandResponse{
+				Content:     "❌ 用法: /gateway [status|restart|reload]",
+				ReplyInline: true,
+			}, nil
+		}
+
 		switch args {
 		case "restart":
 			if ctrl == nil {
@@ -241,7 +256,7 @@ func gatewayHandler(channelMgr ChannelManager, ctrl GatewayController) CommandHa
 
 		default:
 			return CommandResponse{
-				Content:     fmt.Sprintf("❌ Unknown gateway action: %s\n\nAvailable: status, restart, reload", args),
+				Content:     fmt.Sprintf("❌ Unsupported gateway action: %s\n\nAvailable: status, restart, reload", args),
 				ReplyInline: true,
 			}, nil
 		}
@@ -277,6 +292,14 @@ func agentHandler(cfg *config.Config) CommandHandler {
 			}, nil
 		}
 
+		parts := strings.Fields(args)
+		if len(parts) > 1 {
+			return CommandResponse{
+				Content:     "❌ 用法: /agent [info|list]",
+				ReplyInline: true,
+			}, nil
+		}
+
 		// List available agents/providers
 		if args == "list" {
 			var sb strings.Builder
@@ -307,7 +330,7 @@ func agentHandler(cfg *config.Config) CommandHandler {
 
 		// Show provider info
 		return CommandResponse{
-			Content:     "ℹ️ Use `/model list` to see available providers and their configuration.",
+			Content:     fmt.Sprintf("❌ Unsupported agent action: %s\n\nAvailable: info, list", args),
 			ReplyInline: true,
 		}, nil
 	}

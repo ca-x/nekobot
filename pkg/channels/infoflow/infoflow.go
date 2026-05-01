@@ -250,8 +250,14 @@ func (c *Channel) supportsNativeCommands(scope channelcapabilities.CapabilitySco
 
 func (c *Channel) handleCommand(sessionID, userID, username, content, replyWebhook string) {
 	cmdName, args := c.commands.Parse(content)
+	if cmdName == "" {
+		c.sendCommandSystemReply(context.Background(), sessionID, replyWebhook, commands.MalformedCommandMessage())
+		return
+	}
+
 	cmd, exists := c.commands.Get(cmdName)
 	if !exists {
+		c.sendCommandSystemReply(context.Background(), sessionID, replyWebhook, c.commands.UnknownCommandMessage(cmdName))
 		return
 	}
 
@@ -273,6 +279,10 @@ func (c *Channel) handleCommand(sessionID, userID, username, content, replyWebho
 		return
 	}
 
+	c.sendCommandSystemReply(ctx, sessionID, replyWebhook, resp.Content)
+}
+
+func (c *Channel) sendCommandSystemReply(ctx context.Context, sessionID, replyWebhook, content string) {
 	data := map[string]interface{}{}
 	if replyWebhook != "" {
 		data["reply_webhook"] = replyWebhook
@@ -280,7 +290,7 @@ func (c *Channel) handleCommand(sessionID, userID, username, content, replyWebho
 	_ = c.SendMessage(ctx, &bus.Message{
 		ChannelID: c.ID(),
 		SessionID: sessionID,
-		Content:   resp.Content,
+		Content:   content,
 		Data:      data,
 	})
 }
