@@ -43,7 +43,7 @@ export function useControlAgent() {
         `/api/daemon/agents/${agentId}/control`,
         body
       );
-      return response.data;
+      return response;
     },
     onError: (error) => {
       toast.error(`Failed to control agent: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -59,7 +59,7 @@ export function useSendAgentDirectMessage() {
         `/api/daemon/agents/${agentId}/message`,
         body
       );
-      return response.data;
+      return response;
     },
     onError: (error) => {
       toast.error(`Failed to send message: ${error instanceof Error ? error.message : "Unknown error"}`);
