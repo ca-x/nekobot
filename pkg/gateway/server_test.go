@@ -3743,6 +3743,106 @@ func TestGatewayGRPCFlowCompletesTaskAndWritesSessionResult(t *testing.T) {
 	}
 }
 
+func TestGatewayGRPCRegisterAndPollClientLoop(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Port = 0
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Sessions.Sources.WebUI = true
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, store, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	sessionMgr := session.NewManager(t.TempDir(), cfg.Sessions)
+	runtimeID := "machine-a:default:codex"
+	_, err = ag.TaskService().Enqueue(tasks.Task{
+		ID:        "task-grpc-loop",
+		Type:      tasks.TypeRemoteAgent,
+		Summary:   "grpc loop work",
+		SessionID: "webui-chat:grpc-loop",
+		RuntimeID: runtimeID,
+		Metadata:  map[string]any{"computer_id": "machine-a"},
+	})
+	if err != nil {
+		t.Fatalf("enqueue task: %v", err)
+	}
+
+	s := NewServer(cfg, log, ag, bus.NewLocalBus(log, 10), nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, process.NewManager(log), sessionMgr, nil, store)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	httpServer := &http.Server{Handler: h2c.NewHandler(s.mixedHandler(), &http2.Server{})}
+	defer func() { _ = httpServer.Shutdown(context.Background()) }()
+	go func() { _ = httpServer.Serve(ln) }()
+
+	token := "daemon-test-token"
+	if err := store.Set(context.Background(), "daemonhost.auth.token", token); err != nil {
+		t.Fatalf("seed daemon token: %v", err)
+	}
+	client, err := daemonhost.NewGRPCClient(ln.Addr().String(), token)
+	if err != nil {
+		t.Fatalf("new grpc client: %v", err)
+	}
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = daemonhost.RegisterAndPoll(ctx, client, daemonhost.PollOptions{
+		DisplayName:  "machine-a",
+		PollInterval: time.Millisecond,
+		BuildInfo: func(string) (*daemonv1.ComputerInfo, error) {
+			return &daemonv1.ComputerInfo{ComputerId: "machine-a", DisplayName: "machine-a"}, nil
+		},
+		BuildInventory: func(string) (*daemonv1.ComputerInventory, error) {
+			return &daemonv1.ComputerInventory{Runtimes: []*daemonv1.Runtime{{
+				RuntimeId: "codex",
+				Kind:      "codex",
+				Installed: true,
+				Healthy:   true,
+			}}}, nil
+		},
+		Executor: func(ctx context.Context, task *daemonv1.Task) (string, error) {
+			cancel()
+			return "loop-ok", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("RegisterAndPoll failed: %v", err)
+	}
+	items := ag.TaskService().List()
+	if len(items) != 1 || items[0].State != tasks.StateCompleted {
+		t.Fatalf("unexpected task state: %+v", items)
+	}
+	sess, err := sessionMgr.GetExisting("webui-chat:grpc-loop")
+	if err != nil {
+		t.Fatalf("get existing session: %v", err)
+	}
+	messages := sess.GetMessages()
+	if len(messages) < 3 || messages[len(messages)-1].Content != "loop-ok" {
+		t.Fatalf("unexpected daemon loop session messages: %+v", messages)
+	}
+	snapshot, err := daemonhost.NewRegistry(store).Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("registry snapshot: %v", err)
+	}
+	if snapshot.Machines["machine-a"].GetStatus() != "online" || len(snapshot.Inventories["machine-a"].GetRuntimes()) != 1 {
+		t.Fatalf("expected registered online machine and inventory, got %+v", snapshot)
+	}
+}
+
 func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Gateway.Port = 0
@@ -3922,6 +4022,114 @@ func TestGatewayGRPCCollaborationRoundTrip(t *testing.T) {
 	}
 	if boardResp.GetBoard().GetCounts()["All"] != 1 || boardResp.GetBoard().GetCounts()["TODO"] != 1 {
 		t.Fatalf("unexpected grpc task board: %+v", boardResp.GetBoard())
+	}
+}
+
+func TestGatewayGRPCCapabilityDeniedRoundTrip(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Gateway.Port = 0
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Sessions.Sources.Gateway = true
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.NewFileStore(log, &state.FileStoreConfig{FilePath: filepath.Join(t.TempDir(), "daemon-state.json")})
+	if err != nil {
+		t.Fatalf("new daemon state store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	entClient, err := config.OpenRuntimeEntClient(cfg)
+	if err != nil {
+		t.Fatalf("open ent client: %v", err)
+	}
+	t.Cleanup(func() { _ = entClient.Close() })
+	if err := config.EnsureRuntimeEntSchema(entClient); err != nil {
+		t.Fatalf("ensure ent schema: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, entClient)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	allowedRuntime, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "allowed",
+		DisplayName: "Allowed Agent",
+	})
+	if err != nil {
+		t.Fatalf("create allowed runtime: %v", err)
+	}
+	limitedRuntime, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
+		Name:        "limited",
+		DisplayName: "Limited Agent",
+		Policy: map[string]interface{}{
+			"denied_capabilities": []interface{}{capabilityAgentControl, capabilityAttachmentDownload, capabilityMessageSend},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create limited runtime: %v", err)
+	}
+
+	ag, err := agent.New(cfg, log, nil, nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, store, nil, nil)
+	if err != nil {
+		t.Fatalf("new agent: %v", err)
+	}
+	s := NewServer(cfg, log, ag, bus.NewLocalBus(log, 10), nil, approval.NewManager(approval.Config{Mode: approval.ModeAuto}), nil, process.NewManager(log), session.NewManager(t.TempDir(), cfg.Sessions), entClient, store)
+	s.runtimeMgr = runtimeMgr
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	httpServer := &http.Server{Handler: h2c.NewHandler(s.mixedHandler(), &http2.Server{})}
+	defer func() { _ = httpServer.Shutdown(context.Background()) }()
+	go func() { _ = httpServer.Serve(ln) }()
+
+	token := "daemon-test-token"
+	if err := store.Set(context.Background(), "daemonhost.auth.token", token); err != nil {
+		t.Fatalf("seed daemon token: %v", err)
+	}
+	client, err := daemonhost.NewGRPCClient(ln.Addr().String(), token)
+	if err != nil {
+		t.Fatalf("new grpc client: %v", err)
+	}
+	defer client.Close()
+
+	if _, err := client.SendMessageRemote(&daemonv1.SendMessageRequest{
+		Target:        "#websocket:grpc-denied",
+		Content:       "blocked over grpc",
+		SenderAgentId: limitedRuntime.ID,
+		RequestId:     "grpc-denied-message",
+	}); err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected gRPC message send denial, got %v", err)
+	}
+	if _, err := client.ControlAgentRemote(&daemonv1.ControlAgentRequest{
+		AgentId:            allowedRuntime.ID,
+		Action:             daemonv1.AgentControlAction_AGENT_CONTROL_ACTION_RESTART,
+		RequestedByAgentId: limitedRuntime.ID,
+		RequestId:          "grpc-denied-control",
+	}); err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected gRPC control denial, got %v", err)
+	}
+	upload, err := client.UploadAttachmentRemote(&daemonv1.UploadAttachmentRequest{
+		Target:    "#websocket:grpc-denied",
+		Filename:  "grpc-denied.txt",
+		MimeType:  "text/plain",
+		Content:   []byte("private attachment"),
+		OwnerId:   allowedRuntime.ID,
+		RequestId: "grpc-allowed-upload",
+	})
+	if err != nil {
+		t.Fatalf("UploadAttachmentRemote failed: %v", err)
+	}
+	if _, err := client.GetAttachmentRemote(&daemonv1.GetAttachmentRequest{
+		AttachmentId:     upload.Attachment.GetAttachmentId(),
+		Target:           "#websocket:grpc-denied",
+		RequesterAgentId: limitedRuntime.ID,
+	}); err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected gRPC attachment download denial, got %v", err)
 	}
 }
 
