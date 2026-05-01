@@ -3132,7 +3132,7 @@ func (s *Server) handleRegisterDaemon(c *echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "daemon registry unavailable"})
 	}
 	var req daemonv1.RegisterComputerRequest
-	if err := c.Bind(&req); err != nil {
+	if err := daemonhost.DecodeProtoJSON(c.Request(), &req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 	resp, err := daemonhost.NewRegistry(s.kvStore).Register(c.Request().Context(), &req)
@@ -3150,7 +3150,7 @@ func (s *Server) handleHeartbeatDaemon(c *echo.Context) error {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "daemon registry unavailable"})
 	}
 	var req daemonv1.HeartbeatComputerRequest
-	if err := c.Bind(&req); err != nil {
+	if err := daemonhost.DecodeProtoJSON(c.Request(), &req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 	resp, err := daemonhost.NewRegistry(s.kvStore).Heartbeat(c.Request().Context(), &req)

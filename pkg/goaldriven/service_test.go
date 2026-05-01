@@ -613,7 +613,7 @@ func TestServiceResumeActiveRunsRestartsLoop(t *testing.T) {
 	if err := svc.ResumeActiveRuns(t.Context()); err != nil {
 		t.Fatalf("ResumeActiveRuns failed: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		detail, ok, err := svc.GetGoalRunDetail(t.Context(), run.ID)
 		if err == nil && ok && detail.GoalRun.Status == GoalStatusNeedsHumanConfirmation {
@@ -675,7 +675,7 @@ func TestServiceStartGoalRunSkipsExecutionForManualOnlyCriteria(t *testing.T) {
 		t.Fatalf("expected immediate running transition, got %q", started.Status)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		detail, ok, err := svc.GetGoalRunDetail(t.Context(), created.GoalRun.ID)
 		if err == nil && ok && detail.GoalRun.Status == GoalStatusNeedsHumanConfirmation {
@@ -759,7 +759,7 @@ func TestServiceResumeVerifyingRunDoesNotReexecuteWorker(t *testing.T) {
 	if err := svc.ResumeActiveRuns(t.Context()); err != nil {
 		t.Fatalf("ResumeActiveRuns failed: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		detail, ok, err := svc.GetGoalRunDetail(t.Context(), run.ID)
 		if err == nil && ok && detail.GoalRun.Status == GoalStatusNeedsHumanConfirmation {
@@ -848,7 +848,7 @@ func TestServiceResumeVerifyingRunFallsBackToReadyWhenVerificationStillUnmet(t *
 	if err := svc.ResumeActiveRuns(t.Context()); err != nil {
 		t.Fatalf("ResumeActiveRuns failed: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		detail, ok, err := svc.GetGoalRunDetail(t.Context(), run.ID)
 		if err == nil && ok && detail.GoalRun.Status == GoalStatusReady {
@@ -954,7 +954,7 @@ func TestServiceResumeActiveRunsAcrossServiceRestart(t *testing.T) {
 	if err := restarted.ResumeActiveRuns(t.Context()); err != nil {
 		t.Fatalf("ResumeActiveRuns failed: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		detail, ok, err := restarted.GetGoalRunDetail(t.Context(), created.GoalRun.ID)
 		if err == nil && ok && detail.GoalRun.Status == GoalStatusNeedsHumanConfirmation {

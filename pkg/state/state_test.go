@@ -193,12 +193,17 @@ func TestFileStoreAutoSave(t *testing.T) {
 		t.Fatalf("set test: %v", err)
 	}
 
-	// Wait for auto-save
-	time.Sleep(200 * time.Millisecond)
-
-	// Verify file exists
-	if _, err := os.Stat(statePath); os.IsNotExist(err) {
-		t.Error("State file should exist after auto-save")
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := os.Stat(statePath); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			t.Fatalf("stat state file: %v", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("State file should exist after auto-save")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 
 	// Load in new store
@@ -216,8 +221,11 @@ func TestFileStoreAutoSave(t *testing.T) {
 	})
 
 	value, exists, err := store2.GetString(ctx, "test")
-	if err != nil || !exists || value != "auto-save" {
-		t.Error("Value should persist after auto-save")
+	if err != nil {
+		t.Fatalf("GetString after auto-save: %v", err)
+	}
+	if !exists || value != "auto-save" {
+		t.Fatalf("Value should persist after auto-save, exists=%v value=%q", exists, value)
 	}
 }
 

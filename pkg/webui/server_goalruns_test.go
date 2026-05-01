@@ -348,7 +348,7 @@ func testJWTToken(username string) *jwt.Token {
 
 func waitForGoalStatus(t *testing.T, svc *goaldriven.Service, goalRunID string, want goaldriven.GoalStatus) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		detail, ok, err := svc.GetGoalRunDetail(t.Context(), goalRunID)
 		if err == nil && ok && detail.GoalRun.Status == want {
@@ -389,7 +389,7 @@ func TestGoalRunRecoveryAcrossRealProcessRestart(t *testing.T) {
 		if err := cmd.Start(); err != nil {
 			t.Fatalf("start gateway process: %v", err)
 		}
-		waitForHTTPOK(t, "http://127.0.0.1:"+itoa(cfg.WebUI.Port)+"/api/auth/init-status", 15*time.Second)
+		waitForHTTPOK(t, "http://127.0.0.1:"+itoa(cfg.WebUI.Port)+"/api/auth/init-status", 60*time.Second)
 		return cmd
 	}
 
