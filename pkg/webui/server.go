@@ -57,6 +57,7 @@ import (
 	"nekobot/pkg/idempotency"
 	"nekobot/pkg/ilinkauth"
 	"nekobot/pkg/inboundrouter"
+	"nekobot/pkg/licensing"
 	"nekobot/pkg/logger"
 	memoryqmd "nekobot/pkg/memory/qmd"
 	"nekobot/pkg/message"
@@ -130,6 +131,7 @@ type Server struct {
 	goalSvc              *goaldriven.Service
 	chatEventMu          sync.RWMutex
 	chatEventSubs        map[string]map[chan chatEvent]struct{}
+	userMutationMu       sync.Mutex
 	watcher              *watch.Watcher
 	jwtFallbackSecret    string
 	daemonFallbackToken  string
@@ -229,6 +231,9 @@ func NewServer(
 	// Validate auth storage connectivity during startup.
 	if _, err := config.LoadAdminCredential(entClient); err != nil {
 		log.Warn("Failed to load admin credential from database", zap.Error(err))
+	}
+	if _, err := licensing.EnsureInstallID(context.Background(), entClient); err != nil {
+		log.Warn("Failed to ensure server install id", zap.Error(err))
 	}
 
 	s := &Server{
@@ -523,6 +528,12 @@ func (s *Server) setup() {
 	api.GET("/auth/me", s.handleGetMe)
 	api.PUT("/auth/profile", s.handleUpdateProfile)
 	api.POST("/auth/stream-token", s.handleCreateStreamToken)
+	api.GET("/license/status", s.handleGetLicenseStatus)
+	api.POST("/license/import", s.handleImportLicense)
+	api.GET("/users", s.handleListUsers)
+	api.POST("/users", s.handleCreateUser)
+	api.PUT("/users/:id", s.handleUpdateUser)
+	api.DELETE("/users/:id", s.handleDeleteUser)
 
 	// Tool session routes
 	api.GET("/tool-sessions", s.handleListToolSessions)
@@ -978,6 +989,207 @@ func (s *Server) handleUpdateProfile(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleGetLicenseStatus(c *echo.Context) error {
+	status, err := licensing.StatusForClient(c.Request().Context(), s.entClient)
+	if err != nil {
+		s.logger.Error("Failed to load license status", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load license status"})
+	}
+	return c.JSON(http.StatusOK, status)
+}
+
+func (s *Server) handleImportLicense(c *echo.Context) error {
+	var body struct {
+		License string `json:"license"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	status, err := licensing.ImportLicense(c.Request().Context(), s.entClient, body.License)
+	if err != nil {
+		if errors.Is(err, licensing.ErrPublicKeyUnavailable) || errors.Is(err, licensing.ErrInvalidLicense) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid_license", "message": err.Error()})
+		}
+		s.logger.Error("Failed to import license", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to import license"})
+	}
+	return c.JSON(http.StatusOK, status)
+}
+
+func (s *Server) handleListUsers(c *echo.Context) error {
+	users, err := config.ListUsers(c.Request().Context(), s.entClient)
+	if err != nil {
+		s.logger.Error("Failed to list users", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list users"})
+	}
+	return c.JSON(http.StatusOK, users)
+}
+
+func (s *Server) handleCreateUser(c *echo.Context) error {
+	var body struct {
+		Username string `json:"username"`
+		Nickname string `json:"nickname"`
+		Password string `json:"password"`
+		Role     string `json:"role"`
+		Enabled  *bool  `json:"enabled"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	enabled := true
+	if body.Enabled != nil {
+		enabled = *body.Enabled
+	}
+	s.userMutationMu.Lock()
+	defer s.userMutationMu.Unlock()
+	if enabled {
+		if status, err := licensing.CheckCanEnableAdditionalUsers(c.Request().Context(), s.entClient, 1); err != nil {
+			if errors.Is(err, licensing.ErrUserLimitReached) {
+				return s.userLimitReached(c, status)
+			}
+			s.logger.Error("Failed to check user license limit", zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to check user limit"})
+		}
+	}
+	if strings.TrimSpace(body.Password) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "password is required"})
+	}
+	hash, err := config.HashPassword(body.Password)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to hash password"})
+	}
+	created, err := config.CreateUser(c.Request().Context(), s.entClient, config.UserInput{
+		Username:     body.Username,
+		Nickname:     body.Nickname,
+		PasswordHash: hash,
+		Role:         body.Role,
+		Enabled:      enabled,
+	})
+	if err != nil {
+		if errors.Is(err, config.ErrUsernameAlreadyUsed) {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "username is already used"})
+		}
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, created)
+}
+
+func (s *Server) handleUpdateUser(c *echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "user id is required"})
+	}
+	var body struct {
+		Username string `json:"username"`
+		Nickname string `json:"nickname"`
+		Password string `json:"password"`
+		Role     string `json:"role"`
+		Enabled  bool   `json:"enabled"`
+	}
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if id == s.currentUserID(c) && !body.Enabled {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "cannot disable current user"})
+	}
+	s.userMutationMu.Lock()
+	defer s.userMutationMu.Unlock()
+	wasEnabled, err := s.userEnabled(c.Request().Context(), id)
+	if err != nil {
+		if errors.Is(err, config.ErrAdminNotInitialized) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
+		}
+		s.logger.Error("Failed to load user state", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to load user"})
+	}
+	if !wasEnabled && body.Enabled {
+		if status, err := licensing.CheckCanEnableAdditionalUsers(c.Request().Context(), s.entClient, 1); err != nil {
+			if errors.Is(err, licensing.ErrUserLimitReached) {
+				return s.userLimitReached(c, status)
+			}
+			s.logger.Error("Failed to check user license limit", zap.Error(err))
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to check user limit"})
+		}
+	}
+	hash := ""
+	if strings.TrimSpace(body.Password) != "" {
+		hash, err = config.HashPassword(body.Password)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to hash password"})
+		}
+	}
+	updated, err := config.UpdateUser(c.Request().Context(), s.entClient, id, config.UserInput{
+		Username:     body.Username,
+		Nickname:     body.Nickname,
+		PasswordHash: hash,
+		Role:         body.Role,
+		Enabled:      body.Enabled,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, config.ErrUsernameAlreadyUsed):
+			return c.JSON(http.StatusConflict, map[string]string{"error": "username is already used"})
+		case errors.Is(err, config.ErrCannotDisableLastPrivilegedUser):
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "cannot disable the last privileged user"})
+		case errors.Is(err, config.ErrAdminNotInitialized):
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
+		default:
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	}
+	return c.JSON(http.StatusOK, updated)
+}
+
+func (s *Server) handleDeleteUser(c *echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "user id is required"})
+	}
+	if id == s.currentUserID(c) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "cannot delete current user"})
+	}
+	s.userMutationMu.Lock()
+	defer s.userMutationMu.Unlock()
+	if err := config.DeleteUser(c.Request().Context(), s.entClient, id); err != nil {
+		switch {
+		case errors.Is(err, config.ErrCannotDisableLastPrivilegedUser):
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "cannot delete the last privileged user"})
+		case errors.Is(err, config.ErrAdminNotInitialized):
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
+		default:
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (s *Server) userLimitReached(c *echo.Context, status *licensing.Status) error {
+	if status == nil {
+		loaded, err := licensing.StatusForClient(c.Request().Context(), s.entClient)
+		if err == nil {
+			status = loaded
+		}
+	}
+	return c.JSON(http.StatusPaymentRequired, map[string]interface{}{
+		"error":   "user_limit_reached",
+		"message": "Free license supports up to 2 enabled users. Import a license to add more users.",
+		"license": status,
+	})
+}
+
+func (s *Server) userEnabled(ctx context.Context, id string) (bool, error) {
+	users, err := config.ListUsers(ctx, s.entClient)
+	if err != nil {
+		return false, err
+	}
+	for _, item := range users {
+		if item.ID == id {
+			return item.Enabled, nil
+		}
+	}
+	return false, config.ErrAdminNotInitialized
 }
 
 // --- Provider Handlers ---
