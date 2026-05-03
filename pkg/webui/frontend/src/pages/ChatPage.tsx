@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2, AlertCircle, ArrowRight, RotateCcw, Eye, EyeOff, ShieldCheck, Settings2 } from 'lucide-react';
+import { Send, Sparkles, RefreshCw, Trash2, Radio, Wand2, AlertCircle, ArrowRight, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import { toast } from '@/lib/notify';
 
 import { api } from '@/api/client';
@@ -20,7 +20,6 @@ import {
 import { useChat, type ChatMessage } from '@/hooks/useChat';
 import { useWatchStatus } from '@/hooks/useConfig';
 import { useModels, useModelRoutesForModels, buildModelOptions } from '@/hooks/useModels';
-import { usePrompts, usePromptSessionBindings, useReplacePromptSessionBindings } from '@/hooks/usePrompts';
 import { useProviders } from '@/hooks/useProviders';
 import { useSessionDetail, useSessionDetailWithOptions, useUpdateSessionRuntime } from '@/hooks/useSessions';
 import { useAccountBindings, useChannelAccounts, useRuntimeAgents } from '@/hooks/useTopology';
@@ -178,7 +177,6 @@ export default function ChatPage() {
   });
   const providersQuery = useProviders();
   const configQuery = useAppConfig();
-  const promptsQuery = usePrompts();
   const runtimesQuery = useRuntimeAgents();
   const channelAccountsQuery = useChannelAccounts();
   const accountBindingsQuery = useAccountBindings();
@@ -203,7 +201,6 @@ export default function ChatPage() {
   const modelsQuery = useModels();
   const modelCatalog = modelsQuery.data ?? [];
   const modelRoutesQueries = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
-  const prompts = promptsQuery.data ?? [];
   const runtimes = runtimesQuery.data ?? [];
   const channelAccounts = channelAccountsQuery.data ?? [];
   const accountBindings = accountBindingsQuery.data ?? [];
@@ -312,8 +309,6 @@ export default function ChatPage() {
     enabled: !!activeRuntimeID,
   });
   const updateSessionRuntime = useUpdateSessionRuntime();
-  const { data: sessionPromptBindings } = usePromptSessionBindings(activeSessionBindingID);
-  const replacePromptSessionBindings = useReplacePromptSessionBindings();
   const activeFallback = selectedFallbackTargets.filter((target) => target.trim().length > 0);
   const actualProvider = routeResult?.actual_provider?.trim() || '';
   const actualModel = routeResult?.actual_model?.trim() || '';
@@ -370,22 +365,10 @@ export default function ChatPage() {
   const watchRunning = !!watchStatus?.running;
   const watchLabel = watchEnabled ? t('chatWatchOn') : t('chatWatchOff');
   const selectedModelValue = selectedModel.trim() || EMPTY_VALUE;
-  const fallbackRouteTargets = routeTargets.filter((target) => target.name !== effectiveProvider);
-  const systemPrompts = useMemo(
-    () => prompts.filter((item) => item.enabled && item.mode === 'system'),
-    [prompts],
-  );
-  const userPrompts = useMemo(
-    () => prompts.filter((item) => item.enabled && item.mode === 'user'),
-    [prompts],
-  );
   const hasProviders = providers.length > 0;
   const hasModels = modelOptions.length > 0;
-  const hasEnabledPrompts = systemPrompts.length + userPrompts.length > 0;
   const composerBlockedByMissingProvider = !hasProviders && !runtimeControlsRoute;
   const composerDisabled = connectionStatus !== 'connected' || composerBlockedByMissingProvider;
-  const selectedSystemPromptIDs = sessionPromptBindings?.system_prompt_ids ?? [];
-  const selectedUserPromptIDs = sessionPromptBindings?.user_prompt_ids ?? [];
   const runtimeLoadError =
     (runtimesQuery.isError && runtimesQuery.data == null && runtimesQuery.error) ||
     (channelAccountsQuery.isError && channelAccountsQuery.data == null && channelAccountsQuery.error) ||
@@ -393,7 +376,6 @@ export default function ChatPage() {
     null;
   const providersLoadError = providersQuery.isError && providersQuery.data == null ? providersQuery.error : null;
   const modelsLoadError = modelsQuery.isError && modelsQuery.data == null ? modelsQuery.error : null;
-  const promptsLoadError = promptsQuery.isError && promptsQuery.data == null ? promptsQuery.error : null;
 
   useEffect(() => {
     setActiveSessionKey(activeSessionBindingID);
@@ -486,39 +468,10 @@ export default function ChatPage() {
     setCustomModel(value);
   }
 
-  function handleToggleFallbackTarget(targetName: string) {
-    setSelectedFallbackTargets((current) =>
-      current.includes(targetName)
-        ? current.filter((item) => item !== targetName)
-        : [...current, targetName],
-    );
-  }
-
   function handleRuntimeBindingChange(value: string) {
     const nextRuntimeID = fromSelectValue(value);
     setSelectedRuntimeID(nextRuntimeID);
     updateSessionRuntime.mutate({ id: baseChatSessionID, runtime_id: nextRuntimeID });
-  }
-
-  function handleTogglePrompt(promptID: string, mode: 'system' | 'user') {
-    const nextSystemPromptIDs =
-      mode === 'system'
-        ? selectedSystemPromptIDs.includes(promptID)
-          ? selectedSystemPromptIDs.filter((item) => item !== promptID)
-          : [...selectedSystemPromptIDs, promptID]
-        : selectedSystemPromptIDs;
-    const nextUserPromptIDs =
-      mode === 'user'
-        ? selectedUserPromptIDs.includes(promptID)
-          ? selectedUserPromptIDs.filter((item) => item !== promptID)
-          : [...selectedUserPromptIDs, promptID]
-        : selectedUserPromptIDs;
-
-    replacePromptSessionBindings.mutate({
-      sessionID: activeSessionBindingID,
-      systemPromptIDs: nextSystemPromptIDs,
-      userPromptIDs: nextUserPromptIDs,
-    });
   }
 
   function handleSend() {
@@ -532,8 +485,8 @@ export default function ChatPage() {
       provider: activeProvider,
       model: activeModel,
       fallbackProviders: activeFallback,
-      systemPromptIDs: selectedSystemPromptIDs,
-      userPromptIDs: selectedUserPromptIDs,
+      systemPromptIDs: [],
+      userPromptIDs: [],
       runtimeID: activeRuntimeID,
     });
     setChatInput('');
@@ -643,7 +596,7 @@ export default function ChatPage() {
           </CardHeader>
 
           <CardContent className="space-y-4 p-4">
-            {(!hasProviders || !hasModels || !hasEnabledPrompts) && (
+            {(!hasProviders || !hasModels) && (
               <div className="rounded-[1.5rem] border border-[hsl(var(--brand-200))] bg-[linear-gradient(180deg,rgba(255,252,250,0.92),rgba(252,241,245,0.8))] p-4 dark:bg-card/90">
                 <div className="eyebrow-label mb-3 flex items-center gap-2 text-[hsl(var(--brand-700))]">
                   <Sparkles className="h-3.5 w-3.5" />
@@ -684,26 +637,6 @@ export default function ChatPage() {
                             className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--brand-700))] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[hsl(var(--brand-800))] dark:bg-[hsl(var(--brand-300))] dark:text-[hsl(var(--brand-900))] dark:hover:bg-[hsl(var(--brand-200))]"
                           >
                             {t('chatOpenModels')}
-                            <ArrowRight className="h-3 w-3" />
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {!hasEnabledPrompts && (
-                    <div className="rounded-[1.4rem] border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))]/60 p-4 dark:border-[hsl(var(--brand-800))] dark:bg-[hsl(var(--brand-950))]/20">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-700))] dark:bg-[hsl(var(--brand-900))]/50 dark:text-[hsl(var(--brand-300))]">
-                          <Sparkles className="h-4 w-4" />
-                        </div>
-                        <div className="space-y-2">
-                          <div className="text-sm font-semibold text-[hsl(var(--brand-900))] dark:text-[hsl(var(--brand-200))]">{t('chatNoPromptsTitle')}</div>
-                          <p className="text-xs leading-5 text-[hsl(var(--brand-800))]/70 dark:text-[hsl(var(--brand-300))]/70">{t('chatNoPromptsDescription')}</p>
-                          <Link
-                            to="/prompts"
-                            className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--brand-700))] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[hsl(var(--brand-800))] dark:bg-[hsl(var(--brand-300))] dark:text-[hsl(var(--brand-900))] dark:hover:bg-[hsl(var(--brand-200))]"
-                          >
-                            {t('chatGoToPrompts')}
                             <ArrowRight className="h-3 w-3" />
                           </Link>
                         </div>
@@ -827,35 +760,6 @@ export default function ChatPage() {
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 {t('chatActualRouteHint')}
               </p>
-            </div>
-
-            <div className="rounded-[1.5rem] border border-[hsl(var(--gray-200))] bg-[linear-gradient(180deg,rgba(245,249,255,0.9),rgba(241,245,255,0.82))] p-4 dark:bg-card/90">
-              <div className="eyebrow-label mb-3 flex items-center gap-2 text-muted-foreground">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {t('chatHarnessConsoleTitle')}
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
-                  <div className="text-sm font-semibold text-foreground">{t('chatHarnessAuditTitle')}</div>
-                  <div className="mt-2 text-xs leading-5 text-muted-foreground">{t('chatHarnessAuditDescription')}</div>
-                  <Button asChild variant="outline" className="mt-3 w-full justify-center rounded-full sm:w-auto">
-                    <Link to="/harness/audit">
-                      <ShieldCheck className="mr-2 h-4 w-4" />
-                      {t('chatOpenAudit')}
-                    </Link>
-                  </Button>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-card/85 p-4">
-                  <div className="text-sm font-semibold text-foreground">{t('chatHarnessWatchTitle')}</div>
-                  <div className="mt-2 text-xs leading-5 text-muted-foreground">{t('chatHarnessWatchDescription')}</div>
-                  <Button asChild variant="outline" className="mt-3 w-full justify-center rounded-full sm:w-auto">
-                    <Link to="/config">
-                      <Settings2 className="mr-2 h-4 w-4" />
-                      {t('chatOpenWatchConfig')}
-                    </Link>
-                  </Button>
-                </div>
-              </div>
             </div>
 
             <div className="space-y-3">
@@ -992,160 +896,6 @@ export default function ChatPage() {
                 disabled={runtimeControlsRoute}
                 onChange={(event) => setCustomModel(event.target.value)}
               />
-            </div>
-
-            <div className="space-y-3">
-              <label className="eyebrow-label text-muted-foreground">
-                {t('chatSystemPrompts')}
-              </label>
-              {promptsLoadError ? (
-                <ChatLoadErrorState
-                  title={t('chatPromptsLoadFailedTitle')}
-                  description={t('chatPromptsLoadFailedDescription')}
-                  message={formatQueryErrorMessage(promptsLoadError, 'chatPromptsLoadFailedDetailFallback')}
-                  onRetry={() => {
-                    void promptsQuery.refetch();
-                  }}
-                  retrying={promptsQuery.isFetching}
-                />
-              ) : (
-                <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
-                  <p className="text-sm text-muted-foreground">{t('chatSystemPromptsHint')}</p>
-                  {systemPrompts.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
-                      {t('chatPromptEmpty')}
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {systemPrompts.map((prompt) => {
-                        const selected = selectedSystemPromptIDs.includes(prompt.id);
-                        return (
-                          <button
-                            key={prompt.id}
-                            type="button"
-                            onClick={() => handleTogglePrompt(prompt.id, 'system')}
-                            className={cn(
-                              'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                              selected
-                                ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
-                                : 'border-[hsl(var(--gray-200))] bg-white text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
-                            )}
-                          >
-                            {prompt.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <label className="eyebrow-label text-muted-foreground">
-                {t('chatUserPrompts')}
-              </label>
-              {promptsLoadError ? (
-                <ChatLoadErrorState
-                  title={t('chatPromptsLoadFailedTitle')}
-                  description={t('chatPromptsLoadFailedDescription')}
-                  message={formatQueryErrorMessage(promptsLoadError, 'chatPromptsLoadFailedDetailFallback')}
-                  onRetry={() => {
-                    void promptsQuery.refetch();
-                  }}
-                  retrying={promptsQuery.isFetching}
-                />
-              ) : (
-                <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
-                  <p className="text-sm text-muted-foreground">{t('chatUserPromptsHint')}</p>
-                  {userPrompts.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
-                      {t('chatPromptEmpty')}
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {userPrompts.map((prompt) => {
-                        const selected = selectedUserPromptIDs.includes(prompt.id);
-                        return (
-                          <button
-                            key={prompt.id}
-                            type="button"
-                            onClick={() => handleTogglePrompt(prompt.id, 'user')}
-                            className={cn(
-                              'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-                              selected
-                                ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
-                                : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
-                            )}
-                          >
-                            {prompt.name}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              <label className="eyebrow-label text-muted-foreground">
-                {t('fallbackProviders')}
-              </label>
-              <div className="space-y-3 rounded-[1.4rem] border border-border/70 bg-card/90 p-3">
-                <p className="text-sm text-muted-foreground">{t('chatFallbackSelectHint')}</p>
-                {activeFallback.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {activeFallback.map((targetName, index) => (
-                      <button
-                        key={targetName}
-                        type="button"
-                        disabled={runtimeControlsRoute}
-                        onClick={() => handleToggleFallbackTarget(targetName)}
-                        className={cn(
-                          'inline-flex max-w-full items-center gap-2 rounded-full border border-[hsl(var(--brand-200))] bg-[hsl(var(--brand-50))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--brand-800))]',
-                          runtimeControlsRoute && 'cursor-not-allowed opacity-60',
-                        )}
-                      >
-                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-card text-[10px] text-[hsl(var(--brand-700))]">
-                          {index + 1}
-                        </span>
-                        <span className="break-all text-left">{targetName}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-[hsl(var(--gray-200))] px-3 py-4 text-sm text-muted-foreground">
-                    {t('chatFallbackEmpty')}
-                  </div>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  {fallbackRouteTargets.map((target) => {
-                    const selected = activeFallback.includes(target.name);
-                    return (
-                      <button
-                        key={target.name}
-                        type="button"
-                        disabled={runtimeControlsRoute}
-                        onClick={() => handleToggleFallbackTarget(target.name)}
-                        className={cn(
-                          'max-w-full rounded-full border px-3 py-1.5 text-left text-xs font-medium transition-colors',
-                          runtimeControlsRoute && 'cursor-not-allowed opacity-60',
-                          selected
-                            ? 'border-[hsl(var(--brand-300))] bg-[hsl(var(--brand-100))] text-[hsl(var(--brand-800))]'
-                            : 'border-[hsl(var(--gray-200))] bg-card text-muted-foreground hover:border-[hsl(var(--gray-300))] hover:bg-[hsl(var(--gray-50))]',
-                        )}
-                      >
-                        <span className="break-all">
-                          {target.type === 'group'
-                            ? `${target.name} (${t('chatRouteTargetGroup')})`
-                            : target.name}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
             </div>
 
             <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap">

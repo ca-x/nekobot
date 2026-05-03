@@ -12,11 +12,6 @@ import {
   NotebookPen,
   Settings,
   Activity,
-  Library,
-  Rows3,
-  Clock3,
-  BellRing,
-  Wrench,
   Sun,
   Moon,
   LogOut,
@@ -50,14 +45,9 @@ export default function Sidebar() {
   const navItems = [
     { target: '/chat', label: t('tabChat'), icon: MessageSquare },
     { target: '/channels', label: t('tabChannels'), icon: Radio },
-    { target: '/threads', label: t('tabThreads'), icon: Rows3 },
-    { target: '/sessions', label: t('tabSessions'), icon: Library },
-    { target: '/cron', label: t('tabSchedules'), icon: Clock3 },
-    { target: '/notifications', label: t('tabNotifications'), icon: BellRing },
-    { target: '/prompts', label: t('tabPrompts'), icon: NotebookPen },
-    { target: '/skills', label: t('tabSkills'), icon: Wrench },
+    { target: '/models', label: t('tabModels'), icon: NotebookPen },
+    { target: '/providers', label: t('tabProviders'), icon: Settings },
     { target: '/daemon', label: t('tabDaemon'), icon: Bot },
-    { target: '/config', label: t('tabConfig'), icon: Settings },
     { target: '/system', label: t('tabStatus'), icon: Activity },
   ];
 

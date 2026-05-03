@@ -6,26 +6,11 @@ import { t } from '@/lib/i18n';
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const InitPage = lazy(() => import('./pages/InitPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
-const SessionsPage = lazy(() => import('./pages/SessionsPage'));
-const ThreadsPage = lazy(() => import('./pages/ThreadsPage'));
-const ToolSessionsPage = lazy(() => import('./pages/ToolSessionsPage'));
 const ProvidersPage = lazy(() => import('./pages/ProvidersPage'));
 const ModelsPage = lazy(() => import('./pages/ModelsPage'));
-const PermissionRulesPage = lazy(() => import('./pages/PermissionRulesPage'));
 const ChannelsPage = lazy(() => import('./pages/ChannelsPage'));
-const SkillsPage = lazy(() => import('./pages/SkillsPage'));
-const PromptsPage = lazy(() => import('./pages/PromptsPage'));
-const NotificationRoutesPage = lazy(() => import('./pages/NotificationRoutesPage'));
 const DaemonPage = lazy(() => import('./pages/DaemonPage'));
-const ConfigPage = lazy(() => import('./pages/ConfigPage'));
-const HarnessAuditPage = lazy(() => import('./pages/HarnessAuditPage'));
-const RuntimeTopologyPage = lazy(() => import('./pages/RuntimeTopologyPage'));
 const SystemPage = lazy(() => import('./pages/SystemPage'));
-const CronPage = lazy(() => import('./pages/CronPage'));
-const WebhooksPage = lazy(() => import('./pages/WebhooksPage'));
-const PolicyPage = lazy(() => import('./pages/PolicyPage'));
-const GoalRunsPage = lazy(() => import('./pages/GoalRunsPage'));
-const GoalRunDetailPage = lazy(() => import('./pages/GoalRunDetailPage'));
 
 function Loading() {
   return (
@@ -43,27 +28,13 @@ export default function App() {
         <Route path="/init" element={<InitPage />} />
         <Route element={<AppLayout />}>
           <Route path="/chat" element={<ChatPage />} />
-          <Route path="/sessions" element={<SessionsPage />} />
-          <Route path="/threads" element={<ThreadsPage />} />
-          <Route path="/tools" element={<ToolSessionsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/models" element={<ModelsPage />} />
-          <Route path="/permission-rules" element={<PermissionRulesPage />} />
           <Route path="/channels" element={<ChannelsPage />} />
-          <Route path="/skills" element={<SkillsPage />} />
-          <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/daemon" element={<DaemonPage />} />
-          <Route path="/config" element={<ConfigPage />} />
-          <Route path="/harness/audit" element={<HarnessAuditPage />} />
-          <Route path="/runtime-topology" element={<RuntimeTopologyPage />} />
-          <Route path="/cron" element={<CronPage />} />
-          <Route path="/notifications" element={<NotificationRoutesPage />} />
-          <Route path="/webhooks" element={<WebhooksPage />} />
-          <Route path="/policy" element={<PolicyPage />} />
-          <Route path="/goal-runs" element={<GoalRunsPage />} />
-          <Route path="/goal-runs/:id" element={<GoalRunDetailPage />} />
           <Route path="/system" element={<SystemPage />} />
           <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="*" element={<Navigate to="/chat" replace />} />
         </Route>
       </Routes>
     </Suspense>
