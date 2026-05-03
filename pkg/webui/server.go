@@ -116,6 +116,7 @@ type Server struct {
 	bindingMgr           *accountbindings.Manager
 	notificationMgr      *notificationroutes.Manager
 	notificationDispatch *notificationroutes.Dispatcher
+	inboundRouter        *inboundrouter.Router
 	topologySvc          *runtimetopology.Service
 	cronMgr              *cron.Manager
 	skillsMgr            *skills.Manager
@@ -5373,6 +5374,7 @@ func (s *Server) reloadChannelsByType(channelType string) error {
 				if err := s.channels.StopChannel(existing.ID()); err != nil {
 					return fmt.Errorf("stop stale %s runtime %s: %w", channelType, existing.ID(), err)
 				}
+				s.unregisterInboundRouteForChannelID(existing.ID())
 			}
 
 			for _, account := range desiredAccounts {
@@ -5393,6 +5395,7 @@ func (s *Server) reloadChannelsByType(channelType string) error {
 				if err := s.channels.ReloadChannel(ch); err != nil {
 					return fmt.Errorf("reload %s account runtime %s: %w", channelType, ch.ID(), err)
 				}
+				s.registerInboundRouteForChannelID(ch.ID())
 			}
 			return nil
 		}
@@ -5404,10 +5407,25 @@ func (s *Server) reloadChannelsByType(channelType string) error {
 			if err := s.channels.StopChannel(existing.ID()); err != nil {
 				return fmt.Errorf("stop stale %s runtime %s: %w", channelType, existing.ID(), err)
 			}
+			s.unregisterInboundRouteForChannelID(existing.ID())
 		}
 	}
 
 	return s.reloadChannel(channelType)
+}
+
+func (s *Server) registerInboundRouteForChannelID(channelID string) {
+	if s == nil || s.inboundRouter == nil {
+		return
+	}
+	s.inboundRouter.RegisterChannel(channelID)
+}
+
+func (s *Server) unregisterInboundRouteForChannelID(channelID string) {
+	if s == nil || s.inboundRouter == nil {
+		return
+	}
+	s.inboundRouter.UnregisterChannel(channelID)
 }
 
 func (s *Server) prioritizeActiveWechatAccount(
@@ -5559,7 +5577,8 @@ func (s *Server) currentAuthUser(c *echo.Context) (*config.AuthProfile, error) {
 	return &config.AuthProfile{
 		UserID:   userID,
 		Username: username,
-		Role:     "member",
+		Role:     firstNonEmptyString(s.currentUserRole(c), "member"),
+		TenantID: s.currentTenantID(c),
 	}, nil
 }
 
@@ -5618,15 +5637,13 @@ func (s *Server) handlePollWechatBinding(c *echo.Context) error {
 		return c.JSON(http.StatusBadGateway, map[string]string{"error": err.Error()})
 	}
 
-	if err := s.syncWechatBindingToAccounts(c.Request().Context(), authSvc, profile.UserID); err != nil {
+	if err := s.syncWechatBindingToAccounts(c.Request().Context(), authSvc, profile); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	if s.config.Channels.WeChat.Enabled {
-		if err := s.reloadChannelsByType("wechat"); err != nil {
-			s.logger.Error("Failed to reload WeChat after binding", zap.Error(err))
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
+	if err := s.reloadWechatChannelsIfAvailable(); err != nil {
+		s.logger.Error("Failed to reload WeChat after binding", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	payload, err := s.buildWechatBindingPayload(authSvc, profile.UserID)
@@ -5661,11 +5678,9 @@ func (s *Server) handleDeleteWechatBinding(c *echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	if s.config.Channels.WeChat.Enabled {
-		if err := s.reloadChannelsByType("wechat"); err != nil {
-			s.logger.Error("Failed to reload WeChat after unbind", zap.Error(err))
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
+	if err := s.reloadWechatChannelsIfAvailable(); err != nil {
+		s.logger.Error("Failed to reload WeChat after unbind", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "deleted"})
@@ -5697,11 +5712,9 @@ func (s *Server) handleActivateWechatBinding(c *echo.Context) error {
 	if err := s.activateWechatChannelAccount(c.Request().Context(), profile.UserID, accountID); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
-	if s.config.Channels.WeChat.Enabled {
-		if err := s.reloadChannelsByType("wechat"); err != nil {
-			s.logger.Error("Failed to reload WeChat after activation", zap.Error(err))
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
+	if err := s.reloadWechatChannelsIfAvailable(); err != nil {
+		s.logger.Error("Failed to reload WeChat after activation", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	authSvc, err := s.ilinkAuthService()
@@ -5731,11 +5744,9 @@ func (s *Server) handleDeleteWechatBindingAccount(c *echo.Context) error {
 	if err := s.removeWechatChannelAccount(c.Request().Context(), profile.UserID, accountID); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
-	if s.config.Channels.WeChat.Enabled {
-		if err := s.reloadChannelsByType("wechat"); err != nil {
-			s.logger.Error("Failed to reload WeChat after account delete", zap.Error(err))
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
+	if err := s.reloadWechatChannelsIfAvailable(); err != nil {
+		s.logger.Error("Failed to reload WeChat after account delete", zap.Error(err))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	authSvc, err := s.ilinkAuthService()
@@ -5778,7 +5789,7 @@ func (s *Server) buildWechatBindingPayload(authSvc *ilinkauth.Service, userID st
 			if account.ChannelType != "wechat" {
 				continue
 			}
-			if owner, _ := account.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+			if !wechatAccountBelongsToUser(account, userID) {
 				continue
 			}
 			botID, _ := account.Config["ilink_bot_id"].(string)
@@ -5820,9 +5831,16 @@ func (s *Server) buildWechatBindingPayload(authSvc *ilinkauth.Service, userID st
 	return payload, nil
 }
 
-func (s *Server) syncWechatBindingToAccounts(ctx context.Context, authSvc *ilinkauth.Service, userID string) error {
+func (s *Server) syncWechatBindingToAccounts(ctx context.Context, authSvc *ilinkauth.Service, profile *config.AuthProfile) error {
 	if s == nil || s.accountMgr == nil {
 		return nil
+	}
+	if profile == nil {
+		return fmt.Errorf("auth profile is required")
+	}
+	userID := strings.TrimSpace(profile.UserID)
+	if userID == "" {
+		return fmt.Errorf("user id is required")
 	}
 
 	binding, err := authSvc.GetBinding(userID)
@@ -5859,6 +5877,9 @@ func (s *Server) syncWechatBindingToAccounts(ctx context.Context, authSvc *ilink
 		AccountKey:  accountKey,
 		DisplayName: accountKey,
 		Enabled:     true,
+		TenantID:    strings.TrimSpace(profile.TenantID),
+		OwnerUserID: userID,
+		Visibility:  ownership.VisibilityPrivate,
 		Config: map[string]interface{}{
 			"enabled":       true,
 			"ilink_bot_id":  binding.Credentials.ILinkBotID,
@@ -5889,6 +5910,25 @@ func (s *Server) syncWechatBindingToAccounts(ctx context.Context, authSvc *ilink
 	return nil
 }
 
+func (s *Server) reloadWechatChannelsIfAvailable() error {
+	if s == nil || s.channels == nil {
+		return nil
+	}
+	return s.reloadChannelsByType("wechat")
+}
+
+func wechatAccountBelongsToUser(account channelaccounts.ChannelAccount, userID string) bool {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return false
+	}
+	if strings.TrimSpace(account.OwnerUserID) == userID {
+		return true
+	}
+	owner, _ := account.Metadata["owner_user_id"].(string)
+	return strings.TrimSpace(owner) == userID
+}
+
 func (s *Server) deleteWechatChannelAccount(ctx context.Context, userID string) error {
 	if s == nil || s.accountMgr == nil {
 		return nil
@@ -5901,7 +5941,7 @@ func (s *Server) deleteWechatChannelAccount(ctx context.Context, userID string) 
 		if item.ChannelType != "wechat" {
 			continue
 		}
-		if owner, _ := item.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+		if !wechatAccountBelongsToUser(item, userID) {
 			continue
 		}
 		if s.bindingMgr != nil {
@@ -5928,7 +5968,7 @@ func (s *Server) activateWechatChannelAccount(ctx context.Context, userID, accou
 	if account == nil || account.ChannelType != "wechat" {
 		return fmt.Errorf("wechat account not found")
 	}
-	if owner, _ := account.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+	if !wechatAccountBelongsToUser(*account, userID) {
 		return fmt.Errorf("wechat account does not belong to current user")
 	}
 
@@ -5975,7 +6015,7 @@ func (s *Server) removeWechatChannelAccount(ctx context.Context, userID, account
 	if account == nil || account.ChannelType != "wechat" {
 		return fmt.Errorf("wechat account not found")
 	}
-	if owner, _ := account.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+	if !wechatAccountBelongsToUser(*account, userID) {
 		return fmt.Errorf("wechat account does not belong to current user")
 	}
 	if s.bindingMgr != nil {
@@ -6012,7 +6052,7 @@ func (s *Server) removeWechatChannelAccount(ctx context.Context, userID, account
 			if item.ChannelType != "wechat" {
 				continue
 			}
-			if owner, _ := item.Metadata["owner_user_id"].(string); strings.TrimSpace(owner) != strings.TrimSpace(userID) {
+			if !wechatAccountBelongsToUser(item, userID) {
 				continue
 			}
 			return s.activateWechatChannelAccount(ctx, userID, item.ID)

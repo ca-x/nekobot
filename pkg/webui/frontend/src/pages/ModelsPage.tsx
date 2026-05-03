@@ -1,10 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Header from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { t } from '@/lib/i18n';
@@ -65,6 +73,7 @@ export default function ModelsPage() {
   const [expandedModelID, setExpandedModelID] = useState('');
   const [newModelID, setNewModelID] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
+  const [newRouteProvider, setNewRouteProvider] = useState('');
   const [newRouteProviderByModel, setNewRouteProviderByModel] = useState<Record<string, string>>({});
 
   const routesQuery = useModelRoutesForModels(modelCatalog.map((item) => item.model_id));
@@ -101,34 +110,56 @@ export default function ModelsPage() {
     () => new Set(providers.map((provider) => provider.name.trim()).filter(Boolean)),
     [providers],
   );
-  const createDisabled = createModel.isPending || !newModelID.trim() || !newDisplayName.trim();
+  const enabledProviders = useMemo(
+    () => providers.filter((provider) => provider.enabled).map((provider) => provider.name.trim()).filter(Boolean),
+    [providers],
+  );
+  const createDisabled =
+    createModel.isPending ||
+    updateRoute.isPending ||
+    !newModelID.trim() ||
+    !newRouteProvider.trim();
 
-  const handleCreateModel = () => {
-    createModel.mutate(
-      {
-        model_id: newModelID.trim(),
-        display_name: newDisplayName.trim(),
+  useEffect(() => {
+    if (newRouteProvider || enabledProviders.length === 0) {
+      return;
+    }
+    setNewRouteProvider(enabledProviders[0]);
+  }, [enabledProviders, newRouteProvider]);
+
+  const handleCreateModel = async () => {
+    const modelID = newModelID.trim();
+    const providerName = newRouteProvider.trim();
+    if (!modelID || !providerName) {
+      return;
+    }
+    const exists = modelCatalog.some((model) => model.model_id === modelID);
+    if (!exists) {
+      await createModel.mutateAsync({
+        model_id: modelID,
+        display_name: newDisplayName.trim() || modelID,
         catalog_source: 'manual',
         enabled: true,
-      },
-      {
-        onSuccess: () => {
-          setNewModelID('');
-          setNewDisplayName('');
-        },
-      },
-    );
+      });
+    }
+    await updateRoute.mutateAsync({
+      modelID,
+      providerName,
+      data: defaultRouteDraft(modelID, providerName),
+    });
+    setExpandedModelID(modelID);
+    setNewModelID('');
+    setNewDisplayName('');
   };
 
   return (
     <div className="space-y-6">
       <Header title={t('tabModels')} description={t('modelsPageDescription')} />
 
-      <section className="relative overflow-hidden rounded-[28px] border border-border/70 bg-[radial-gradient(circle_at_top_left,_rgba(244,114,182,0.18),_transparent_38%),linear-gradient(135deg,hsl(var(--card)/0.98),hsl(var(--muted)/0.72))] p-5 shadow-sm sm:p-6">
-        <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-rose-100/60 blur-3xl" />
+      <section className="relative overflow-hidden rounded-2xl border border-border/70 bg-card/92 p-5 shadow-sm sm:p-6">
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-rose-300/40 bg-card/90 px-3 py-1 text-xs font-medium text-rose-700 shadow-sm">
+            <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/70 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
               <Sparkles className="h-3.5 w-3.5" />
               {t('modelsHeroBadge')}
             </div>
@@ -172,8 +203,32 @@ export default function ModelsPage() {
         </div>
       </section>
 
-      <Card className="rounded-[28px] border-border/70 bg-card/92 shadow-sm">
-        <CardContent className="grid gap-4 p-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+      <Card className="rounded-2xl border-border/70 bg-card/92 shadow-sm">
+        <CardHeader className="pb-0">
+          <CardTitle className="text-base">{t('modelsQuickAddTitle')}</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 p-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <div className="space-y-2">
+            <Label>{t('modelsFieldProvider')}</Label>
+            {enabledProviders.length > 0 ? (
+              <Select value={newRouteProvider} onValueChange={setNewRouteProvider}>
+                <SelectTrigger className="h-11 rounded-2xl bg-card/90">
+                  <SelectValue placeholder={t('modelsProviderNamePlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {enabledProviders.map((providerName) => (
+                    <SelectItem key={providerName} value={providerName}>
+                      {providerName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Button asChild variant="outline" className="h-11 w-full rounded-2xl justify-center">
+                <Link to="/providers">{t('modelsAddProviderFirst')}</Link>
+              </Button>
+            )}
+          </div>
           <div className="space-y-2">
             <Label htmlFor="new-model-id">{t('modelsFieldModelId')}</Label>
             <Input
@@ -196,7 +251,7 @@ export default function ModelsPage() {
           </div>
           <div className="flex items-end">
             <Button type="button" className="h-11 rounded-full px-5" onClick={handleCreateModel} disabled={createDisabled}>
-              {t('modelsCreate')}
+              {createModel.isPending || updateRoute.isPending ? t('saving') : t('modelsCreateAndRoute')}
             </Button>
           </div>
         </CardContent>

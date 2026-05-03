@@ -726,18 +726,25 @@ func (c *Channel) storeCursor(sessionID string, offset int) {
 
 // SendMessage sends a message through WeChat.
 func (c *Channel) SendMessage(ctx context.Context, msg *bus.Message) error {
-	userID := strings.TrimPrefix(msg.SessionID, c.ChannelType()+":")
-	if strings.TrimSpace(userID) == strings.TrimSpace(msg.SessionID) {
-		userID = strings.TrimPrefix(msg.SessionID, c.ID()+":")
-	}
-	if strings.TrimSpace(userID) == "" {
-		userID = strings.TrimSpace(msg.UserID)
-	}
+	userID := c.outboundUserID(msg)
 	if strings.TrimSpace(userID) == "" {
 		return fmt.Errorf("wechat session/user id is empty")
 	}
 	contextToken := messageContextToken(msg)
 	return c.sendReply(ctx, userID, prependBusToolTrace(msg.Content, msg), contextToken)
+}
+
+func (c *Channel) outboundUserID(msg *bus.Message) string {
+	if msg == nil {
+		return ""
+	}
+	sessionID := strings.TrimSpace(msg.SessionID)
+	for _, prefix := range []string{c.ID() + ":", c.ChannelType() + ":"} {
+		if strings.HasPrefix(sessionID, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(sessionID, prefix))
+		}
+	}
+	return strings.TrimSpace(msg.UserID)
 }
 
 func messageContextToken(msg *bus.Message) string {
