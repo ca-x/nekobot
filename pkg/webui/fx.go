@@ -9,6 +9,7 @@ import (
 
 	"nekobot/pkg/config"
 	"nekobot/pkg/goaldriven"
+	"nekobot/pkg/inboundrouter"
 	"nekobot/pkg/logger"
 )
 
@@ -16,6 +17,7 @@ import (
 var Module = fx.Module("webui",
 	fx.Provide(NewServer),
 	fx.Invoke(bindGoalDrivenService),
+	fx.Invoke(bindInboundRouter),
 	fx.Invoke(registerLifecycle),
 )
 
@@ -34,6 +36,20 @@ func bindGoalDrivenService(deps bindGoalDrivenDeps) {
 	deps.GoalSvc.SetAgent(deps.Server.agent)
 	deps.GoalSvc.SetKVStore(deps.Server.kvStore)
 	deps.Server.goalSvc = deps.GoalSvc
+}
+
+type bindInboundRouterDeps struct {
+	fx.In
+
+	Server *Server
+	Router *inboundrouter.Router `optional:"true"`
+}
+
+func bindInboundRouter(deps bindInboundRouterDeps) {
+	if deps.Server == nil || deps.Router == nil {
+		return
+	}
+	deps.Server.inboundRouter = deps.Router
 }
 
 func registerLifecycle(lc fx.Lifecycle, s *Server, cfg *config.Config, log *logger.Logger) {

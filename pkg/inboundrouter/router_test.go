@@ -785,6 +785,108 @@ func TestChatWebsocketRejectsUnknownExplicitRuntime(t *testing.T) {
 	}
 }
 
+func TestHandleInboundFallsBackWhenAccountHasNoRuntimeBindings(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Storage.DBDir = t.TempDir()
+	cfg.Agents.Defaults.Workspace = t.TempDir()
+
+	log, err := logger.New(&logger.Config{Level: "error", OutputPath: ""})
+	if err != nil {
+		t.Fatalf("create logger: %v", err)
+	}
+	client := newTestEntClient(t, cfg)
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close ent client: %v", err)
+		}
+	})
+
+	accountMgr, err := channelaccounts.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new account manager: %v", err)
+	}
+	runtimeMgr, err := runtimeagents.NewManager(cfg, log, client)
+	if err != nil {
+		t.Fatalf("new runtime manager: %v", err)
+	}
+	bindingMgr, err := accountbindings.NewManager(cfg, log, client, runtimeMgr, accountMgr)
+	if err != nil {
+		t.Fatalf("new binding manager: %v", err)
+	}
+
+	accountItem, err := accountMgr.Create(context.Background(), channelaccounts.ChannelAccount{
+		ChannelType: "wechat",
+		AccountKey:  "bot-1@im.wechat",
+		DisplayName: "WeChat Bot",
+		Enabled:     true,
+		Config: map[string]interface{}{
+			"bot_token":    "token-1",
+			"ilink_bot_id": "bot-1@im.wechat",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	messageBus := bus.NewLocalBus(log, 8)
+	if err := messageBus.Start(); err != nil {
+		t.Fatalf("start bus: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := messageBus.Stop(); err != nil {
+			t.Fatalf("stop bus: %v", err)
+		}
+	})
+
+	runtimeChannelID := accountItem.ChannelType + ":" + accountItem.AccountKey
+	replyCh := make(chan *bus.Message, 1)
+	messageBus.RegisterOutboundHandler(runtimeChannelID, func(ctx context.Context, msg *bus.Message) error {
+		replyCh <- msg
+		return nil
+	})
+
+	agentStub := &stubAgent{response: "default reply"}
+	router, err := New(
+		log,
+		messageBus,
+		agentStub,
+		session.NewManager(t.TempDir(), cfg.Sessions),
+		accountMgr,
+		bindingMgr,
+		runtimeMgr,
+	)
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	err = router.HandleInbound(context.Background(), &bus.Message{
+		ChannelID: runtimeChannelID,
+		SessionID: "wechat:bot-1@im.wechat:ilink-user-1",
+		UserID:    "ilink-user-1",
+		Username:  "alice",
+		Type:      bus.MessageTypeText,
+		Content:   "hello",
+	})
+	if err != nil {
+		t.Fatalf("handle inbound: %v", err)
+	}
+
+	select {
+	case reply := <-replyCh:
+		if reply.Content != "default reply" {
+			t.Fatalf("unexpected reply: %q", reply.Content)
+		}
+		if reply.ChannelID != runtimeChannelID {
+			t.Fatalf("unexpected reply channel: %q", reply.ChannelID)
+		}
+		if agentStub.lastPrompt.Channel != runtimeChannelID {
+			t.Fatalf("unexpected prompt channel: %q", agentStub.lastPrompt.Channel)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected outbound reply")
+	}
+}
+
 func TestHandleInboundFallsBackForLegacyChannelWithoutTopology(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Storage.DBDir = t.TempDir()

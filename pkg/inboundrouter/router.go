@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 
@@ -32,6 +33,7 @@ type Router struct {
 	accounts    *channelaccounts.Manager
 	bindings    *accountbindings.Manager
 	runtimes    *runtimeagents.Manager
+	mu          sync.Mutex
 	channelKeys []string
 }
 
@@ -99,8 +101,40 @@ func (r *Router) RegisterChannel(channelID string) {
 		return
 	}
 
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, existing := range r.channelKeys {
+		if existing == channelID {
+			r.bus.UnregisterInboundHandlers(channelID)
+			r.bus.RegisterInboundHandler(channelID, r.HandleInbound)
+			return
+		}
+	}
+
 	r.channelKeys = append(r.channelKeys, channelID)
+	r.bus.UnregisterInboundHandlers(channelID)
 	r.bus.RegisterInboundHandler(channelID, r.HandleInbound)
+}
+
+// UnregisterChannel removes this router's inbound handler for a channel.
+func (r *Router) UnregisterChannel(channelID string) {
+	channelID = strings.TrimSpace(channelID)
+	if channelID == "" || r == nil || r.bus == nil {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.bus.UnregisterInboundHandlers(channelID)
+	next := r.channelKeys[:0]
+	for _, existing := range r.channelKeys {
+		if existing != channelID {
+			next = append(next, existing)
+		}
+	}
+	r.channelKeys = next
 }
 
 // UnregisterAll removes all registered inbound handlers.
@@ -108,6 +142,9 @@ func (r *Router) UnregisterAll() {
 	if r == nil || r.bus == nil {
 		return
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	for _, channelID := range r.channelKeys {
 		r.bus.UnregisterInboundHandlers(channelID)
 	}
@@ -226,7 +263,14 @@ func (r *Router) HandleInbound(ctx context.Context, msg *bus.Message) error {
 		r.log.Debug("No enabled bindings for channel account",
 			zap.String("channel_id", msg.ChannelID),
 			zap.String("account_id", account.ID))
-		return nil
+		hasBindings, err := r.hasAnyBindings(ctx, account.ID)
+		if err != nil {
+			return err
+		}
+		if hasBindings {
+			return nil
+		}
+		return r.handleLegacyInbound(ctx, msg)
 	}
 
 	for _, item := range selectedBindings {
@@ -240,6 +284,14 @@ func (r *Router) HandleInbound(ctx context.Context, msg *bus.Message) error {
 	}
 
 	return nil
+}
+
+func (r *Router) hasAnyBindings(ctx context.Context, channelAccountID string) (bool, error) {
+	items, err := r.bindings.ListByChannelAccountID(ctx, channelAccountID)
+	if err != nil {
+		return false, err
+	}
+	return len(items) > 0, nil
 }
 
 func (r *Router) handleLegacyInbound(ctx context.Context, msg *bus.Message) error {

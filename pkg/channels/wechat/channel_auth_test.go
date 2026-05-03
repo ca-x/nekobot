@@ -86,6 +86,28 @@ func TestWeChatMessageContextTokenFromBusData(t *testing.T) {
 	}
 }
 
+func TestWeChatOutboundUserIDUsesAccountRuntimePrefixFirst(t *testing.T) {
+	ch := &Channel{id: "wechat:bot-a", channelType: "wechat"}
+	msg := &bus.Message{
+		SessionID: "wechat:bot-a:user-1",
+		UserID:    "fallback-user",
+	}
+	if got := ch.outboundUserID(msg); got != "user-1" {
+		t.Fatalf("expected account runtime user id, got %q", got)
+	}
+}
+
+func TestWeChatOutboundUserIDUsesLegacyPrefix(t *testing.T) {
+	ch := &Channel{id: "wechat", channelType: "wechat"}
+	msg := &bus.Message{
+		SessionID: "wechat:user-1",
+		UserID:    "fallback-user",
+	}
+	if got := ch.outboundUserID(msg); got != "user-1" {
+		t.Fatalf("expected legacy user id, got %q", got)
+	}
+}
+
 func TestWeChatPrependBusToolTraceUsesOutboundMetadata(t *testing.T) {
 	msg := &bus.Message{
 		Data: map[string]interface{}{

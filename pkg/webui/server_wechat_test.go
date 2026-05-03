@@ -214,6 +214,16 @@ func TestHandleWechatBindingLifecycle_UsesSharedIlinkAuth(t *testing.T) {
 	if pollPayload.Accounts[0].BotID != "bot-1@im.wechat" {
 		t.Fatalf("unexpected synced channel account: %+v", pollPayload.Accounts[0])
 	}
+	syncedAccounts, err := accountMgr.List(context.Background())
+	if err != nil {
+		t.Fatalf("List channel accounts after sync failed: %v", err)
+	}
+	if len(syncedAccounts) != 1 {
+		t.Fatalf("expected one stored channel account, got %+v", syncedAccounts)
+	}
+	if syncedAccounts[0].OwnerUserID != "user-1" || syncedAccounts[0].Visibility != "private" {
+		t.Fatalf("expected synced account to be private and user-owned, got %+v", syncedAccounts[0])
+	}
 	runtimeItem, err := runtimeMgr.Create(context.Background(), runtimeagents.AgentRuntime{
 		Name:        "wechat-runtime",
 		DisplayName: "WeChat Runtime",
