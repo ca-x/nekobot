@@ -48,6 +48,7 @@ type CollaborationService interface {
 	UpdateTaskGraph(context.Context, *daemonv1.UpdateTaskGraphRequest) (*daemonv1.UpdateTaskGraphResponse, error)
 	GetServerInfo(context.Context, *daemonv1.GetServerInfoRequest) (*daemonv1.GetServerInfoResponse, error)
 	GetAgentProfile(context.Context, *daemonv1.GetAgentProfileRequest) (*daemonv1.GetAgentProfileResponse, error)
+	UpdateAgentProfile(context.Context, *daemonv1.UpdateAgentProfileRequest) (*daemonv1.UpdateAgentProfileResponse, error)
 	SetAgentEnv(context.Context, *daemonv1.SetAgentEnvRequest) (*daemonv1.SetAgentEnvResponse, error)
 	ListAgentProfiles(context.Context, *daemonv1.ListAgentProfilesRequest) (*daemonv1.ListAgentProfilesResponse, error)
 	ListAgentDMs(context.Context, *daemonv1.ListAgentDMsRequest) (*daemonv1.ListAgentDMsResponse, error)
@@ -58,6 +59,9 @@ type CollaborationService interface {
 	ScheduleReminder(context.Context, *daemonv1.ScheduleReminderRequest) (*daemonv1.ScheduleReminderResponse, error)
 	ListReminders(context.Context, *daemonv1.ListRemindersRequest) (*daemonv1.ListRemindersResponse, error)
 	CancelReminder(context.Context, *daemonv1.CancelReminderRequest) (*daemonv1.CancelReminderResponse, error)
+	SnoozeReminder(context.Context, *daemonv1.SnoozeReminderRequest) (*daemonv1.SnoozeReminderResponse, error)
+	UpdateReminder(context.Context, *daemonv1.UpdateReminderRequest) (*daemonv1.UpdateReminderResponse, error)
+	GetReminderLog(context.Context, *daemonv1.GetReminderLogRequest) (*daemonv1.GetReminderLogResponse, error)
 	LogActivity(context.Context, *daemonv1.LogActivityRequest) (*daemonv1.LogActivityResponse, error)
 	ListActivity(context.Context, *daemonv1.ListActivityRequest) (*daemonv1.ListActivityResponse, error)
 	UploadAttachment(context.Context, *daemonv1.UploadAttachmentRequest) (*daemonv1.UploadAttachmentResponse, error)
@@ -293,6 +297,13 @@ func (s *GRPCService) GetAgentProfile(ctx context.Context, req *daemonv1.GetAgen
 	return s.Collaboration.GetAgentProfile(ctx, req)
 }
 
+func (s *GRPCService) UpdateAgentProfile(ctx context.Context, req *daemonv1.UpdateAgentProfileRequest) (*daemonv1.UpdateAgentProfileResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.UpdateAgentProfile(ctx, req)
+}
+
 func (s *GRPCService) SetAgentEnv(ctx context.Context, req *daemonv1.SetAgentEnvRequest) (*daemonv1.SetAgentEnvResponse, error) {
 	if s == nil || s.Collaboration == nil {
 		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
@@ -361,6 +372,27 @@ func (s *GRPCService) CancelReminder(ctx context.Context, req *daemonv1.CancelRe
 		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
 	}
 	return s.Collaboration.CancelReminder(ctx, req)
+}
+
+func (s *GRPCService) SnoozeReminder(ctx context.Context, req *daemonv1.SnoozeReminderRequest) (*daemonv1.SnoozeReminderResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.SnoozeReminder(ctx, req)
+}
+
+func (s *GRPCService) UpdateReminder(ctx context.Context, req *daemonv1.UpdateReminderRequest) (*daemonv1.UpdateReminderResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.UpdateReminder(ctx, req)
+}
+
+func (s *GRPCService) GetReminderLog(ctx context.Context, req *daemonv1.GetReminderLogRequest) (*daemonv1.GetReminderLogResponse, error) {
+	if s == nil || s.Collaboration == nil {
+		return nil, status.Error(codes.Unimplemented, "collaboration RPCs are not implemented on this daemon control surface")
+	}
+	return s.Collaboration.GetReminderLog(ctx, req)
 }
 
 func (s *GRPCService) LogActivity(ctx context.Context, req *daemonv1.LogActivityRequest) (*daemonv1.LogActivityResponse, error) {

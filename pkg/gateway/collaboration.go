@@ -41,9 +41,11 @@ const (
 	daemonFollowStoreKey   = "daemon.collaboration.followed_threads.v1"
 	daemonAgentEnvStoreKey = "daemon.collaboration.agent_env.v1"
 	daemonReminderMetaKey  = "daemon.collaboration.reminder_meta.v1"
+	daemonReminderEventKey = "daemon.collaboration.reminder_events.v1"
 	daemonActivityStoreKey = "daemon.collaboration.activity.v1"
 	daemonAttachmentKey    = "daemon.collaboration.attachments.v1"
 	daemonAgentStatusKey   = "daemon.collaboration.agent_status.v1"
+	daemonAgentProfileKey  = "daemon.collaboration.agent_profile_overrides.v1"
 	daemonSavedMessageKey  = "daemon.collaboration.saved_messages.v1"
 	daemonSplitProposalKey = "daemon.collaboration.task_split_proposals.v1"
 
@@ -86,6 +88,20 @@ type lifecycleExecutionResult struct {
 	State      string
 	Reason     string
 	EventTypes []string
+}
+
+type daemonAgentProfileOverride struct {
+	DisplayName string `json:"display_name,omitempty"`
+	Description string `json:"description,omitempty"`
+	AvatarURL   string `json:"avatar_url,omitempty"`
+}
+
+type daemonReminderMeta struct {
+	Target     string `json:"target,omitempty"`
+	MsgRef     string `json:"msg_ref,omitempty"`
+	Repeat     string `json:"repeat,omitempty"`
+	Timezone   string `json:"timezone,omitempty"`
+	LastStatus string `json:"last_status,omitempty"`
 }
 
 type runtimePolicyLifecycleExecutor struct {
@@ -1618,6 +1634,61 @@ func (s *Server) GetAgentProfile(ctx context.Context, req *daemonv1.GetAgentProf
 	return nil, fmt.Errorf("agent profile not found: %s", runtimeID)
 }
 
+func (s *Server) UpdateAgentProfile(ctx context.Context, req *daemonv1.UpdateAgentProfileRequest) (*daemonv1.UpdateAgentProfileResponse, error) {
+	agentID := strings.TrimSpace(req.GetAgentId())
+	if agentID == "" {
+		return nil, fmt.Errorf("agent_id is required")
+	}
+	current, err := s.findAgentProfile(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	override := s.agentProfileOverrides(ctx)[current.GetAgentId()]
+	if req.DisplayName != nil {
+		override.DisplayName = strings.TrimSpace(req.GetDisplayName())
+		if override.DisplayName == "" {
+			return nil, fmt.Errorf("display_name must not be empty")
+		}
+	}
+	if req.Description != nil {
+		override.Description = strings.TrimSpace(req.GetDescription())
+	}
+	if len(req.GetAvatarContent()) > 0 {
+		mimeType := strings.TrimSpace(req.GetAvatarMimeType())
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		override.AvatarURL = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(req.GetAvatarContent())
+	}
+	if s.runtimeMgr != nil && (req.DisplayName != nil || req.Description != nil) {
+		runtimeItem, getErr := s.runtimeMgr.Get(ctx, current.GetAgentId())
+		if getErr == nil && runtimeItem != nil {
+			if override.DisplayName != "" {
+				runtimeItem.DisplayName = override.DisplayName
+			}
+			if req.Description != nil {
+				runtimeItem.Description = override.Description
+			}
+			updated, updateErr := s.runtimeMgr.Update(ctx, runtimeItem.ID, *runtimeItem)
+			if updateErr != nil {
+				return nil, updateErr
+			}
+			if updated != nil {
+				override.DisplayName = updated.DisplayName
+				override.Description = updated.Description
+			}
+		}
+	}
+	if err := s.storeAgentProfileOverride(ctx, current.GetAgentId(), override); err != nil {
+		return nil, err
+	}
+	profile, err := s.GetAgentProfile(ctx, &daemonv1.GetAgentProfileRequest{AgentId: current.GetAgentId()})
+	if err != nil {
+		return nil, err
+	}
+	return &daemonv1.UpdateAgentProfileResponse{Profile: profile.Profile}, nil
+}
+
 func (s *Server) SetAgentEnv(ctx context.Context, req *daemonv1.SetAgentEnvRequest) (*daemonv1.SetAgentEnvResponse, error) {
 	runtimeID := strings.TrimSpace(req.GetAgentId())
 	if runtimeID == "" {
@@ -1991,35 +2062,36 @@ func (s *Server) ScheduleReminder(ctx context.Context, req *daemonv1.ScheduleRem
 	if s == nil || s.cronMgr == nil {
 		return nil, fmt.Errorf("reminder scheduler unavailable")
 	}
-	target, err := daemonhost.ValidateCollaborationTarget(req.GetTarget())
+	target, err := daemonhost.ValidateCollaborationTarget(firstNonEmpty(req.GetTarget(), req.GetChannel()))
 	if err != nil {
 		return nil, err
 	}
-	name := strings.TrimSpace(req.GetName())
+	name := strings.TrimSpace(firstNonEmpty(req.GetTitle(), req.GetName()))
 	if name == "" {
 		name = "daemon reminder"
 	}
 	prompt := strings.TrimSpace(req.GetPrompt())
 	if prompt == "" {
-		return nil, fmt.Errorf("prompt is required")
+		prompt = name
 	}
 	route := cron.RouteOptions{Skills: req.GetSkills()}
 	var job *cron.Job
-	switch cron.ScheduleKind(strings.ToLower(strings.TrimSpace(req.GetScheduleKind()))) {
+	scheduleKind, schedule, atTime, recurrence, err := reminderScheduleFromRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	switch scheduleKind {
 	case "", cron.ScheduleCron:
-		schedule := strings.TrimSpace(req.GetSchedule())
 		if schedule == "" {
 			return nil, fmt.Errorf("schedule is required")
 		}
 		job, err = s.cronMgr.AddCronJobWithRoute(name, schedule, prompt, route)
 	case cron.ScheduleAt:
-		at, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(req.GetSchedule()))
-		if parseErr != nil {
-			return nil, fmt.Errorf("invalid at schedule, use RFC3339: %w", parseErr)
+		if atTime == nil {
+			return nil, fmt.Errorf("at schedule is required")
 		}
-		job, err = s.cronMgr.AddAtJobWithRoute(name, at, prompt, true, route)
+		job, err = s.cronMgr.AddAtJobWithRoute(name, *atTime, prompt, true, route)
 	case cron.ScheduleEvery:
-		schedule := strings.TrimSpace(req.GetSchedule())
 		if schedule == "" {
 			return nil, fmt.Errorf("schedule is required")
 		}
@@ -2030,10 +2102,18 @@ func (s *Server) ScheduleReminder(ctx context.Context, req *daemonv1.ScheduleRem
 	if err != nil {
 		return nil, err
 	}
-	if err := s.storeReminderTarget(ctx, job.ID, target); err != nil {
+	meta := daemonReminderMeta{
+		Target:   target,
+		MsgRef:   strings.TrimSpace(req.GetMsgId()),
+		Repeat:   recurrence.GetRule(),
+		Timezone: recurrence.GetTimezone(),
+	}
+	if err := s.storeReminderMeta(ctx, job.ID, meta); err != nil {
 		return nil, err
 	}
-	return &daemonv1.ScheduleReminderResponse{Reminder: reminderToProto(job, target)}, nil
+	record := reminderToProto(job, meta)
+	_, _ = s.appendReminderEvent(ctx, job.ID, "created", "agent", "", record.GetFireTimeUnix(), "")
+	return &daemonv1.ScheduleReminderResponse{Reminder: record}, nil
 }
 
 func (s *Server) ListReminders(ctx context.Context, req *daemonv1.ListRemindersRequest) (*daemonv1.ListRemindersResponse, error) {
@@ -2042,7 +2122,8 @@ func (s *Server) ListReminders(ctx context.Context, req *daemonv1.ListRemindersR
 	}
 	target := strings.TrimSpace(req.GetTarget())
 	limit := normalizedCollaborationLimit(req.GetLimit(), 200)
-	targets := s.reminderTargets(ctx)
+	metas := s.reminderMetas(ctx)
+	statuses := reminderStatusSet(req.GetStatuses(), req.GetIncludeCanceled())
 	jobs := s.cronMgr.ListJobs()
 	sort.SliceStable(jobs, func(i, j int) bool {
 		if jobs[i] == nil || jobs[j] == nil {
@@ -2055,11 +2136,15 @@ func (s *Server) ListReminders(ctx context.Context, req *daemonv1.ListRemindersR
 		if job == nil {
 			continue
 		}
-		jobTarget := targets[job.ID]
-		if target != "" && jobTarget != target {
+		meta := metas[job.ID]
+		if target != "" && meta.Target != target {
 			continue
 		}
-		out = append(out, reminderToProto(job, jobTarget))
+		record := reminderToProto(job, meta)
+		if !reminderStatusAllowed(record.GetStatus(), statuses) {
+			continue
+		}
+		out = append(out, record)
 		if len(out) >= limit {
 			break
 		}
@@ -2075,11 +2160,76 @@ func (s *Server) CancelReminder(ctx context.Context, req *daemonv1.CancelReminde
 	if reminderID == "" {
 		return nil, fmt.Errorf("reminder_id is required")
 	}
+	meta := s.reminderMetas(ctx)[reminderID]
+	job, _ := s.cronMgr.GetJob(reminderID)
 	if err := s.cronMgr.RemoveJob(reminderID); err != nil {
 		return nil, err
 	}
 	_ = s.deleteReminderTarget(ctx, reminderID)
-	return &daemonv1.CancelReminderResponse{Accepted: true}, nil
+	record := reminderToProto(job, meta)
+	if record != nil {
+		record.Status = "canceled"
+	}
+	_, _ = s.appendReminderEvent(ctx, reminderID, "canceled", "agent", "", 0, "")
+	return &daemonv1.CancelReminderResponse{Accepted: true, Reminder: record}, nil
+}
+
+func (s *Server) SnoozeReminder(ctx context.Context, req *daemonv1.SnoozeReminderRequest) (*daemonv1.SnoozeReminderResponse, error) {
+	if s == nil || s.cronMgr == nil {
+		return nil, fmt.Errorf("reminder scheduler unavailable")
+	}
+	reminderID := strings.TrimSpace(req.GetReminderId())
+	if reminderID == "" {
+		return nil, fmt.Errorf("reminder_id is required")
+	}
+	delay := time.Duration(req.GetDelaySeconds()) * time.Second
+	job, err := s.cronMgr.SnoozeJob(reminderID, delay)
+	if err != nil {
+		return nil, err
+	}
+	meta := s.reminderMetas(ctx)[reminderID]
+	record := reminderToProto(job, meta)
+	_, _ = s.appendReminderEvent(ctx, reminderID, "snoozed", "agent", "", record.GetFireTimeUnix(), "")
+	return &daemonv1.SnoozeReminderResponse{Reminder: record}, nil
+}
+
+func (s *Server) UpdateReminder(ctx context.Context, req *daemonv1.UpdateReminderRequest) (*daemonv1.UpdateReminderResponse, error) {
+	if s == nil || s.cronMgr == nil {
+		return nil, fmt.Errorf("reminder scheduler unavailable")
+	}
+	reminderID := strings.TrimSpace(req.GetReminderId())
+	if reminderID == "" {
+		return nil, fmt.Errorf("reminder_id is required")
+	}
+	change, metaChange, err := reminderUpdateFromRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	job, err := s.cronMgr.UpdateJob(reminderID, change)
+	if err != nil {
+		return nil, err
+	}
+	meta := s.reminderMetas(ctx)[reminderID]
+	if metaChange.Repeat != "" {
+		meta.Repeat = metaChange.Repeat
+	}
+	if metaChange.Timezone != "" {
+		meta.Timezone = metaChange.Timezone
+	}
+	if err := s.storeReminderMeta(ctx, reminderID, meta); err != nil {
+		return nil, err
+	}
+	record := reminderToProto(job, meta)
+	_, _ = s.appendReminderEvent(ctx, reminderID, "updated", "agent", "", record.GetFireTimeUnix(), "")
+	return &daemonv1.UpdateReminderResponse{Reminder: record}, nil
+}
+
+func (s *Server) GetReminderLog(ctx context.Context, req *daemonv1.GetReminderLogRequest) (*daemonv1.GetReminderLogResponse, error) {
+	reminderID := strings.TrimSpace(req.GetReminderId())
+	if reminderID == "" {
+		return nil, fmt.Errorf("reminder_id is required")
+	}
+	return &daemonv1.GetReminderLogResponse{Events: s.reminderEvents(ctx, reminderID)}, nil
 }
 
 func (s *Server) LogActivity(ctx context.Context, req *daemonv1.LogActivityRequest) (*daemonv1.LogActivityResponse, error) {
@@ -2453,6 +2603,7 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 	}
 	envByRuntime := s.agentEnv(ctx)
 	statusByRuntime := s.agentStatuses(ctx)
+	profileOverrides := s.agentProfileOverrides(ctx)
 	allSkills := s.skillRecords(nil)
 	out := make([]*daemonv1.AgentProfile, 0, len(runtimes))
 	for _, item := range runtimes {
@@ -2473,7 +2624,9 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 			DmTargets:    []string{agentDMTarget(item.ID)},
 			Capabilities: collaborationCapabilitiesForPolicy(item.Policy),
 			Permissions:  collaborationPermissionsForPolicy(item.Policy),
+			RuntimeKind:  firstNonEmpty(item.Provider, item.Name),
 		}
+		applyAgentProfileOverride(profile, profileOverrides[item.ID])
 		applyAgentStatusProfile(profile, statusByRuntime[item.ID])
 		out = append(out, profile)
 		if len(out) >= limit {
@@ -2491,7 +2644,9 @@ func (s *Server) agentProfiles(ctx context.Context, limit int) ([]*daemonv1.Agen
 			DmTargets:    []string{agentDMTarget("default")},
 			Capabilities: collaborationCapabilitiesForPolicy(nil),
 			Permissions:  collaborationPermissionsForPolicy(nil),
+			RuntimeKind:  "default",
 		}
+		applyAgentProfileOverride(profile, profileOverrides["default"])
 		applyAgentStatusProfile(profile, statusByRuntime["default"])
 		out = append(out, profile)
 	}
@@ -2516,6 +2671,60 @@ func (s *Server) findAgentProfile(ctx context.Context, agentID string) (*daemonv
 		}
 	}
 	return nil, fmt.Errorf("agent profile not found: %s", agentID)
+}
+
+func applyAgentProfileOverride(profile *daemonv1.AgentProfile, override daemonAgentProfileOverride) {
+	if profile == nil {
+		return
+	}
+	if override.DisplayName != "" {
+		profile.DisplayName = override.DisplayName
+	}
+	if override.Description != "" {
+		profile.Description = override.Description
+	}
+	if override.AvatarURL != "" {
+		profile.AvatarUrl = override.AvatarURL
+	}
+}
+
+func (s *Server) agentProfileOverrides(ctx context.Context) map[string]daemonAgentProfileOverride {
+	result := map[string]daemonAgentProfileOverride{}
+	if s == nil || s.kvStore == nil {
+		return result
+	}
+	value, ok, err := s.kvStore.Get(ctx, daemonAgentProfileKey)
+	if err != nil || !ok {
+		return result
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return result
+	}
+	_ = json.Unmarshal(payload, &result)
+	if result == nil {
+		return map[string]daemonAgentProfileOverride{}
+	}
+	return result
+}
+
+func (s *Server) storeAgentProfileOverride(ctx context.Context, agentID string, override daemonAgentProfileOverride) error {
+	agentID = strings.TrimSpace(agentID)
+	if agentID == "" || s == nil || s.kvStore == nil {
+		return nil
+	}
+	return s.kvStore.UpdateFunc(ctx, daemonAgentProfileKey, func(current interface{}) interface{} {
+		result := map[string]daemonAgentProfileOverride{}
+		payload, err := json.Marshal(current)
+		if err == nil {
+			_ = json.Unmarshal(payload, &result)
+		}
+		if result == nil {
+			result = map[string]daemonAgentProfileOverride{}
+		}
+		result[agentID] = override
+		return result
+	})
 }
 
 func (s *Server) findAgentRuntime(ctx context.Context, agentID, runtimeProfileID string) (*runtimeagents.AgentRuntime, error) {
@@ -3039,22 +3248,54 @@ func (s *Server) storeAgentEnv(ctx context.Context, runtimeID string, env []*dae
 	})
 }
 
-func reminderToProto(job *cron.Job, target string) *daemonv1.ReminderRecord {
+func reminderToProto(job *cron.Job, meta daemonReminderMeta) *daemonv1.ReminderRecord {
 	if job == nil {
 		return nil
 	}
-	return &daemonv1.ReminderRecord{
-		ReminderId:   job.ID,
-		Target:       target,
-		ScheduleKind: string(job.ScheduleKind),
-		Schedule:     reminderSchedule(job),
-		Prompt:       job.Prompt,
-		Enabled:      job.Enabled,
-		NextRunUnix:  unixOrZero(job.NextRun),
-		LastRunUnix:  unixOrZero(job.LastRun),
-		RunCount:     uint32(job.RunCount),
-		LastError:    job.LastError,
+	status := "scheduled"
+	if !job.Enabled {
+		status = "fired"
 	}
+	recurrence := reminderRecurrence(job, meta)
+	return &daemonv1.ReminderRecord{
+		ReminderId:    job.ID,
+		Target:        meta.Target,
+		ScheduleKind:  string(job.ScheduleKind),
+		Schedule:      reminderSchedule(job),
+		Prompt:        job.Prompt,
+		Enabled:       job.Enabled,
+		NextRunUnix:   unixOrZero(job.NextRun),
+		LastRunUnix:   unixOrZero(job.LastRun),
+		RunCount:      uint32(job.RunCount),
+		LastError:     job.LastError,
+		Title:         job.Name,
+		Status:        status,
+		FireTimeUnix:  unixOrZero(job.NextRun),
+		FiredTimeUnix: unixOrZero(job.LastRun),
+		MsgRef:        meta.MsgRef,
+		Recurrence:    recurrence,
+	}
+}
+
+func reminderRecurrence(job *cron.Job, meta daemonReminderMeta) *daemonv1.ReminderRecurrence {
+	if job == nil {
+		return nil
+	}
+	rule := strings.TrimSpace(meta.Repeat)
+	description := rule
+	if rule == "" {
+		switch job.ScheduleKind {
+		case cron.ScheduleEvery:
+			rule = "every:" + strings.TrimSpace(job.EveryDuration)
+			description = rule
+		case cron.ScheduleCron:
+			rule = strings.TrimSpace(job.Schedule)
+			description = "cron " + rule
+		default:
+			return nil
+		}
+	}
+	return &daemonv1.ReminderRecurrence{Rule: rule, Description: description, Timezone: strings.TrimSpace(meta.Timezone)}
 }
 
 func reminderSchedule(job *cron.Job) string {
@@ -3078,8 +3319,158 @@ func unixOrZero(ts time.Time) int64 {
 	return ts.Unix()
 }
 
-func (s *Server) reminderTargets(ctx context.Context) map[string]string {
-	result := map[string]string{}
+func reminderScheduleFromRequest(req *daemonv1.ScheduleReminderRequest) (cron.ScheduleKind, string, *time.Time, *daemonv1.ReminderRecurrence, error) {
+	if delay := req.GetDelaySeconds(); delay > 0 {
+		at := time.Now().Add(time.Duration(delay) * time.Second)
+		return cron.ScheduleAt, at.Format(time.RFC3339), &at, nil, nil
+	}
+	if fireAt := strings.TrimSpace(req.GetFireAt()); fireAt != "" {
+		at, err := time.Parse(time.RFC3339, fireAt)
+		if err != nil {
+			return "", "", nil, nil, fmt.Errorf("invalid fire_at, use RFC3339: %w", err)
+		}
+		return cron.ScheduleAt, at.Format(time.RFC3339), &at, nil, nil
+	}
+	if repeat := strings.TrimSpace(req.GetRepeat()); repeat != "" {
+		kind, schedule, recurrence, err := reminderScheduleFromRepeat(repeat, req.GetTimezone())
+		return kind, schedule, nil, recurrence, err
+	}
+	kind := cron.ScheduleKind(strings.ToLower(strings.TrimSpace(req.GetScheduleKind())))
+	schedule := strings.TrimSpace(req.GetSchedule())
+	if kind == cron.ScheduleAt {
+		at, err := time.Parse(time.RFC3339, schedule)
+		if err != nil {
+			return "", "", nil, nil, fmt.Errorf("invalid at schedule, use RFC3339: %w", err)
+		}
+		return kind, schedule, &at, nil, nil
+	}
+	return kind, schedule, nil, nil, nil
+}
+
+func reminderScheduleFromRepeat(repeat, tz string) (cron.ScheduleKind, string, *daemonv1.ReminderRecurrence, error) {
+	repeat = strings.TrimSpace(repeat)
+	recurrence := &daemonv1.ReminderRecurrence{Rule: repeat, Description: repeat, Timezone: strings.TrimSpace(tz)}
+	if every := strings.TrimPrefix(repeat, "every:"); every != repeat {
+		if _, err := time.ParseDuration(every); err != nil {
+			return "", "", nil, fmt.Errorf("invalid repeat duration: %w", err)
+		}
+		return cron.ScheduleEvery, every, recurrence, nil
+	}
+	if daily := strings.TrimPrefix(repeat, "daily@"); daily != repeat {
+		hour, minute, err := parseReminderClock(daily)
+		if err != nil {
+			return "", "", nil, err
+		}
+		return cron.ScheduleCron, fmt.Sprintf("%d %d * * *", minute, hour), recurrence, nil
+	}
+	if weekly := strings.TrimPrefix(repeat, "weekly:"); weekly != repeat {
+		parts := strings.Split(weekly, "@")
+		if len(parts) != 2 {
+			return "", "", nil, fmt.Errorf("invalid weekly repeat")
+		}
+		hour, minute, err := parseReminderClock(parts[1])
+		if err != nil {
+			return "", "", nil, err
+		}
+		return cron.ScheduleCron, fmt.Sprintf("%d %d * * %s", minute, hour, reminderWeekdays(parts[0])), recurrence, nil
+	}
+	return "", "", nil, fmt.Errorf("unsupported repeat rule")
+}
+
+func parseReminderClock(raw string) (int, int, error) {
+	t, err := time.Parse("15:04", strings.TrimSpace(raw))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid repeat clock, use HH:MM: %w", err)
+	}
+	return t.Hour(), t.Minute(), nil
+}
+
+func reminderWeekdays(raw string) string {
+	mapping := map[string]string{"sun": "0", "mon": "1", "tue": "2", "wed": "3", "thu": "4", "fri": "5", "sat": "6"}
+	out := make([]string, 0)
+	for _, item := range strings.Split(raw, ",") {
+		day := mapping[strings.ToLower(strings.TrimSpace(item))]
+		if day != "" {
+			out = append(out, day)
+		}
+	}
+	if len(out) == 0 {
+		return "*"
+	}
+	return strings.Join(out, ",")
+}
+
+func reminderUpdateFromRequest(req *daemonv1.UpdateReminderRequest) (cron.JobUpdate, daemonReminderMeta, error) {
+	var change cron.JobUpdate
+	var meta daemonReminderMeta
+	if req.Title != nil {
+		title := strings.TrimSpace(req.GetTitle())
+		if title == "" {
+			return change, meta, fmt.Errorf("title must not be empty")
+		}
+		change.Name = &title
+	}
+	if req.DelaySeconds != nil {
+		at := time.Now().Add(time.Duration(req.GetDelaySeconds()) * time.Second)
+		kind := cron.ScheduleAt
+		change.ScheduleKind = &kind
+		change.AtTime = &at
+	}
+	if req.FireAt != nil {
+		at, err := time.Parse(time.RFC3339, strings.TrimSpace(req.GetFireAt()))
+		if err != nil {
+			return change, meta, fmt.Errorf("invalid fire_at, use RFC3339: %w", err)
+		}
+		kind := cron.ScheduleAt
+		change.ScheduleKind = &kind
+		change.AtTime = &at
+	}
+	if req.Repeat != nil {
+		kind, schedule, _, err := reminderScheduleFromRepeat(req.GetRepeat(), req.GetTimezone())
+		if err != nil {
+			return change, meta, err
+		}
+		change.ScheduleKind = &kind
+		if kind == cron.ScheduleEvery {
+			change.EveryDuration = &schedule
+		} else {
+			change.Schedule = &schedule
+		}
+		meta.Repeat = strings.TrimSpace(req.GetRepeat())
+	}
+	if req.Timezone != nil {
+		meta.Timezone = strings.TrimSpace(req.GetTimezone())
+	}
+	return change, meta, nil
+}
+
+func reminderStatusSet(statuses []string, includeCanceled bool) map[string]struct{} {
+	if len(statuses) == 0 {
+		statuses = []string{"scheduled", "fired"}
+		if includeCanceled {
+			statuses = append(statuses, "canceled")
+		}
+	}
+	result := map[string]struct{}{}
+	for _, status := range statuses {
+		status = strings.ToLower(strings.TrimSpace(status))
+		if status != "" {
+			result[status] = struct{}{}
+		}
+	}
+	return result
+}
+
+func reminderStatusAllowed(status string, allowed map[string]struct{}) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	_, ok := allowed[strings.ToLower(strings.TrimSpace(status))]
+	return ok
+}
+
+func (s *Server) reminderMetas(ctx context.Context) map[string]daemonReminderMeta {
+	result := map[string]daemonReminderMeta{}
 	if s == nil || s.kvStore == nil {
 		return result
 	}
@@ -3091,27 +3482,32 @@ func (s *Server) reminderTargets(ctx context.Context) map[string]string {
 	if err != nil {
 		return result
 	}
-	_ = json.Unmarshal(payload, &result)
-	if result == nil {
-		return map[string]string{}
+	if err := json.Unmarshal(payload, &result); err == nil && result != nil {
+		return result
+	}
+	legacy := map[string]string{}
+	if err := json.Unmarshal(payload, &legacy); err == nil {
+		for id, target := range legacy {
+			result[id] = daemonReminderMeta{Target: target}
+		}
 	}
 	return result
 }
 
-func (s *Server) storeReminderTarget(ctx context.Context, reminderID, target string) error {
+func (s *Server) storeReminderMeta(ctx context.Context, reminderID string, meta daemonReminderMeta) error {
 	if s == nil || s.kvStore == nil {
 		return nil
 	}
 	return s.kvStore.UpdateFunc(ctx, daemonReminderMetaKey, func(current interface{}) interface{} {
-		result := map[string]string{}
+		result := map[string]daemonReminderMeta{}
 		payload, err := json.Marshal(current)
 		if err == nil {
 			_ = json.Unmarshal(payload, &result)
 		}
 		if result == nil {
-			result = map[string]string{}
+			result = map[string]daemonReminderMeta{}
 		}
-		result[reminderID] = target
+		result[reminderID] = meta
 		return result
 	})
 }
@@ -3121,17 +3517,65 @@ func (s *Server) deleteReminderTarget(ctx context.Context, reminderID string) er
 		return nil
 	}
 	return s.kvStore.UpdateFunc(ctx, daemonReminderMetaKey, func(current interface{}) interface{} {
-		result := map[string]string{}
+		result := map[string]daemonReminderMeta{}
 		payload, err := json.Marshal(current)
 		if err == nil {
 			_ = json.Unmarshal(payload, &result)
 		}
 		if result == nil {
-			result = map[string]string{}
+			result = map[string]daemonReminderMeta{}
 		}
 		delete(result, reminderID)
 		return result
 	})
+}
+
+func (s *Server) appendReminderEvent(ctx context.Context, reminderID, eventType, actorType, actorID string, nextFireUnix int64, detail string) (*daemonv1.ReminderEvent, error) {
+	event := &daemonv1.ReminderEvent{
+		EventId:          "reminder-event-" + uuid.NewString(),
+		ReminderId:       reminderID,
+		EventType:        eventType,
+		ActorType:        actorType,
+		ActorId:          actorID,
+		OccurredTimeUnix: time.Now().Unix(),
+		NextFireTimeUnix: nextFireUnix,
+		Detail:           detail,
+	}
+	if s == nil || s.kvStore == nil {
+		return event, nil
+	}
+	err := s.kvStore.UpdateFunc(ctx, daemonReminderEventKey, func(current interface{}) interface{} {
+		result := map[string][]*daemonv1.ReminderEvent{}
+		payload, err := json.Marshal(current)
+		if err == nil {
+			_ = json.Unmarshal(payload, &result)
+		}
+		if result == nil {
+			result = map[string][]*daemonv1.ReminderEvent{}
+		}
+		result[reminderID] = append(result[reminderID], event)
+		return result
+	})
+	return event, err
+}
+
+func (s *Server) reminderEvents(ctx context.Context, reminderID string) []*daemonv1.ReminderEvent {
+	if s == nil || s.kvStore == nil {
+		return nil
+	}
+	value, ok, err := s.kvStore.Get(ctx, daemonReminderEventKey)
+	if err != nil || !ok {
+		return nil
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	result := map[string][]*daemonv1.ReminderEvent{}
+	if err := json.Unmarshal(payload, &result); err != nil {
+		return nil
+	}
+	return result[reminderID]
 }
 
 func (s *Server) appendActivity(ctx context.Context, activity *daemonv1.ActivityRecord) error {

@@ -636,6 +636,11 @@ message AgentProfile {
   repeated Capability capabilities = 15;
   repeated Permission permissions = 16;
   AgentStatusSnapshot status_snapshot = 17;
+  string avatar_url = 18;
+  string runtime_kind = 19;
+  string reasoning_effort = 20;
+  string execution_mode = 21;
+  string daemon_version = 22;
 }
 
 message GetAgentProfileRequest {
@@ -643,6 +648,20 @@ message GetAgentProfileRequest {
 }
 
 message GetAgentProfileResponse {
+  AgentProfile profile = 1;
+}
+
+message UpdateAgentProfileRequest {
+  string agent_id = 1;
+  optional string display_name = 2;
+  optional string description = 3;
+  string avatar_filename = 4;
+  string avatar_mime_type = 5;
+  bytes avatar_content = 6;
+  string request_id = 7;
+}
+
+message UpdateAgentProfileResponse {
   AgentProfile profile = 1;
 }
 
@@ -814,6 +833,29 @@ message ReminderRecord {
   int64 last_run_unix = 8;
   uint32 run_count = 9;
   string last_error = 10;
+  string title = 11;
+  string status = 12;
+  int64 fire_time_unix = 13;
+  int64 fired_time_unix = 14;
+  string msg_ref = 15;
+  ReminderRecurrence recurrence = 16;
+}
+
+message ReminderRecurrence {
+  string rule = 1;
+  string description = 2;
+  string timezone = 3;
+}
+
+message ReminderEvent {
+  string event_id = 1;
+  string reminder_id = 2;
+  string event_type = 3;
+  string actor_type = 4;
+  string actor_id = 5;
+  int64 occurred_time_unix = 6;
+  int64 next_fire_time_unix = 7;
+  string detail = 8;
 }
 
 message ScheduleReminderRequest {
@@ -824,6 +866,13 @@ message ScheduleReminderRequest {
   string prompt = 5;
   repeated string skills = 6;
   string request_id = 7;
+  string title = 8;
+  uint32 delay_seconds = 9;
+  string fire_at = 10;
+  string repeat = 11;
+  string timezone = 12;
+  string channel = 13;
+  string msg_id = 14;
 }
 
 message ScheduleReminderResponse {
@@ -833,6 +882,8 @@ message ScheduleReminderResponse {
 message ListRemindersRequest {
   string target = 1;
   uint32 limit = 2;
+  repeated string statuses = 3;
+  bool include_canceled = 4;
 }
 
 message ListRemindersResponse {
@@ -846,6 +897,40 @@ message CancelReminderRequest {
 
 message CancelReminderResponse {
   bool accepted = 1;
+  ReminderRecord reminder = 2;
+}
+
+message SnoozeReminderRequest {
+  string reminder_id = 1;
+  uint32 delay_seconds = 2;
+  string request_id = 3;
+}
+
+message SnoozeReminderResponse {
+  ReminderRecord reminder = 1;
+}
+
+message UpdateReminderRequest {
+  string reminder_id = 1;
+  optional string title = 2;
+  optional string fire_at = 3;
+  optional uint32 delay_seconds = 4;
+  optional string repeat = 5;
+  optional string timezone = 6;
+  string request_id = 7;
+}
+
+message UpdateReminderResponse {
+  ReminderRecord reminder = 1;
+}
+
+message GetReminderLogRequest {
+  string reminder_id = 1;
+  string request_id = 2;
+}
+
+message GetReminderLogResponse {
+  repeated ReminderEvent events = 1;
 }
 
 message ActivityRecord {
@@ -964,6 +1049,7 @@ service DaemonControlService {
   rpc UpdateTaskGraph(UpdateTaskGraphRequest) returns (UpdateTaskGraphResponse);
   rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
   rpc GetAgentProfile(GetAgentProfileRequest) returns (GetAgentProfileResponse);
+  rpc UpdateAgentProfile(UpdateAgentProfileRequest) returns (UpdateAgentProfileResponse);
   rpc SetAgentEnv(SetAgentEnvRequest) returns (SetAgentEnvResponse);
   rpc ListAgentProfiles(ListAgentProfilesRequest) returns (ListAgentProfilesResponse);
   rpc ListAgentDMs(ListAgentDMsRequest) returns (ListAgentDMsResponse);
@@ -974,6 +1060,9 @@ service DaemonControlService {
   rpc ScheduleReminder(ScheduleReminderRequest) returns (ScheduleReminderResponse);
   rpc ListReminders(ListRemindersRequest) returns (ListRemindersResponse);
   rpc CancelReminder(CancelReminderRequest) returns (CancelReminderResponse);
+  rpc SnoozeReminder(SnoozeReminderRequest) returns (SnoozeReminderResponse);
+  rpc UpdateReminder(UpdateReminderRequest) returns (UpdateReminderResponse);
+  rpc GetReminderLog(GetReminderLogRequest) returns (GetReminderLogResponse);
   rpc UploadAttachment(UploadAttachmentRequest) returns (UploadAttachmentResponse);
   rpc GetAttachment(GetAttachmentRequest) returns (GetAttachmentResponse);
   rpc LogActivity(LogActivityRequest) returns (LogActivityResponse);

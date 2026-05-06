@@ -277,6 +277,14 @@ func (c *Client) GetAgentProfileRemote(req *daemonv1.GetAgentProfileRequest) (*d
 	}
 	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
 }
+func (c *Client) UpdateAgentProfileRemote(req *daemonv1.UpdateAgentProfileRequest) (*daemonv1.UpdateAgentProfileResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.UpdateAgentProfile(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
 func (c *Client) SetAgentEnvRemote(req *daemonv1.SetAgentEnvRequest) (*daemonv1.SetAgentEnvResponse, error) {
 	if c.grpcClient != nil {
 		ctx, cancel := c.rpcContext()
@@ -354,6 +362,30 @@ func (c *Client) CancelReminderRemote(req *daemonv1.CancelReminderRequest) (*dae
 		ctx, cancel := c.rpcContext()
 		defer cancel()
 		return c.grpcClient.CancelReminder(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) SnoozeReminderRemote(req *daemonv1.SnoozeReminderRequest) (*daemonv1.SnoozeReminderResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.SnoozeReminder(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) UpdateReminderRemote(req *daemonv1.UpdateReminderRequest) (*daemonv1.UpdateReminderResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.UpdateReminder(ctx, req)
+	}
+	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
+}
+func (c *Client) GetReminderLogRemote(req *daemonv1.GetReminderLogRequest) (*daemonv1.GetReminderLogResponse, error) {
+	if c.grpcClient != nil {
+		ctx, cancel := c.rpcContext()
+		defer cancel()
+		return c.grpcClient.GetReminderLog(ctx, req)
 	}
 	return nil, fmt.Errorf("collaboration RPCs require grpc transport")
 }

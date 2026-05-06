@@ -131,6 +131,16 @@ type RouteOptions struct {
 	Skills   []string
 }
 
+// JobUpdate contains optional cron job fields to update.
+type JobUpdate struct {
+	Name          *string
+	Prompt        *string
+	ScheduleKind  *ScheduleKind
+	Schedule      *string
+	AtTime        *time.Time
+	EveryDuration *string
+}
+
 const (
 	tickerInterval = 5 * time.Second
 )
@@ -633,6 +643,121 @@ func (m *Manager) RunJob(jobID string) error {
 	}
 
 	go m.executeJob(jobID)
+	return nil
+}
+
+// SnoozeJob delays the next run by the provided duration.
+func (m *Manager) SnoozeJob(jobID string, delay time.Duration) (*Job, error) {
+	if delay <= 0 {
+		return nil, fmt.Errorf("snooze delay must be positive")
+	}
+	at := time.Now().Add(delay)
+	kind := ScheduleAt
+	return m.UpdateJob(jobID, JobUpdate{ScheduleKind: &kind, AtTime: &at})
+}
+
+// UpdateJob updates mutable job fields and reschedules the job when needed.
+func (m *Manager) UpdateJob(jobID string, change JobUpdate) (*Job, error) {
+	m.mu.Lock()
+	job, exists := m.jobs[jobID]
+	if !exists {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("job not found: %s", jobID)
+	}
+	candidate := *job
+	if change.Name != nil {
+		name := strings.TrimSpace(*change.Name)
+		if name == "" {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("job name is required")
+		}
+		candidate.Name = name
+	}
+	if change.Prompt != nil {
+		prompt := strings.TrimSpace(*change.Prompt)
+		if prompt == "" {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("job prompt is required")
+		}
+		candidate.Prompt = prompt
+	}
+	if change.ScheduleKind != nil {
+		candidate.ScheduleKind = normalizeScheduleKind(*change.ScheduleKind)
+	}
+	if err := applyScheduleUpdate(&candidate, change); err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+	if entryID, ok := m.entries[jobID]; ok {
+		m.scheduler.Remove(entryID)
+		delete(m.entries, jobID)
+	}
+	if candidate.Enabled {
+		if err := m.scheduleJob(&candidate); err != nil {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("scheduling job: %w", err)
+		}
+	}
+	*job = candidate
+	jobCopy := *job
+	m.mu.Unlock()
+
+	if err := m.updateJobState(m.ctx, &jobCopy); err != nil {
+		return nil, fmt.Errorf("persisting updated job: %w", err)
+	}
+	return &jobCopy, nil
+}
+
+func applyScheduleUpdate(job *Job, change JobUpdate) error {
+	switch normalizeScheduleKind(job.ScheduleKind) {
+	case ScheduleCron:
+		if change.Schedule != nil {
+			job.Schedule = strings.TrimSpace(*change.Schedule)
+		}
+		if job.Schedule == "" {
+			return fmt.Errorf("schedule is required")
+		}
+		if _, err := cron.ParseStandard(job.Schedule); err != nil {
+			return fmt.Errorf("invalid cron schedule: %w", err)
+		}
+		job.AtTime = nil
+		job.EveryDuration = ""
+	case ScheduleAt:
+		if change.AtTime != nil {
+			at := *change.AtTime
+			job.AtTime = &at
+		}
+		if job.AtTime == nil {
+			return fmt.Errorf("at time is required")
+		}
+		if job.AtTime.Before(time.Now()) {
+			return fmt.Errorf("scheduled time %s is in the past", job.AtTime.Format(time.RFC3339))
+		}
+		job.Schedule = ""
+		job.EveryDuration = ""
+		job.NextRun = *job.AtTime
+	case ScheduleEvery:
+		if change.EveryDuration != nil {
+			job.EveryDuration = strings.TrimSpace(*change.EveryDuration)
+		}
+		if job.EveryDuration == "" {
+			return fmt.Errorf("every duration is required")
+		}
+		duration, err := time.ParseDuration(job.EveryDuration)
+		if err != nil {
+			return fmt.Errorf("invalid duration %q: %w", job.EveryDuration, err)
+		}
+		if duration < time.Second {
+			return fmt.Errorf("interval must be at least 1 second")
+		}
+		job.Schedule = ""
+		job.AtTime = nil
+		if change.EveryDuration != nil || job.NextRun.IsZero() {
+			job.NextRun = time.Now().Add(duration)
+		}
+	default:
+		return fmt.Errorf("unknown schedule kind: %s", job.ScheduleKind)
+	}
 	return nil
 }
 

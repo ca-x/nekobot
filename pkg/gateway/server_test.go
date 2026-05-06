@@ -479,6 +479,24 @@ func TestDaemonCollaborationAgentProfileEnvAndActivity(t *testing.T) {
 		t.Fatalf("unexpected profiles: %+v", profiles.Profiles)
 	}
 	assertSecretEnvRedacted(t, profiles.Profiles[0].Env, "TOKEN", "secret")
+	displayName := "Codex Display"
+	description := "Updated from daemon profile API"
+	updatedProfile, err := s.UpdateAgentProfile(context.Background(), &daemonv1.UpdateAgentProfileRequest{
+		AgentId:        runtimeItem.ID,
+		DisplayName:    &displayName,
+		Description:    &description,
+		AvatarMimeType: "image/png",
+		AvatarContent:  []byte("avatar"),
+	})
+	if err != nil {
+		t.Fatalf("UpdateAgentProfile failed: %v", err)
+	}
+	if updatedProfile.Profile.GetDisplayName() != displayName || updatedProfile.Profile.GetDescription() != description {
+		t.Fatalf("unexpected updated profile: %+v", updatedProfile.Profile)
+	}
+	if !strings.HasPrefix(updatedProfile.Profile.GetAvatarUrl(), "data:image/png;base64,") {
+		t.Fatalf("expected data avatar URL, got %q", updatedProfile.Profile.GetAvatarUrl())
+	}
 	if permission := matchingPermission(profiles.Profiles[1].GetPermissions(), capabilityAgentControl, "*"); permission == nil || permission.GetAllowed() {
 		t.Fatalf("expected denied agent.control permission, got %+v", profiles.Profiles[1].GetPermissions())
 	}
@@ -1153,6 +1171,12 @@ func TestDaemonCollaborationReminders(t *testing.T) {
 	if resp.Reminder.GetReminderId() == "" || resp.Reminder.GetTarget() != "#websocket:thread-reminder" {
 		t.Fatalf("unexpected reminder: %+v", resp.Reminder)
 	}
+	if resp.Reminder.GetTitle() != "check later" || resp.Reminder.GetStatus() != "scheduled" || resp.Reminder.GetFireTimeUnix() == 0 {
+		t.Fatalf("expected scheduled reminder metadata, got %+v", resp.Reminder)
+	}
+	if resp.Reminder.GetRecurrence().GetRule() != "every:1h" {
+		t.Fatalf("expected every recurrence, got %+v", resp.Reminder.GetRecurrence())
+	}
 	listResp, err := s.ListReminders(context.Background(), &daemonv1.ListRemindersRequest{Target: "#websocket:thread-reminder", Limit: 10})
 	if err != nil {
 		t.Fatalf("ListReminders failed: %v", err)
@@ -1160,12 +1184,45 @@ func TestDaemonCollaborationReminders(t *testing.T) {
 	if len(listResp.Reminders) != 1 || listResp.Reminders[0].GetReminderId() != resp.Reminder.GetReminderId() {
 		t.Fatalf("unexpected reminders: %+v", listResp.Reminders)
 	}
+	snoozed, err := s.SnoozeReminder(context.Background(), &daemonv1.SnoozeReminderRequest{
+		ReminderId:   resp.Reminder.GetReminderId(),
+		DelaySeconds: 60,
+	})
+	if err != nil {
+		t.Fatalf("SnoozeReminder failed: %v", err)
+	}
+	if snoozed.Reminder.GetScheduleKind() != string(cron.ScheduleAt) || snoozed.Reminder.GetFireTimeUnix() == 0 {
+		t.Fatalf("unexpected snoozed reminder: %+v", snoozed.Reminder)
+	}
+	updatedTitle := "check later again"
+	updatedRepeat := "every:2h"
+	updated, err := s.UpdateReminder(context.Background(), &daemonv1.UpdateReminderRequest{
+		ReminderId: resp.Reminder.GetReminderId(),
+		Title:      &updatedTitle,
+		Repeat:     &updatedRepeat,
+	})
+	if err != nil {
+		t.Fatalf("UpdateReminder failed: %v", err)
+	}
+	if updated.Reminder.GetTitle() != updatedTitle || updated.Reminder.GetRecurrence().GetRule() != updatedRepeat {
+		t.Fatalf("unexpected updated reminder: %+v", updated.Reminder)
+	}
+	logResp, err := s.GetReminderLog(context.Background(), &daemonv1.GetReminderLogRequest{ReminderId: resp.Reminder.GetReminderId()})
+	if err != nil {
+		t.Fatalf("GetReminderLog failed: %v", err)
+	}
+	if len(logResp.Events) < 3 {
+		t.Fatalf("expected created/snoozed/updated events, got %+v", logResp.Events)
+	}
 	cancelResp, err := s.CancelReminder(context.Background(), &daemonv1.CancelReminderRequest{ReminderId: resp.Reminder.GetReminderId()})
 	if err != nil {
 		t.Fatalf("CancelReminder failed: %v", err)
 	}
 	if !cancelResp.Accepted {
 		t.Fatalf("expected cancel accepted")
+	}
+	if cancelResp.Reminder.GetStatus() != "canceled" {
+		t.Fatalf("expected canceled reminder record, got %+v", cancelResp.Reminder)
 	}
 }
 
