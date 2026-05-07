@@ -2,7 +2,7 @@
 
 Status: accepted design target
 
-Current protocol drift checkpoint: `docs/superpowers/specs/2026-05-07-slock-runtime-integration.md`.
+Reusable Slock-style daemon implementation spec: `docs/superpowers/specs/2026-05-07-slock-runtime-integration.md`.
 
 ## Decision
 

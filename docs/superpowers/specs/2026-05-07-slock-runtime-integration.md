@@ -1,65 +1,175 @@
-# Slock Runtime Integration Design
+# Slock-Style Agent Daemon Protocol and Runtime Design
 
-Status: implementation reference for task #90
+Status: reusable implementation specification
 Date: 2026-05-07
+Protocol checkpoint: observed Slock daemon `v0.44.2`
 
-Related:
-- `proto/nekobot/daemon/v1/daemon.proto`
-- `docs/superpowers/specs/2026-04-30-daemon-collaboration-protocol-v2.md`
-- `docs/superpowers/specs/2026-04-30-task-graph-auto-split-sync.md`
-- `docs/superpowers/specs/2026-04-30-hermes-memory-curator-redesign.md`
+## How To Use This Document
 
-## Purpose
+This document is intentionally independent of any one application
+implementation. It describes the protocol objects, runtime behavior, storage
+boundaries, and minimum algorithms needed to build a Slock-style agent daemon
+and server.
 
-This document describes enough of the Slock-style daemon design to implement a compatible version from scratch and to keep Nekobot's daemon protocol aligned with the observed Slock runtime behavior.
+Use it with the protobuf definitions currently stored at:
 
-It covers:
+```text
+proto/nekobot/daemon/v1/daemon.proto
+```
 
-- protocol drift checked against Slock daemon `v0.44.2`;
-- daemon/server communication;
-- live daemon startup and scheduling behavior observed from logs;
-- core objects and RPC semantics;
-- memory implementation;
-- task splitting;
-- DM implementation;
-- errors, retries, diagnostics, and minimum implementation steps.
+That path is only the current location of the reusable IDL. The design below
+does not depend on any concrete application code structure, storage layer,
+package names, or implementation modules.
 
-## Protocol Drift Check
+For a new implementation:
 
-The checked runtime is Slock daemon `v0.44.2`.
+1. Treat `daemon.proto` as the service and message contract.
+2. Treat this document as the behavioral contract.
+3. Use implementation-specific storage, transport, process supervision, and UI
+   choices as long as the externally visible semantics stay the same.
 
-| Slock behavior | Nekobot protocol action |
+## Goals
+
+- Define a server/daemon/runtime architecture for human-agent collaboration.
+- Define how agents communicate with the server through a local daemon.
+- Define task, DM, reminder, profile, memory, and event replay behavior.
+- Capture observed daemon behavior from live logs so it can be reproduced.
+- Keep runtime products open-ended by using string identifiers instead of
+  closed enums.
+
+## Non-Goals
+
+- This is not a UI design.
+- This is not tied to a specific programming language or database.
+- This does not require a specific wire transport such as WebSocket, gRPC, or
+  long polling.
+- This does not prescribe how the model provider itself is called.
+- This does not make runtime session files a substitute for server-visible
+  events or curated memory.
+
+## Conformance Levels
+
+Use these levels when implementing the system:
+
+| Level | Meaning |
 | --- | --- |
-| OpenCode is a supported runtime beside Claude, Codex, Kimi, and Gemini. | No protobuf enum needed. Nekobot keeps runtime identity in string fields such as `Runtime.kind`, `RuntimeProfile.kind`, `RuntimeProfile.provider`, and `AgentProfile.runtime_kind`. |
-| Public channels enforce join-to-write. | No new proto field needed. This maps to target-scoped `Permission` checks and failed mutation responses. |
-| Profile update accepts display name, description, and avatar file. | Added to `UpdateAgentProfileRequest` and wired through daemonhost/gateway. |
-| Reminders support snooze, update, lifecycle history, and status/recurrence fields. | Added `SnoozeReminder`, `UpdateReminder`, `GetReminderLog`, `ReminderEvent`, `ReminderRecurrence`, and related `ReminderRecord` fields. |
-| Failed task claim is silent to chat output. | No proto change. The caller observes the RPC/CLI error and avoids emitting an explanatory chat message. |
-| Agents stay online through daemon reconnects. | Covered by existing computer lease, heartbeat, and `AgentStatusSnapshot` projection. |
+| Required | Needed for a compatible daemon/server implementation. |
+| Optional | Useful, but a minimal implementation can defer it. |
+| Future extension | Protocol-compatible direction for later versions. |
 
-Current Nekobot branch baseline includes the proto and generated-code changes from `origin/task89-daemon-proto`.
+## Protocol Surface
 
-## Architecture Overview
+The protobuf service is centered on `DaemonControlService`. The most important
+groups are:
 
-The system has four layers:
+- computer registration and heartbeat;
+- runtime and workspace inventory;
+- channels, DMs, threads, messages, and attachments;
+- collaboration tasks, task boards, task graph split/apply flow;
+- agent profiles, profile updates, environment variables, and status snapshots;
+- reminders, reminder lifecycle, and reminder event history;
+- activity records, event replay, runs, and run steps;
+- agent lifecycle controls and direct-agent messages.
 
-1. **Slock server**: authoritative state for users, channels, DMs, messages, tasks, reminders, attachments, agent profiles, and daemon control.
-2. **Local daemon**: long-running process on a machine. It authenticates to the server, holds the machine lock, discovers runtimes, starts agent processes, injects credentials, streams events, and reports status.
-3. **Runtime adapter**: per-runtime launcher/supervisor for Codex, Claude, OpenCode, Kimi, Gemini, or a custom runtime.
-4. **Agent workspace**: per-agent files and process state, including `MEMORY.md`, notes, runtime session files, and the local `.slock/agent-token`.
+### Runtime Drift Checkpoint
 
-Nekobot maps this to protobuf/gRPC internally:
+The observed daemon version is `v0.44.2`. A compatible implementation should
+cover these behaviors:
 
-- registration and liveness: `RegisterComputer`, `HeartbeatComputer`, `Lease`;
-- inventory: `ComputerInfo`, `ComputerInventory`, `Workspace`, `Runtime`, `RuntimeProfile`, `AgentProfile`;
-- collaboration: targets, threads, messages, saved messages, tasks, task boards, task graphs, reminders, activity, attachments, and event replay;
-- runtime control: `ControlAgent`, `SendAgentDirectMessage`, profile/env updates, and status snapshots.
+| Observed behavior | Required protocol stance |
+| --- | --- |
+| OpenCode is supported beside Claude, Codex, Kimi, Gemini, and future runtimes. | Runtime identity must be string-based. Do not use a closed runtime enum. |
+| Public channels enforce join-to-write. | Mutating operations must check membership/permission before writing. |
+| Profile update accepts display name, description, and avatar file. | Implement `UpdateAgentProfile` with additive fields. |
+| Reminders support snooze, update, status, recurrence, and lifecycle log. | Implement `SnoozeReminder`, `UpdateReminder`, `GetReminderLog`, `ReminderEvent`, and recurrence fields. |
+| Failed task claim is silent in chat. | The client observes a failed mutation and does not emit an explanatory chat message. |
+| Agents remain online through daemon reconnects. | Presence must be recovered from lease, heartbeat, and agent status state. |
 
-HTTP/WebUI is a derived control surface. It must call server APIs that mutate the same durable collaboration state as daemon RPCs; WebUI-only state must not become the source of truth for agent-visible collaboration.
+## System Roles
 
-## Live Daemon Behavior From Logs
+### Server
 
-The following behavior was observed from a real daemon startup on 2026-05-07:
+The server is the authoritative source of collaboration state:
+
+- humans, agents, and computers;
+- channel and DM membership;
+- messages, threads, attachments, saved messages;
+- tasks, task boards, task graphs, and runs;
+- reminders and reminder event logs;
+- agent profiles, permissions, capabilities, and status;
+- event log and replay cursor;
+- leases and machine liveness.
+
+The server validates permissions and owns idempotency for side-effecting
+operations.
+
+### Local Daemon
+
+The daemon is a long-running machine process. It:
+
+- holds a machine lock;
+- connects to the server;
+- registers and heartbeats the computer;
+- discovers local runtimes;
+- receives server events;
+- launches and supervises agent runtime processes;
+- injects agent-scoped credentials;
+- captures stdout/stderr diagnostics;
+- reports status, activity, run steps, and event acknowledgements.
+
+### Runtime Adapter
+
+A runtime adapter knows how to launch one runtime product, such as Codex,
+Claude, OpenCode, Kimi, Gemini, or a custom runtime.
+
+The adapter boundary should accept:
+
+- runtime kind;
+- model;
+- session id;
+- agent id;
+- workspace path;
+- token file path;
+- launch environment;
+- optional runtime-specific adapter config.
+
+It should return:
+
+- process id or supervisor handle;
+- stdout/stderr stream handles;
+- lifecycle status;
+- initial-turn-ended signal;
+- exit status and error diagnostics.
+
+### Agent Process
+
+The agent process receives messages from the runtime and performs work. It
+should not need the user's server credential. It uses an agent-scoped local
+credential or CLI bridge provided by the daemon.
+
+### Agent Workspace
+
+Each agent has an owned workspace for durable local files:
+
+```text
+agent-workspace/
+  MEMORY.md
+  notes/
+    user-preferences.md
+    channels.md
+    work-log.md
+  .slock/
+    agent-token
+  runtime/
+    sessions/
+```
+
+The exact layout can vary, but `MEMORY.md` should remain the small recovery
+index for long-lived agent memory.
+
+## Observed Daemon Runtime Behavior
+
+The following behavior was observed from a live daemon startup:
 
 ```text
 [Slock Daemon] Starting...
@@ -76,20 +186,25 @@ The following behavior was observed from a real daemon startup on 2026-05-07:
 
 ### Startup Sequence
 
-1. Daemon starts and acquires a per-machine lock under `.slock/machines/<machine-id>/daemon.lock`.
-2. Daemon connects to `https://api.slock.ai`.
-3. Server connection is established before agent processes are started.
-4. Daemon detects local runtimes and versions. Example runtime kinds: `claude`, `codex`, `opencode`.
-5. Server sends `agent:start` events containing `agent_id`, `runtime`, `model`, and `session`.
-6. Daemon converts each event into a local runtime start request.
-7. Start requests enter a bounded queue.
-8. When a start permit is available, the daemon dequeues one request and launches the runtime.
-9. The start permit is released after the initial turn ends, allowing the next queued agent to start.
-10. Server ping events continue while agents are running.
+Required behavior:
+
+1. Start daemon process.
+2. Acquire a per-machine lock under a stable machine directory.
+3. Connect to the server endpoint.
+4. Register or resume the computer identity.
+5. Discover available local runtimes and versions.
+6. Receive `agent:start` events from the server.
+7. Convert each start event into a local runtime launch request.
+8. Queue launch requests behind a bounded start scheduler.
+9. Launch one or more requests when permits are available.
+10. Release the start permit after initial-turn-ended, launch failure, or
+    timeout.
+11. Continue heartbeats and ping handling while agents are running.
 
 ### Runtime Discovery
 
-Runtime discovery returns a list of available local adapters and versions. This is why Nekobot should keep runtime identity string-based instead of a closed enum:
+Discovery should produce a runtime inventory with string identifiers and
+versions. Example detected runtimes:
 
 ```text
 claude (2.1.123 (Claude Code))
@@ -97,12 +212,13 @@ codex (codex-cli 0.128.0)
 opencode (1.14.30)
 ```
 
-Implementation guidance:
+Required behavior:
 
-- Probe known runtime commands on daemon startup and periodically on configuration reload.
-- Report discovered runtimes in heartbeat inventory.
-- Keep unsupported or missing runtimes visible with `installed=false` or `healthy=false` when the runtime is configured but unavailable.
-- Store runtime kind/provider/model as strings to avoid a proto migration for every new runtime product.
+- probe configured and well-known runtime commands;
+- record kind, version, availability, and health;
+- report missing configured runtimes as unavailable instead of hiding them;
+- keep runtime kind/provider/model as strings;
+- avoid protobuf changes for each new runtime product.
 
 ### Agent Start Event
 
@@ -112,89 +228,243 @@ The server-side start event carries these logical fields:
 | --- | --- |
 | `agent_id` | Durable agent identity. |
 | `runtime` | Runtime adapter kind, for example `codex`, `claude`, or `opencode`. |
-| `model` | Model requested by server/user/profile. |
-| `session` | Runtime session id used to resume or continue the runtime conversation. |
+| `model` | Model requested by profile, user, or server policy. |
+| `session` | Runtime session id used to resume or continue runtime-local conversation state. |
 
-Nekobot should represent this with `AgentProfile`, `RuntimeProfile`, `Run`, and runtime adapter launch parameters. Do not confuse runtime session with memory:
+Do not confuse runtime session with memory:
 
 - session id resumes runtime-local conversation state;
-- `MEMORY.md` and notes preserve curated agent knowledge across sessions and restarts;
-- run steps and activity preserve server-visible execution progress.
+- `MEMORY.md` and notes preserve curated knowledge across sessions;
+- run steps and activity preserve server-visible progress;
+- event replay preserves collaboration continuity.
 
 ### Start Queue and Permit
 
-Observed logs show `max=1` and `interval=500ms`. This implies an agent start scheduler with:
+Observed logs show `max=1` and `interval=500ms`. A compatible daemon should
+implement a bounded start scheduler.
 
-- a FIFO queue of start requests;
-- an `active` count;
-- a maximum concurrent starts value;
-- a retry/dequeue interval;
-- a permit released when the initial turn ends.
-
-Minimum implementation:
+Minimum algorithm:
 
 ```text
-on agent:start:
-  enqueue request
+on agent:start event:
+  validate event
+  enqueue start request
   tryStartNext()
 
 tryStartNext:
-  if active >= max: return
-  req = dequeue()
-  active++
-  launch runtime(req)
+  while active < maxConcurrentStarts and queue not empty:
+    req = dequeue()
+    active++
+    launchRuntime(req)
 
-on initial-turn-ended or launch-failed:
+on initial-turn-ended, launch-failed, or launch-timeout:
   active--
   tryStartNext()
 ```
 
-The release signal is important. If a process starts but never reports that the first turn ended, later queued agents can starve. Implement a timeout and surface it as a diagnostic event.
+Required diagnostics:
 
-### CLI Transport and Token Injection
+- queued count;
+- active count;
+- max concurrent starts;
+- dequeue event;
+- launch command/runtime kind;
+- permit release reason;
+- timeout when initial-turn-ended never arrives.
 
-Observed Claude agent startup includes:
+## Server Communication
+
+### Transport
+
+The server/daemon transport can be WebSocket, gRPC stream, server-sent events,
+long polling, or another bidirectional protocol.
+
+The required contract is:
+
+1. daemon authenticates;
+2. daemon registers or resumes the computer;
+3. daemon sends heartbeat and inventory updates;
+4. server sends events;
+5. daemon acknowledges accepted side effects;
+6. daemon reports agent status and run/activity progress;
+7. daemon reconnects and replays missed events from a cursor.
+
+### Event Types
+
+A minimal event stream should support:
+
+- `ping`;
+- `agent:start`;
+- `agent:control`;
+- `message:received`;
+- `task:assigned`;
+- `task:updated`;
+- `reminder:fired`;
+- `profile:updated`;
+- `shutdown` or `lease:revoked`.
+
+Event payloads should include:
+
+- event id;
+- event type;
+- server time;
+- target or subject id;
+- request id or idempotency key when applicable;
+- payload message.
+
+### Idempotency
+
+All side-effecting operations should be idempotent by:
+
+```text
+(caller_kind, caller_id, method, request_id)
+```
+
+Required behavior:
+
+- same request id and same body replays the same response;
+- same request id and different body returns conflict;
+- in-progress duplicate returns unavailable or equivalent retryable status;
+- failed mutation records enough detail for safe retry handling.
+
+Operations that should carry request ids include:
+
+- send/save/unsave message;
+- upload attachment;
+- create/claim/update task;
+- propose/apply task split;
+- schedule/cancel/snooze/update reminder;
+- update agent profile/status/env;
+- control agent lifecycle;
+- log activity.
+
+## Authentication and Token Injection
+
+Observed runtime launch log:
 
 ```text
 transport=cli cli=.../@slock-ai/daemon/dist/cli/index.js token_file=.../.slock/agent-token
 ```
 
-This means the agent runtime does not need the user's server token directly. The daemon creates an agent-scoped token file in the agent workspace and launches the runtime with a CLI transport that can read it.
+Required behavior:
 
-Implementation guidance:
+- daemon stores an agent-scoped token file inside the agent workspace;
+- token file is readable only by the local user running the daemon;
+- runtime receives token path, not raw token contents;
+- token is rotated or deleted when the agent is disabled, deleted, or fully
+  reset;
+- token content is never returned through profile APIs, logs, activity, run
+  steps, or diagnostics.
 
-- Store each agent token under the agent workspace, not in global config.
-- Restrict token file permissions to the local user.
-- Pass token file path through environment or runtime adapter config.
-- Rotate or delete the token when the agent is disabled, deleted, or fully reset.
-- Never include token contents in `AgentProfile`, logs, activity records, or run steps.
+The agent-facing CLI bridge should use this token file to call the local daemon
+or server on behalf of the agent.
 
-### Runtime Stderr Diagnostics
+## Core Object Model
 
-Observed Codex stderr:
+### Computer and Lease
 
-```text
-failed to load skill .../SKILL.md: missing field `description`
-failed to load skill .../SKILL.md: invalid YAML ...
-```
+A computer is one registered daemon host.
 
-These errors did not necessarily stop the daemon connection, but they are runtime health signals.
+Important fields:
 
-Implementation guidance:
+- `computer_id`: stable machine identity;
+- `daemon_id`: daemon installation or process identity;
+- `hostname`: diagnostic only, not an identity root;
+- `os` and `arch`;
+- `lease_id`;
+- runtime inventory;
+- status: online, stale, offline, degraded.
 
-- Capture stderr lines as structured diagnostics.
-- Mark the runtime or agent `degraded` when repeated startup/runtime errors occur.
-- Keep raw stderr out of user chat unless explicitly requested.
-- Redact secrets before storing diagnostics.
-- Include enough context to debug: runtime kind, agent id, session id, and source file path if safe.
+Lease behavior:
 
-## Server Communication Contract
+- server grants a lease during register/heartbeat;
+- heartbeat renews the lease;
+- missed heartbeat marks the computer stale/offline;
+- another daemon takeover must be explicit server-side lease replacement;
+- reconnect should reuse `computer_id`.
 
-### Agent-facing CLI Contract
+### Runtime
 
-An agent does not talk to the Slock server directly. The local runtime injects a `slock` CLI wrapper into `PATH`; the CLI communicates with the local daemon, and the daemon handles server auth, reconnects, channel membership, task mutation, attachment download/upload, and reminder lifecycle.
+A runtime is a locally detected executable capability.
 
-Incoming messages are delivered with a structured header:
+Fields:
+
+- runtime id;
+- kind;
+- version;
+- installed/available;
+- health;
+- default flag;
+- supported features.
+
+### Runtime Profile
+
+A runtime profile describes how to start an agent:
+
+- runtime kind;
+- model;
+- workspace;
+- session policy;
+- environment variables;
+- adapter config;
+- skills or instruction roots;
+- concurrency limits.
+
+### Agent Profile
+
+An agent profile is the server-visible collaboration identity:
+
+- agent id;
+- display name;
+- description;
+- avatar URL;
+- runtime kind;
+- model;
+- enabled flag;
+- capabilities;
+- permissions;
+- status snapshot;
+- DM targets.
+
+Profile mutation should support display name, description, and avatar content.
+
+### Targets
+
+Targets are stable route identifiers:
+
+| Shape | Meaning |
+| --- | --- |
+| `#channel` | Channel-level chat, tasks, reminders, activity. |
+| `#channel:msgid` | Thread attached to a channel message. |
+| `dm:@user` | Direct message with a human user. |
+| `dm:@agent` | Direct message with an agent identity. |
+| `dm:@name:msgid` | Thread attached to a DM message. |
+
+Rules:
+
+- replies reuse the exact incoming target;
+- target parsing belongs in shared server code;
+- runtime adapters must not implement their own target grammar;
+- channel membership and write permissions are checked before mutation;
+- threads are not nested.
+
+## Agent-Facing CLI Contract
+
+The runtime should expose a small command surface to the agent. The command
+names can vary, but the semantics should match:
+
+- check new messages;
+- read message history;
+- send messages;
+- list channels and members;
+- manage threads;
+- list/create/claim/update tasks;
+- upload/download attachments;
+- schedule/list/cancel/snooze/update reminders;
+- inspect server info and profiles;
+- update profile where permitted.
+
+Incoming messages should be formatted with a structured header:
 
 ```text
 [target=#channel msg=shortid time=... type=human] @sender: content
@@ -204,265 +474,346 @@ Incoming messages are delivered with a structured header:
 
 Rules:
 
-- Replies reuse the exact incoming `target`.
-- Work that requires action is claimed before execution with `slock task claim`.
-- Mutating calls fail through CLI exit status and JSON stderr, not through explanatory chat output.
-- The daemon owns reconnect behavior and keeps the agent online when the daemon reconnects.
+- replies reuse the exact `target`;
+- work must be claimed before execution;
+- task claim conflict does not produce a chat apology;
+- mutating command failures are surfaced through exit status and structured
+  error output;
+- ordinary channel delivery stops when the agent leaves or loses membership.
 
-### Daemon/Server Event Loop
+## Memory Design
 
-A minimal implementation can use WebSocket, gRPC stream, or long-polling. The transport is less important than the event contract:
+Memory has separate layers. Do not collapse them into one transcript file.
 
-1. Daemon authenticates and registers the computer.
-2. Daemon sends inventory and receives server time plus a lease.
-3. Daemon keeps heartbeating with lease id and inventory changes.
-4. Server sends events such as `ping`, `agent:start`, `agent:control`, `message:received`, or `task:assigned`.
-5. Daemon acknowledges events by request/event id when side effects are accepted.
-6. Daemon reports process status through activity, run steps, and agent status snapshots.
-7. On reconnect, daemon lists missed events using its event cursor.
+### Hot Prompt Memory
 
-Side-effecting operations must be idempotent by `(caller_id, request_id, method)`.
+Small curated facts injected into the prompt. This should include:
 
-## Core Objects and RPC Semantics
+- durable user preferences;
+- stable project facts;
+- recurring decisions;
+- current active context needed after restart.
 
-### Computer and Lease
+`MEMORY.md` should act as an index, not a full history.
 
-`ComputerInfo` represents one daemon host. It registers with `RegisterComputer` and refreshes with `HeartbeatComputer`.
+### Work Notes
 
-Important fields:
+Detailed notes live in separate files referenced by `MEMORY.md`. Examples:
 
-- `computer_id`: durable machine identity;
-- `daemon_id`: daemon process/install identity;
-- `status`: online, stale, offline, degraded;
-- `lease_id`: current server-issued ownership lease;
-- `capabilities`: host-level capabilities.
+- user preferences;
+- channel context;
+- work log;
+- domain knowledge;
+- project conventions.
 
-Lease behavior:
+These notes are read only when relevant.
 
-- heartbeat renews the lease;
-- reconnect should reuse `computer_id`;
-- lease expiry marks the computer stale/offline;
-- takeover by another daemon should require explicit server-side lease replacement.
+### Runtime Session
 
-### Runtime, RuntimeProfile, and AgentProfile
+Runtime session files are model/runtime-local continuation state. They are not
+authoritative collaboration state and are not a replacement for curated memory.
 
-`Runtime` is detected executable capability on a computer. `RuntimeProfile` is how to launch an agent. `AgentProfile` is the collaboration identity visible to users.
+### Event Replay
 
-Keep these separate:
+Server event replay is the authoritative collaboration recovery path. A daemon
+restart should recover missed messages, task updates, reminders, and control
+events from the server cursor.
 
-- one computer can expose many runtimes;
-- one runtime kind can have many profiles with different models/workspaces/env;
-- one agent profile can move between daemon sessions while keeping identity.
-
-### Messages and Threads
-
-`SendMessage` creates a durable collaboration message under a target. `ReadMessages` returns target/thread history. Attachments are referenced by ids.
-
-Thread behavior:
-
-- channel thread target: `#channel:msgid`;
-- DM thread target: `dm:@name:msgid`;
-- threads are not nested;
-- all message writes must validate target permissions.
-
-### Tasks and Runs
-
-Tasks are human-visible work items. Runs are execution attempts.
-
-- `Task`: title/summary, state, target, assignee, graph fields.
-- `Run`: current execution attempt for an agent/runtime.
-- `RunStep`: durable step-level progress and artifacts.
-
-Do not use process memory as the only source of task progress. If a daemon restarts, server-visible state must be enough to show what happened and decide whether to resume, retry, or hand off.
-
-### Profile and Reminder Drift Surface
-
-Slock `v0.44.2` requires these surfaces:
-
-- `UpdateAgentProfile(display_name, description, avatar_*)`;
-- `SnoozeReminder(reminder_id, delay_seconds)`;
-- `UpdateReminder(title, fire_at, delay_seconds, repeat, timezone)`;
-- `GetReminderLog(reminder_id)`;
-- reminder `status`, `fire_time_unix`, `fired_time_unix`, `msg_ref`, and recurrence data.
-
-## Target Grammar
-
-Targets are stable route identifiers:
-
-| Shape | Meaning |
-| --- | --- |
-| `#channel` | Channel-level chat, tasks, reminders, or activity. |
-| `#channel:msgid` | Thread attached to a channel message. |
-| `dm:@user` | Direct message with a human user. |
-| `dm:@agent` | Direct message with an agent identity. |
-| `dm:@name:msgid` | Thread attached to a DM message. |
-
-Rules:
-
-- The exact incoming target is reused for replies.
-- A thread suffix is a message id or server-issued thread id.
-- Target parsing belongs in shared server code.
-- Runtime adapters must not implement their own target grammar.
-- Channel membership and write permissions are evaluated before mutation.
-
-## Memory Implementation
-
-Slock agents use an agent-owned workspace with `MEMORY.md` as the recovery index. Additional notes live under `notes/` and are referenced from the index. This gives the agent a small, stable entry point after daemon restart or context compaction.
-
-Nekobot should keep the same separation:
-
-1. **Hot prompt memory**: short curated facts and user preferences injected into the prompt. This is the `MEMORY.md` / `USER.md` layer described in the Hermes memory redesign.
-2. **Work notes**: task history, project facts, and channel context stored in notes files and referenced by the index. These are not always injected.
-3. **Episodic/session recall**: searchable session records or QMD exports used on demand.
-4. **Procedural memory**: skills and runtime instructions loaded by index first, full content only when needed.
-5. **Server-visible progress**: task messages, run steps, activity records, and release notes. These are not prompt memory.
-
-Memory must not become a task progress log. A useful entry is stable across sessions; temporary state belongs in task state, run steps, activity records, or release notes.
-
-### Suggested File Layout
-
-```text
-agent-workspace/
-  MEMORY.md
-  notes/
-    user-preferences.md
-    channels.md
-    work-log.md
-  .slock/
-    agent-token
-  runtime/
-    sessions/
-```
-
-### Compression and Recovery
+### Compaction and Recovery
 
 Before context compaction:
 
-1. Ask the model to save only durable facts, preferences, corrections, and repeated patterns.
-2. Enable only the curated memory tool or file path.
-3. Reject task progress, temporary TODOs, credentials, and prompt-injection-shaped text.
-4. Continue the task from `MEMORY.md` plus task/thread history after restart.
+1. save durable facts to `MEMORY.md` or indexed notes;
+2. reject credentials and prompt-injection-shaped content;
+3. avoid saving temporary task progress as memory;
+4. write server-visible task/run/activity state through protocol APIs.
 
-Session id and memory serve different purposes:
+After restart:
 
-- session id is runtime-local conversation continuity;
-- memory is curated cross-session knowledge;
-- event replay is server-side collaboration continuity.
+1. read `MEMORY.md`;
+2. read task/thread history;
+3. replay missed server events;
+4. resume runtime session if available and appropriate.
 
-## Task Splitting
+## Task Model and Task Splitting
 
-Slock task splitting is chat-native:
+Tasks are chat-native work items. A top-level channel or DM message can become a
+task. The task is visible in the same conversation surface where it originated.
 
-1. A top-level channel or DM message becomes a task.
-2. The owner claims the task before doing work.
-3. Independent subtasks are created as separate task messages only when parallel ownership helps.
-4. Duplicate subtasks are closed or marked as duplicates.
-5. Status flow is `todo -> in_progress -> in_review -> done`.
-6. The assignee is separate from status.
+### Task State
 
-Nekobot's daemon protocol supports the same model through:
+Required state flow:
 
-- flat tasks: `CreateCollaborationTask`, `ListCollaborationTasks`, `ClaimCollaborationTask`;
-- board projection: `ListTaskBoard`;
-- structured decomposition: `ProposeTaskSplit`, `ApplyTaskSplit`, `CreateTaskGraph`, `ListTaskGraph`, `UpdateTaskGraph`;
-- event replay: `ListEventsSince` events such as `task.created`, `task.claimed`, `task.updated`, `task.split_proposed`, and `task.split_applied`.
+```text
+todo -> in_progress -> in_review -> done
+```
 
-### Idempotent Split Flow
+Assignee and status are separate:
 
-1. Caller sends `ProposeTaskSplit(parent_task_id, proposed_tasks, request_id)`.
-2. Server validates the parent task, permissions, and duplicate request id.
-3. Server stores a split proposal with temporary child ids and dependency references.
-4. Reviewer or automation selects children.
-5. Caller sends `ApplyTaskSplit(parent_task_id, proposal_id, selected_task_ids, request_id)`.
-6. Server materializes subtasks, increments `graph_version`, emits `task.split_applied`, and returns the authoritative graph.
+- a task can be unassigned;
+- a task can be in review but still assigned;
+- a done task should not be claimed again.
 
-Agents should fetch graph changes from the event log rather than polling every visible task.
+### Task Board
 
-## DM Implementation
+A task board is a projection grouped by status:
 
-DM is not a separate transport. It is a target namespace with the same message, thread, attachment, task, reminder, and activity rules as channels.
+- All;
+- TODO;
+- IN PROCESS;
+- IN REVIEW;
+- Done.
 
-Implementation rules:
+The exact labels can vary, but the canonical statuses should remain stable.
 
-- Direct agent messages use `SendAgentDirectMessage` only as a convenience wrapper; internally they create a normal collaboration message at `dm:@agent`.
-- `ListAgentDMs` returns DM channel records that the caller can use with the normal message APIs.
-- Attachments and replies follow the same `attachment_ids` and `reply_to_message_id` fields as channel messages.
-- DM thread replies use `dm:@name:msgid` and cannot be nested further.
-- Runtime adapters receive DM work through normal assigned runs or message replay, not through a side channel.
+### Split Flow
 
-## Error Handling and Diagnostics
+Task splitting should be explicit and idempotent:
 
-### User-visible Failures
+1. caller sends `ProposeTaskSplit(parent_task_id, proposed_tasks, request_id)`;
+2. server validates parent task and permission;
+3. server stores a proposal with client-proposed child ids;
+4. reviewer or automation selects children;
+5. caller sends `ApplyTaskSplit(parent_task_id, proposal_id, selected_task_ids,
+   request_id)`;
+6. server materializes subtasks;
+7. server records graph edges;
+8. server increments `graph_version`;
+9. server emits `task.split_applied`;
+10. clients replay graph changes from the event log.
 
-- Permission denied: return an explicit error, but do not emit a self-explanatory chat message unless the user requested a reply.
-- Task claim conflict: fail silently at chat level; the caller can pick another task.
-- Missing channel membership: fail writes until the agent is joined to the channel.
-- Reminder update/cancel not found: return not found and keep request id idempotent.
+Dependency types:
 
-### Daemon Diagnostics
+- parent-child;
+- depends-on;
+- blocks;
+- duplicate-of.
 
-When an agent does not respond, inspect in this order:
+## DM Design
 
-1. Is the daemon connected to the server and still receiving ping?
-2. Did runtime discovery find the requested runtime?
-3. Is the start request stuck in the queue because `active >= max`?
-4. Was the start permit released after the initial turn?
-5. Did the runtime receive the correct `agent_id`, `runtime`, `model`, and `session`?
-6. Does the agent workspace contain `.slock/agent-token`?
-7. Does stderr show runtime launch, skill loading, YAML, auth, or model errors?
-8. Does `ListEventsSince` show missed events after reconnect?
+DM is not a separate transport. It is a target namespace with the same message,
+thread, attachment, task, reminder, and activity rules as channels.
+
+Required behavior:
+
+- direct user DM target: `dm:@user`;
+- direct agent DM target: `dm:@agent`;
+- DM thread target: `dm:@name:msgid`;
+- `SendAgentDirectMessage` is a convenience RPC that writes a normal
+  collaboration message to the agent DM target;
+- `ListAgentDMs` returns DM channel records usable by normal message APIs;
+- attachments and replies use the same fields as channel messages;
+- runtime adapters receive DM work through normal message replay or assigned
+  runs, not a side channel.
+
+## Reminder Design
+
+Reminder records should support:
+
+- reminder id;
+- target;
+- title;
+- prompt/body;
+- schedule kind;
+- next fire time;
+- fired time;
+- status;
+- recurrence;
+- message reference;
+- creator/owner if available;
+- lifecycle event log.
+
+Required operations:
+
+- schedule;
+- list;
+- cancel;
+- snooze;
+- update;
+- get lifecycle log.
+
+### Schedule Forms
+
+Support these forms:
+
+- absolute `fire_at` timestamp;
+- relative `delay_seconds`;
+- recurring `every:<duration>`;
+- recurring `daily@HH:MM`;
+- recurring `weekly:mon,fri@HH:MM`;
+- cron expression as an advanced option.
+
+### Reminder Lifecycle Events
+
+Event types:
+
+- created;
+- fired;
+- snoozed;
+- updated;
+- canceled;
+- failed.
+
+Each event should include:
+
+- event id;
+- reminder id;
+- event type;
+- actor type/id;
+- occurred time;
+- next fire time if any;
+- detail/error.
+
+## Agent Lifecycle Control
+
+Lifecycle actions:
+
+- terminate;
+- restart;
+- restart and reset session;
+- restart and fully reset runtime-local state.
+
+Rules:
+
+- lifecycle requests must be permission-checked;
+- requests are idempotent by request id;
+- server records an operation with state;
+- daemon executes when the relevant computer/agent is reachable;
+- unsupported actions return an explicit unsupported state;
+- terminal events are written to the event log.
+
+## Diagnostics
+
+### Runtime Stderr
+
+Observed stderr examples include skill metadata and YAML errors:
+
+```text
+failed to load skill .../SKILL.md: missing field `description`
+failed to load skill .../SKILL.md: invalid YAML ...
+```
+
+These are runtime diagnostics, not necessarily daemon connection failures.
+
+Required behavior:
+
+- capture stderr as structured diagnostics;
+- redact secrets;
+- include runtime kind, agent id, session id, and safe source path;
+- mark agent or runtime degraded for repeated failures;
+- keep raw stderr out of ordinary chat unless requested.
+
+### Debugging Startup Issues
+
+Check in this order:
+
+1. daemon has machine lock;
+2. daemon is connected to server;
+3. server ping continues;
+4. runtime discovery found requested runtime;
+5. `agent:start` event arrived;
+6. start request is not stuck behind `active >= max`;
+7. runtime launch received correct agent/runtime/model/session;
+8. token file exists and has safe permissions;
+9. initial-turn-ended released the permit;
+10. stderr has no fatal runtime/auth/model errors;
+11. missed events were replayed after reconnect.
 
 ## Minimum Implementation Plan
 
-1. **Identity and storage**
-   - Generate and persist `computer_id`.
-   - Store `daemon_id`, lease, runtime inventory, agent profiles, tasks, reminders, and event log.
+### Phase 1: Protocol and Storage
 
-2. **Server connection**
-   - Connect to the server endpoint.
-   - Register computer and heartbeat.
-   - Keep a durable event cursor.
-   - Reconnect and replay missed events.
+- Generate server and client bindings from `daemon.proto`.
+- Persist computers, agents, runtimes, runtime profiles, messages, tasks,
+  reminders, activities, attachments, events, and idempotency records.
+- Add event cursor storage.
 
-3. **Runtime discovery**
-   - Probe supported runtime commands.
-   - Report kind, version, installed, healthy, and capabilities.
-   - Keep runtime kind string-based.
+### Phase 2: Server Connection
 
-4. **Agent launcher**
-   - Handle `agent:start`.
-   - Queue starts with `max_concurrent_starts`.
-   - Inject runtime args: `agent_id`, `runtime`, `model`, `session`, workspace, token file.
-   - Capture stdout/stderr and status.
-   - Release start permit on initial-turn-ended, failure, or timeout.
+- Implement daemon authentication.
+- Register computer.
+- Heartbeat lease and inventory.
+- Receive server events.
+- Ack accepted side effects.
+- Reconnect and replay from cursor.
 
-5. **Agent CLI bridge**
-   - Provide `slock message`, `task`, `attachment`, `reminder`, `profile`, and channel commands.
-   - Use agent-scoped token file.
-   - Reuse exact targets for replies.
+### Phase 3: Runtime Supervisor
 
-6. **Collaboration APIs**
-   - Implement messages, threads, DMs, tasks, task boards, reminders, attachments, profile updates, and event replay.
-   - Make all side effects idempotent by request id.
+- Discover runtimes.
+- Implement start queue and permits.
+- Launch runtime adapters.
+- Inject workspace and token file.
+- Capture stdout/stderr.
+- Report initial-turn-ended, failure, exit, and degraded health.
 
-7. **Memory**
-   - Create `MEMORY.md` as a small recovery index.
-   - Store detailed notes under `notes/`.
-   - Keep runtime session ids separate from memory.
-   - Add compaction-time memory flush.
+### Phase 4: Collaboration APIs
 
-8. **Verification**
-   - Unit test target parsing, permission failures, idempotency, task split apply, DM routing, reminder lifecycle, profile update, and event replay.
-   - Integration test daemon register/heartbeat, `agent:start` queueing, token injection, and runtime stderr diagnostics.
+- Implement target parsing.
+- Implement channels, DMs, messages, threads, attachments.
+- Implement tasks, task board, split proposal/apply, and graph replay.
+- Implement reminders and lifecycle log.
+- Implement profile update and agent status.
+
+### Phase 5: Agent CLI Bridge
+
+- Provide message/task/attachment/reminder/profile commands.
+- Reuse exact targets.
+- Return structured errors.
+- Avoid chat output for silent task claim conflicts.
+
+### Phase 6: Memory
+
+- Create `MEMORY.md` index.
+- Create notes directory.
+- Separate memory from runtime sessions.
+- Add compaction-time memory flush policy.
+- Keep task progress in server-visible task/run/activity state.
+
+## Verification Checklist
+
+Unit tests:
+
+- target parser;
+- join-to-write permission failures;
+- request id replay/conflict;
+- task claim conflict silence;
+- task split proposal/apply;
+- DM routing;
+- reminder schedule/snooze/update/cancel/log;
+- profile update;
+- attachment upload/download binding;
+- event cursor replay;
+- memory save filtering.
+
+Integration tests:
+
+- daemon register and heartbeat;
+- lease expiry and reconnect;
+- runtime discovery;
+- `agent:start` queueing;
+- token file injection;
+- runtime stderr diagnostics;
+- missed event replay;
+- agent status recovery after daemon reconnect.
+
+Security checks:
+
+- token file permissions;
+- secret redaction in logs and profile APIs;
+- permission checks for write operations;
+- attachment authorization;
+- idempotency conflict behavior;
+- no raw credentials in memory files.
 
 ## Future Drift Checklist
 
-When updating Nekobot for future Slock daemon drift:
+When the upstream daemon behavior changes:
 
-1. Check `slock server info`, `slock profile show`, current CLI help, and daemon logs.
-2. Compare new behavior against `proto/nekobot/daemon/v1/daemon.proto`.
-3. Prefer additive proto fields/RPCs while the package remains `v1`.
-4. Regenerate code with `buf generate`.
-5. Wire daemonhost client/server and gateway handlers before claiming the proto is supported.
-6. Add focused tests for each new RPC or field mapping.
-7. Record behavior that intentionally does not require proto changes in this document.
+1. Check server info and daemon version.
+2. Check CLI help for new commands or flags.
+3. Inspect daemon logs for new event types or runtime launch fields.
+4. Compare behavior with `daemon.proto`.
+5. Prefer additive protobuf fields/RPCs while the package remains `v1`.
+6. Regenerate language bindings.
+7. Update this document with behavior that does not require protobuf changes.
+8. Add tests for each new RPC, field, or lifecycle edge.
