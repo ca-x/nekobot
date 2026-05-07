@@ -2,6 +2,8 @@
 
 Status: accepted design target
 
+Current protocol drift checkpoint: `docs/superpowers/specs/2026-05-07-slock-runtime-integration.md`.
+
 ## Decision
 
 Nekobot daemon should be a Slock-style collaboration control plane, not a runtime-specific agent launcher protocol.
@@ -323,6 +325,7 @@ Scheduled future collaboration event.
 Current mapping:
 
 - Existing reminder RPCs can stay, but should include `request_id`, `created_by`, `target`, and permission checks.
+- Slock daemon `v0.44.x` adds snooze/update/log semantics. Nekobot now models these with `SnoozeReminder`, `UpdateReminder`, `GetReminderLog`, `ReminderEvent`, recurrence fields, and reminder status timestamps.
 
 ### Attachment
 
@@ -413,6 +416,9 @@ Current status:
 - `ScheduleReminder`
 - `ListReminders`
 - `CancelReminder`
+- `SnoozeReminder`
+- `UpdateReminder`
+- `GetReminderLog`
 - `ListActivity`
 - `LogActivity`
 
@@ -541,6 +547,8 @@ Adjust:
 - Stop deriving all non-DM thread targets as `#websocket:<session>`; persist the channel/thread target relation.
 - Make `ActivityRecord` run-aware.
 - Replace coarse `FetchAssignedTasks` / `UpdateTaskStatus` execution flow with run/step RPCs. Done at the proto and daemon client/server boundary.
+- Keep agent profile mutation aligned with Slock daemon `profile update`: `display_name`, `description`, and avatar upload are now represented by `UpdateAgentProfile`.
+- Keep reminder lifecycle aligned with Slock daemon `v0.44.x`: snooze, update, status/recurrence fields, and event history are represented in proto and daemonhost/gateway wiring.
 
 ## Migration Plan
 
